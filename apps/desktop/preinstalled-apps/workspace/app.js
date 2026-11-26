@@ -203,7 +203,6 @@ const STRINGS = {
     leftHours: '临时保留 {n} 小时',
     leftMinutes: '临时保留 {n} 分钟',
     clearsAt: '{time} 清除云端副本',
-    sent: '聊天附件',
     expired: '已过期',
     deleted: '已删除',
     unavailable: '暂不可用',
@@ -454,7 +453,6 @@ const STRINGS = {
     leftHours: 'Temporary for {n}h',
     leftMinutes: 'Temporary for {n}m',
     clearsAt: 'Cloud copy cleared {time}',
-    sent: 'Chat attachments',
     expired: 'Expired',
     deleted: 'Deleted',
     unavailable: 'Unavailable',
@@ -833,7 +831,7 @@ function renderChrome() {
 // The newest list asked is the one shown (an older one back later — another chat's — is dropped); what the chat says
 // while it is on its way goes over it again when it is back: the list may be from before (#7257).
 // A chat's folder is read one folder at a time too (a 7,800-file chat was read whole, eight pages one after another, for
-// the 36 at its top): the folder on screen — the top with 「附件」, at once — and each folder again as it is entered.
+// the 36 at its top): the folder on screen, and each folder again as it is entered.
 async function refreshList(readPreferences = false) {
   if (!state.root || !canRead() || (inWorkspace() && !copyOf())) return showList()
   // Drawn as it is asked: a folder not read yet says so (renderList) until its answer is drawn.
@@ -870,9 +868,6 @@ async function refreshList(readPreferences = false) {
   showList()
 }
 
-// 「附件」 by its path: the database finds it by its role, whatever it is called on screen.
-const ATTACHMENTS = '附件'
-
 function forgetListed() {
   state.entries = []
   state.listed = new Set()
@@ -881,31 +876,18 @@ function forgetListed() {
 
 /**
  * Chat folders ('' the top, else a folder's id), all read at once: what is directly in each goes into the list in place of
- * what was there, drawn once every answer is in — the top without 「附件」 is another list (none of what was sent, no 「聊天附件」
- * block), drawn and then replaced. The top brings 「附件」 with it (the top shows what was sent in the chat), unless
- * `withAttachments` is false (a file's own folder read again for its keep).
+ * what was there, drawn once every answer is in.
  */
-async function readFolders(folders, asked, withAttachments = true) {
+async function readFolders(folders, asked) {
   const chat = state.ctx.chat.id
-  const named = [...new Set(withAttachments && folders.includes('') ? [...folders, ATTACHMENTS] : folders)]
-  const answers = await Promise.all(named.map((folder) => gugu.files.list({ chat, folder }).catch((error) => {
-    if (folder === ATTACHMENTS && error.code === 'not-found') return null // a chat nothing was sent in has none
-    throw error
-  })))
+  const answers = await Promise.all(folders.map((folder) => gugu.files.list({ chat, folder })))
   // Another chat by now, or a newer refresh: this one's answer is dropped.
   if (state.ctx?.chat?.id !== chat || inWorkspace() || (asked && state.listing !== asked)) return
-  named.forEach((folder, at) => {
-    const listed = answers[at]
-    if (!listed) return
-    // The top is read first: 「附件」 with nothing in it is found by its row there.
-    const parent = folder === ATTACHMENTS ? listed[0]?.parentId ?? state.entries.find((e) => e.systemRole === 'attachments')?.id : folder || null
-    if (parent === undefined) return
-    state.entries = [...state.entries.filter((entry) => (entry.parentId ?? null) !== parent), ...listed]
-    state.listed.add(parent ?? '')
+  folders.forEach((folder, at) => {
+    const parent = folder || null
+    state.entries = [...state.entries.filter((entry) => (entry.parentId ?? null) !== parent), ...answers[at]]
+    state.listed.add(folder)
   })
-  // 「附件」 with nothing in it yet: known empty, once the top has named it.
-  const attachments = state.entries.find((e) => e.systemRole === 'attachments' && e.parentId === null)
-  if (attachments && named.includes(ATTACHMENTS)) state.listed.add(attachments.id)
   showList()
 }
 
@@ -944,7 +926,7 @@ function wholeThen(next = () => {}) {
 
 /**
  * A chat folder pressed open: drawn with what is known of it, and read (one folder: what it holds now). Back at the top
- * it is not read again: the top was read with 「附件」, which can be long, and the chat's changes keep it.
+ * it is not read again: the chat's changes keep it.
  */
 function readChatFolder(folderId) {
   if (folderId === '' && state.listed.has('')) return
@@ -1046,7 +1028,7 @@ const keepAsked = new Set()
 const keepRead = debounce(() => {
   const folders = [...keepAsked].filter((folder) => state.listed.has(folder))
   keepAsked.clear()
-  if (state.root === 'chat' && folders.length) void readFolders(folders, null, false).catch(() => {})
+  if (state.root === 'chat' && folders.length) void readFolders(folders, null).catch(() => {})
 }, 800)
 function keepLater(folders) {
   if (!folders.length) return
@@ -1137,15 +1119,7 @@ function under(folderId) {
   return found
 }
 
-// What the top of the folder shows (owner 10-28): its folders, and every file there or in 「附件」 — what was sent in the
-// chat is not one folder further down. 「附件」 itself is not a row; it is still a folder a file can be moved to.
-function topEntries() {
-  return [...inside(null).filter((e) => e.systemRole !== 'attachments'), ...sentEntries()]
-}
-// What is in 「附件」: what was sent in the chat.
-const sentEntries = () => inside(null).filter((e) => e.systemRole === 'attachments').flatMap((folder) => under(folder.id))
-
-// The folders of a list: 「附件」 first where a search lists it, the rest by name.
+// The folders of a list: 「附件」 first, the rest by name.
 function folderOrder(a, b) {
   if (!!a.systemRole !== !!b.systemRole) return a.systemRole ? -1 : 1
   // A computer's hidden folders (.git) come after the ones a person is there for.
@@ -1178,7 +1152,7 @@ function renderList() {
   const needle = state.filter.trim().toLocaleLowerCase()
   // One clock for the whole list, the one relative times read (Date.now).
   const now = new Date(Date.now())
-  const shown = (needle ? state.entries : state.folder ? inside(state.folder) : topEntries())
+  const shown = (needle ? state.entries : inside(state.folder ?? null))
     .filter(visibleEntry)
     .filter((e) => !needle || e.name.toLocaleLowerCase().includes(needle) || shownName(e).toLocaleLowerCase().includes(needle))
   const ofKind = (state.ofKind = shown.filter((e) => !isFolder(e) && (state.kind === 'all' || kindOf(e) === state.kind)))
@@ -1198,9 +1172,6 @@ function renderList() {
   // Unreadable files stay in folded sections under the rest, each named by the service's evidenced reason.
   const files = picked.filter((e) => !fileUnavailable(e))
   const expired = picked.filter(fileUnavailable)
-  // At the top, the files placed there and the ones sent in the chat (「附件」) are two blocks under their own headings (owner 11-12).
-  const sentIds = new Set(!needle && !state.folder ? sentEntries().map((e) => e.id) : [])
-  const sent = files.filter((e) => sentIds.has(e.id))
   const grid = viewOf(state.kind) === 'grid'
   list.classList.toggle('as-grid', grid)
   const item = (entry) => (grid && !isFolder(entry) ? gridItem(entry, now) : listItem(entry, now))
@@ -1208,21 +1179,11 @@ function renderList() {
   if (!grid && (folders.length || files.length)) rows.push(tableHead())
   if (folders.length && files.length) rows.push(sectionRow(t.folders))
   rows.push(...folders.map(item))
-  // What is drawn. At the top, the two blocks under a plain heading each, one list apiece in the order picked (the time is
-  // on each row; owner 11-12: one level of headings). Elsewhere, in the recent order, each time section under its own
-  // heading — a press folds it away (owner 11-06); other orders: every file, one list. A long block or section shows its
-  // first SECTION_ROWS with 「再显示 N 条」 under them.
+  // What is drawn. In the recent order, each time section under its own heading — a press folds it away (owner 11-06);
+  // other orders: every file, one list. A long section shows its first SECTION_ROWS with 「再显示 N 条」 under them.
   const drawn = []
   const draw = (entries) => { for (const entry of entries) { rows.push(item(entry)); drawn.push(entry) } }
-  if (sent.length) {
-    for (const [block, entries] of [[HERE, files.filter((e) => !sentIds.has(e.id))], [SENT, sent]]) {
-      if (!entries.length) continue
-      rows.push(blockRow(block, entries.length))
-      const cut = state.openSections.has(block.key) ? entries.length : SECTION_ROWS
-      draw(entries.slice(0, cut))
-      if (entries.length > cut) rows.push(moreRow(block, entries.length - cut))
-    }
-  } else if (state.sort === 'recent') {
+  if (state.sort === 'recent') {
     const sections = []
     for (const entry of files) {
       const at = sectionOf(changedAt(entry), now)
@@ -1275,21 +1236,8 @@ function renderList() {
 /** How many files a time section shows before 「再显示 N 条」. */
 const SECTION_ROWS = 20
 
-/**
- * The blocks of a list, each under its own heading: the files placed at the top and the ones sent in the chat, and at the
- * bottom the expired ones, closed unless its key is in `openSections`.
- */
-const HERE = { key: 'here', kind: 'files' }
-const SENT = { key: 'sent', kind: 'sent' }
+/** The blocks at the bottom of a list, each under its own heading: the expired ones, closed unless its key is in `openSections`. */
 const UNAVAILABLE_BLOCKS = ['expired', 'deleted', 'unavailable'].map((key) => ({ key, kind: key }))
-
-/** A block's heading: its name and how many files are in it, with a hairline above. */
-function blockRow(block, count) {
-  const li = sectionRow(sectionName(block))
-  li.dataset.block = block.key
-  li.append(Object.assign(document.createElement('span'), { className: 'section-count', textContent: String(count) }))
-  return li
-}
 
 /**
  * A section's heading: the whole line folds the section away and back, with how many files are in it. A press flips its
