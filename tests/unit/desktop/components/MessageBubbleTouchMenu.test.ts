@@ -167,8 +167,8 @@ describe('MessageBubble touch menu', () => {
     expect(messageBubble().style.userSelect).toBe('none')
   })
   it('hands the original word to the native selector and restores the bubble when it closes', async () => {
-    let finish!: () => void
-    const open = vi.fn<NativeTextSelection['open']>(() => new Promise<void>(resolve => { finish = resolve }))
+    let finish!: (closed: undefined) => void
+    const open = vi.fn<NativeTextSelection['open']>(() => new Promise<undefined>(resolve => { finish = resolve }))
     const close = vi.fn(async () => {})
     platform.textSelection = { open, close }
     await renderMessage()
@@ -181,13 +181,13 @@ describe('MessageBubble touch menu', () => {
     expect(messageBubble().style.visibility).toBe('')
     expect(messageBubble().querySelector<HTMLElement>('.gg-md')?.style.visibility).toBe('hidden')
     const request = open.mock.calls[0][0]
-    await act(async () => { finish() })
+    await act(async () => { finish(undefined) })
     expect(close).toHaveBeenCalledExactlyOnceWith({ id: request.id })
     expect(messageBubble().style.userSelect).toBe('none')
     expect(messageBubble().querySelector<HTMLElement>('.gg-md')?.style.visibility).toBe('')
   })
   it('keeps the first press when Android delivers contextmenu after the message is lifted', async () => {
-    const open = vi.fn<NativeTextSelection['open']>(() => new Promise<void>(() => {}))
+    const open = vi.fn<NativeTextSelection['open']>(() => new Promise<undefined>(() => {}))
     platform.textSelection = { open, close: vi.fn(async () => {}) }
     await renderMessage()
     pressInsideWord('from')
@@ -199,7 +199,7 @@ describe('MessageBubble touch menu', () => {
     expect(open).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ text: 'hello from mobile', start: 6, end: 10 }))
   })
   it('closes only its native selection request when the selection layer receives Back', async () => {
-    const open = vi.fn<NativeTextSelection['open']>(() => new Promise<void>(() => {}))
+    const open = vi.fn<NativeTextSelection['open']>(() => new Promise<undefined>(() => {}))
     const close = vi.fn(async () => {})
     platform.textSelection = { open, close }
     await renderMessage()
@@ -283,7 +283,7 @@ describe('MessageBubble touch menu', () => {
     await renderMessage(undefined, false, vi.fn(), { onEnterSelectMode: vi.fn(), onOpenTopic: vi.fn() })
     selectMessageText('hello')
     await contextMenu()
-    expect(actionKeys()).toEqual(['reply', 'copy'])
+    expect(actionKeys()).toEqual(['comment', 'copy'])
     window.getSelection()!.removeAllRanges()
     await clickElement(menuItem('复制'))
     expect(writeText).toHaveBeenCalledWith('hello')
@@ -296,20 +296,20 @@ describe('MessageBubble touch menu', () => {
     selectTextIn(link, 'https://example.com/path')
     await act(() => { link.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 2 })) })
     await contextMenu()
-    expect(actionKeys()).toEqual(['reply', 'copy', 'copyLink', 'openLink'])
+    expect(actionKeys()).toEqual(['comment', 'copy', 'copyLink', 'openLink'])
     window.getSelection()!.removeAllRanges()
     await clickElement(document.querySelector('[data-testid="message-action-copyLink"]')!)
     expect(writeText).toHaveBeenCalledWith('https://example.com/path')
   })
-  it('hides excerpt quoting while retaining whole-message reply after desktop selection', async () => {
+  it('comments on a desktop selection instead of replying to the whole message', async () => {
     const onQuote = vi.fn()
     await renderMessage(undefined, false, vi.fn(), { onQuote })
     selectMessageText('hello')
     await contextMenu()
     window.getSelection()!.removeAllRanges()
-    expect([...document.querySelectorAll('[role="menuitem"]')].some(item => item.textContent === '引用选中文字')).toBe(false)
-    await clickElement(menuItem('回复'))
-    expect(onQuote).toHaveBeenCalledWith(expect.objectContaining({ id: 'msg-1', content: 'hello from mobile' }))
+    expect([...document.querySelectorAll('[role="menuitem"]')].map(item => item.textContent?.trim())).toEqual(['评论', '复制'])
+    await clickElement(menuItem('评论'))
+    expect(onQuote).not.toHaveBeenCalled()
   })
   it('ignores a selection outside the message and retains whole-message copying', async () => {
     const writeText = vi.fn(async (_text: string) => {})
@@ -322,7 +322,7 @@ describe('MessageBubble touch menu', () => {
     window.getSelection()!.removeAllRanges()
     window.getSelection()!.addRange(range)
     await contextMenu()
-    expect([...document.querySelectorAll('[role="menuitem"]')].some((item) => item.textContent === '引用选中文字')).toBe(false)
+    expect([...document.querySelectorAll('[role="menuitem"]')].some((item) => item.textContent === '评论')).toBe(false)
     await clickElement(menuItem('复制'))
     expect(writeText).toHaveBeenCalledWith('hello from mobile')
     outside.remove()

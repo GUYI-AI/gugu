@@ -6,6 +6,7 @@ import { ChatMessageComposer } from '@/components/chat/ChatMessageComposer'
 import { useChatStore } from '@/store/chatContext'
 import { LocalizationProvider, setLocalePreference } from '@/i18n'
 import { until } from '../../../../../../../tests/support/awaitCondition'
+import { sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
 
 const editors = vi.hoisted(() => ({ ids: [] as string[], read: Promise.resolve() }))
 // The cited file's makers, as the workspace reads answer them: none by the item row, every id among its versions' authors.
@@ -92,4 +93,37 @@ it('keeps words typed while the cited files are read, and sends only what was th
   expect(onSend.mock.calls[0]?.[0]).not.toContain('next thought')
   expect(onSend.mock.calls[0]?.[1]?.toUserIds).toEqual(['cite-agent'])
   await until('the later words stay in the composer', () => input.element().textContent?.trim() === 'next thought')
+})
+
+// A comment on part of a member's message names its writer, the way a cited file names its makers.
+function commentOn(chatId: string, ...authors: string[]) {
+  const draft = sessionAnnotations.forConversation({ kind: 'chat', chatId })
+  draft.clear()
+  for (const authorId of authors) draft.add({ kind: 'message', messageId: `m-${authorId}`, authorId, authorName: authorId, text: 'the part', annotation: 'why?' })
+}
+
+it('sends comments with no @ to the members who wrote the commented messages, not to the sender or to non-members', async () => {
+  commentOn('comment-room', 'cite-peer', 'cite-me', 'someone-who-left', 'cite-peer')
+  root.render(<LocalizationProvider><ChatMessageComposer chatId="comment-room" currentUserId="cite-me" isGroupChat onSend={onSend} groupMembers={members} /></LocalizationProvider>)
+  const send = page.getByRole('button', { name: 'Send message', exact: true })
+  await until('the comments can be sent alone', () => send.elements().length === 1 && !(send.element() as HTMLButtonElement).disabled)
+  await send.click()
+  await until('sent', () => onSend.mock.calls.length === 1)
+  expect(onSend.mock.calls[0]?.[1]?.toUserIds).toEqual(['cite-peer'])
+  expect((onSend.mock.calls[0]?.[1] as { annotations?: unknown[] } | undefined)?.annotations).toHaveLength(4)
+})
+
+it('lets an @ win over the comments', async () => {
+  commentOn('comment-room-at', 'cite-peer')
+  root.render(<LocalizationProvider><ChatMessageComposer chatId="comment-room-at" currentUserId="cite-me" isGroupChat onSend={onSend} groupMembers={members} /></LocalizationProvider>)
+  const input = page.getByTestId('chat-composer')
+  await until('composer', () => input.elements().length === 1)
+  await input.click()
+  await userEvent.keyboard('@')
+  const member = page.getByRole('option', { name: /Cite agent/ })
+  await until('member picker result', () => member.elements().length === 1)
+  await member.click()
+  await page.getByRole('button', { name: 'Send message', exact: true }).click()
+  await until('sent', () => onSend.mock.calls.length === 1)
+  expect(onSend.mock.calls[0]?.[1]?.toUserIds).toEqual(['cite-agent'])
 })
