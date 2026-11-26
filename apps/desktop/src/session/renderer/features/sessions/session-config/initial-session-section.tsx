@@ -132,7 +132,7 @@ import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-s
 import { useComposerFileUploads, type TaskAttachmentTarget } from '@renderer/features/sessions/acp/use-composer-file-uploads';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
 import { guguReasonInText } from '@gugu/session-core/session-record/contract';
-import type { ComposerDraft, SubmittedComposerDraft } from '../composer-drafts';
+import type { ComposerDraft, DraftContextSelection, SubmittedComposerDraft } from '../composer-drafts';
 import type { SessionContextChoice } from '@shared/core/sessions/session-config';
 import {
   guguCatalogNotice,
@@ -266,6 +266,7 @@ export type InitialSessionState = {
   setFastMode?: (enabled: boolean) => void;
   contextChoice?: SessionContextChoice;
   setContextChoice?: (choice: SessionContextChoice) => void;
+  clearSubmittedContextChoice?: () => void;
   /** Fast's published token multiple for this draft (`fastTokenMultiplier`); undefined = billed higher, no multiple. */
   fastTokenMultiplier?: number;
   /** What the CLI would pick on its own for this model — shown in the 「默认」 row. */
@@ -507,7 +508,8 @@ export function useInitialSessionState(
   const terminalEnabled = terminalShown(useTerminalEnabled());
   // #2569 a draft handed over from another box (the sample project's first message) opens with what was picked there.
   const handed = draft?.handoff?.picked;
-  const [contextSelection, setContextSelection] = useState<{ provider: AgentProviderId | null; choice: SessionContextChoice }>();
+  const [localContextSelection, setLocalContextSelection] = useState<DraftContextSelection>();
+  const contextSelection = draft ? draft.contextSelection : localContextSelection;
   const [sessionViewOverride, setSessionViewOverride] = useState<SessionView | null>(() => handed?.sessionView ?? null);
   const sessionViewPreference = sessionViewOverride ?? DEFAULT_SESSION_VIEW;
   // #6264 远端创建框:只经云端连着的机器只有聊天界面那条腿(终端画面走不了云端消息通道),
@@ -1299,7 +1301,15 @@ export function useInitialSessionState(
     contextChoice: contextSelection?.provider === providerId
       && contextSelection.choice.model === composerSelectedOptionId({ platformModel, model })
       ? contextSelection.choice : undefined,
-    setContextChoice: choice => setContextSelection({ provider: providerId, choice }),
+    setContextChoice: (choice) => {
+      const selection = { provider: providerId, choice };
+      if (draft) draft.setContextSelection(selection);
+      else setLocalContextSelection(selection);
+    },
+    clearSubmittedContextChoice: contextSelection && (() => {
+      if (draft) draft.clearSubmittedContextSelection(contextSelection);
+      else setLocalContextSelection(current => current === contextSelection ? undefined : current);
+    }),
     platformNotice,
     // 只有过一会儿可能自己好的原因值得重试;其余原因是配置事实,重试也不会变。
     retryPlatformCatalog: platformCatalogNotice?.retryable ? platformCatalog.retry : undefined,
