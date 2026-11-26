@@ -391,6 +391,10 @@ export const VIRTUOSO_START_INDEX = 100000
 const LIST_FRAME_STYLE: CSSProperties = { position: 'relative', display: 'flex', flexDirection: 'column' }
 // 原生滚动锚定(overflow-anchor 缺省 auto):视口上方的行变高时浏览器在同一次排版里改位置,见 lib/flowList.ts。
 const LIST_SCROLLER_STYLE: CSSProperties = { flex: 1, minHeight: 0, position: 'relative', overflowX: 'hidden', overflowY: 'auto', outline: 'none' }
+// The list scrolls as far as its rows go: an avatar track (StickyGroupAvatar, absolute, so the rows' box is its containing
+// block) placed while its rows were laid out elsewhere must not extend it — the end the list sticks to would be past the
+// last row, and with no row in view nothing wakes the rows to place the track again.
+const LIST_CONTENT_STYLE: CSSProperties = { position: 'relative', overflowY: 'clip' }
 // 与底部「N 条新消息 ↓」同一身份(强调色药丸 + 浮层阴影),位置照微信放右上角。
 const UNREAD_ABOVE_STYLE: CSSProperties = { position: 'absolute', top: 'var(--spacing-md)', right: 'var(--spacing-md)', zIndex: 'var(--z-float)', borderRadius: 'var(--radius-xl)', fontSize: 'var(--font-caption)', boxShadow: 'var(--shadow-lift)' }
 /**
@@ -505,7 +509,7 @@ export function MessageList({
     <div style={frameStyle}>
       {/* 每换一条线(resetKey)换一个滚动容器:落点、贴底电平、锚定都从这条线自己的第一帧开始。 */}
       <div key={resetKey} ref={handleScrollerRef} tabIndex={0} data-testid={AUTOMATION_TEST_IDS.chatMessageList} data-unread-stream-surface="main" data-chat-dock-reads="" data-message-avatars="true" data-image-gallery="" style={LIST_SCROLLER_STYLE}>
-        <div ref={contentRef}>
+        <div ref={contentRef} style={LIST_CONTENT_STYLE}>
           {rows.slice(start, end).map((row) => <MessageListSlot key={row.message.id} id={row.message.id} flash={row.message.id === rowProps.flashMessageId} seenRows={seenRows} />)}
           {end >= rows.length ? footer : null}
           {/* 会话底部那一摞浮在消息流上(ChatBottomDock 写的 --chat-dock-h),滚到底的最后一条落在它上面;没有它就是 0。 */}

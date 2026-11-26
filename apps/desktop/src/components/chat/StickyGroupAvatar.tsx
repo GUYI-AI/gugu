@@ -8,7 +8,7 @@ const GROUP_TOP_ATTR = 'data-avatar-group-top'
  * @@@avatar-track (avatarTrack.ts) — the avatar stays in the bubble's React tree (a portal onto its row's track), so clicks,
  * the context-menu @, the profile card and the focus / reading order (the avatar just before its bubble) are what they were.
  * The track is absolute at its static place (the row's top-left) and moved by margins, so it scrolls with its row because
- * the list's scroller is positioned (MessageList).
+ * the list's rows box is positioned (MessageList).
  */
 type Bubble = { top: number; bottom: number }
 type Track = {
