@@ -6,13 +6,12 @@ import { readServerVersionSwitchBusyAgents, restartServerVersionNow, retryServer
 import type { Device } from '@gugu/core/shared/types/chat'
 import { reportedSshUpdate } from '../lib/sshLinkOnline'
 import { openDeviceRecovery } from '@/lib/deviceActionsIntent'
-import type { SshLinkFailure, SshLinkOpenResult } from '../lib/sshLink'
+import type { SshLinkFailure } from '../lib/sshLink'
 import { useSshPromptTarget, useSshStatusShown, sshLinkNoticeReason, type SshLinkNotice } from '../lib/sshLinkNotice'
 import {
   answerSshSignInPrompt,
   isSshMachine,
   requestSshServerUpgrade,
-  signInSshMachine,
   sshReinstallCommand,
   subscribeSshSignInPrompts,
   subscribeSshUpgradeEvents,
@@ -21,7 +20,6 @@ import type { SshPrompt } from '../session/shared/ssh-prompt'
 import { useDevicesStore } from '../store/devicesContext'
 import { canRestartServerUpdate } from '../lib/deviceRowModel'
 import { useSessionMessages } from '../session/renderer/localization/use-session-messages'
-import { SshIdentityDetails } from './settings/addServer/SshHostKeyChanged'
 import { SshPromptCard, SshPromptFrame } from './settings/addServer/SshPromptCard'
 import { Button } from './ui/Button'
 import { InlineAction } from './settings/addServer/InlineAction'
@@ -76,22 +74,19 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
   const { translate } = useSessionMessages()
   const { toast } = useToast()
   const [dismissed, setDismissed] = useState<SshLinkFailure | null>(null)
-  const [verification, setVerification] = useState<Extract<SshLinkOpenResult, { ok: false }> | null>(null)
-  const [signingIn, setSigningIn] = useState(false)
   const [answered, setAnswered] = useState<string | null>(null)
   const [confirmRestart, setConfirmRestart] = useState<{ deviceId: string; busyAgents?: number | null } | null>(null)
   const ssh = isSshMachine(machine.device_id)
   const update = machine.capabilities?.server_update
   const tunnelWaiting = !ssh && machine.is_online && update?.state === 'ready'
     && serverMachineNotices(machine.capabilities).some(notice => notice.kind === 'server-too-old')
-  const reason = prompt ? 'signInRequired' : signingIn ? (problem === 'hostKeyChanged' ? 'hostKeyChanged' : 'signInRequired') : sshLinkNoticeReason(reportedSshUpdate(machine, problem)) ?? (tunnelWaiting ? 'waitingIdle' : null)
+  const reason = prompt ? 'signInRequired' : sshLinkNoticeReason(reportedSshUpdate(machine, problem)) ?? (tunnelWaiting ? 'waitingIdle' : null)
   const inPlace = useSshStatusShown(machine.device_id, reason)
   const promptTarget = useSshPromptTarget(machine.device_id)
   const pendingRestart = reason === 'waitingIdle' || reason === 'confirmationRequired'
-  if (verification && problem !== 'hostKeyChanged') setVerification(null)
   if (confirmRestart && !pendingRestart) setConfirmRestart(null)
   if (dismissed !== null && dismissed !== reason) setDismissed(null)
-  const shown = reason && (prompt || signingIn || reason !== dismissed)
+  const shown = reason && (prompt || reason !== dismissed)
     ? { deviceId: machine.device_id, name: machine.label, reason } : null
   const question = prompt && <SshPromptCard
     prompt={prompt}
@@ -109,17 +104,7 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
   function card(shown: SshLinkNotice): Omit<Notice, 'key'> {
     const confirmableUpdate = !ssh && update?.state === 'ready' && canRestartServerUpdate(update, machine.capabilities) ? update : null
 
-    const startSignIn = () => {
-      const deviceId = shown.deviceId
-      setSigningIn(true)
-      void signInSshMachine(deviceId).then(result => {
-        setVerification(!result.ok && result.reason === 'hostKeyChanged' ? result : null)
-      }).finally(() => {
-        setSigningIn(false)
-        setAnswered(null)
-      })
-    }
-    const dismiss = () => { setDismissed(shown.reason); setVerification(null) }
+    const dismiss = () => setDismissed(shown.reason)
     const askRestart = () => {
       const question = { deviceId: shown.deviceId, busyAgents: null }
       setConfirmRestart(question)
@@ -142,17 +127,15 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
       } catch (error) { failed(error) }
     }
     const activePrompt = prompt
-    const canSignIn = shown.reason === 'signInRequired' || shown.reason === 'hostKeyChanged'
     const reinstall = shown.reason === 'updateFailed' ? sshReinstallCommand(shown.deviceId) : null
 
     // Clearing this notice in the inbox cancels its outstanding prompt. The deck close button only defers the notice.
     const close = () => {
       if (activePrompt) answerSshSignInPrompt({ deviceId: shown.deviceId, promptId: activePrompt.id, value: null })
-      else if (signingIn) setSigningIn(false)
       else dismiss()
     }
     // 机器名是这条横幅的标题(带服务器图标),下面平铺那一句和按钮 —— ❌ 横幅里再套一张卡。
-    return { ongoing: true, shownInline: inPlace && !prompt && !signingIn, onDismiss: close,
+    return { ongoing: true, shownInline: inPlace && !prompt, onDismiss: close,
       title: prompt ? t('devices.recovery.promptTitle', { name: shown.name }) : shown.name, icon: <Server size={16} />, description: (
         <div data-testid="ssh-link-sign-in">
           {pendingRestart && !activePrompt ? (
@@ -186,10 +169,10 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
           ) : (
             <div>
               <p className="m-0 min-w-0 flex-1 text-[length:var(--font-body)] leading-[1.5]">
-                {signingIn || shown.reason === 'updating' ? (
+                {shown.reason === 'updating' ? (
                   <span className="inline-flex items-center gap-2 text-muted-foreground" data-testid="ssh-link-busy">
                     <LoadingIndicator size="inline" />
-                    {t(signingIn ? 'devices.link.connecting' : 'devices.link.updating', { name: shown.name })}
+                    {t('devices.link.updating', { name: shown.name })}
                   </span>
                 ) : reinstall ? (
                   <span className="flex flex-col gap-2" data-testid="ssh-link-reinstall">
@@ -198,24 +181,15 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
                   </span>
                 ) : (
                   <>
-                    {t(`devices.link.${shown.reason}`, { name: shown.name })}
-                    {verification?.hostKey && <SshIdentityDetails hostKey={verification.hostKey} />}
-                    {['notSignedIn', 'notInstalled', 'notRunning', 'refused'].includes(shown.reason) && <>
-                      {' '}<InlineAction onClick={() => { dismiss(); openDeviceRecovery(shown.deviceId) }}>{translate('remoteHost.ssh.settings')}</InlineAction>
+                    {t(shown.reason === 'hostKeyChanged' ? 'devices.recovery.hostKeyChanged.body' : `devices.link.${shown.reason}`, { name: shown.name })}
+                    {['hostKeyChanged', 'notSignedIn', 'notInstalled', 'notRunning', 'refused'].includes(shown.reason) && <>
+                      {' '}<InlineAction onClick={() => { dismiss(); openDeviceRecovery(shown.deviceId) }}>{shown.reason === 'hostKeyChanged' ? t('devices.recovery.hostKeyChanged.action') : translate('remoteHost.ssh.settings')}</InlineAction>
                     </>}
                     {shown.reason === 'updateFailed' ? (
                       <>
                         {' '}
                         <InlineAction onClick={() => void requestSshServerUpgrade(shown.deviceId, { force: true })} testId="ssh-link-upgrade-retry">
                           {t('devices.link.retryUpdate')}
-                        </InlineAction>
-                      </>
-                    ) : null}
-                    {canSignIn ? (
-                      <>
-                        {' '}
-                        <InlineAction onClick={startSignIn} testId="ssh-link-sign-in-action">
-                          {shown.reason === 'hostKeyChanged' ? (verification ? t('devices.retry') : translate('remoteHost.ssh.verify')) : t('devices.link.signIn')}
                         </InlineAction>
                       </>
                     ) : null}

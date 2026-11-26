@@ -40,6 +40,7 @@ import { reportedSshUpdate } from '@/lib/sshLinkOnline'
 import { showSshStatusInPlace } from '@/lib/sshLinkNotice'
 import { isInboxNotice, persistentNotices } from '@/lib/notices'
 import { NoticeHost } from '@/components/NoticeHost'
+import { UI_EVENTS } from '@/lib/uiEvents'
 import { answerSshSignInPrompt, requestSshServerUpgrade } from '@/lib/sshLinkChannel'
 
 let harness: ReturnType<typeof createReactHarness>
@@ -259,4 +260,17 @@ it('lets the visible recovery panel answer the pending SSH question and returns 
     await clickElement(deck.querySelector<HTMLButtonElement>('[data-testid=ssh-prompt-cancel]')!)
     expect(answerSshSignInPrompt).toHaveBeenCalledWith({ deviceId: 'remote', promptId: 'pw2', value: null })
   } finally { close(); panel.remove() }
+})
+
+it('opens the affected device from a changed identity notice for the shared fingerprint review', async () => {
+  state.ssh = true
+  state.problem = 'hostKeyChanged'
+  state.devices = [device('remote', [], { label: 'Remote' })]
+  await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
+  const opened = vi.fn()
+  window.addEventListener(UI_EVENTS.openSettings, opened)
+  try {
+    await clickElement(document.querySelector<HTMLButtonElement>('[data-testid=ssh-link-sign-in] button')!)
+    expect(opened.mock.calls[0]?.[0].detail).toEqual({ section: 'devices', deviceId: 'remote' })
+  } finally { window.removeEventListener(UI_EVENTS.openSettings, opened) }
 })
