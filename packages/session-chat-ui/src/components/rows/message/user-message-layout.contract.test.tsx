@@ -47,6 +47,8 @@ type Reading = {
   cardH: number;
   /** 这一行画出来的附件 chip 数(#5269)。 */
   chips: number;
+  /** 每一枚 chip 画出来的宽高。 */
+  boxes: Array<[number, number]>;
   text: string;
   /** 画出来的气泡数:只有附件、没有正文时是 0。 */
   cards: number;
@@ -125,6 +127,7 @@ async function mountUser(item: ChatMessage, layout: ChatLayout, commands: ChatCo
       dom: root.offsetHeight,
       cardH: card.offsetHeight,
       chips: root.querySelectorAll('[data-attachment-chip]').length,
+      boxes: [...root.querySelectorAll<HTMLElement>('[data-attachment-chip]')].map((chip) => [chip.offsetWidth, chip.offsetHeight]),
       text: root.textContent ?? '',
       cards,
       left: rect.left - hostRect.left,
@@ -251,14 +254,26 @@ describe('a cite stays in the words; the strip draws attachments only', () => {
     }
   });
 
-  it('a picture placed in the words is drawn there only, not again on the strip', () => {
-    const file = (itemId: string, name: string) => ({ itemId, version: 1, name, mimeType: 'image/png', sizeBytes: 1 });
+  it('a picture placed in the words is drawn above them at the size it was sent with, the words without its place; measure === offsetHeight', async () => {
+    const file = (itemId: string, name: string, imageDimensions?: { width: number; height: number }) =>
+      ({ itemId, version: 1, name, mimeType: 'image/png', sizeBytes: 1, ...(imageDimensions ? { imageDimensions } : {}) });
     const item = normalizeMessage({ kind: 'message', id: 'u-inline', role: 'user',
       text: 'First: ![Image 1](gugu-file://red?v=1) then: ![Image 2](gugu-file://blue?v=1)',
-      files: [file('red', 'red.png'), file('blue', 'blue.png'), file('kept', 'kept.png')],
+      files: [file('red', 'red.png', { width: 1600, height: 900 }), file('blue', 'blue.png', { width: 300, height: 1200 }), file('kept', 'kept.png')],
       // The agent's echo carries the same pictures as images, by the file's name.
       attachments: [{ id: 'acp-0', name: 'red.png', dataUrl: 'data:image/png;base64,iVBORw0KGgo=' }, { id: 'acp-1', name: 'blue.png' }] });
-    expect(item.attachments?.map(file => file.name)).toEqual(['kept.png']);
+    expect(item.text).toBe('First: then:');
+    expect(item.attachments?.map(file => [file.name, file.imageDimensions])).toEqual([
+      ['red.png', { width: 1600, height: 900 }], ['blue.png', { width: 300, height: 1200 }], ['kept.png', undefined]]);
+    for (const layout of [DOUBLE, SINGLE]) {
+      const mounted = await mountUser(item, layout);
+      // A chat bubble's picture: its proportions inside 280 × 280; one of unknown size gets a box 160 high.
+      expect(mounted.boxes).toEqual([[280, 158], [70, 280], [280, 160]]);
+      expect(mounted.text).not.toContain('Image 1');
+      expect(mounted.computed).toBe(mounted.dom);
+    }
+    const unsent = normalizeMessage({ kind: 'message', id: 'u-other', role: 'user', text: 'See ![Image 1](gugu-file://other?v=1)' });
+    expect(unsent.text).toBe('See ![Image 1](gugu-file://other?v=1)');
   });
 
   it('draws each comment sent beside the words as a row naming its place and comment; measure === offsetHeight', async () => {

@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 import { attachmentKind } from '@gugu/core/shared/ui/attachmentType';
-import { fileImageLinks } from '@gugu/session-core/acp/inline-file-images';
+import { fileImageLinks, withoutFileImages } from '@gugu/session-core/acp/inline-file-images';
 import { safeDeliveredBody, type DeliveryMessagePresentation } from '@session-chat/state/delivery-presentation';
 import { rowTranslator } from '../readable-label';
 import { ConversationMessage, conversationMessageHeight, isConversationMessage } from './ConversationMessage';
@@ -105,14 +105,21 @@ export function normalizeMessage(item: ChatMessage, deliveredMessage?: (id: stri
   // 用户消息上的附件条只画结构化附件(上传的、发出的文件)。正文里的 `@[name](path)` 是引用,
   // 不论路径是不是绝对的,都留在正文里画成胶囊 —— 引用不是「我附了它」。
   if (normalized.role !== 'user') return normalized;
-  // A picture placed in the words (`![Image 1](gugu-file://<id>…)`) is drawn there as a chip; the strip leaves it out.
-  const placedIds = new Set(fileImageLinks(normalized.text).map(link => link.itemId));
-  const placed = (item.files ?? []).filter(file => placedIds.has(file.itemId));
-  if (placed.length) normalized.attachments = normalized.attachments?.filter(file => (file.kind ?? 'image') !== 'image' || !placed.some(each => each.name === file.name));
+  // A picture placed in the words (`![Image 1](gugu-file://<id>…)`) is drawn above them on the strip, the way a chat draws
+  // a picture with its caption (owner 11-26): the words leave its place out. Each picture keeps the size it was sent with.
+  const sent = item.files ?? [];
+  const isSent = (itemId: string) => sent.some(file => file.itemId === itemId);
+  if (fileImageLinks(normalized.text).some(link => isSent(link.itemId))) normalized.text = withoutFileImages(normalized.text, isSent);
+  const sizeOf = (name: string) => sent.find(file => file.name === name)?.imageDimensions;
+  normalized.attachments = normalized.attachments?.map(file => {
+    const size = (file.kind ?? 'image') === 'image' ? sizeOf(file.name) : undefined;
+    return size ? { ...file, imageDimensions: size } : file;
+  });
   const imageNames = new Set(normalized.attachments?.map(file => file.name) ?? []);
-  const files = (item.files ?? []).filter(file => !imageNames.has(file.name) && !placed.includes(file)).map(file => {
+  const files = sent.filter(file => !imageNames.has(file.name)).map(file => {
     const href = `gugu-file://${file.itemId}?v=${file.version}`;
-    return { id: href, href, name: file.name, kind: attachmentKind({ fileName: file.name, mimeType: file.mimeType }) };
+    return { id: href, href, name: file.name, kind: attachmentKind({ fileName: file.name, mimeType: file.mimeType }),
+      ...(file.imageDimensions ? { imageDimensions: file.imageDimensions } : {}) };
   });
   // Each comment sent with the words is a row of its own: what it points at, and the comment.
   const annotations = (item.annotations ?? []).map(annotation => ({ id: `annotation:${annotation.number}`, kind: 'annotation' as const,
