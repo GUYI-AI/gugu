@@ -7,6 +7,8 @@ import { normalizeDeviceRow } from '@gugu/core/cloud/devices'
 import type { HumanAuthSession } from '@gugu/core'
 import type { AppPlatform, FeedbackLogTail } from './types'
 import { writeBrowserClipboardText } from './browserClipboard'
+import { desktopIpc } from './desktopIpc'
+import { DEVICE_ACTIONS_CHANNELS } from '../lib/deviceActionsIpc'
 import { unavailableCapability } from './errors'
 import { anchorDownload } from './anchorDownload'
 import { systemSettingsUrl, type HostOs } from '../../shared/system-settings-urls'
@@ -205,13 +207,11 @@ export const electronPlatform: AppPlatform = {
   },
   async openSystemPermissionSettings(permission) {
     // 「去系统里开这项权限」桌面也做得到,走的是全仓唯一那份地址表。
-    // window.open 在 Electron 里被 main.ts 的 setWindowOpenHandler 接走 → shell.openExternal,
-    // 自定义 scheme 照样走得通,不需要另开一条 IPC。
+    // 走设备能力页「打开系统设置」那条 IPC(主进程只放行系统设置的 scheme);主窗的 window.open 只放行网页、邮件、电话。
     if (permission !== 'notifications' && permission !== 'fileAccess') return false
     const url = systemSettingsUrl(permission, hostOs())
     if (!url) return false
-    window.open(url)
-    return true
+    return await desktopIpc()?.invoke(DEVICE_ACTIONS_CHANNELS.openSystemSettings, url) === true
   },
   async setBackgroundWatch() {
     // 桌面上没有这个概念:窗口最小化了进程照样在跑,连接不会被系统掐。
