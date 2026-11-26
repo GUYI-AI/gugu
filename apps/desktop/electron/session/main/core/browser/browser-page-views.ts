@@ -79,7 +79,6 @@ const hostsWired = new WeakSet<BrowserWindow>();
 
 function emitPageEvent(page: BrowserPage, type: BrowserPageEventType, detail: Record<string, unknown> = {}): void {
   if (page.webContents.isDestroyed() || page.runtime.initializing) return;
-  if (page.webContents.isDestroyed()) return;
   events.emit(browserPageEventChannel, { browserId: page.browserId, type, detail, state: pageState(page.webContents) });
 }
 
@@ -343,6 +342,9 @@ function wirePage(page: BrowserPage): void {
   webContents.on('page-favicon-updated', (_event, favicons) => emitPageEvent(page, 'page-favicon-updated', { favicons }));
   webContents.on('focus', () => emitPageEvent(page, 'focus'));
   webContents.on('blur', () => emitPageEvent(page, 'blur'));
+  // The page's own input (keys, wheel, pointer) has stopped a moment: the picture kept of it is taken again (browser-page-surface).
+  let idle: ReturnType<typeof setTimeout> | undefined;
+  webContents.on('input-event', () => { clearTimeout(idle); idle = setTimeout(() => emitPageEvent(page, 'input-idle'), 300); });
   webContents.on('zoom-changed', () => notifyPresentation(page));
   // 网页要全屏(视频):view 铺满整个窗口内容区,退出时回到页签那一块。
   webContents.on('enter-html-full-screen', () => {

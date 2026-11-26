@@ -2,6 +2,7 @@ export type BrowserWebviewEventMap = {
   'dom-ready': Event;
   'did-start-loading': Event;
   'did-stop-loading': Event;
+  'input-idle': Event;
   'did-navigate': { url: string };
   'did-navigate-in-page': { url: string };
   'did-fail-load': { errorCode: number; errorDescription: string; validatedURL: string };

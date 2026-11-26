@@ -5,7 +5,7 @@ import { browserPageEventChannel, type BrowserPageMode } from '@shared/events/br
 import { forgetPageFocus, guardHostFocus, notePageFocus } from './browser-host-focus';
 import { BrowserPageHandle } from './browser-page-handle';
 import { isBrowserPageOccluded, type PageRect } from './browser-page-occlusion';
-import { isElementVisible } from '@/lib/elementVisibility';
+import { clippedElementBox, isElementVisible } from '@/lib/elementVisibility';
 import { followBox } from '@renderer/lib/layout/follow-box';
 
 const surfaceLog = rendererLogger('browser/page-surface');
@@ -25,7 +25,7 @@ const SNAPSHOT_WAIT_MS = 250;
  * (browser-page-views.ts)。这里负责:
  * - 挂上 / 卸下时请主进程建 / 收那张网页(页签挪位置时主进程接着用原来那张,❌ 重新载入);
  * - 这块占位挪了、缩放了(followBox 看着它),量它在窗口里的位置报过去,网页跟着挪;❌ 常驻逐帧量;
- * - 页签不在屏上(切走、整条会话页藏起来)报 `background`;界面的浮层压上来报 `occluded`,这时占位上换成一张网页截图;
+ * - 页签不在屏上(切走、整条会话页藏起来)报 `background`;界面的浮层压上来、所在格子在动或在淡出报 `occluded`,这时露出占位上常备的那张网页截图(@@@page-picture);
  * - 主进程报来的网页事件交给 handle(地址栏、前进后退据此更新)。
  */
 export function BrowserPageSurface({
@@ -78,6 +78,7 @@ export function BrowserPageSurface({
     let snapshotToken = 0;
     let mounted = false;
     let pendingSnapshotReport: (() => void) | null = null;
+    let takenAt = '';
 
     const report = (mode: BrowserPageMode, rect: PageRect | null) =>
       rpc.browser.layoutPage({
@@ -95,7 +96,10 @@ export function BrowserPageSurface({
       let timer = 0;
       const timeout = new Promise<void>((resolve) => { timer = win.setTimeout(resolve, SNAPSHOT_WAIT_MS); });
       const capture = rpc.browser.snapshotPage(browserId).then(({ dataUrl }) => {
-        if (!disposed && token === snapshotToken && dataUrl) element.style.backgroundImage = `url("${dataUrl}")`;
+        if (disposed || token !== snapshotToken || !dataUrl) return;
+        const { width, height } = element.getBoundingClientRect();
+        takenAt = `${width}px ${height}px`;
+        element.style.backgroundImage = `url("${dataUrl}")`;
       }).catch((error: unknown) => {
         if (!disposed) surfaceLog.error({ browserId, error }, 'the browser page snapshot could not be captured');
       });
@@ -107,10 +111,12 @@ export function BrowserPageSurface({
       notify?.();
     };
 
-    const refreshLoadedSnapshot = () => {
-      if (lastSent.startsWith('occluded:')) void showSnapshot(null);
-    };
-    handle.addEventListener('did-stop-loading', refreshLoadedSnapshot);
+    // @@@page-picture — the placeholder keeps the page's last picture under the native view (one per mounted page, taken
+    // again in place while the page rests): when the view cannot be shown as its box is, the picture is there, in the box.
+    const takePicture = () => { if (!lastSent.startsWith('background:') && lastSent) void showSnapshot(null); };
+    const PICTURE_ON = ['did-stop-loading', 'input-idle', 'blur'] as const;
+    for (const type of PICTURE_ON) handle.addEventListener(type, takePicture);
+    element.ownerDocument.documentElement.addEventListener('pointerenter', takePicture);
 
     const tick = () => {
       if (!mounted) return;
@@ -121,19 +127,24 @@ export function BrowserPageSurface({
         visibleRef.current &&
         rect.width > 0 &&
         rect.height > 0 &&
+        box.right > 0 && // a cell at nothing is moved out of the window
         isElementVisible(element, { opacity: true });
       if (onScreen && (coveredRef.current || now - lastOcclusionCheck >= OCCLUSION_CHECK_MS)) {
         lastOcclusionCheck = now;
         occluded = coveredRef.current || isBrowserPageOccluded(element, rect);
       }
-      const mode: BrowserPageMode = !onScreen ? 'background' : occluded ? 'occluded' : 'shown';
+      // A native view takes no opacity and is placed a frame late: in a cell fading or moving on its track it is its picture.
+      const riding = onScreen && (!!element.closest('[data-panel-rest]') || clippedElementBox(element, rect).opacity < 1);
+      const mode: BrowserPageMode = !onScreen ? 'background' : occluded || riding ? 'occluded' : 'shown';
       const key = `${mode}:${Math.round(rect.left)},${Math.round(rect.top)},${Math.round(rect.width)},${Math.round(rect.height)}`;
       if (key !== lastSent) {
         // 初次挂载或从后台回来也可能已经有浮层:每次进入遮挡态都先换上截图,不能留下纯白占位。
         const enteringOcclusion = mode === 'occluded' && !lastSent.startsWith('occluded:');
+        // Riding its cell the picture keeps the size it was taken at; under an overlay or a drag it fills the placeholder, taken afresh.
+        element.style.backgroundSize = riding ? takenAt : '100% 100%';
         const wasShown = lastSent.startsWith('shown:');
         lastSent = key;
-        if (enteringOcclusion) {
+        if (enteringOcclusion && !(riding && element.style.backgroundImage)) {
           if (wasShown) {
             // 先截一张、换上,再让网页收起 —— 收起在前,浮层压着的那块会白一下。
             void showSnapshot(() => { if (lastSent === key) void report(mode, rect); });
@@ -145,9 +156,9 @@ export function BrowserPageSurface({
           if (mode !== 'occluded') {
             snapshotToken += 1;
             pendingSnapshotReport = null;
-            element.style.backgroundImage = '';
           }
           void report(mode, rect);
+          if (mode === 'shown' && !wasShown) takePicture();
         }
         return;
       }
@@ -167,7 +178,6 @@ export function BrowserPageSurface({
         tick();
       });
     tickRef.current = tick;
-    const stopFollowing = followBox(element, tick);
     // 弹层挂到 body 上、页签自己那一层里的起始页 / 加载失败页挂上或撤下、拖拽开始 / 结束:当场看一眼,❌ 等下一个
     // OCCLUSION_CHECK_MS(菜单在网页底下晚出来一下;起始页闪一下撤掉时,采样落没落进那一两帧决定网页露不露出来)。
     const doc = element.ownerDocument;
@@ -183,23 +193,24 @@ export function BrowserPageSurface({
       disposed = true;
       tickRef.current = null;
       recheck.disconnect();
-      stopFollowing();
       stopEvents();
-      handle.removeEventListener('did-stop-loading', refreshLoadedSnapshot);
+      for (const type of PICTURE_ON) handle.removeEventListener(type, takePicture);
+      element.ownerDocument.documentElement.removeEventListener('pointerenter', takePicture);
       forgetPageFocus(browserId);
       onHandleRef.current(null);
       void rpc.browser.releasePage(browserId);
     };
   }, [browserId, partition]);
 
-  // 切到 / 切走这个页签:当场报;只在屏上时按 SAMPLE_MS 量,后台页签什么都不跑。
+  // 切到 / 切走这个页签:当场报;只在屏上时跟着占位、按 SAMPLE_MS 量,后台页签什么都不跑。
   useEffect(() => {
     tickRef.current?.();
     if (!visible) return;
     const win = ref.current?.ownerDocument.defaultView;
     if (!win) return;
     const timer = win.setInterval(() => tickRef.current?.(), SAMPLE_MS);
-    return () => win.clearInterval(timer);
+    const stopFollowing = followBox(ref.current!, () => tickRef.current?.());
+    return () => { win.clearInterval(timer); stopFollowing(); };
   }, [visible]);
 
   return (
@@ -210,7 +221,6 @@ export function BrowserPageSurface({
       tabIndex={-1}
       onFocus={() => void rpc.browser.pageCommand({ browserId, command: 'focus' })}
       className="h-full w-full bg-background bg-no-repeat outline-none"
-      style={{ backgroundSize: '100% 100%' }}
     />
   );
 }
