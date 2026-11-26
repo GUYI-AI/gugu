@@ -16,6 +16,8 @@ function setup(over: Partial<AppCredentialDeps> = {}) {
     saved: async () => [mona, work],
     secret: async (id) => `token-${id}`,
     connectorDefault: async () => 'c-work',
+    save: vi.fn(async () => 'c-new'),
+    ask: vi.fn(async () => undefined),
     fetch: vi.fn(async (url, init) => {
       sent.push({ url, init });
       return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json', 'x-ratelimit-remaining': '9', 'set-cookie': 'x=1' } });
@@ -26,6 +28,23 @@ function setup(over: Partial<AppCredentialDeps> = {}) {
 }
 
 describe('App credentials (API 61)', () => {
+  it('choose (API 65): asks in the window that draws the page with the App\'s words, then says whether one is chosen', async () => {
+    const { credentials, deps } = setup({ saved: async () => [], connectorDefault: async () => null });
+    const words = { hint: 'A fine-grained token', help: 'https://github.com/settings/personal-access-tokens/new' };
+    await expect(credentials.choose('pr', 'GitHub PR', { site: 'github.com', ...words }, { embedderId: 7 })).resolves.toEqual({ chosen: false });
+    expect(deps.ask).toHaveBeenCalledWith({ embedderId: 7 }, { extensionId: 'pr', appName: 'GitHub PR', site: 'github.com', hint: 'A fine-grained token', help: 'https://github.com/settings/personal-access-tokens/new' });
+    await expect(credentials.choose('pr', 'GitHub PR', { site: 'gitlab.com' }, { embedderId: 7 })).rejects.toThrow(/declares no credential/);
+    await expect(credentials.choose('pr', 'GitHub PR', { site: 'github.com', help: 'http://example.com' }, { embedderId: 7 })).rejects.toThrow(/https/);
+  });
+
+  it('the dialog\'s save keeps the value in the vault for the declared website and picks it for the App', async () => {
+    const { credentials, deps } = setup();
+    await credentials.saveAndPick('pr', 'github.com', { name: ' GitHub PR · github.com ', value: ' ghp_x ' });
+    expect(deps.save).toHaveBeenCalledWith({ origin: 'https://github.com', name: 'GitHub PR · github.com', account: '', password: 'ghp_x' });
+    expect(deps.picked('pr', 'github.com')).toBe('c-new');
+    await expect(credentials.saveAndPick('pr', 'github.com', { name: 'x', value: 'a\nb' })).rejects.toThrow(/one line/);
+  });
+
   it('uses the connector default until the person picks, then their pick', async () => {
     const { credentials, sent } = setup();
     await expect(credentials.states('pr')).resolves.toEqual([

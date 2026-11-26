@@ -1,0 +1,91 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": [
+        "scripts/**/*.{js,mjs,cjs,ts,mts}",
+        "tests/**/*.{test,spec}.{ts,tsx,mts,mjs,cjs}",
+        "tests/**/*.typecheck.ts",
+        "tests/mutation/**/*.{ts,mts}",
+        "electron-builder.cjs",
+        "i18next.config.ts",
+        "playwright.config.mts",
+        "vite.config.mts",
+        "vitest.config.ts",
+        "capacitor.config.ts",
+        "tests/support/setup.ts",
+        "tests/support/byte-equality.ts",
+        "tests/support/browser-*-reset.ts",
+        "tests/support/sharePosterAvatarServer.ts"
+      ],
+      "project": [
+        "scripts/**/*.{js,mjs,cjs,ts,mts}",
+        "tests/**/*.{ts,tsx,mts,mjs,cjs}"
+      ],
+      "ignore": [
+        "tests/fixtures/**",
+        "tests/**/fixtures/**",
+        "tests/unit/desktop/assistantRules/capture.ts"
+      ]
+    },
+    "apps/desktop": {
+      "entry": [
+        "src/main.tsx",
+        "src/lib/engine-polyfills.ts",
+        "src/lib/startup-motion-bootstrap.ts",
+        "src/session/renderer/embedded.tsx",
+        "electron/main.ts",
+        "electron/server-entry.ts",
+        "electron/session-host-entry.ts",
+        "electron/preload.ts",
+        "electron/extension-bridge-preload.ts",
+        "electron/sessionpage/emdash-main-bridge.ts",
+        "electron/session/main/**/*worker*.ts",
+        "electron/session/main/**/runtime-process/entry.ts",
+        "electron/session/main/**/token-scan-worker/entry.ts",
+        "electron/sessionpage/*-worker.ts",
+        "electron/session/drizzle.config.ts",
+        "electron/**/test-support/*.ts",
+        "native/**/*.node-test.mjs",
+        "src/session/app-runtime/*-entry.ts",
+        "src/session/app-runtime/program-confine.ts",
+        "session-tooling/**/*.ts",
+        "**/*.{test,spec}.{ts,tsx,mts,mjs}"
+      ],
+      "project": [
+        "**/*.{ts,tsx,mts,mjs,cjs,js,css}"
+      ],
+      "ignore": [
+        "preinstalled-apps/**",
+        "src/mobile/android-runtime/androidAccountClosureAdapter.ts"
+      ]
+    },
+    "apps/mobile": {
+      "entry": [
+        "runtime/agent-entry.mjs",
+        "runtime/agent.mjs",
+        "runtime/intl-smoke-cli.mjs",
+        "runtime/ios/agent.mjs",
+        "runtime/ios/bootstrap.js",
+        "runtime/**/*.test.mjs"
+      ],
+      "project": [
+        "runtime/**/*.{mjs,js}"
+      ]
+    },
+    "packages/*": {
+      "entry": [
+        "src/**/*.{test,spec}.{ts,tsx}",
+        "src/tests/**/*.{ts,tsx}",
+        ".storybook/**/*.{ts,tsx}",
+        "src/**/*.stories.tsx"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx,mts,mjs}"
+      ],
+      "ignore": [
+        "src/**/fixtures/**"
+      ]
+    }
+  }
+}

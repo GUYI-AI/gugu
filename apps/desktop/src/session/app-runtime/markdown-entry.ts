@@ -27,7 +27,7 @@ type FileChange = { kind: string; entries?: { id: string; version?: number | nul
 type LinkVerbs = {
   openLink(url: string): Promise<unknown>;
   reportError(message: string): Promise<unknown>;
-  openBrowserTab(url: string): Promise<unknown>;
+  openBrowserTab(url: string, options?: { external?: boolean }): Promise<unknown>;
   /** A code block's copy button goes through the host's clipboard (the platform's one exit; a phone's sandboxed page has
    *  none of its own). A page without it draws no copy button. */
   clipboard?: { writeText(text: string): Promise<unknown> };
@@ -155,14 +155,15 @@ function siblingOf(file: unknown, href: string): { chat: string; name: string } 
  * http(s) opens a browser tab; a relative link opens the file beside this one. Anything else does nothing: an App page
  * has no other way out (`openBrowserTab` takes only http(s)). The opens are the person's click, as their verbs need.
  */
-function followLink(root: HTMLElement, gugu: LinkVerbs, file: unknown, href: string): void {
+function followLink(root: HTMLElement, gugu: LinkVerbs, file: unknown, href: string, click: Pick<MouseEvent, 'metaKey' | 'ctrlKey'>): void {
   if (href.startsWith('#')) {
     revealMarkdownAnchor(root, href.slice(1));
     return;
   }
   const failed = (error: unknown) => gugu.reportError(error instanceof Error ? error.message : String(error));
   if (/^https?:\/\//i.test(href)) {
-    void gugu.openBrowserTab(href).catch(failed);
+    const opened = click.metaKey || click.ctrlKey ? gugu.openBrowserTab(href, { external: true }) : gugu.openBrowserTab(href);
+    void opened.catch(failed);
     return;
   }
   const sibling = siblingOf(file, href);
@@ -339,7 +340,7 @@ export function renderer(gugu: LinkVerbs) {
         const link = (event.target as Element | null)?.closest?.('a[href]');
         if (!link || !root.contains(link)) return;
         event.preventDefault();
-        followLink(root, gugu, made.options.file, link.getAttribute('href') ?? '');
+        followLink(root, gugu, made.options.file, link.getAttribute('href') ?? '', event);
       });
       byTarget.set(target, made);
       byRoot.set(root, made);

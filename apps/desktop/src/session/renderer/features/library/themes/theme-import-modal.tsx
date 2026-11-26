@@ -9,6 +9,7 @@ import { DialogContentArea, DialogFooter, DialogHeader, DialogTitle } from '@ren
 import { Input } from '@renderer/lib/ui/input';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { rendererLogger } from '@/lib/log';
+import { isImeComposing } from '@/lib/ime';
 
 const log = rendererLogger('theme/import');
 
@@ -54,7 +55,7 @@ export function ThemeImportModal({ onSuccess, onClose }: BaseModalProps<void>) {
           value={link}
           onChange={(e) => setLink(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') void submit();
+            if (e.key === 'Enter' && !isImeComposing(e)) void submit();
           }}
           placeholder={translate('themes.importPlaceholder')}
           aria-invalid={error !== null}

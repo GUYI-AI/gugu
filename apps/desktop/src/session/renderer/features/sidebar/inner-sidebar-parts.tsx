@@ -49,7 +49,7 @@ export function InnerHeadRowLayout({
   tag?: string;
   avatar: ReactNode;
   active: boolean;
-  onOpen: () => void;
+  onOpen: (beside: boolean) => void;
   /** 行尾的钮有几枚,名字给它们让出的宽度按它算。 */
   trailingButtons: number;
   createAction?: { label: string; onClick: () => void };
@@ -69,7 +69,7 @@ export function InnerHeadRowLayout({
           data-inner-head-open=""
           className="w-full"
           style={{ paddingInlineEnd: 'var(--head-reserve)' }}
-          onClick={onOpen}
+          onClick={(event) => onOpen(event.metaKey || event.ctrlKey)}
         >
           <span className={cn('flex min-w-0 items-center gap-2', sidebarRowContentInsetX)}>
             <span className="flex size-6 shrink-0 items-center justify-center">{avatar}</span>

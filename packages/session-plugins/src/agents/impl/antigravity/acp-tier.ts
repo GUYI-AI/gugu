@@ -27,14 +27,14 @@ export function tierNameFromAcpResponse(response: unknown): string | null {
 async function accountFingerprint(ctx: TierContext): Promise<string | null> {
   // Secret Service can switch accounts without touching the managed settings or token file.
   // Without a reliable identity, even a cached response from an open session may belong to a previous account.
-  if (process.platform === 'linux') return null;
+  if (process.platform === 'linux' && !ctx.env.SSH_CONNECTION?.trim()) return null;
   const root = ctx.env.GEMINI_HOME!;
   const hash = createHash('sha256').update(root).update(await realpath(ctx.cli).catch(() => ctx.cli));
   for (const relative of ['antigravity-cli/settings.json', 'antigravity-cli/antigravity-oauth-token']) {
     const info = await stat(join(root, relative)).catch(() => null);
     hash.update(relative).update(info ? `${info.ino}:${info.size}:${info.mtimeMs}` : 'absent');
   }
-  if (process.platform === 'darwin') {
+  if (process.platform === 'darwin' && !ctx.env.SSH_CONNECTION?.trim()) {
     const metadata = await ctx.exec('/usr/bin/security', ['find-generic-password', '-s', 'gemini', '-a', 'antigravity'], { timeout: 5_000 })
       .then(result => result.stdout, () => 'absent');
     hash.update(metadata);

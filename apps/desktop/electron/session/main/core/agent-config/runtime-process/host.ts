@@ -246,7 +246,7 @@ export function withHostResolvedCli(
     removeConnection: ({ stopBusySessions, ...input }) => connectionOperation(async () => {
       // 按原生解析取这份 env:❌ 解开要删的那把 key(它解不开时也得删得掉)。
       const nativeEnv = (await runContextFor({ providerId: input.providerId, connectionId: 'native' })).env;
-      const current = input.connectionId !== 'native'
+      const current = (input.connectionId !== 'native' || input.providerId === 'antigravity')
         && (await listHarnessConnections(input.providerId)).some((connection) => connection.current && connection.id === input.connectionId);
       if (current) {
         // 删当前连接 = 一次切换,落回原生(#2507):与「切换连接」同一条路 —— 有会话在忙就先不切(拒绝带着

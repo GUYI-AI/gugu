@@ -144,13 +144,14 @@ export function SubscriptionConnections({
         (nativeStatus?.kind === 'authenticated' && nativeStatus.credentialKind === 'subscription') ||
         (nativeStatus?.kind === 'unauthenticated' && nativeStatus.reason === 'expired')
   )
-  const planRows = listed?.filter(connection => connection.kind !== 'native' || nativeHasPlan)
+  const planRows = listed?.filter(connection => connection.kind !== 'native' && !(agent.id === 'antigravity' && connection.id === 'native') || nativeHasPlan)
   const empty = listed?.length === 0
   const changeOpen = (next: boolean, details?: { reason?: string; event?: Event }) => {
     if (next && empty) setAdding(true)
     else setOpen(next, details)
   }
-  const method = resolveSignInMethod(agent.capabilities)
+  const signInProgram = agent.id === 'antigravity' ? 'antigravity-cli' : undefined
+  const method = resolveSignInMethod(agent.capabilities, signInProgram)
   // 账号连接(多个账号、各自登录)只有 Claude / Codex;其余家的账号就是它 CLI 自己那份登录(`cliSignIn`)。
   const canSignIn = !!form?.accounts && method?.kind === 'cli-login' && (!machine || !!method.headlessArgs)
   // 面板也从新建任务、会话里打开:CLI 自己那份登在连接所属的那台机器上,❌ 落到资源库正在看的那台。
@@ -332,7 +333,7 @@ export function SubscriptionConnections({
       providerId: agent.id,
       providerName: agent.name,
       connectionId,
-      steps: [{ methodId: method.id }],
+      steps: [{ methodId: method.id, ...(signInProgram ? { program: signInProgram } : {}) }],
       ...(machine
         ? {
             remote: {

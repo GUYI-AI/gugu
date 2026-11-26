@@ -124,6 +124,9 @@ export const ChatMessageComposer = observer(function ChatMessageComposer(props: 
   }
 
   useEffect(() => registerComposerFocusTarget(() => inputRef.current), [])
+  // A hidden composer's @ / slash menus are hidden too: they are portaled out of this host, so its `hidden` does not
+  // reach them (a phone chat left for the chat list stays mounted, and its open @ list stayed over the list).
+  useEffect(() => { editorApiRef.current?.setMenusHidden(hidden) }, [hidden])
   useComposerEntryFocus(chatId ? 'chat:' + chatId : null, !hidden && props.entryActive === true, () => {
     if (!disabled) focusComposer('chat-entry', { mobileShell: mobile, target: () => inputRef.current })
   })

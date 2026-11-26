@@ -1,6 +1,6 @@
 import { log } from '@main/lib/logger';
 import { networkHostAllowed } from '@shared/extensions/network-host';
-import type { AppCredentialDeclaration } from '@shared/extensions/app-credentials';
+import { APP_CREDENTIAL_HINT_MAX, type AppCredentialChooseAsk, type AppCredentialDeclaration } from '@shared/extensions/app-credentials';
 
 /**
  * An App's use of the person's saved credentials (`permissions.credentials`, App API 61). Which one it uses on a website
@@ -21,6 +21,10 @@ export interface AppCredentialDeps {
   /** The vault's credentials that serve `site`; their values only through `secret`. */
   saved(site: string): Promise<SavedCredential[]>;
   secret(credentialId: string): Promise<string | null>;
+  /** A new credential into the vault, as Settings › Passwords adds one; its id. */
+  save(input: { origin: string; name: string; account: string; password: string }): Promise<string>;
+  /** `gugu.credentials.choose`: the host's dialog in the window that draws the page; resolves once it closes. */
+  ask(page: { embedderId: number | null }, ask: AppCredentialChooseAsk): Promise<void>;
   connectorDefault(site: string): Promise<string | null>;
   fetch(url: string, init: { method: string; headers: Record<string, string>; body?: string; redirect: 'manual' }): Promise<Response>;
 }
@@ -69,6 +73,25 @@ export function createAppCredentials(deps: AppCredentialDeps) {
       deps.pick(extensionId, site, credentialId);
     },
 
+    /** The dialog's 「保存」: a new credential for the declared website, kept in the vault and picked for the App. */
+    async saveAndPick(extensionId: string, site: string, input: { name: string; value: string }): Promise<void> {
+      declaration(extensionId, site);
+      const name = input.name.trim(), value = input.value.trim();
+      if (!name || !value || /[\r\n\0]/.test(value)) throw fail('invalid', 'A credential needs a name and a value on one line');
+      const id = await fromVault(() => deps.save({ origin: `https://${site}`, name, account: '', password: value }));
+      deps.pick(extensionId, site, id);
+    },
+
+    /** `gugu.credentials.choose(site)`: the host's dialog (pick a saved one, or save a new one); `{ chosen }` once it closes. */
+    async choose(extensionId: string, appName: string, args: Record<string, unknown>, page: { embedderId: number | null }): Promise<{ chosen: boolean }> {
+      const { site } = declaration(extensionId, args.site);
+      const hint = typeof args.hint === 'string' ? args.hint.trim() : '', help = typeof args.help === 'string' ? args.help : '';
+      if (hint.length > APP_CREDENTIAL_HINT_MAX) throw fail('invalid', `gugu.credentials.choose: hint is at most ${APP_CREDENTIAL_HINT_MAX} characters`);
+      if (help && !/^https:\/\/[^\s]+$/.test(help)) throw fail('invalid', 'gugu.credentials.choose: help is an https URL');
+      await deps.ask(page, { extensionId, appName, site, ...(hint ? { hint } : {}), ...(help ? { help } : {}) });
+      return { chosen: !!(await state(extensionId, site)).chosen };
+    },
+
     /** `gugu.credentials.read/write`: one request with the credential the App uses on that website. */
     async request(extensionId: string, args: Record<string, unknown>, write: boolean): Promise<CredentialAnswer> {
       const { site, header, format } = declaration(extensionId, args.site);
@@ -89,7 +112,8 @@ export function createAppCredentials(deps: AppCredentialDeps) {
       const chosen = (await state(extensionId, site)).chosen;
       if (!chosen) throw fail('unavailable', `No saved credential is chosen for ${site}: choose one in this App's permissions`);
       const value = await fromVault(() => deps.secret(chosen.id));
-      if (!value) throw fail('unavailable', `The saved credential for ${site} is gone: choose another in this App's permissions`);
+      if (value === null) throw fail('unavailable', `The saved credential for ${site} is gone: choose another in this App's permissions`);
+      if (!value) throw fail('unavailable', `The saved credential for ${site} holds no password or single secret field: choose another in this App's permissions`);
       // A value that could end the header line would write more headers: refused, never trimmed.
       if (/[\r\n\0]/.test(value)) throw fail('unavailable', `The saved credential for ${site} cannot go into a header`);
       headers[header] = format.replace('{value}', value);

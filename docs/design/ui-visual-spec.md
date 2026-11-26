@@ -803,9 +803,9 @@ design.md 那条「never write `#fff` / `bg-white` / `text-black`」因此不构
 | `styles/tokens.css:402-404 / 656-658` | `--bg-overlay-soft / -modal / -strong`(暗 0.28/0.56/0.35,浅 0.18/0.44/0.28)—— **已经是语义 token**,消费者是主 app 的几处二次封装 |
 | `session/renderer/lib/ui/dialog.tsx` · `sheet.tsx` | 字面 Tailwind 类 `bg-black/30`,**不消费**上面那族 |
 | `packages/session-ui/.../dialog/dialog.css.ts` | 字面 `rgba(0, 0, 0, 0.4)`,文件注释自陈「留作规格增补建议」 |
-| `components/ImagePreviewProvider.tsx` | 字面 `rgba(0,0,0,0.82)` |
+| `components/imagePreview.css`(看图查看器) | 已改用 `--bg-overlay-modal`(2026-11-24) |
 
-⇒ 同一件事(压暗底下那一层)现在**四处各写各的数字**:0.30 / 0.40 / 0.82,外加语义那族自己的三档。
+⇒ 同一件事(压暗底下那一层)现在**三处各写各的数字**:0.30 / 0.40,外加语义那族自己的三档。
 这与 §6.0 把 13 档具名投影并成一档 lift 是同一类收敛,只是还没做。
 ❌ 别顺手「各自改成 0.4」——那是把四个数字改成一个数字,定义处仍然是四处;要的是**一个名字**。
 **判据**:无。当前连「遮罩一共有几种」都只能靠人工 grep 数出来。

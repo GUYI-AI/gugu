@@ -1,4 +1,6 @@
 @import '../usage/SubscriptionUsageColors.css';
+.gg-model-quota-colors[data-usage-provider='antigravity'] { --quota-fill:var(--usage-brand-codex-fill); --quota-edge:var(--usage-brand-codex-edgeLight); --quota-track:var(--usage-brand-codex-trackLight); }
+[data-theme='dark'] .gg-model-quota-colors[data-usage-provider='antigravity'] { --quota-edge:var(--usage-brand-codex-edgeDark); --quota-track:var(--usage-brand-codex-trackDark); }
 .gg-model-quota { display:flex; align-items:center; flex-wrap:wrap; gap:16px; min-width:0; }
 .gg-model-quota-window { display:flex; align-items:center; gap:8px; white-space:nowrap; font-size:var(--font-caption); }
 .gg-model-quota-label { color:var(--muted-fg); }

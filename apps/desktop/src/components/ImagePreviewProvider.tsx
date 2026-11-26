@@ -140,7 +140,7 @@ function viewerOptions(request: ImageViewerRequest, view: ViewerWindow, mobile: 
     hideAnimationDuration: DUR_SLOW_MS,
     zoomAnimationDuration: DUR_SLOW_MS,
     easing: `cubic-bezier(${EASE.join(', ')})`,
-    // 底不透明:后面的对话一直在动(新消息、滚动、「N 条新消息」提示),透一成底就是查看器里一闪一闪的暗块
+    // 底色自带透明度(imagePreview.css 的 --pswp-bg):这里给满,PhotoSwipe 只在开关和下拉时把它往 0 渐变
     bgOpacity: 1,
     loop: false,
     escKey: false,

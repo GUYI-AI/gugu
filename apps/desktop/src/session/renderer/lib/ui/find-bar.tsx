@@ -5,6 +5,7 @@ import { Input } from '@renderer/lib/ui/input';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
 import type { FindStatus } from './use-find-bar';
+import { isImeComposing } from '@/lib/ime';
 
 interface Props {
   isOpen: boolean;
@@ -47,6 +48,7 @@ export function FindBar({
           value={searchQuery}
           onChange={(event) => onQueryChange(event.target.value)}
           onKeyDown={(event) => {
+            if (isImeComposing(event)) return;
             if (event.key === 'Enter') {
               event.preventDefault();
               onStep(event.shiftKey ? 'prev' : 'next');

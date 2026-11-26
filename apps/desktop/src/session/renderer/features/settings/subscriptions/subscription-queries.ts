@@ -67,7 +67,7 @@ export const connectionDetails = replica({
   read: async (_device: string, machine: Machine, providerId: string, connectionId: string) => {
     const client = await getAgentConfigRuntimeClient(machine);
     const input = { providerId, connectionId };
-    const [status, plan] = await Promise.all([client.refreshAuthStatus(input), client.readSubscription(input)]);
+    const [status, plan] = await Promise.all([client.refreshAuthStatus({ ...input, ...(providerId === 'antigravity' ? { program: 'antigravity-cli' } : {}) }), client.readSubscription(input)]);
     if (!status.success) throw new Error(errorText(status.error));
     return { status: status.data, plan: plan.success ? plan.data : null, ...(plan.success ? {} : { planError: errorText(plan.error) }) };
   },
@@ -80,8 +80,9 @@ export const connectionAvailability = replica({
   name: 'connectionAvailability',
   scope: 'device',
   tags: [SUBSCRIPTIONS],
-  read: async (_device: string, machine: Machine, providerId: string): Promise<AgentAuthStatus> => {
-    const result = await (await getAgentConfigRuntimeClient(machine)).refreshAuthStatus({ providerId });
+  read: async (_device: string, machine: Machine, providerId: string, connectionId?: string): Promise<AgentAuthStatus> => {
+    const result = await (await getAgentConfigRuntimeClient(machine)).refreshAuthStatus({ providerId,
+      ...(connectionId !== undefined ? { connectionId } : {}), ...(providerId === 'antigravity' ? { program: 'antigravity-cli' } : {}) });
     if (!result.success) throw new Error('message' in result.error ? result.error.message : result.error.type);
     return result.data;
   },

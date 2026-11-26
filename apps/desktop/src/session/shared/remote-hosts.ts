@@ -6,6 +6,7 @@
 // 契约只在这一份(两个 bundle 都从 session/shared 取),❌ 两侧各写一份结构副本。
 //
 // 会话本身走那台机器的整套会话页宿主(`openSessionHost`,一套工作台),与本机同一套界面。
+import type { SshLinkState } from '../../lib/sshLink';
 import type { DeviceSessionSummary } from '@gugu/core/shared/types/chat';
 import type { ServerMachineNotice } from '@gugu/core/cloud/serverMachineHealth';
 import type { CloudComputerPresence, DeviceServerUpdate } from '@gugu/core/shared/types/deviceHost';
@@ -62,7 +63,7 @@ export type RemoteHostDevice = {
    * outdated = 那台机器的咕咕 server 太旧(替它升级没成);updating = 太旧,正在替它升级(升完自动连上);
    * 缺席 / null = 连着(或还没连过)。远程隧道的机器没有这一格。
    */
-  sshLink?: 'signInRequired' | 'unreachable' | 'outdated' | 'updating' | null;
+  sshLink?: SshLinkState | null;
   /** Whether it is reached over SSH is not known yet: its link is drawn as pending, ❌ offline. */
   linkUnknown?: true;
   /**

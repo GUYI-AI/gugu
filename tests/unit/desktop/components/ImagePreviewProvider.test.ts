@@ -245,7 +245,7 @@ describe('ImagePreviewProvider', () => {
     thumb.remove()
   })
 
-  it('desktop backdrop is opaque, so the chat changing underneath never shows through the viewer', async () => {
+  it('desktop backdrop is drawn at full strength: the modal scrim it is painted with carries the see-through, not a lower opacity', async () => {
     const instances = await capturePhotoSwipe()
     await openViewer()
     expect(instances[0].options.bgOpacity).toBe(1)

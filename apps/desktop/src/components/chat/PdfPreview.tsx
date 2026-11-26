@@ -10,6 +10,7 @@ import { Button } from '../ui/Button'
 import type { FilePlace } from '@gugu/core/shared/ui/guguLink'
 import { DOCUMENT_MAX_ZOOM, DOCUMENT_MIN_ZOOM, pinchZoom } from '@/session/shared/preview/pinch-zoom'
 import { useFileZoom } from '../preview/file-content-zoom'
+import { isImeComposing } from '@/lib/ime'
 
 type Fit = 'page-width' | 'page-fit'
 type OutlineItem = { title: string; dest: string | unknown[] | null; url?: string | null; items: OutlineItem[] }
@@ -204,6 +205,7 @@ export function PdfPreview({ data, at }: { data: ArrayBuffer; at?: FilePlace }) 
             value={query}
             onChange={(event) => { setQuery(event.target.value); find('', false, event.target.value) }}
             onKeyDown={(event) => {
+              if (isImeComposing(event)) return
               if (event.key === 'Enter') { event.preventDefault(); find('again', event.shiftKey) }
               if (event.key === 'Escape') { event.preventDefault(); closeFind() }
             }}

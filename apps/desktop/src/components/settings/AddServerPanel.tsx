@@ -28,6 +28,7 @@ import { InstallProgress, type InstallLanding } from './addServer/InstallProgres
 import { OneLineInstall } from './addServer/OneLineInstall'
 import { filterSshConfigHosts, landedDevice } from './addServer/addServerFormat'
 import { desktopIpc } from '../../platform/desktopIpc'
+import { isImeComposing } from '@/lib/ime'
 
 // #6264 设置 → 设备 → 添加一台机器:在设备列表顶上就地展开的一块,❌ 再叠一层弹窗。
 // 两种装法是两个动作(照 VS Code 把 Remote - SSH 与 Remote - Tunnels 分开),「添加一台机器」的菜单里先挑一种,
@@ -336,6 +337,7 @@ function SshTargetForm({
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (isImeComposing(event)) return
     if (event.key === 'ArrowDown') {
       event.preventDefault()
       if (!open) { setOpen(true); setHighlight(0); return }
