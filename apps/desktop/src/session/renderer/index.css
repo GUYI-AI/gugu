@@ -1137,8 +1137,8 @@
 
   [data-chat-card-head],
   [data-chat-card] {
-    /* The right gap closes as the tools come on or go off the track (chat-workspace-chrome @@@card-head-width). */
-    margin-right: var(--chat-card-right-gap, var(--chat-card-half-gap));
+    /* The right gap closes as the tools come on or go off the track: written on these two (chat-workspace-chrome @@@card-head-width). */
+    margin-right: var(--chat-card-half-gap);
     background: var(--bg);
   }
 
