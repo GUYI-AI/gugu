@@ -5,7 +5,7 @@ import { basename, dirname, isAbsolute, relative, sep } from 'node:path'
 import { withBoundedOperation } from '@gugu/core/cloud/boundedOperation'
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase'
 import { createAssistantPanelClient, type AssistantPanelChange, type AssistantPanelDomain, type AssistantPanelItem, type AssistantPanelSnapshot } from '@gugu/core/cloud/assistantPanel'
-import { readAssistantPanelBody, uploadAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies'
+import { panelBodyFileName, readAssistantPanelBody, uploadAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies'
 import type { AssistantHomeKind } from '@gugu/core/shared/assistantPolicy'
 import { assistantHomePaths } from '@gugu/core/shared/assistantPolicy'
 import type { assistantPanelLocal } from '../session/main/core/app/assistant-panel-local'
@@ -187,8 +187,23 @@ export function createAssistantPanelRuntime(deps: {
         return rows
       }
       if (domain === 'integrations') return [
-        ...deps.local.integrationCatalog().map(row => ({ key: `catalog:${row.id}`,data: { providerId: row.id,configured: false,displayName: row.en.name,catalog: row.en.catalog },
-          bytes: new TextEncoder().encode(JSON.stringify({ version: 1,en: row.en,'zh-CN': row.zh })),
+        ...await Promise.all(deps.local.integrationCatalog().map(async row => {
+          const key = `catalog:${row.id}`, catalogBodyLabel = `${key} (configurable, not connected)`
+          const existing = previous.find(item => item.resource_key === key && !item.deleted_at)
+          // A catalog describes a possible setup, not a saved connection. Upgrade the existing file in place:
+          // unchanged body hashes are reused by the publisher, and uploading another file would leave the old name behind.
+          if (existing?.body_item_id && existing.data.catalogBodyLabel !== catalogBodyLabel) {
+            const current = await auth()
+            const client = createGuguSupabaseClient({ schema: 'chat',headers: { Authorization: `Bearer ${current.accessToken}` } })
+            const { error } = await client.rpc('workspace_move_as',{ p_item_id: existing.body_item_id,p_as_user_id: binding.ownerId,
+              p_folder: null,p_name: panelBodyFileName(catalogBodyLabel),
+            }).abortSignal(anySignal([AbortSignal.timeout(2000),lifetime.signal]))
+            await auth()
+            if (error) throw new Error('PANEL_CATALOG_LABEL_UPGRADE_FAILED')
+          }
+          return { key,data: { providerId: row.id,configured: false,displayName: row.en.name,catalog: row.en.catalog,catalogBodyLabel },
+            bytes: new TextEncoder().encode(JSON.stringify({ version: 1,en: row.en,'zh-CN': row.zh })),
+          }
         })),
         ...(await deps.local.integrations(binding.ownerId,() => scheduleCollection('integrations'))).map(({ publicMetadata,...row }) => {
           const checkedAt = typeof row.checkedAt === 'number' ? row.checkedAt : Date.parse(String(row.checkedAt ?? ''))
@@ -287,7 +302,8 @@ export function createAssistantPanelRuntime(deps: {
             baseline: baseline ?? await cloud.snapshot(binding.assistantId),
             bodyFailures: failures,
             collect: previous => observations(domain,previous),
-            upload: async row => uploadAssistantPanelBody({ ...await access(),label: row.key.split('/').pop() ?? domain,bytes: row.bytes! }),
+            upload: async row => uploadAssistantPanelBody({ ...await access(),label: domain === 'integrations' && row.key.startsWith('catalog:')
+              ? String(row.data.catalogBodyLabel) : row.key.split('/').pop() ?? domain,bytes: row.bytes! }),
             discard: async itemId => {
               const current = await auth()
               const client = createGuguSupabaseClient({ schema: 'chat',headers: { Authorization: `Bearer ${current.accessToken}` } })
