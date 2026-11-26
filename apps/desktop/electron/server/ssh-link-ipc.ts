@@ -56,8 +56,7 @@ export function classifySignInExit(code: number | null, stderr: string): SshLink
   const failure = classifySshFailure(stderr)
   if (failure === 'authFailed' || failure === 'hostKeyRejected') return { ok: false, reason: 'signInRequired' }
   if (failure === 'hostKeyChanged') {
-    const { fingerprint } = changedHostKey(stderr, '')
-    return { ok: false, reason: 'hostKeyChanged', fingerprint }
+    return { ok: false, reason: 'hostKeyChanged', hostKey: changedHostKey(stderr, '') }
   }
   return { ok: false, reason: 'unreachable' }
 }

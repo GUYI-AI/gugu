@@ -851,6 +851,7 @@ export default {
       "sshSignIn": "Needs SSH sign-in",
       "sshHostKeyChanged": "SSH host key changed",
       "sshSignInIncomplete": "SSH sign-in did not complete. Check your credentials and try again.",
+      "sshOldEntry": "Old entry: {{location}}",
       "sshSignInAction": "Sign in",
       "expired": "Sign-in expired (since {{time}})",
       "offlineHint": "Run gugu-server status on the device to see why.",

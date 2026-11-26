@@ -851,6 +851,7 @@ export default {
       "sshSignIn": "需要 SSH 登录",
       "sshHostKeyChanged": "SSH 主机指纹已变更",
       "sshSignInIncomplete": "SSH 登录未完成，请检查凭据后重试。",
+      "sshOldEntry": "旧记录：{{location}}",
       "sshSignInAction": "登录",
       "expired": "登录已失效（{{time}}起）",
       "offlineHint": "请在该设备上运行 gugu-server status 查看原因。",

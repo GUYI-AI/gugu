@@ -86,7 +86,7 @@ afterEach(() => {
 describe('DevicesSection interaction', () => {
   it('reports a repeated SSH host key refusal in the device row and clears it after a successful retry', async () => {
     const deviceId = 'rotated-host'
-    const refused: SshLinkOpenResult = { ok: false, reason: 'hostKeyChanged', fingerprint: 'SHA256:newKey' }
+    const refused: SshLinkOpenResult = { ok: false, reason: 'hostKeyChanged', hostKey: { host: 'box', fingerprint: 'SHA256:newKey', location: '/test/known_hosts:17' } }
     const pending = Promise.withResolvers<SshLinkOpenResult>()
     const signIn = vi.fn().mockResolvedValueOnce(refused).mockReturnValueOnce(pending.promise).mockResolvedValueOnce({ ok: true })
     const electron = window as unknown as { electronAPI?: unknown }
@@ -109,7 +109,8 @@ describe('DevicesSection interaction', () => {
       expect(container.querySelector('[role="status"]')?.textContent).toContain('SSH')
       await act(async () => { pending.resolve(refused) })
       const alert = container.querySelector('[data-testid="settings-device-ssh-sign-in"] [role="alert"]')
-      expect(alert?.textContent).toContain('管理员')
+      expect(action().parentElement?.textContent).toContain('管理员')
+      expect(alert?.textContent).toContain('/test/known_hosts:17')
       expect(alert?.textContent).toContain('SHA256:newKey')
       await act(async () => { action().click() })
       expect(container.querySelector('[data-testid="settings-device-ssh-sign-in"]')).toBeNull()

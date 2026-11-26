@@ -4,6 +4,7 @@
 // (electron/server/ssh-link.ts),上面跑的是与咕咕云设备 RPC 逐字相同的信封;渲染层的设备 RPC 客户端
 // (deviceRpc.ts)对远程 SSH 的机器把「频道」换成它。主进程只搬字节,请求 / 应答配对、推送分发都在渲染层那一份里。
 
+import type { ServerSshInstallFailure } from './serverSshInstall'
 import type { SshPrompt } from '../session/shared/ssh-prompt'
 import type { DeviceCapabilities } from '@gugu/core/shared/types/chat'
 
@@ -82,7 +83,7 @@ export type SshLinkState = 'signInRequired' | 'unreachable' | 'outdated' | 'upda
  * via = 'tunnel':这条设备连接开在远程隧道上(这台电脑没有它的 SSH 映射)。连不上的原因由远程隧道自己报
  * (tunnelMachines.ts),❌ 记成远程 SSH 的「要先登录」;主进程当场标,渲染层 ❌ 靠清单加载先后去猜。
  */
-export type SshLinkOpenResult = { ok: true } | { ok: false; reason: SshLinkFailure; fingerprint?: string | null; detail?: string; via?: 'tunnel'; controlOnly?: true }
+export type SshLinkOpenResult = { ok: true } | { ok: false; reason: SshLinkFailure; hostKey?: ServerSshInstallFailure['hostKey']; detail?: string; via?: 'tunnel'; controlOnly?: true }
 
 export type SshLinkMessageEvent = { deviceId: string; message: unknown }
 export type SshLinkClosedEvent = { deviceId: string; reason: SshLinkFailure; via?: 'tunnel' }
