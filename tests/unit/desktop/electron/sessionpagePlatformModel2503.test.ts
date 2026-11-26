@@ -36,6 +36,10 @@ const configPathOf = (helper: string): string => {
 }
 const legacyHelper = vi.hoisted(() => ({ enabled: false }))
 const reviewPreference = vi.hoisted(() => ({ value: null as unknown }))
+const managedModelPolicy = vi.hoisted(() => ({ value: { available: null as string[] | null, denied: [] as string[], exact: false } }))
+vi.mock('../../../../apps/desktop/electron/session/main/core/agents/claude-managed-settings', () => ({
+  managedClaudeModelPolicy: async () => managedModelPolicy.value,
+}))
 vi.mock('../../../../apps/desktop/electron/session/main/core/settings/settings-service', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../apps/desktop/electron/session/main/core/settings/settings-service')>()
   const service = actual.appSettingsService
@@ -1950,6 +1954,7 @@ describe('Auto mode reviewer on a Claude platform session', () => {
     loadEngine.mockResolvedValue({ id: 'claude', modelConfigInjection: 'provider-env' })
     agentOnThisSession()
     reviewPreference.value = null
+    managedModelPolicy.value = { available: null, denied: [], exact: false }
   })
   afterEach(async () => { await releasePlatformModelForSession(SESSION) })
   /** What the last launch told the menu about Auto mode. */
@@ -2026,19 +2031,32 @@ describe('Auto mode reviewer on a Claude platform session', () => {
     expect(settings.permissions?.disableAutoMode).toBe('disable')
     expect(lastReview).toEqual({ autoReviewAllowed: false, autoReviewUnavailable: true, autoReviewReason: 'taskConfig.reviewNoReviewer' })
   })
-  it('matches the user allowlist on the alias the CLI is given, not the catalog id', async () => {
+  it('matches the managed allowlist on the alias the CLI is given, not the catalog id', async () => {
+    managedModelPolicy.value = { available: ['gw-claude-opus-4-6', 'gw-claude-haiku-5-5'], denied: [], exact: false }
+    expect((await launch('claude-opus-4-6')).env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe('gw-claude-haiku-5-5')
+    // Only the catalog id listed: the CLI, given the alias, would drop the reviewer and review with the main model.
+    managedModelPolicy.value = { available: ['gw-claude-opus-4-6', 'claude-haiku-5-5'], denied: [], exact: false }
+    const excluded = await launch('claude-opus-4-6')
+    expect(excluded.permissions?.disableAutoMode).toBe('disable')
+    expect(lastReview).toMatchObject({ autoReviewAllowed: false, autoReviewReason: 'taskConfig.reviewReviewerExcluded' })
+  })
+  it('turns Auto mode off when managed settings deny the reviewer', async () => {
+    managedModelPolicy.value = { available: null, denied: ['gw-claude-haiku-5-5'], exact: false }
+    const settings = await launch('claude-opus-4-6')
+    expect(settings.permissions?.disableAutoMode).toBe('disable')
+    expect(lastReview).toMatchObject({ autoReviewAllowed: false, autoReviewReason: 'taskConfig.reviewReviewerExcluded' })
+  })
+  it("keeps the reviewer whatever the user's own list says: the session's settings list it, and the CLI adds the two lists", async () => {
     const home = await mkdtemp(join(tmpdir(), 'gugu-review-allowlist-'))
     const configDir = join(home, '.claude')
     const env = { ...CLAUDE_TEST_ENV, HOME: home, CLAUDE_CONFIG_DIR: configDir }
     try {
       await mkdir(configDir, { recursive: true })
-      await writeFile(join(configDir, 'settings.json'), JSON.stringify({ availableModels: ['gw-claude-opus-4-6', 'gw-claude-haiku-5-5'] }))
-      expect((await launch('claude-opus-4-6', catalog, env)).env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe('gw-claude-haiku-5-5')
-      // Only the catalog id listed: the CLI, given the alias, would drop the reviewer and review with the main model.
-      await writeFile(join(configDir, 'settings.json'), JSON.stringify({ availableModels: ['gw-claude-opus-4-6', 'claude-haiku-5-5'] }))
-      const excluded = await launch('claude-opus-4-6', catalog, env)
-      expect(excluded.permissions?.disableAutoMode).toBe('disable')
-      expect(lastReview).toMatchObject({ autoReviewAllowed: false, autoReviewReason: 'taskConfig.reviewReviewerExcluded' })
+      await writeFile(join(configDir, 'settings.json'), JSON.stringify({ availableModels: ['gw-claude-opus-4-6'] }))
+      const settings = await launch('claude-opus-4-6', catalog, env)
+      expect(settings.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe('gw-claude-haiku-5-5')
+      expect(settings.availableModels).toContain('gw-claude-haiku-5-5')
+      expect(lastReview).toMatchObject({ autoReviewAllowed: true })
     } finally {
       await rm(home, { recursive: true, force: true })
     }

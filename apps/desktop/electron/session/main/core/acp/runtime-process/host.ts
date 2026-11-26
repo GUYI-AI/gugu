@@ -750,7 +750,7 @@ function decorateRuntimeClient(client: ContractClient<AcpRuntimeApiContract>): A
  * 解析失败不在这里抛:它作为 `unresolved` 带着解析器的诊断原文进 worker,由会话边界照常报成
  * 「起不来」—— 与从前 worker 自己找不到时用户看到的是同一条路,只是消息换成了真正的原因。
  */
-export async function withHostResolvedCli<T extends { input: { providerId: string; sessionId: string; sourceSessionId?: string } }>(
+export async function withHostResolvedCli<T extends { input: { providerId: string; sessionId: string; sourceSessionId?: string; cwd?: string } }>(
   command: T,
   /** What this start's platform launch armed for Claude's Auto mode; it replaces the catalog's verdict. */
   launchedReview?: ClaudeReviewRunContext,
@@ -764,6 +764,7 @@ export async function withHostResolvedCli<T extends { input: { providerId: strin
     // Runtime-only forks have no database row; inherit the persistent source's credential binding.
     sessionId,
     sourceSessionId: command.input.sourceSessionId,
+    cwd: command.input.cwd,
     bridgeWait: {
       onWaiting: (bridge) =>
         events.emit(sessionStartStageChannel, {

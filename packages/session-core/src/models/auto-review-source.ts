@@ -105,13 +105,6 @@ export function resolveClaudeReviewer(input: ClaudeReviewInput): ClaudeReviewRes
   return haiku ? own(haiku.id, true) : { ok: false, reason: 'noReviewer' };
 }
 
-/** The settings key that names a reviewer the CLI will honour, or null when it would silently swap it. */
-export function reviewerHonouredByAllowlist(reviewerId: string, allowlist: readonly string[] | null): boolean {
-  if (!allowlist) return true;
-  const bare = (id: string) => id.trim().replace(/\[[^\]]*\]$/, '');
-  return allowlist.some(entry => bare(entry) === bare(reviewerId));
-}
-
 /** Native subscriptions retain the supplier's classifier. Only an official API key gets Haiku. */
 export function nativeClaudeReviewEnv(env: Readonly<Record<string, string | undefined>>): Record<string, string> {
   if (env.CLAUDE_CODE_OAUTH_TOKEN || (!env.ANTHROPIC_API_KEY && !env.ANTHROPIC_AUTH_TOKEN)) return {};

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_CLAUDE_REVIEWER, nativeClaudeReviewEnv, resolveClaudeReviewer, reviewConnectionsOf, reviewerHonouredByAllowlist,
+  DEFAULT_CLAUDE_REVIEWER, nativeClaudeReviewEnv, resolveClaudeReviewer, reviewConnectionsOf,
   type ClaudeReviewInput,
 } from './auto-review-source';
 import {
@@ -149,18 +149,13 @@ describe('a connection session', () => {
   });
 });
 
-describe('connection facts and the user allowlist', () => {
+describe('connection facts', () => {
   it('reads the Anthropic endpoint of each saved connection', () => {
     expect(reviewConnectionsOf([{
       id: otherId, name: 'Relay', credentialRef: 'ref', keySaved: true, preset: null,
       endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.example/v1' }, { protocol: 'anthropic-messages', baseUrl: 'https://relay.example' }],
       models: [{ id: 'claude-sonnet-4-6', label: 'Sonnet 4.6' }],
     }])).toEqual([{ id: otherId, name: 'Relay', removed: undefined, keySaved: true, anthropicEndpoint: 'https://relay.example', models: [{ id: 'claude-sonnet-4-6', label: 'Sonnet 4.6' }] }]);
-  });
-  it('matches allowlist entries by bare id', () => {
-    expect(reviewerHonouredByAllowlist('claude-haiku-5-5', null)).toBe(true);
-    expect(reviewerHonouredByAllowlist('claude-haiku-5-5', ['claude-haiku-5-5[1m]'])).toBe(true);
-    expect(reviewerHonouredByAllowlist('claude-haiku-5-5', ['claude-opus-4-6'])).toBe(false);
   });
 });
 

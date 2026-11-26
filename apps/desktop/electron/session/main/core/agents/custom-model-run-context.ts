@@ -3,16 +3,23 @@ import type { AgentRunContext } from '@gugu/session-core/agents/agent-run-contex
 import { antigravityCustomModelLaunch, claudeAcpPlatformSessionMeta, codexPlatformModelFacts, GUGU_PLATFORM_MODELS_ENV, OPENCODE_FAMILY_CONNECTION_PROVIDER_ID, pluginRegistry } from '@gugu/session-plugins/agents';
 import { chatModel, customModelEfforts } from '@gugu/session-core/models/custom-model';
 import { writeSessionSettingsFile } from '../../../../sessionpage/session-settings-file';
+import { resolveAgentHomeEnv } from './agent-home';
 import { armReviewer, claudeReviewRunContext, resolveHostClaudeReviewer } from './claude-reviewer';
 import { resolveCustomModel, type ResolvedCustomModel } from './custom-models';
 import { CLAUDE_CONNECTION_UNSET_ENV, CODEX_CONNECTION_UNSET_ENV, claudeApiKeyEnv, codexApiKeyConnectionArgs } from './harness-connection-launch';
 
+/** Where the session's Claude reads its settings: its env (the config root) and its folder (project and local files). */
+export type ClaudeSettingsScope = { env?: NodeJS.ProcessEnv; cwd?: string };
+
 /** Who reviews this connection session: the user's pick on any connection that can be reached, else its own default. */
-function reviewResolution(custom: ResolvedCustomModel): Promise<ClaudeReviewResolution> {
+async function reviewResolution(custom: ResolvedCustomModel, scope: ClaudeSettingsScope): Promise<ClaudeReviewResolution> {
   return resolveHostClaudeReviewer({
     route: 'custom', mainModel: custom.models[0], platformModels: [],
     session: { connectionId: custom.connectionId, endpoint: custom.upstreamEndpoint, models: custom.entries,
       ...(custom.removed ? { removed: true } : {}), ...(custom.converted ? { converted: true } : {}) },
+    // The run context passes the env its CLI runs with; the ACP envelope resolves the same config root here.
+    env: scope.env ?? { ...process.env, ...await resolveAgentHomeEnv('claude').catch(() => ({})) },
+    ...(scope.cwd ? { cwd: scope.cwd } : {}),
   });
 }
 
@@ -46,21 +53,21 @@ async function claudeModelSettings(custom: ResolvedCustomModel, reviewer: string
   return write;
 }
 
-export async function claudeCustomModelSessionMeta(sessionId: string, sourceSessionId?: string) {
+export async function claudeCustomModelSessionMeta(sessionId: string, sourceSessionId?: string, scope: ClaudeSettingsScope = {}) {
   const custom = await resolveCustomModel('claude', sessionId, sourceSessionId);
   if (!custom) return null;
-  const reviewer = armReviewer(sessionId, await reviewResolution(custom));
+  const reviewer = armReviewer(sessionId, await reviewResolution(custom, scope));
   return claudeAcpPlatformSessionMeta({ settingsDocumentPath: await claudeModelSettings(custom, reviewer), env: {}, model: custom.models[0] });
 }
 
 /** The three native credential carriers retained by the custom-model contract. */
-export async function resolveCustomModelRunContext(providerId: string, sessionId: string, sourceSessionId?: string, acp = false): Promise<Partial<AgentRunContext>> {
+export async function resolveCustomModelRunContext(providerId: string, sessionId: string, sourceSessionId?: string, acp = false, scope: ClaudeSettingsScope = {}): Promise<Partial<AgentRunContext>> {
   const custom = await resolveCustomModel(providerId, sessionId, sourceSessionId);
   if (!custom) return {};
   const model = custom.models[0];
   const marker = { connectionId: custom.connectionId, customModel: { endpoint: custom.endpoint, ...(model ? { model } : {}) } };
   if (providerId === 'claude') {
-    const resolution = await reviewResolution(custom);
+    const resolution = await reviewResolution(custom, scope);
     const reviewer = armReviewer(sessionId, resolution);
     return {
       ...marker,
