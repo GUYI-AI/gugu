@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AcpAuthLoginBinding } from '@renderer/lib/acp/auth-login-binding';
 import type { AuthStatusModelState } from '@gugu/session-core/workspace-server/agent-config';
 import type { BaseModalProps } from '@renderer/lib/modal/modal-provider';
-import { openExternalLinkInBrowser } from '@renderer/lib/open-external-link';
+import { openExternalLinkInBrowser } from '@renderer/lib/open-web-link';
 import { cancelsLoginOnClose, loginAttemptSucceeded, pendingUrlToOpen, rereadOnReturn } from './login-success';
 import { SignInLinkBody, type SignInCodeEntry, type SignInLinkPhase } from './SignInLinkBody';
 import { AcpAuthenticateSignIn } from './AcpAuthenticateSignIn';

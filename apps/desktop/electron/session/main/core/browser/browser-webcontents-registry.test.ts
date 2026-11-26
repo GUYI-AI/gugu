@@ -4,6 +4,8 @@ import { events } from '@main/lib/events';
 import { browserAppShortcutChannel, tabNavigationShortcutChannel } from '@shared/events/appEvents';
 import { browserFocusedChannel } from '@shared/events/browserEvents';
 import { BrowserWebContentsRegistry, isSamePreviewNavigation } from './browser-webcontents-registry';
+import { setSessionHostCopy } from '@main/core/host-copy';
+import { hostCatalog } from '../../../../../shared/host-localization';
 
 const sessionsByPartition = new Map<string, object>();
 
@@ -11,7 +13,9 @@ const showMenu = vi.hoisted(() => vi.fn());
 const showEditableMenu = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('../../../../content-context-menu', () => ({ showContentContextMenu: showMenu }));
 vi.mock('../../../../editable-context-menu', () => ({ showEditableContextMenu: showEditableMenu }));
+const openExternal = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('electron', () => ({
+  shell: { openExternal },
   session: {
     fromPartition: (partition: string) => {
       let value = sessionsByPartition.get(partition);
@@ -234,7 +238,27 @@ describe('BrowserWebContentsRegistry', () => {
     webContents.emitEvent('context-menu', { preventDefault: vi.fn() }, { x: 5, y: 7, selectionText: 'hi', linkURL: '', srcURL: '', mediaType: 'none' });
     expect(showMenu.mock.calls[0]?.[1]).toEqual({ window: PAGE_WINDOW, x: 45, y: 97 });
     const items = showMenu.mock.calls[0]?.[0];
-    expect(items.find((item: { id?: string }) => item.id === 'copy-link')).toMatchObject({ enabled: false });
+    expect(items.map((item: { id?: string; type?: string }) => item.id ?? item.type)).toEqual(['copy', 'separator', 'reload']);
+  });
+
+  it('offers the one link menu on a link: Gugu browser (a new tab), the system browser, copy', () => {
+    setSessionHostCopy(hostCatalog('zh-CN').sessionHost);
+    const registry = new BrowserWebContentsRegistry();
+    registry.registerSession({ browserId: 'browser-1', partition: PROFILE_PARTITION });
+    const webContents = fakeWebContents();
+    Object.assign(webContents, { executeJavaScript: vi.fn(async () => undefined) });
+    adopt(registry, 'browser-1', webContents);
+    showMenu.mockClear();
+    vi.mocked(events.emit).mockClear();
+    webContents.emitEvent('context-menu', { preventDefault: vi.fn() }, { x: 5, y: 7, selectionText: '', linkURL: 'https://example.com/a', srcURL: '', mediaType: 'none' });
+    const items = showMenu.mock.calls[0]?.[0] as { id?: string; label?: string; click?: () => void }[];
+    expect(items.filter((item) => item.id).map((item) => [item.id, item.label])).toEqual([
+      ['open-link', '在咕咕浏览器中打开'], ['open-link-system', '在系统浏览器中打开'], ['copy-link', '复制链接'], ['reload', 'Reload'],
+    ]);
+    items.find((item) => item.id === 'open-link')!.click!();
+    expect(events.emit).toHaveBeenCalledWith(expect.anything(), { sourceBrowserId: 'browser-1', url: 'https://example.com/a' });
+    items.find((item) => item.id === 'open-link-system')!.click!();
+    expect(openExternal).toHaveBeenCalledWith('https://example.com/a');
   });
 
   it('allows OAuth popups as hardened windows and routes tab links in-app', () => {

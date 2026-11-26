@@ -1,7 +1,7 @@
 import { metadataSeparator } from '@/i18n/format'
 import { messageForUser } from '@/lib/userFacingError';
 import { toast } from '@renderer/lib/hooks/use-toast';
-import { copyExternalLink } from '@renderer/lib/open-external-link';
+import { copyExternalLink } from '@renderer/lib/open-web-link';
 import { Copy, Globe, RefreshCw, Unplug, X } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useState } from 'react';

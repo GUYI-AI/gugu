@@ -623,11 +623,6 @@ export const enUSSessionWorkflowMessages = {
   'prSelector.syncFailed': 'Sync failed',
 
   // gugu Browser 是既有技术子品牌，保留原样小写；只翻译它周围的外壳。
-  'preview.openInGuguBrowser': 'Open in gugu Browser',
-  'preview.openInSystemBrowser': 'Open in System Browser',
-  'externalLink.title': 'Open link?',
-  'externalLink.copyLink': 'Copy link',
-  'externalLink.copied': 'Copied',
   'externalLink.linkCopied': 'Link copied',
   'externalLink.copyFailed': 'Copy failed',
   'externalLink.copyFailedDescription': 'The link could not be copied to the clipboard.',
@@ -1334,11 +1329,6 @@ export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflo
   'prSelector.connectToLoad': '连接 GitHub 后才能加载 PR',
   'prSelector.syncFailed': '同步失败',
 
-  'preview.openInGuguBrowser': '在 gugu 浏览器中打开',
-  'preview.openInSystemBrowser': '在系统浏览器中打开',
-  'externalLink.title': '打开链接？',
-  'externalLink.copyLink': '复制链接',
-  'externalLink.copied': '已复制',
   'externalLink.linkCopied': '链接已复制',
   'externalLink.copyFailed': '复制失败',
   'externalLink.copyFailedDescription': '无法将链接复制到剪贴板。',

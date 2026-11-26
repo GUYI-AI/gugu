@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next'
-import { Clock, Copy, Download, ExternalLink, GitFork, MessageSquare, Pencil, Pin, Reply, Share, SquareCheck, TextCursorInput, Trash, type IconComponent } from '@/lib/icons'
+import { Clock, Copy, Download, ExternalLink, GitFork, Globe, MessageSquare, Pencil, Pin, Reply, Share, SquareCheck, TextCursorInput, Trash, type IconComponent } from '@/lib/icons'
 import { confirmDanger } from '../../lib/confirmDanger'
 
 export type MessageActionTarget = {
@@ -14,7 +14,10 @@ export type MessageActionTarget = {
   /** 手机才有:收起菜单,在气泡上原地选字(手机长按就是菜单,平时气泡不能选字)。 */
   onSelectText?: () => void
   onCopyLink?: () => void
+  /** The link's own click: in Gugu's browser for a web link. */
   onOpenLink?: () => void
+  /** A web link in the system browser. */
+  onOpenLinkSystem?: () => void
   onForward?: () => void
   onDelete?: () => void
   onDownload?: () => void
@@ -51,7 +54,7 @@ export function messageActionItems(input: MessageActionTarget, t: TFunction<'mes
   const target: MessageActionTarget = input.hasSelection ? {
     isRetracted: input.isRetracted, content: input.content,
     onCommentSelection: input.onCommentSelection, onCopy: input.onCopy,
-    onCopyLink: input.onCopyLink, onOpenLink: input.onOpenLink,
+    onCopyLink: input.onCopyLink, onOpenLink: input.onOpenLink, onOpenLinkSystem: input.onOpenLinkSystem,
   } : input
   const hasContent = !!target.content && !target.isRetracted
   // Ordered by session/shared/menu-table.ts @@@menu-order. No click data exists; each row says why it sits where it does.
@@ -66,10 +69,11 @@ export function messageActionItems(input: MessageActionTarget, t: TFunction<'mes
     !!target.onQuoteToComposer && { key: 'quoteToComposer', icon: Reply, label: t('message.actions.quoteToComposer'), onSelect: target.onQuoteToComposer, disabled: !hasContent },
     // Phone only: selecting part of a message to copy it, the phone's way to a partial copy.
     !!target.onSelectText && { key: 'selectText', icon: TextCursorInput, label: t('message.actions.selectText'), onSelect: target.onSelectText, disabled: !hasContent },
-    // Copy or open a link: offered only when the pointer is on a link; after copy, which keeps its place so the rows a
-    // reader knows do not move under a link.
+    // A link under the pointer: the one link menu's rows, in its order (session/shared/link-menu.ts @@@link-menu); after
+    // copy, which keeps its place so the rows a reader knows do not move under a link.
+    !!target.onOpenLink && { key: 'openLink', icon: Globe, label: t('message.actions.openLink'), onSelect: target.onOpenLink, disabled: target.isRetracted },
+    !!target.onOpenLinkSystem && { key: 'openLinkSystem', icon: ExternalLink, label: t('message.actions.openLinkSystem'), onSelect: target.onOpenLinkSystem, disabled: target.isRetracted },
     !!target.onCopyLink && { key: 'copyLink', icon: Copy, label: t('message.actions.copyLink'), onSelect: target.onCopyLink, disabled: target.isRetracted },
-    !!target.onOpenLink && { key: 'openLink', icon: ExternalLink, label: t('message.actions.openLink'), onSelect: target.onOpenLink, disabled: target.isRetracted },
     // Forward: daily, sharing a message with another chat.
     !!target.onForward && { key: 'forward', icon: Share, label: t('message.actions.forward'), onSelect: target.onForward, disabled: !hasContent },
     // Open a topic: a few times a week, splitting a thread off a busy group.

@@ -3,10 +3,13 @@ import { annotationConversationKey, type AnnotationConversation } from '@shared/
 import { showContentContextMenu } from '../../../../content-context-menu';
 import { showEditableContextMenu } from '../../../../editable-context-menu';
 import type { ContentMenuEntry } from '@shared/content-context-menu';
+import { linkMenuEntries } from '@shared/link-menu';
+import { sessionHostCopy } from '@main/core/host-copy';
 import {
   clipboard,
   ClipboardItem,
   session,
+  shell,
   type BrowserWindow,
   type BrowserWindowConstructorOptions,
   type ClearDataOptions,
@@ -352,44 +355,31 @@ export class BrowserWebContentsRegistry {
       }
 
       const target = getBrowserContextTarget(params);
-      const template: ContentMenuEntry[] = [
-        ...(selectionText
+      const openInNewTab = (url: string) => {
+        const sourceBrowserId = this.browserIdByWebContentsId.get(webContents.id);
+        if (sourceBrowserId) events.emit(browserOpenInNewTabChannel, { sourceBrowserId, url });
+      };
+      const copyTarget = (kind: 'link' | 'image', url: string) =>
+        copyTextThenNotify(url, () => events.emit(browserLinkCopiedChannel, { kind, url }));
+      // A link offers the one link menu (@@@link-menu); an image keeps its own rows.
+      const targetItems: ContentMenuEntry[] = target?.kind === 'link'
+        ? linkMenuEntries(sessionHostCopy().linkMenu, (action) => {
+          if (action === 'copy-link') copyTarget('link', target.url);
+          else if (action === 'open-link-system') void shell.openExternal(target.url);
+          else openInNewTab(target.url);
+        })
+        : target?.kind === 'image'
           ? [
-              {
-                id: 'copy', label: 'Copy',
-                click: () => copyTextThenNotify(selectionText),
-              },
-              { type: 'separator' as const },
-            ]
-          : []),
-        {
-          id: 'copy-link', label: target?.kind === 'image' ? 'Copy Image URL' : 'Copy Link',
-          enabled: target !== null,
-          click: () => {
-            if (!target) return;
-            copyTextThenNotify(target.url, () =>
-              events.emit(browserLinkCopiedChannel, { kind: target.kind, url: target.url }),
-            );
-          },
-        },
-        {
-          id: 'open-link', label: target?.kind === 'image' ? 'Open Image' : 'Open Link',
-          enabled: target !== null,
-          click: () => {
-            if (target) void webContents.loadURL(target.url);
-          },
-        },
-        {
-          id: 'open-tab', label: target?.kind === 'image' ? 'Open Image in New Tab' : 'Open Link in New Tab',
-          enabled: target !== null,
-          click: () => {
-            const sourceBrowserId = this.browserIdByWebContentsId.get(webContents.id);
-            if (sourceBrowserId && target) {
-              events.emit(browserOpenInNewTabChannel, { sourceBrowserId, url: target.url });
-            }
-          },
-        },
-        { type: 'separator' },
+            { id: 'copy-link', label: 'Copy Image URL', click: () => copyTarget('image', target.url) },
+            { id: 'open-link', label: 'Open Image', click: () => { void webContents.loadURL(target.url); } },
+            { id: 'open-tab', label: 'Open Image in New Tab', click: () => openInNewTab(target.url) },
+          ]
+          : [];
+      const template: ContentMenuEntry[] = [
+        ...(selectionText ? [{ id: 'copy', label: 'Copy', click: () => copyTextThenNotify(selectionText) }] : []),
+        ...(selectionText && targetItems.length ? [{ type: 'separator' as const }] : []),
+        ...targetItems,
+        ...(selectionText || targetItems.length ? [{ type: 'separator' as const }] : []),
         { id: 'reload', label: 'Reload', click: () => webContents.reload() },
       ];
 
