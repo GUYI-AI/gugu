@@ -3,6 +3,7 @@ import { createServer, type Server } from 'node:http';
 import { connect, type Socket } from 'node:net';
 import { getGlobalDispatcher } from 'undici';
 import { connectionModelListSchema, customModelProtocolProbeSchema } from '@gugu/session-core/workspace-server/agent-config';
+import { detectModelProtocol } from '@gugu/session-core/models/custom-model';
 import { listEndpointModels, probeEndpointProtocols, verifyEndpointModel } from './connection-endpoint-probe';
 
 const target = { endpoint: 'https://provider.test/v1', apiKey: 'dummy-key', protocol: 'openai-chat-completions' as const, env: {} };
@@ -203,4 +204,14 @@ it('a 401 under /v1 is kept when the bare address then answers 404, and an addre
   expect(result.failures).toContainEqual({ step: 'openai-chat-completions', reason: 'unauthorized' });
   const none = await probeEndpointProtocols({ baseUrl: 'https://relay.test/v1', apiKey: 'dummy-key', env: {}, modelId: 'model' }, byPath({ '/v1/models': 401 }));
   expect(none.refused).toBeUndefined();
+});
+// Anthropic's own API and Zhipu's Anthropic route answer 401 on every path with a refused key (measured above): only the
+// address can tell, and it does, so these are added anyway as Anthropic, not as OpenAI Chat that their first session would fail on.
+it.each([
+  ['https://api.anthropic.com', { protocol: 'anthropic-messages', baseUrl: 'https://api.anthropic.com' }],
+  ['https://open.bigmodel.cn/api/anthropic', { protocol: 'anthropic-messages', baseUrl: 'https://open.bigmodel.cn/api/anthropic' }],
+] as const)('%s, refusing the key on every path, is added anyway as Anthropic', async (baseUrl, first) => {
+  const everywhere: typeof fetch = vi.fn(async () => new Response('{}', { status: 401 }));
+  const result = await probeEndpointProtocols({ baseUrl, apiKey: 'dummy-key', env: {}, modelId: 'model', hint: detectModelProtocol(baseUrl) }, everywhere);
+  expect(result.refused?.[0]).toEqual(first);
 });
