@@ -38,14 +38,12 @@ describe('a group App picked in its group\'s side panel', () => {
 })
 
 describe('the group Apps in a group', () => {
-  const app = (extensionId: string) => ({ extensionId, name: extensionId, kind: `${extensionId}.main`, iconDataUrl: null })
-
   it('keeps the Apps with a file here when asking about another one fails', async () => {
     appInChat.mockImplementation(async ({ extensionId }: { extensionId: string }) => {
       if (extensionId === 'broken') throw new Error('rpc gone')
       if (extensionId === 'unread') return { success: false, error: 'offline' }
       return { success: true, data: { files: extensionId === 'board' ? [{ itemId: 'f1', name: 'a.board.json', displayName: 'a' }] : [] } }
     })
-    expect(await appsWithFilesIn('chat-1', [app('broken'), app('board'), app('unread'), app('empty')])).toEqual(['board'])
+    expect(await appsWithFilesIn('chat-1', ['broken', 'board', 'unread', 'empty'])).toEqual(['board'])
   })
 })
