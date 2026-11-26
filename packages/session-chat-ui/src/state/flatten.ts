@@ -59,7 +59,7 @@ import { continuedActivityHeader, foldActivityUnits, hasUnconfirmedSend, incomin
  * makeUnitsView(c, a)           — combine committedUnits + activeUnits.
  */
 
-import { isDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
+import { isDeliveryEnvelope, visibleDeliveryText } from '@gugu/core/local/agent/deliveryEnvelope';
 import { agentSendOf, replyItems } from '@gugu/session-core/session-record/reply-process';
 import { CONVERSATION_BLOCK_GAP, CONVERSATION_UTTERANCE_GAP, resolveSeamGap } from '@session-chat/core/spacing';
 import type { FoldGate, ItemSegmenter, Margin, RenderUnit, SegmentCtx } from '@session-chat/core/units';
@@ -193,7 +193,19 @@ export function flattenTier(
   previousRow?: RenderUnit,
 ): RenderUnit[] {
   const sentReplies = ctx.settled ? withSettledSentReplies : withSentReplies;
-  turns = turns.map(turn => sentReplies(turn, { allDestinations: ctx.agentConversation }));
+  turns = turns.flatMap(turn => {
+    let changed = false;
+    const items = turn.items.flatMap((item): TranscriptTurn['items'] => {
+      if (item.kind !== 'message' || item.role !== 'user') return [item];
+      const text = visibleDeliveryText(item.text);
+      if (text === item.text) return [item];
+      changed = true;
+      return text === null ? [] : [{ ...item, text }];
+    });
+    // A notice with no visible response has no conversation row of its own.
+    if (changed && items.length === 0 && (!turn.outcome || turn.outcome.kind === 'done')) return [];
+    return [sentReplies(changed ? { ...turn, items } : turn, { allDestinations: ctx.agentConversation })];
+  });
   // A turn the agent opened because one of its own tasks finished continues the turn before it (#2587).
   if (ctx.agentConversation) turns = joinContinuedTurns(conversationMessages(turns));
   // One send, drawn once. On the session page the call itself is drawn as the agent's words (agent-send, below), so the
