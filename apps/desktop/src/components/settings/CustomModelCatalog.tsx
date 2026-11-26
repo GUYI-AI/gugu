@@ -179,7 +179,7 @@ export function CatalogModelFields({ entries, onChange, protocolControl }: {
       </div>
       <fieldset className="gg-model-field">
         <legend className="gg-model-field-label">{translate('customModels.supportedEfforts')}</legend>
-        <div className="gg-model-levels mt-1.5">
+        <div className="gg-model-levels mt-2">
           {levels.map(({ level, value, differs }) => <div key={level}>{checkbox(effortLabel(level), { value, differs }, checked => {
             onChange(entry => {
               const previous = levelsOf(entry);
