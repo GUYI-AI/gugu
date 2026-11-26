@@ -23,12 +23,11 @@ function PopoverContent({
   side = 'bottom',
   sideOffset = 4,
   anchor,
-  collisionAvoidance,
   ...props
 }: FixedDataSlotProps<PopoverPrimitive.Popup.Props> &
   Pick<
     PopoverPrimitive.Positioner.Props,
-    'align' | 'alignOffset' | 'side' | 'sideOffset' | 'anchor' | 'collisionAvoidance'
+    'align' | 'alignOffset' | 'side' | 'sideOffset' | 'anchor'
   >) {
   const portalContainer = useUiPortalContainer();
   return (
@@ -39,7 +38,6 @@ function PopoverContent({
         side={side}
         sideOffset={sideOffset}
         anchor={anchor}
-        collisionAvoidance={collisionAvoidance}
         className={styles.positioner}
         style={{ zIndex: useUiPopupZIndex() }}
       >

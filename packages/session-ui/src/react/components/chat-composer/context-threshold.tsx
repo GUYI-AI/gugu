@@ -28,15 +28,11 @@ function parseContextThreshold(text: string, minimum: number, maximum: number): 
   return Number.isSafeInteger(tokens) && tokens >= minimum && tokens <= maximum ? tokens : null;
 }
 
-export function ContextThresholdMenu({
-  threshold, label, hover = false, onCommit,
-}: { threshold: ContextThreshold; label: ReactNode; hover?: boolean; onCommit?: () => void }) {
+export function ContextThresholdChoices({ threshold, onCommit }: { threshold: ContextThreshold; onCommit: () => void }) {
   const { translate } = useMessages();
-  const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const [error, setError] = useState<'input' | 'save' | null>(null);
   const [saving, setSaving] = useState(false);
-  const [editing, setEditing] = useState(false);
   const { minimum, maximum } = threshold;
   const current = threshold.value ?? maximum;
   const options = [...PRESETS.filter(value => value >= minimum && value < maximum), maximum];
@@ -45,8 +41,7 @@ export function ContextThresholdMenu({
     setSaving(true);
     try {
       await threshold.set(value === maximum ? null : value);
-      setOpen(false);
-      onCommit?.();
+      onCommit();
     } catch {
       setError('save');
     } finally {
@@ -55,28 +50,9 @@ export function ContextThresholdMenu({
   };
 
   return (
-    <Popover.Root open={open} onOpenChange={(next, details) => {
-      if (!next && details.reason === 'trigger-hover' && editing) {
-        details.cancel();
-        return;
-      }
-      setOpen(next);
-      if (next) { setText(''); setError(null); }
-    }}>
-      <Popover.Trigger openOnHover={hover} delay={100} closeDelay={300}
-        onKeyDown={event => {
-          if (!hover || event.key !== 'ArrowRight' || open) return;
-          event.preventDefault();
-          event.currentTarget.click();
-        }}
-        disabled={!threshold.set} className={styles.contextThresholdTrigger}>
-        {label}<ChevronRight size={14} aria-hidden />
-      </Popover.Trigger>
-      <Popover.Content side="left" align="end" sideOffset={4} className={styles.contextThresholdContent}
-        onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setEditing(false); }}>
+    <>
         {minimum < maximum && <input className={styles.contextThresholdInput} aria-label={translate('composer.contextWindowThreshold')}
           placeholder={translate('composer.contextWindowThreshold')} value={text} aria-invalid={error ? true : undefined}
-          onFocus={() => setEditing(true)}
           onChange={event => { setText(event.target.value); setError(null); }}
           onKeyDown={event => {
             if (event.key !== 'Enter') return;
@@ -86,16 +62,29 @@ export function ContextThresholdMenu({
             if (value === null) setError('input');
             else void commit(value);
           }} />}
-        {error && <div role="alert" className={styles.contextThresholdError}>
-          {error === 'save' ? translate('taskError.settingFailedRetry')
-            : translate('composer.contextThresholdRange', { minimum: formatTokenCount(minimum), maximum: formatTokenCount(maximum) })}
+        {error === 'input' && <div role="alert" className={styles.contextThresholdError}>
+          {translate('composer.contextThresholdRange', { minimum: formatTokenCount(minimum), maximum: formatTokenCount(maximum) })}
         </div>}
+        {error === 'save' && <div role="alert" className={styles.contextThresholdError}>{translate('taskError.settingFailedRetry')}</div>}
         {options.map(value => (
           <button type="button" key={value} disabled={saving} className={styles.contextThresholdOption}
             aria-pressed={current === value} onClick={() => void commit(value)}>
             {formatTokenCount(value)}{current === value && <Check size={14} aria-hidden />}
           </button>
         ))}
+    </>
+  );
+}
+
+export function ContextThresholdMenu({ threshold, label }: { threshold: ContextThreshold; label: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger disabled={!threshold.set} className={styles.contextThresholdTrigger}>
+        {label}<ChevronRight size={14} aria-hidden />
+      </Popover.Trigger>
+      <Popover.Content side="left" align="end" sideOffset={4} className={styles.contextThresholdContent}>
+        {open && <ContextThresholdChoices threshold={threshold} onCommit={() => setOpen(false)} />}
       </Popover.Content>
     </Popover.Root>
   );

@@ -1,6 +1,6 @@
 /** Composer model list and its anchored model details. */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Pencil, Search, Sparkles } from '../../../icons';
+import { Check, ChevronRight, Pencil, Search, Sparkles } from '../../../icons';
 import { Combobox } from '@session-ui/react/primitives/combobox/combobox';
 // 「思考」那一段是**一条有序标尺**,所以是 Slider 而不是一组单选药丸 ——
 // 见 chat-composer.css.ts 的 modelEffortRow 抬头(owner 2026-09-17 指定)。
@@ -16,8 +16,9 @@ import { useMessages } from '../../localization/message-provider';
 import * as styles from './chat-composer.css';
 // 圆钮直径的**唯一真源** —— 填充末端要落在圆心上,这里跟着它算,❌ 别再写一遍字面量。
 import { ComposerFastMode, type RenderFastModeHint } from './composer-fast-mode';
+import { sideAwayFromPicker } from './detail-card-side';
 import { ComposerThinking } from './composer-thinking';
-import { ContextThresholdMenu, type ComposerContextThresholds } from './context-threshold';
+import { ContextThresholdChoices, type ComposerContextThresholds } from './context-threshold';
 
 import type {
   ComposerEffortItem,
@@ -140,7 +141,11 @@ export function formatContextWindow(tokens: number): string {
   return `${tokens} tokens`;
 }
 
-/** Native hint for disabled rows without an explicit unavailability reason. */
+/**
+ * 模型条目的悬浮说明。原来这些信息在一张 hover 详情卡里,Codex 的设置面板没有那一层,
+ * 卡片随弹层重构一起去掉了 —— 但 modelFeatures 是插件真声明过的数据,不能跟着卡片一起
+ * 消失,所以折进条目的 title,信息还在,只是不再占一块面板。
+ */
 export function modelTitle(item: ComposerModelItem, locale = 'en-US'): string | undefined {
   const parts: string[] = [];
   if (item.description) parts.push(item.description);
@@ -156,13 +161,15 @@ export function modelTitle(item: ComposerModelItem, locale = 'en-US'): string | 
  * 事实里上下文、速度、智能来自 `modelFeatures`(插件 / 目录真声明过的),其余由宿主翻好递进来(`facts`)。
  * 什么都没有的那几格就不画 —— ❌ 写「未知」占位。
  */
-function ModelDetail({ item, contextThresholds, efforts, effort, onEffortChange, onContextCommit, keyboardEntry, onReturn, fastControl, onDisabledAction }: {
+function ModelDetail({ item, picker, contextThresholds, efforts, effort, onEffortChange, onContextCommit,
+  keyboardEntry, onReturn, fastControl, onDisabledAction }: {
   item: ComposerModelItem;
+  picker: HTMLElement | null;
   contextThresholds?: ComposerContextThresholds;
   efforts?: ComposerEffortItem[];
   effort?: ComposerEffortItem;
   onEffortChange?: (id: string) => void;
-  onContextCommit?: () => void;
+  onContextCommit: () => void;
   keyboardEntry: number;
   onReturn: () => void;
   fastControl?: React.ReactNode;
@@ -172,19 +179,19 @@ function ModelDetail({ item, contextThresholds, efforts, effort, onEffortChange,
   const f = item.modelFeatures;
   const threshold = !item.disabled ? contextThresholds?.(item.id, f?.contextWindowSize) : undefined;
   const detail = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!keyboardEntry) return;
-    const current = detail.current;
-    (current?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]:enabled')
-      ?? current?.querySelector<HTMLButtonElement>('button:enabled')
-      ?? current)?.focus({ preventScroll: true });
-  }, [keyboardEntry]);
+  const effortTrigger = useRef<HTMLButtonElement>(null);
+  const [submenuAnchor, setSubmenuAnchor] = useState<HTMLElement | null>(null);
+  const submenu = useHoverCard({ openDelay: 100, closeDelay: 300, safeTriangle: true, delaySwitch: true });
+  const submenuId = React.useId();
+  const focusSubmenu = useRef(false);
+  const showSubmenu = submenu.show;
   const canEditEffort = !!efforts?.length && !!onEffortChange;
+  const canChooseEffort = canEditEffort && !!efforts?.some(level => !level.disabled);
+  const canSetThreshold = !!threshold?.set && threshold.minimum < threshold.maximum;
   const effortLabel = translate('composer.effort');
   const lockedEffortReasonId = React.useId();
   const lockedEffortReason = efforts?.length && efforts.every(level => level.disabled)
     ? efforts[0]?.disabledReason ?? translate('composer.effortLocked') : undefined;
-  const canSetThreshold = !!threshold?.set && threshold.minimum < threshold.maximum;
   const contextSize = threshold?.maximum ?? f?.contextWindowSize;
   const facts = [
     ...(!canSetThreshold && !threshold?.unsupported && contextSize !== undefined
@@ -196,28 +203,62 @@ function ModelDetail({ item, contextThresholds, efforts, effort, onEffortChange,
       ? [{ label: translate('composer.modelDetailIntelligence'), value: `${f.intelligence}/5` }]
       : []),
   ];
+
+  useEffect(() => {
+    if (!keyboardEntry) return;
+    if (effortTrigger.current && canChooseEffort) {
+      focusSubmenu.current = true;
+      setSubmenuAnchor(effortTrigger.current);
+      showSubmenu('effort');
+    } else {
+      const current = detail.current;
+      (current?.querySelector<HTMLElement>('button:enabled') ?? current)?.focus({ preventScroll: true });
+    }
+  }, [keyboardEntry, canChooseEffort, showSubmenu]);
+
+  const submenuTrigger = (key: 'effort' | 'context') => {
+    const open = submenu.open && submenu.activeKey === key;
+    const show = (button: HTMLButtonElement, keyboard: boolean) => {
+      focusSubmenu.current = keyboard;
+      setSubmenuAnchor(button);
+      showSubmenu(key);
+    };
+    return {
+      'aria-haspopup': 'dialog' as const, 'aria-expanded': open, 'aria-controls': open ? submenuId : undefined,
+      ...submenu.getRowHoverProps(key, element => {
+        focusSubmenu.current = false;
+        setSubmenuAnchor(element);
+      }),
+      onClick: (event: React.MouseEvent<HTMLButtonElement>) => show(event.currentTarget, event.detail === 0),
+      onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
+        if (event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        show(event.currentTarget, true);
+      },
+    };
+  };
+  const submenuSide = sideAwayFromPicker(submenuAnchor, picker, 192) ?? 'left';
   return (
-    <div ref={detail} data-slot="composer-model-detail" tabIndex={-1} className={styles.modelDetailBody}
+    <div ref={detail} data-slot="composer-model-detail" className={styles.modelDetailBody} tabIndex={-1}
       onKeyDown={event => {
-        if (!(event.target instanceof HTMLElement)) return;
-        const inDetail = event.currentTarget.contains(event.target);
-        if (event.key === 'ArrowLeft' || (event.key === 'Escape' && inDetail)) {
+        if (!(event.target instanceof HTMLElement) || event.nativeEvent.isComposing) return;
+        if (event.key === 'ArrowLeft' || event.key === 'Escape') {
           if (event.key === 'ArrowLeft' && event.target instanceof HTMLInputElement && event.target.selectionStart !== 0) return;
           event.preventDefault();
           event.stopPropagation();
+          submenu.close();
           onReturn();
           return;
         }
         if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-        const scope = inDetail ? event.currentTarget : event.target.closest('[data-slot="popover-content"]');
-        const buttons = [...(scope?.querySelectorAll<HTMLButtonElement>('button:enabled') ?? [])];
-        if (!buttons.length) return;
-        const index = buttons.findIndex(button => button === event.target);
-        const next = event.key === 'ArrowDown'
-          ? (index + 1) % buttons.length : index <= 0 ? buttons.length - 1 : index - 1;
+        const scope = event.target.closest('[data-slot="popover-content"]');
+        const controls = [...(scope?.querySelectorAll<HTMLElement>('button:enabled, input:enabled') ?? [])];
+        if (!controls.length) return;
+        const index = controls.indexOf(event.target);
+        const next = event.key === 'ArrowDown' ? (index + 1) % controls.length : index <= 0 ? controls.length - 1 : index - 1;
         event.preventDefault();
         event.stopPropagation();
-        buttons[next]?.focus({ preventScroll: true });
+        controls[next]?.focus({ preventScroll: true });
       }}>
       <div className={styles.modelDetailHead}>
         {item.icon && (
@@ -241,20 +282,11 @@ function ModelDetail({ item, contextThresholds, efforts, effort, onEffortChange,
         </dl>
       )}
       {canEditEffort && (
-        <div role="group" aria-label={effortLabel} className={styles.modelDetailEffort}>
-          <span className={styles.modelDetailFactLabel}>{effortLabel}</span>
-          <div className={styles.modelDetailEffortOptions}>
-            {efforts.map(level => (
-              <button type="button" key={level.id} disabled={level.disabled} aria-pressed={effort?.id === level.id}
-                className={styles.modelDetailEffortOption} title={level.disabledReason ?? level.description}
-                aria-describedby={lockedEffortReason ? lockedEffortReasonId : undefined}
-                onClick={() => onEffortChange(level.id)}>
-                {level.name}
-              </button>
-            ))}
-          </div>
-          {lockedEffortReason && <p id={lockedEffortReasonId} className={styles.effortMenuLockedReason}>{lockedEffortReason}</p>}
-        </div>
+        <button ref={effortTrigger} type="button" data-slot="popover-trigger" className={styles.contextThresholdTrigger}
+          {...submenuTrigger('effort')}>
+          <span>{effortLabel}</span>
+          <span className={styles.modelDetailControlValue}>{effort?.name}<ChevronRight size={14} aria-hidden /></span>
+        </button>
       )}
       {fastControl}
       {threshold?.unsupported && (
@@ -263,10 +295,38 @@ function ModelDetail({ item, contextThresholds, efforts, effort, onEffortChange,
           <span className={styles.modelDetailControlValue}>{translate('composer.contextThresholdUnsupported')}</span>
         </div>
       )}
-      {canSetThreshold && <ContextThresholdMenu threshold={threshold} hover onCommit={onContextCommit} label={
-        <><span>{translate('composer.contextWindowThreshold')}</span>
-          <span className={styles.modelDetailControlValue}>{formatContextWindow(threshold.value ?? threshold.maximum)}</span></>
-      } />}
+      {canSetThreshold && <button type="button" data-slot="popover-trigger" className={styles.contextThresholdTrigger}
+        {...submenuTrigger('context')}>
+        <span>{translate('composer.contextWindowThreshold')}</span>
+        <span className={styles.modelDetailControlValue}>
+          {formatContextWindow(threshold.value ?? threshold.maximum)}<ChevronRight size={14} aria-hidden />
+        </span>
+      </button>}
+      <HoverCard id={submenuId} anchor={submenuAnchor} ownPopup={submenuAnchor?.closest<HTMLElement>('[data-hover-card]')}
+        controller={submenu} side={submenuSide} sideOffset={submenuSide === 'bottom' ? 4 : 16}
+        align={submenu.activeKey === 'context' ? 'end' : 'start'} className={styles.contextThresholdContent}
+        initialFocus={() => {
+          if (!focusSubmenu.current) return false;
+          const popup = detail.current?.ownerDocument.getElementById(submenuId);
+          return popup?.querySelector<HTMLElement>('button[aria-pressed="true"]:enabled')
+            ?? popup?.querySelector<HTMLElement>('button:enabled, input:enabled') ?? true;
+        }}>
+        {submenu.open && (submenu.activeKey === 'context' ? (
+          canSetThreshold && <ContextThresholdChoices threshold={threshold} onCommit={onContextCommit} />
+        ) : (
+          <>
+            {efforts?.map(level => (
+              <button type="button" key={level.id} disabled={level.disabled} aria-pressed={effort?.id === level.id}
+                className={styles.contextThresholdOption} title={level.disabledReason}
+                aria-describedby={lockedEffortReason ? lockedEffortReasonId : undefined}
+                onClick={() => onEffortChange?.(level.id)}>
+                {level.name}{effort?.id === level.id && <Check size={14} aria-hidden />}
+              </button>
+            ))}
+            {lockedEffortReason && <p id={lockedEffortReasonId} className={styles.effortMenuLockedReason}>{lockedEffortReason}</p>}
+          </>
+        ))}
+      </HoverCard>
       {item.disabled && item.disabledReason && (
         <p className={styles.modelDetailSummary}>{item.disabledReason}</p>
       )}
@@ -412,13 +472,11 @@ export function ComposerModelMenu({
     ? (modelItems.find((m) => m.id === selectedModel) ?? null)
     : null;
   const detailIsSelected = !!detailItem && detailItem.id === (selectedModelItem?.aliasOf ?? selectedModelItem?.id);
-  const detailOptions = detailItem && !detailItem.disabled && !detailIsSelected && onModelChange
-    ? effortOptionsForModel?.(detailItem.id)
-    : null;
-  const detailEfforts = detailIsSelected ? effortItems
-    : detailOptions ? Object.entries(detailOptions)
-      .filter(([id]) => id.toLowerCase() !== 'default')
-      .map(([id, option]) => ({ id, ...option })) : undefined;
+  const targetOptions = detailItem && !detailItem.disabled && !detailIsSelected && onModelChange
+    ? effortOptionsForModel?.(detailItem.id) : null;
+  const detailEfforts = detailIsSelected ? effortItems : targetOptions ? Object.entries(targetOptions)
+    .filter(([id]) => id.toLowerCase() !== 'default')
+    .map(([id, option]) => ({ id, ...option })) : undefined;
   const selectedEffortItem = effortItems.find(item => item.id === selectedEffort);
   const defaultEffortItem = effortItems.find(item => item.id === defaultEffort);
   const effectiveEffortItem = selectedEffortItem ?? defaultEffortItem;
@@ -716,17 +774,15 @@ export function ComposerModelMenu({
             anchor={detailAnchor}
             ownPopup={panelEl}
             controller={detailCard}
-            // Keep the card beside its row when the options make it taller than the space below.
+            // 面板贴着底排右侧往上开,右边常常没地方 —— 卡放左边,与 Cursor 同侧;贴不下时定位器自己翻。
             side="right"
             align="start"
-            collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}
             sideOffset={8}
             className={styles.modelDetailCard}
           >
             {detailItem ? (
-              <ModelDetail key={detailItem.id} item={detailItem} contextThresholds={contextThresholds}
-                efforts={detailEfforts} effort={detailIsSelected ? effectiveEffortItem : undefined}
-                keyboardEntry={keyboardEntry}
+              <ModelDetail key={detailItem.id} item={detailItem} picker={panelEl} contextThresholds={contextThresholds}
+                efforts={detailEfforts} effort={detailIsSelected ? effectiveEffortItem : undefined} keyboardEntry={keyboardEntry}
                 onReturn={() => {
                   searchInput.current?.focus({ preventScroll: true });
                   detailCard.close();
@@ -736,7 +792,7 @@ export function ComposerModelMenu({
                   closeAfterSelection(true);
                   if (!detailIsSelected) onModelChange?.(detailItem.id);
                 }}
-                fastControl={detailItem.id === selectedModel && panel.modelRow === 'list' && !phoneActions && fastMode !== undefined
+                fastControl={detailIsSelected && panel.modelRow === 'list' && !phoneActions && fastMode !== undefined
                   ? <ComposerFastMode detailRow picker={panelEl} enabled={fastMode} disabled={disabled} onChange={onFastModeChange} renderHint={renderFastModeHint} />
                   : undefined}
                 onDisabledAction={() => {

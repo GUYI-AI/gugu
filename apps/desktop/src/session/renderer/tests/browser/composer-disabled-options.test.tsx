@@ -335,10 +335,13 @@ describe('会话里暂时改不了的选项:看得见 · 选不了 · 看得出 
     await until('the unlocked slider emits an effort change', () => onEffortChange.mock.calls.length > 0)
   })
 
-  it('桌面详情保留置灰思考档和原因', async () => {
+  it('桌面详情的思考菜单保留置灰档和原因', async () => {
     async function openThinking() {
       await openPanel()
       await page.elementLocator(rowByName('Haiku')!).hover()
+      const trigger = page.getByRole('button', { name: /^(Thinking|思考)/ })
+      await expect.element(trigger).toBeVisible()
+      await trigger.hover()
       const high = page.getByRole('button', { name: '高', exact: true })
       await expect.element(high).toBeVisible()
       return high.element() as HTMLButtonElement

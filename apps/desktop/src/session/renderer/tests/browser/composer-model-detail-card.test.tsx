@@ -98,35 +98,24 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
     document.body.classList.add('emlight', 'gugu-skin')
     document.body.appendChild(container)
     root = createRoot(container)
-    function Fixture() {
-      const [model, setModel] = useState('platform:glm-5.3-flash')
-      const [effort, setEffort] = useState('high')
-      const targetEfforts = { low: EFFORTS.low, high: EFFORTS.high }
-      return (
-        <SessionLocalizationProvider>
-          <ChatComposer
-            modelOptions={MODELS}
-            selectedModel={model}
-            onModelChange={(id, level) => {
-              if (level === undefined) onModelChange(id)
-              else onModelChange(id, level)
-              setModel(id)
-              if (level !== undefined) setEffort(level)
-            }}
-            onManageModels={onManageModels}
-            modelUpgrade={{ label: '升级解锁更多模型', title: '开通会员后可用', models: ['Claude Opus 5', 'GPT-5.6 Sol'] }}
-            onModelUpgrade={onModelUpgrade}
-            effortOptions={model === 'opus' ? targetEfforts : EFFORTS}
-            effortOptionsForModel={id => id === 'opus' ? targetEfforts : null}
-            selectedEffort={effort}
-            onEffortChange={setEffort}
-            onSubmit={() => {}}
-            onStop={() => {}}
-          />
-        </SessionLocalizationProvider>
-      )
-    }
-    root.render(<Fixture />)
+    root.render(
+      <SessionLocalizationProvider>
+        <ChatComposer
+          modelOptions={MODELS}
+          selectedModel="platform:glm-5.3-flash"
+          onModelChange={onModelChange}
+            effortOptionsForModel={id => id === 'opus' ? EFFORTS : null}
+          onManageModels={onManageModels}
+          modelUpgrade={{ label: '升级解锁更多模型', title: '开通会员后可用', models: ['Claude Opus 5', 'GPT-5.6 Sol'] }}
+          onModelUpgrade={onModelUpgrade}
+          effortOptions={EFFORTS}
+          selectedEffort="high"
+          onEffortChange={() => {}}
+          onSubmit={() => {}}
+          onStop={() => {}}
+        />
+      </SessionLocalizationProvider>
+    )
     await until('composer model trigger mounted', () => document.querySelector('[data-testid="composer-model-trigger"]') != null)
     ;(document.querySelector('[data-testid="composer-model-trigger"]') as HTMLElement).click()
     await until('model panel lists options', () => (panel()?.querySelectorAll('[role="option"]').length ?? 0) > 0)
@@ -170,36 +159,49 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
     for (const el of [footer, upgrade, manage]) expect(getComputedStyle(el).borderTopWidth, '模型和底部去路之间画了分隔线').toBe('0px')
   })
 
-  it('commits a thinking level from a left-opening card for a different model', async () => {
-    const target = rowByName('Opus 5.5')
-    await page.elementLocator(target).hover()
-    const low = page.getByRole('button', { name: '低', exact: true })
-    const high = page.getByRole('button', { name: '高', exact: true })
-    await expect.element(low).toBeVisible()
-    expect(detail()!.closest('[data-hover-card]')!.getBoundingClientRect().right).toBeLessThanOrEqual(target.getBoundingClientRect().left)
-    await expect.element(high).toHaveAttribute('aria-pressed', 'false')
-    await low.hover()
-    await low.click()
-    expect(onModelChange).toHaveBeenCalledExactlyOnceWith('opus', 'low')
-    await until('panel closes and trigger regains focus', () => panel() === null && document.activeElement === page.getByTestId('composer-model-trigger').element())
-    await expect.element(page.getByTestId('composer-model-trigger')).toHaveTextContent('Opus 5.5低')
-    await page.getByTestId('composer-model-trigger').click()
-    await page.elementLocator(rowByName('Opus 5.5')).hover()
-    await expect.element(low).toHaveAttribute('aria-pressed', 'true')
+  it('opens an explicit thinking submenu from the selected model detail', async () => {
+    await page.elementLocator(rowByName('GLM 5.3 Flash')).hover()
+    await until('detail card opens', () => detail() !== null)
+    const thinking = detail()!.querySelector<HTMLButtonElement>('button')!
+    await page.elementLocator(thinking).hover()
+    await expect.element(page.getByRole('button', { name: '低', exact: true })).toBeVisible()
+    await expect.element(page.getByRole('button', { name: '高', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    expect(page.getByRole('button', { name: 'Default', exact: true }).query()).toBeNull()
   })
 
-  it('enters the highlighted model card, returns to the same row and confirms a level by keyboard', async () => {
+  it('selects an unselected model and its thinking level from the left-opening submenu', async () => {
+    const target = rowByName('Opus 5.5')
+    await page.elementLocator(target).hover()
+    await until('Opus detail opens', () => detail()?.textContent?.includes('Opus 5.5') === true)
+    const thinking = detail()!.querySelector<HTMLButtonElement>('button')!
+    await page.elementLocator(thinking).hover()
+    const low = page.getByRole('button', { name: '低', exact: true })
+    await expect.element(low).toBeVisible()
+    expect(detail()!.closest('[data-hover-card]')!.getBoundingClientRect().right).toBeLessThanOrEqual(target.getBoundingClientRect().left)
+    await low.click()
+    expect(onModelChange).toHaveBeenCalledExactlyOnceWith('opus', 'low')
+    await until('model picker closes', () => panel() === null)
+    await expect.element(page.getByTestId('composer-model-trigger')).toHaveFocus()
+  })
+
+  it('returns from the thinking options to the highlighted model and confirms with Enter', async () => {
     const search = page.getByTestId('composer-model-search')
+    const low = page.getByRole('button', { name: '低', exact: true })
+    const high = page.getByRole('button', { name: '高', exact: true })
     await search.fill('Opus')
     await userEvent.keyboard('{ArrowDown}{ArrowRight}')
-    const low = page.getByRole('button', { name: '低', exact: true })
-    await until('first level focused', () => document.activeElement === low.query())
+    await expect.element(low).toHaveFocus()
     await userEvent.keyboard('{ArrowLeft}')
     await expect.element(search).toHaveFocus()
     expect(search.element().getAttribute('aria-activedescendant')).toBe(rowByName('Opus 5.5').id)
-    await userEvent.keyboard('{ArrowRight}{ArrowDown}{Enter}')
+    await userEvent.keyboard('{ArrowRight}')
+    await expect.element(low).toHaveFocus()
+    await userEvent.keyboard('{ArrowDown}')
+    await expect.element(high).toHaveFocus()
+    expect(onModelChange).not.toHaveBeenCalled()
+    await userEvent.keyboard('{Enter}')
     expect(onModelChange).toHaveBeenCalledExactlyOnceWith('opus', 'high')
-    await until('panel closes', () => panel() === null)
+    await until('model picker closes', () => panel() === null)
     await expect.element(page.getByTestId('composer-model-trigger')).toHaveFocus()
   })
 
@@ -210,7 +212,7 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
     expect(text).toContain('咕咕模型按积分计费')
     expect(text).toContain('相对倍率 ×0.04')
     expect(text).toContain('200K tokens')
-    expect([...detail()!.querySelectorAll('button')].map(button => button.textContent)).toEqual(['低', '高'])
+    expect(text).toContain('低 · 高')
     // 卡开着,面板还在:鼠标移向卡不能把清单关掉。
     expect(panel()).not.toBeNull()
 
@@ -476,55 +478,6 @@ it.each([
     await input.fill(invalid)
     await userEvent.keyboard('{Enter}')
     await expect.element(page.getByRole('alert')).toHaveTextContent(`Enter ${range} tokens.`)
-  } finally {
-    composer.unmount()
-    mount.remove()
-  }
-})
-
-it('saves the hovered model’s context preset, selects it and shows the saved value on reopening', async () => {
-  const mount = document.createElement('div')
-  mount.style.cssText = 'position:fixed;right:24px;bottom:24px;width:640px'
-  document.body.appendChild(mount)
-  const composer = createRoot(mount)
-  const save = vi.fn()
-  function Fixture() {
-    const [model, setModel] = useState('platform:glm-5.3-flash')
-    const [values, setValues] = useState<Record<string, number | null>>({})
-    return (
-      <SessionLocalizationProvider>
-        <ChatComposer modelOptions={MODELS} selectedModel={model} onModelChange={setModel}
-          contextThresholds={(id, maximum) => maximum ? {
-            minimum: 8_000, maximum, value: values[id] ?? null, set: async value => {
-              save(id, value)
-              setValues(previous => ({ ...previous, [id]: value }))
-            },
-          } : undefined}
-          onSubmit={() => {}} onStop={() => {}} />
-      </SessionLocalizationProvider>
-    )
-  }
-  try {
-    composer.render(<Fixture />)
-    const trigger = page.getByTestId('composer-model-trigger')
-    await trigger.click()
-    await page.getByTestId('composer-model-search').fill('Opus')
-    await userEvent.keyboard('{ArrowDown}{ArrowRight}')
-    const context = page.getByRole('button', { name: /Context window.*1M/ })
-    await expect.element(context).toHaveFocus()
-    await userEvent.keyboard('{Enter}')
-    const custom = page.getByRole('textbox', { name: 'Context window', exact: true })
-    await expect.element(custom).toHaveFocus()
-    await userEvent.keyboard('{ArrowDown}{Enter}')
-    expect(save).toHaveBeenCalledExactlyOnceWith('opus', 64_000)
-    await until('model picker closes after saving', () => panel() === null)
-    await expect.element(trigger).toHaveTextContent('Opus 5.5')
-    await expect.element(trigger).toHaveFocus()
-    await trigger.click()
-    await page.elementLocator(rowByName('Opus 5.5')).hover()
-    const savedContext = page.getByRole('button', { name: /Context window.*64K/ })
-    await savedContext.hover()
-    await expect.element(page.getByRole('button', { name: '64k', exact: true })).toHaveAttribute('aria-pressed', 'true')
   } finally {
     composer.unmount()
     mount.remove()

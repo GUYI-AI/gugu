@@ -1756,33 +1756,6 @@ export const modelDetailBody = style({
   outline: 'none',
 });
 
-export const modelDetailEffort = style({
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '0.25rem',
-  fontSize: tokenVars.textTiny,
-  lineHeight: tokenVars.textTinyLineHeight,
-});
-
-export const modelDetailEffortOptions = style({
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: '0.25rem',
-});
-
-export const modelDetailEffortOption = style({
-  padding: '0.25rem 0.375rem',
-  border: `1px solid ${vars.border}`,
-  borderRadius: tokenVars.radiusMd,
-  color: vars.foreground,
-  selectors: {
-    '&:hover:not(:disabled)': { backgroundColor: vars.surfaceHover },
-    '&[aria-pressed="true"]': { backgroundColor: vars.surfaceSelected, borderColor: vars.foregroundMuted, fontWeight: 600 },
-    '&:focus-visible:not([data-pointer-focus])': { outline: `2px solid ${vars.foreground}`, outlineOffset: '-2px' },
-    '&:disabled': { opacity: 0.55 },
-  },
-});
-
 export const modelDetailHead = style({
   display: 'flex',
   alignItems: 'center',
