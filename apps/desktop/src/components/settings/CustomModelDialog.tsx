@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { CONTEXT_TIERS, contextTierChoice } from '@gugu/session-core/models/context-threshold';
 import {
   CUSTOM_MODEL_EFFORT_LEVELS, CUSTOM_MODEL_KEY_CHANNEL, FAST_PROTOCOLS, customModelAcceptsImages, customModelCatalogLevels, customModelRouteSchema,
   customModelThinks, modelProtocolSchema, normalizeModelBaseUrl, proposedDefaultEffort,
@@ -72,6 +73,24 @@ function advancedOf(entry: CustomModelEntry | undefined, routes: readonly Custom
 
 const INPUT_LIMITS = [['32K', 32_768], ['64K', 65_536], ['128K', 131_072], ['256K', 262_144]] as const;
 const OUTPUT_LIMITS = [['8K', 8_192], ['16K', 16_384], ['32K', 32_768], ['64K', 65_536]] as const;
+const CONTEXT_LIMITS = CONTEXT_TIERS.map(value => [formatTokenLimit(value), value] as const);
+
+/** A token count as people say it (300K, 1M, 8K for 8192); never a raw seven-digit number in the field. */
+function formatTokenLimit(value: number | undefined): string {
+  if (value === undefined) return '';
+  if (value % 1_000_000 === 0) return `${value / 1_000_000}M`;
+  if (value % 1_000 === 0) return `${value / 1_000}K`;
+  if (value % 1_024 === 0) return `${value / 1_024}K`;
+  return String(value);
+}
+
+/** What a typed limit means: digits, optionally with K (thousand) or M (million). Empty is the provider default. */
+function parseTokenLimit(text: string): number | undefined | null {
+  if (!text.trim()) return undefined;
+  const match = /^(\d+(?:\.\d+)?)\s*([km]?)$/i.exec(text.trim());
+  const value = match ? Math.round(Number(match[1]) * ({ k: 1_000, m: 1_000_000 }[match[2]!.toLowerCase()] ?? 1)) : NaN;
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
 const CUSTOM_PROVIDER = 'custom';
 
 type ConnectionTest = { kind: 'idle' } | { kind: 'testing' } | { kind: 'ok' } | { kind: 'failed'; message: string };
@@ -153,9 +172,14 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     return initialRoute && existing.length < 100 ? [{ ...initialRoute, id: crypto.randomUUID() }, ...existing] : existing;
   });
   const [advanced, setAdvanced] = useState<Advanced>(() => advancedOf(editedModel, routes));
-  const [limits, setLimits] = useState({ contextWindow: editedModel?.contextWindow, maxOutput: editedModel?.maxOutput });
-  const [contextLengths, setContextLengths] = useState(editedModel?.contextLengths?.join(', ') ?? '');
-  const [defaultContextLength, setDefaultContextLength] = useState<number | undefined>(editedModel?.defaultContextLength);
+  // A window read from Codex's config.toml (model_context_window) is this model's max context until the person changes it.
+  const fromCodexConfig = Boolean(connection?.discovered?.source.startsWith('codex') && editedModel?.contextWindow && !editedModel.contextLengths?.length);
+  // 「最大上下文」 stands for the lengths the menu offers; a record saved with a list shows its largest (owner 11-27 02:38).
+  const savedMaxContext = editedModel?.contextLengths?.length ? Math.max(...editedModel.contextLengths) : fromCodexConfig ? editedModel?.contextWindow : undefined;
+  const [limits, setLimits] = useState({ contextWindow: editedModel?.contextWindow, maxOutput: editedModel?.maxOutput, maxContext: savedMaxContext });
+  const [limitText, setLimitText] = useState({
+    contextWindow: formatTokenLimit(editedModel?.contextWindow), maxOutput: formatTokenLimit(editedModel?.maxOutput), maxContext: formatTokenLimit(savedMaxContext),
+  });
   const [test, setTest] = useState<ConnectionTest>({ kind: 'idle' });
   const [busy, setBusy] = useState<'save' | null>(null);
   const [accountCreating, setAccountCreating] = useState(false);
@@ -321,17 +345,17 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
       const { customProtocol: _shown, efforts, defaultEffort, ...declared } = advanced;
       declared.fast = declared.fast && fastCarried(saved);
       const stored = ({ effortCatalog: _catalog, ...rest }: CustomModelEntry) => rest;
-      const lengths = contextLengths.trim() ? [...new Set(contextLengths.split(',').map(value => Number(value.trim())))] : undefined;
-      if (lengths && (!defaultContextLength || !lengths.includes(defaultContextLength) ||
-        lengths.some(value => !Number.isSafeInteger(value) || value <= 0 || (limits.contextWindow != null && value > limits.contextWindow)))) {
-        throw new Error(translate('customModels.contextLengthsInvalid'));
-      }
+      if (Object.values(limitText).some(text => parseTokenLimit(text) === null)) throw new Error(translate('customModels.limitInvalid'));
+      // The menu offers 300K / 600K / 900K under the window plus the window itself, 300K first (owner 11-27 02:35).
+      const { maxContext } = limits;
+      if (maxContext && limits.contextWindow && maxContext > limits.contextWindow) throw new Error(translate('customModels.maxContextOverInput'));
+      const context = maxContext ? contextTierChoice(maxContext) : undefined;
       const entry = {
         ...(editedModel && stored(editedModel)), ...declared, id: model,
         efforts: advanced.thinking ? efforts : undefined,
         defaultEffort: advanced.thinking ? defaultEffort ?? undefined : undefined,
-        contextWindow: limits.contextWindow ?? (lengths ? Math.max(...lengths) : undefined), maxOutput: limits.maxOutput,
-        contextLengths: lengths, defaultContextLength: lengths ? defaultContextLength : undefined,
+        contextWindow: limits.contextWindow ?? maxContext, maxOutput: limits.maxOutput,
+        contextLengths: context?.contextLengths, defaultContextLength: context?.defaultContextLength,
       };
       // The edited model keeps its place; the connection's other models are saved as they are.
       const models = (connection?.models ?? []).flatMap(item => item.id === editedModel?.id ? [entry] : item.id === model ? [] : [stored(item)]);
@@ -370,16 +394,22 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     if (!known) log.warn({ detail: text }, 'custom model save refused');
     return known ?? translate('customModels.saveFailed');
   };
-  const limitField = (key: 'contextWindow' | 'maxOutput', presets: typeof INPUT_LIMITS | typeof OUTPUT_LIMITS) => {
-    const label = translate(key === 'contextWindow' ? 'customModels.inputLimit' : 'customModels.outputLimit');
+  const limitField = (key: 'contextWindow' | 'maxOutput' | 'maxContext', presets: readonly (readonly [string, number])[], hint?: string) => {
+    const label = translate(key === 'contextWindow' ? 'customModels.inputLimit' : key === 'maxOutput' ? 'customModels.outputLimit' : 'customModels.maxContext');
+    const choose = (text: string, value: number | undefined | null) => {
+      setLimitText(current => ({ ...current, [key]: text }));
+      setLimits(current => ({ ...current, [key]: value ?? undefined }));
+    };
     return <label className="gg-model-field">
       <span className="gg-model-field-label">{label}</span>
-      <Input type="number" min="1" step="1" inputMode="numeric" data-testid={`custom-model-${key}`} placeholder={translate('customModels.limitDefault')} value={limits[key] ?? ''}
-        onChange={(event) => setLimits(current => ({ ...current, [key]: event.target.value ? Number(event.target.value) : undefined }))} />
+      <Input type="text" inputMode="numeric" spellCheck={false} data-testid={`custom-model-${key}`} placeholder={translate('customModels.limitDefault')} value={limitText[key]}
+        aria-invalid={parseTokenLimit(limitText[key]) === null ? true : undefined}
+        onChange={(event) => choose(event.target.value, parseTokenLimit(event.target.value))} />
       <span className="gg-model-limit-presets">
         {presets.map(([text, value]) => <Button key={text} type="button" size="sm" variant="ghost" aria-pressed={limits[key] === value}
-          onClick={() => setLimits(current => ({ ...current, [key]: value }))}>{text}</Button>)}
+          onClick={() => choose(text, value)}>{text}</Button>)}
       </span>
+      {hint && <span className="gg-model-hint">{hint}</span>}
     </label>;
   };
   // Unchecking Custom protocol drops the routes this connection already has when it saves: said under the box, not asked in a modal.
@@ -527,13 +557,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
               {limitField('maxOutput', OUTPUT_LIMITS)}
             </div>
             <div className="gg-model-limits">
-              <label className="gg-model-field"><span className="gg-model-field-label">{translate('customModels.contextLengths')}</span>
-                <Input data-testid="custom-model-context-lengths" value={contextLengths} onChange={event => setContextLengths(event.target.value)} />
-              </label>
-              <label className="gg-model-field"><span className="gg-model-field-label">{translate('customModels.defaultContextLength')}</span>
-                <Input data-testid="custom-model-default-context-length" type="number" min={1} step={1} value={defaultContextLength ?? ''}
-                  onChange={event => setDefaultContextLength(event.target.value ? Number(event.target.value) : undefined)} />
-              </label>
+              {limitField('maxContext', CONTEXT_LIMITS, fromCodexConfig && limits.maxContext === editedModel?.contextWindow ? translate('customModels.contextFromCodex') : undefined)}
             </div>
           </div>
         </form>}
