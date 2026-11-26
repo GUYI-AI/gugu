@@ -36,3 +36,9 @@ it("recognizes macro-enabled Office documents without MIME metadata", () => {
     expect(fileFamily(name, mime)).toBe(family)
   }
 })
+
+it("uses the document family for Office templates", () => {
+  for (const [name, mime, family] of [["letter.dotx", "", "word"], ["letter.dotm", "", "word"], ["budget.xltx", "", "sheet"], ["budget.xltm", "", "sheet"], ["deck.potx", "", "slides"], ["deck.potm", "", "slides"]]) {
+    expect(fileFamily(name, mime)).toBe(family)
+  }
+})
