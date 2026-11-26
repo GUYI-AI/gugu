@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  CUSTOM_MODEL_EFFORT_LEVELS, CUSTOM_MODEL_KEY_CHANNEL, FAST_PROTOCOLS, customModelAcceptsImages, customModelCatalogLevels, customModelRouteSchema,
+  CONVERSION_PREFERENCE, CUSTOM_MODEL_EFFORT_LEVELS, CUSTOM_MODEL_KEY_CHANNEL, FAST_PROTOCOLS, customModelAcceptsImages, customModelCatalogLevels, customModelRouteSchema,
   customModelThinks, modelProtocolSchema, normalizeModelBaseUrl, proposedDefaultEffort,
   type CustomModelConnection, type CustomModelEffortLevel, type CustomModelEntry, type CustomModelMeta, type CustomModelRoute, type ModelProtocol,
 } from '@gugu/session-core/models/custom-model';
@@ -112,7 +112,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
   modelId?: string;
   initialAccount?: 'claude' | 'codex' | 'antigravity'; initialRoute?: Omit<CustomModelRoute, 'id'>; onClose: () => void;
 }) {
-  const { translate } = useSessionMessages();
+  const { translate, locale } = useSessionMessages();
   const initialPreset = group === 'custom' ? undefined : providerPresets.find(preset => preset.group === group);
   const accountPreset = initialAccount === 'antigravity' ? 'antigravity-subscription' : initialAccount === 'codex' ? 'chatgpt-subscription' : 'claude-subscription';
   const [presetId, setPresetId] = useState(connection ? connection.preset ?? CUSTOM_PROVIDER : group === 'coding-plan' ? accountPreset : initialPreset?.id ?? CUSTOM_PROVIDER);
@@ -186,6 +186,11 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     return endpoint?.baseUrl === normalized?.[0]?.baseUrl ? translate('customModels.sameApiAddress') : endpoint?.baseUrl;
   };
   const protocolLabel = (protocol: ModelProtocol) => translate(`customModels.${protocol}`);
+  // Routing is automatic (owner 2026-11-27 03:17): the person sees one line of what the address takes, most preferred first.
+  const recognized = address && probed.length ? translate('customModels.recognized', {
+    protocols: new Intl.ListFormat(locale, { style: 'narrow', type: 'conjunction' }).format([...new Set(probed.map(({ protocol }) => protocol))]
+      .sort((a, b) => CONVERSION_PREFERENCE.indexOf(a) - CONVERSION_PREFERENCE.indexOf(b)).map(protocolLabel)),
+  }) : '';
   const effortLabel = (level: CustomModelEffortLevel | null) => translate(level ? `customModels.effort.${level}` : 'customModels.effortAuto');
   const updateRoute = (id: string, patch: Partial<CustomModelRoute>) => setRoutes(current =>
     current.map(route => route.id === id ? { ...route, ...patch } : route));
@@ -427,7 +432,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
           </Combobox>
         </div>
         {accountProvider ? accountAgent ? <SubscriptionConnections key={accountProvider} agent={accountAgent} machine={machine} modelAccount={{ onClose, onBusyChange: setAccountCreating }} /> : agentsError ? <SettingsNote tone="danger" role="alert">{errorText(agentsError)} <Button size="sm" variant="outline" onClick={retryOf(agentsReading)}>{translate('common.retry')}</Button></SettingsNote> : agents ? <SettingsNote tone="danger">{translate('customModels.accountUnavailable')}</SettingsNote> : <Unknown className="h-9 w-full" /> : <form id={formId} className="gg-model-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-          {!preset && <label className="gg-model-field"><span className="gg-model-field-label">{translate('customModels.address')}</span><Input data-testid="custom-model-address-0" type="url" required spellCheck={false} placeholder={translate('customModels.addressPlaceholder')} value={endpoints[0]?.baseUrl ?? ''} onChange={(event) => setAddress(event.target.value)} /></label>}
+          {!preset && <label className="gg-model-field"><span className="gg-model-field-label">{translate('customModels.address')}</span><Input data-testid="custom-model-address-0" type="url" required spellCheck={false} placeholder={translate('customModels.addressPlaceholder')} value={endpoints[0]?.baseUrl ?? ''} onChange={(event) => setAddress(event.target.value)} />{recognized && <span className="gg-model-hint" data-testid="custom-model-recognized">{recognized}</span>}</label>}
           <div className="gg-model-field">
             <label className="gg-model-field-label" htmlFor="custom-model-key">API Key</label>
             <div className="gg-model-key-row">

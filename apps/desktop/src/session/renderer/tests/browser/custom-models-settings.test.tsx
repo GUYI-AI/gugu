@@ -429,6 +429,22 @@ it('a custom address shows no protocol and saves the addresses it recognized for
   await until('the form saved', () => state.saved !== null);
   expect(state.saved).toMatchObject({ endpoints: state.probe.endpoints, models: [{ id: 'model-b', toolCall: true, image: false, thinking: true, efforts: [] }], apiKey: 'sk-test', routes: [] });
 });
+// owner 2026-11-27 03:17: routing is automatic; the dialog says in one line what the address takes, Responses first.
+it('says in one line which protocols a custom address takes, Responses first, and nothing when it took none', async () => {
+  state.probe = {
+    endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }, { protocol: 'openai-responses', baseUrl: 'https://relay.test/v1' }],
+    models: ['m'], failures: [],
+  };
+  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+  await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test/v1');
+  await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-test');
+  await expect.element(page.getByTestId('custom-model-recognized')).toHaveTextContent('Recognized: takes OpenAI Responses, OpenAI Chat');
+  expect(document.querySelector('[data-testid=custom-model-routes]')).toBeNull();
+  state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason: 'no-list' }] };
+  await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://other.test/v1');
+  await until('the new address is probed', () => state.probes.some(probe => JSON.stringify(probe).includes('other.test')));
+  await expect.element(page.getByTestId('custom-model-recognized')).not.toBeInTheDocument();
+});
 const failures = [
   ['unauthorized', 'This address refused the key.', '该地址拒绝了此 Key。'],
   ['unreachable', 'Cannot reach this address.', '无法连接到该地址。'],
