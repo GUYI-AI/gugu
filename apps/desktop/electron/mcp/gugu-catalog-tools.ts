@@ -25,7 +25,7 @@ import { assertMcpToolDescriptionWithinBudget } from './mcp-tool-description-bud
  * 多数会话都会用到的(#6614 的读数)。不在这里的已注册工具只进目录,按原名 tools/call 仍然能调。
  */
 export const GUGU_LISTED_TOOLS: ReadonlySet<string> = new Set([
-  'message_send', 'message_download_file', 'message_history', 'message_search', 'message_members',
+  'message_send', 'message_download_file', 'file_put', 'message_history', 'message_search', 'message_members',
   'message_conversations', 'message_rules', 'profile_whoami',
   // Acting for the owner (message_send_as_owner, owner_friends_list, contact_friend, message_invite) and topics are in the
   // catalog (MCP surface review 11-16: 0–10 calls in 454 sessions); the catalog_list description and the platform prompt point there.
@@ -51,6 +51,7 @@ export const RETIRED_TOOLS: Readonly<Record<string, string>> = {
   message_send_file_as_owner: 'message_send_as_owner with file_path',
   guide_topics: 'guide_read without a topic',
   catalog_describe: 'catalog_list with the exact tool name as name',
+  workspace__create: 'file_put with file_path (a file you wrote on this computer; its name is its format)',
 }
 
 /** The refusal for a retired name, or null. */

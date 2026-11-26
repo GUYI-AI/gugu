@@ -9,7 +9,7 @@
     }
   },
   "author": "咕咕",
-  "version": "0.2.89",
+  "version": "0.2.90",
   "apiVersion": 63,
   "platforms": ["desktop", "phone"],
   "entry": "index.html",
@@ -37,6 +37,6 @@
     "prompts": [
       { "name": "tidy-folder", "title": "群文件整理", "prompt": "请整理本群文件夹：先用 workspace__list 列出全部文件，按主题提出新的子文件夹结构（不超过 6 个），指出重复、过期、命名不清的文件，各给一句理由。先把方案发给我确认，我同意后再移动或改名，不要删除任何文件。" }
     ],
-    "instructions": "Chat files: workspace__list(chat_id) (download: message_download_file), create(chat_id,title,content), delete(item_id), edit(item_id,old,new)."
+    "instructions": "Chat files: workspace__list(chat_id), edit(item_id,name) to rename or move, delete(item_id). A new file or a file's next version: file_put(chat_id,file_path; file = its gugu-file://<id>?v=<n> link); download: message_download_file."
   }
 }

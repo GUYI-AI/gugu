@@ -31,7 +31,7 @@ import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
 import { messageReferenceBlocks } from '@gugu/session-shared/markdown/dialect'
 import { attachmentFolderLine, SHARED_READ_ONLY_COPY } from '../../../../packages/core/src/shared/attachmentFolderLine'
-import { accountAttachmentsEndpoint, AttachmentsError, commitAttachment, contentRequestId, retryableAttachmentError, sendFileAsOwner, shareAttachment, withUploadedAttachment } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { accountAttachmentsEndpoint, AttachmentsError, commitAttachment, contentRequestId, placeAttachment, retryableAttachmentError, sendFileAsOwner, shareAttachment, withUploadedAttachment } from '../../../../packages/core/src/cloud/attachmentsApi'
 import { fileSha256 } from '../../../../packages/core/src/local/agent/sessionFileHandoff'
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
 import { createGroupAdmin, setGroupAvatar } from '../../../../packages/core/src/cloud/groupAdmin'
@@ -900,12 +900,12 @@ export async function sendExtensionCardOf(context, { chatId, filePath, fileName,
 }
 
 /**
- * F40 app_install { chat_id, data }: the group's data file, made as this agent — or the one already there with
- * that name (a reinstall after a fix keeps the group's data), or (F102, `itemId`) a document already in the group,
- * opened as it is. Judged by the same rule as an upload
- * (`workspaceUploadKind`): a `.json` must be a JSON object, and every data file is a live document.
+ * F40 app_install { chat_id, data }: the group's data file — a file on this computer put in the folder as file_put puts
+ * it (`putFile`), as this agent — or the one already there with that name (a reinstall after a fix keeps the group's
+ * data), or (F102, `itemId`) a document already in the group, opened as it is. Judged before it goes by the same rule
+ * as an upload (`workspaceUploadKind`): a `.json` must be a JSON object, and every data file is a live document.
  */
-export async function groupDataFileOf(context, { chatId, name, content, itemId }, injected = {}) {
+export async function groupDataFileOf(context, { chatId, filePath, fileName, itemId }, injected = {}) {
   const deps = createDeps(context, injected)
   const chat = await requireChat({ chat_id: String(chatId) }, deps)
   // 摩擦单 F102 (S20): the data is already in the group — that file itself, read as this agent; never a copy of it.
@@ -915,21 +915,20 @@ export async function groupDataFileOf(context, { chatId, name, content, itemId }
     if (item.kind !== 'document') throw new Error(`data.item_id ${itemId} (${item.filename}) is a stored file, not a document an App opens`)
     return { item: summarizeWorkspaceItem(item), link: workspaceFileLink(item), reused: true }
   }
+  const args = { file_path: filePath, ...(fileName ? { file_name: fileName } : {}) }
+  const name = resolveUploadName(args)
   // An App's data file is at the top (子文件夹): looked for there only, by the name as the database keeps names (`p_exact`:
   // its own rule, case not counted) — never worked out here.
   const [same] = await workspaceRpcRows(deps, 'workspace_list_as', {
     p_chat_id: chat, p_name: name, p_kind: 'document', p_folder: '', p_exact: true, p_offset: 0, p_limit: 1,
   }, 'app_install')
   if (same) return { item: summarizeWorkspaceItem(same), link: workspaceFileLink(same), reused: true }
-  const text = typeof content === 'string' ? content : JSON.stringify(content ?? {}, null, 2)
-  const kind = workspaceUploadKind(name, null, new TextEncoder().encode(text))
+  const { size } = await uploadTarget('app_install', args)
+  const kind = size > WORKSPACE_TEXT_MAX_BYTES
+    ? { kind: 'file', why: `over the ${WORKSPACE_TEXT_MAX_BYTES / 1024 / 1024} MiB of a live text file` }
+    : workspaceUploadKind(name, null, new Uint8Array(await readUploadBytes('app_install', args, WORKSPACE_TEXT_MAX_BYTES)))
   if (kind.kind !== 'document') throw new Error(`the data file ${name} was not made: ${kind.why}`)
-  const item = await workspaceRpcItem(deps, 'workspace_create_document_as', {
-    p_chat_id: chat,
-    p_title: name,
-    p_content: kind.text,
-    p_source_message_ids: [],
-  }, 'app_install')
+  const item = await putFile(args, deps, { chatId: chat, label: 'app_install' })
   return { item: summarizeWorkspaceItem(item), link: workspaceFileLink(item), reused: false }
 }
 
@@ -2348,11 +2347,11 @@ async function handleProfile(args, deps) {
 
 
 /** The bytes of a file on this computer that the shared classifier makes a text document; `null` for stored bytes. */
-async function documentUploadBytes(args) {
+async function documentUploadBytes(label, args) {
   // Only a file within the live text size can be a document: anything larger is never read here.
-  const { size } = await uploadTarget('message_send', args)
+  const { size } = await uploadTarget(label, args)
   if (size > WORKSPACE_TEXT_MAX_BYTES) return null
-  const bytes = await readUploadBytes('message_send', args, WORKSPACE_TEXT_MAX_BYTES)
+  const bytes = await readUploadBytes(label, args, WORKSPACE_TEXT_MAX_BYTES)
   const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
   return workspaceUploadKind(resolveUploadName(args), contentType, new Uint8Array(bytes)).kind === 'document' ? bytes : null
 }
@@ -2372,36 +2371,81 @@ async function uploadForSend(args, deps, requestId, send) {
 }
 
 /**
- * A project chat: a file other than an image stays on this machine, through the one publisher the composer uses — the
- * message pins it. `next` (a folder file and the version it started from) makes it that file's next version, kept here
- * too, an image included. Null when this is not a project chat, the account uploads its files, or for a new image
- * (uploaded when sent): the ordinary upload then decides.
+ * A project chat: a file other than an image stays on this machine, through the one publisher the composer uses — with
+ * `message`, the message pins it; without, it only goes in the folder. `next` (a folder file and the version it started
+ * from) makes it that file's next version, kept here too, an image included. Null when this is not a project chat, the
+ * account uploads its files, or for a new image (uploaded when sent): the ordinary upload then decides.
  */
-async function publishHere(args, deps, chatId, message, next) {
+async function publishHere(local, deps, chatId, message) {
   const publish = deps.context.publishFile
   if (!publish) return null
-  const fileName = resolveUploadName(args)
-  const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
-  const { target, size } = await uploadTarget('message_send', args)
-  const sent = await publish(chatId, { name: fileName, path: target, size, contentType }, deps.context.agentId,
-    { ...message, file_name: fileName, content_type: contentType }, next)
-  return sent?.message ?? null
+  return await publish(chatId, { name: local.fileName, path: local.target, size: local.size, contentType: local.contentType }, deps.context.agentId,
+    message ? { ...message, file_name: local.fileName, content_type: local.contentType } : undefined, local.next) ?? null
 }
 
-/** A next version that started from a version the file is no longer at: nothing was sent, and what to do. */
-function newerVersionRefusal(file, version) {
-  return `message_send: someone stored a newer version of ${file} since version ${version}, and nothing was sent. Download the current one (message_download_file), make your change on it, and send it with that version.`
+/** A next version that started from a version the file is no longer at: nothing was written, and what to do. */
+function newerVersionRefusal(label, file, version) {
+  return `${label}: someone stored a newer version of ${file} since version ${version}, and nothing was written. Download the current one (message_download_file), make your change on it, and give that version.`
 }
 
-/** Read under the sending agent's membership before choosing a replacement route; SQL checks again at the write. */
-async function replacementTarget(args, deps, chatId, file) {
-  const item = await workspaceRpcItem(deps, 'workspace_get_as', { p_item_id: file.itemId }, 'message_send')
-  if (item.chat_id !== chatId) throw new Error('message_send: the file belongs to another chat; nothing was sent')
-  if (item.kind !== 'file' && item.kind !== 'document') throw new Error('message_send: the target is not a file or text document; nothing was sent')
-  if (!Number.isInteger(item.version) || item.version < 1) throw new Error('message_send: the server did not confirm the current file version')
-  if (item.version > file.version) throw new Error(newerVersionRefusal(args.file, file.version))
-  if (item.version !== file.version) throw new Error(`message_send: the file is at version ${item.version}, not the supplied version ${file.version}; nothing was sent`)
+/** Read under the agent's membership before choosing a replacement route; SQL checks again at the write. */
+async function replacementTarget(label, args, deps, chatId, file) {
+  const item = await workspaceRpcItem(deps, 'workspace_get_as', { p_item_id: file.itemId }, label)
+  if (item.chat_id !== chatId) throw new Error(`${label}: the file belongs to another chat; nothing was written`)
+  if (item.kind !== 'file' && item.kind !== 'document') throw new Error(`${label}: the target is not a file or text document; nothing was written`)
+  if (!Number.isInteger(item.version) || item.version < 1) throw new Error(`${label}: the server did not confirm the current file version`)
+  if (item.version > file.version) throw new Error(newerVersionRefusal(label, args.file, file.version))
+  if (item.version !== file.version) throw new Error(`${label}: the file is at version ${item.version}, not the supplied version ${file.version}; nothing was written`)
   return item
+}
+
+/**
+ * @@@local-file-into-folder - A file on this computer on its way into a chat's folder: message_send's file_path and
+ * file_put's one route, up to whether a message goes with it. Its name (resolveUploadName), its bytes (uploadTarget,
+ * read whole only when the shared classifier may make it a text document: documentUploadBytes), its type, and with
+ * `file` the folder file it becomes the next version of (replacementTarget, from the version the agent started from).
+ */
+async function localFileIntoFolder(label, args, deps, chatId) {
+  const folderFile = folderFileArg(args.file, label)
+  if (folderFile && folderFile.version === undefined) {
+    throw new Error(`${label}: file_path as the next version of ${args.file} needs the version you started from: gugu-file://${folderFile.itemId}?v=<n>`)
+  }
+  const replacement = folderFile ? await replacementTarget(label, args, deps, chatId, folderFile) : null
+  // A text file the shared classifier makes a document goes up through the attachments service, where the server makes
+  // it one (as a person's upload does); only stored bytes are published from a project.
+  const documentBytes = replacement?.kind === 'document'
+    ? await readUploadBytes(label, args, WORKSPACE_TEXT_MAX_BYTES)
+    : !folderFile ? await documentUploadBytes(label, args) : null
+  const { target, size } = await uploadTarget(label, args)
+  return {
+    folderFile, documentBytes, target, size,
+    fileName: resolveUploadName(args),
+    contentType: resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type),
+    next: folderFile ? { itemId: folderFile.itemId, expectedVersion: folderFile.version } : undefined,
+  }
+}
+
+/**
+ * file_put: the file into the chat's folder, no message — a new file, or with `file` (gugu-file://<id>?v=<n>, the version
+ * it was downloaded at) that file's next version. The same route as message_send's file_path, the folder's own write
+ * (attachments/place) in place of the message commit: a document changed since that version is refused, never overwritten.
+ */
+async function putFile(args, deps, { chatId, folder = null, label = 'file_put' }) {
+  const local = await localFileIntoFolder(label, args, deps, chatId)
+  const published = local.documentBytes ? null : await publishHere(local, deps, chatId, null)
+  if (published) return published
+  const endpoint = await deps.attachmentsEndpoint()
+  const bytes = local.documentBytes ? new Uint8Array(local.documentBytes) : await uploadBlob(label, args, local.contentType)
+  const keep = args.temporary === true ? { keep: 'temporary' } : {}
+  return withUploadedAttachment(endpoint, { bytes, name: local.fileName, contentType: local.contentType }, { chat_id: chatId, as: deps.context.agentId },
+    (stagingKey) => placeAttachment(endpoint, local.next
+      ? { staging_key: stagingKey, item_id: local.next.itemId, expected_version: local.next.expectedVersion, as_user_id: deps.context.agentId, content_type: local.contentType, ...keep }
+      : { staging_key: stagingKey, chat_id: chatId, file_name: local.fileName, folder, as_user_id: deps.context.agentId, content_type: local.contentType,
+        ...keep }))
+    .catch(async (error) => {
+      if (local.folderFile && error instanceof AttachmentsError && error.code === 'version_conflict') await replacementTarget(label, args, deps, chatId, local.folderFile)
+      throw error
+    })
 }
 
 async function sendMessageAsOwner(args, deps, content, extra = {}, outcome = { uncertain: false }) {
@@ -2573,11 +2617,11 @@ async function downloadFile(args, deps) {
 }
 
 /** message_send 的 file:群文件夹里一个文件的 gugu-file 链接(?v= 是它的那一版),或者裸的 item_id。 */
-function folderFileArg(raw) {
+function folderFileArg(raw, label = 'message_send') {
   if (raw === undefined || raw === null || raw === '') return null
   const text = String(raw).trim()
   const link = parseGroupFileLink(text) ?? (/^[0-9a-f-]{36}$/i.test(text) ? { itemId: text.toLowerCase() } : null)
-  if (!link) throw new Error(`message_send: file is a file of the chat's folder, its gugu-file://<item_id>?v=<n> link — not ${JSON.stringify(text)}`)
+  if (!link) throw new Error(`${label}: file is a file of the chat's folder, its gugu-file://<item_id>?v=<n> link — not ${JSON.stringify(text)}`)
   return link
 }
 
@@ -2621,9 +2665,6 @@ async function ownerNotificationFile(args, deps) {
  */
 async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, replyToMessageId = null, isWhisper = false, threadRootId = null, caption = '' }) {
   const folderFile = folderFileArg(args.file)
-  if (folderFile && args.file_path && folderFile.version === undefined) {
-    throw new Error(`message_send: file_path as the next version of ${args.file} needs the version you started from: gugu-file://${folderFile.itemId}?v=<n>`)
-  }
   // #2383 收件人合不合格由库判(与文字消息同一条规则);被拒时 recipientRefusal 说清是谁。
   const refused = async (error) => { throw await recipientRefusal(error, chatId, deps) }
   const said = String(caption ?? '').trim()
@@ -2631,13 +2672,9 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
   let message
   let fileName
   let uploadReceipt = {}
-  // A text file the shared classifier makes a document goes up through the attachments commit, where the server makes it
-  // one (as a person's upload does); only stored bytes are published from a project.
-  const replacement = folderFile && args.file_path ? await replacementTarget(args, deps, chatId, folderFile) : null
-  const documentBytes = replacement?.kind === 'document'
-    ? await readUploadBytes('message_send', args, WORKSPACE_TEXT_MAX_BYTES)
-    : !folderFile ? await documentUploadBytes(args) : null
-  if (folderFile && !args.file_path) {
+  // A file on this computer: the same route as file_put (localFileIntoFolder), with the message.
+  const local = args.file_path ? await localFileIntoFolder('message_send', args, deps, chatId) : null
+  if (!local) {
     // 按引用发(attachments/share):消息钉住群文件夹里那个文件的那一版,不传字节;文本文件钉住它此刻的正文。
     if (isWhisper) throw new Error('message_send: a whisper cannot carry a file of the chat\'s folder; send it openly, or a file_path')
     message = await shareAttachment(await deps.attachmentsEndpoint(), {
@@ -2645,20 +2682,18 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
       sender_user_id: deps.context.agentId, ...meta,
     }).catch(refused)
     fileName = attachmentNameOf(message)
-  } else if (!documentBytes && (message = await publishHere(args, deps, chatId, { message_id: messageId, chat_id: chatId,
-    sender_user_id: deps.context.agentId, ...meta, ...(isWhisper ? { is_whisper: true } : {}) },
-    folderFile ? { itemId: folderFile.itemId, expectedVersion: folderFile.version } : undefined).catch(async (error) => {
+  } else if (!local.documentBytes && (message = (await publishHere(local, deps, chatId, { message_id: messageId, chat_id: chatId,
+    sender_user_id: deps.context.agentId, ...meta, ...(isWhisper ? { is_whisper: true } : {}) }).catch(async (error) => {
     const reason = String(error?.message ?? error)
-    if (folderFile && /File revision conflict/.test(reason)) await replacementTarget(args, deps, chatId, folderFile)
+    if (folderFile && /File revision conflict/.test(reason)) await replacementTarget('message_send', args, deps, chatId, folderFile)
     await refused(error)
-  }))) {
-    fileName = resolveUploadName(args)
+  }))?.message)) {
+    fileName = local.fileName
   } else {
     // The message goes with the file's index; its bytes follow it (owner 11-15: one path for every sender).
-    const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
-    const { target, size } = await uploadTarget('message_send', args)
+    const { target, size, contentType, documentBytes } = local
     const endpoint = await deps.attachmentsEndpoint()
-    fileName = resolveUploadName(args)
+    fileName = local.fileName
     if (!deps.attachments) throw new Error('The device attachment upload host is unavailable')
     const { declared, uploaded } = await deps.attachments.declare({ file: { path: target, name: fileName, size, contentType,
       ...(documentBytes ? { data: new Uint8Array(documentBytes).buffer } : {}) }, chatId, as: deps.context.agentId, messageId })
@@ -2685,7 +2720,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
           note: 'Whether the message committed is uncertain; this machine keeps delivering its bytes. Check message_history for this message_id before deciding whether to resend.' })
       }
       await deps.attachments.drop(messageId)
-      if (folderFile && error.code === 'version_conflict') await replacementTarget(args, deps, chatId, folderFile)
+      if (folderFile && error.code === 'version_conflict') await replacementTarget('message_send', args, deps, chatId, folderFile)
       await refused(error)
     }
     if (message?.id) await uploaded.catch((error) => {
@@ -2820,6 +2855,27 @@ export const TOOL_DEFS = [
       temporary: z.boolean().optional().describe('The cloud copy expires: for files sent only to be looked at.'),
     }),
     handler: (args, deps) => handleMessage({ ...args, action: 'send' }, deps),
+  },
+  {
+    name: 'file_put',
+    writer: true,
+    description: 'Put a file from this computer in a chat\'s folder, without a message: a new file, or with file its next version. Its name is its format (周报.md, data.json). To change a folder file: message_download_file, change your copy, then file_put it back with that file link; if someone changed it since, nothing is written.',
+    schema: z.object({
+      chat_id: chatIdSchema,
+      file_path: uploadFilePathSchema.describe('A file on this computer.'),
+      file: z.string().optional().describe('gugu-file://<id>?v=<n>, as message_download_file gave it: file_path becomes its next version.'),
+      file_name: uploadFileNameSchema,
+      mime_type: uploadMimeTypeSchema,
+      folder: z.string().optional().describe('A new file goes in this folder (合同/2026), made when missing; left out: the top.'),
+      temporary: z.boolean().optional().describe('The cloud copy expires: for files put only to be looked at.'),
+    }),
+    handler: async (args, deps) => {
+      const chatId = await requireChat(args, deps)
+      if (args.file && args.folder !== undefined) throw new Error('file_put: folder places a new file; a next version stays where its file is (move it with the Files App)')
+      const item = await putFile(args, deps, { chatId, folder: args.folder ?? null })
+      return JSON.stringify({ status: 'put', file: groupFileLink(String(item.id), { version: Number(item.version) }), name: item.filename, path: item.path ?? item.filename,
+        version: item.version, type: item.kind === 'document' ? 'document' : 'file' })
+    },
   },
   {
     name: 'message_send_as_owner',

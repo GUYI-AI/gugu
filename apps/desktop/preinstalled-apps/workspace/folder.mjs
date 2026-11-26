@@ -1,12 +1,13 @@
 /* global gugu */ // An App program's gugu: the page's, for the page's own verbs (guide apps-programs).
-// The Files App's tools for an agent's chat files (moved into the App 2026-10-11): list, create, edit, delete. A file's
-// bytes come and go through the host alone: message_download_file saves one here, message_send's file_path sends one.
+// The Files App's tools for an agent's chat files (moved into the App 2026-10-11): list, edit (rename / move), delete. A
+// file's bytes come and go through the host alone: message_download_file saves one here, file_put puts one there — new,
+// or a downloaded file's next version — and message_send's file_path sends one.
 // Every one acts as the agent that calls it: a chat it hands (`gugu-chat`) or a file it hands (`gugu-file`) is checked as
 // that agent at the gateway, and what the tool reads and writes there is the agent's, by its own membership.
 // Only the public API: gugu.files, and Node's own modules for the files on this computer.
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { isAbsolute, join } from 'node:path'
+import { join } from 'node:path'
 import { markdownLiteral } from './markdown-literal.js'
 
 const CHAT = {
@@ -54,11 +55,6 @@ function chatOf(chatId) {
   throw new Error(`chat_id is a chat's id or the number people see (its 咕咕号), not ${typeof chatId === 'number' ? chatId : JSON.stringify(chatId)}`)
 }
 
-/** A live text file's limit (the file service's), the same as a text file put there from this computer. */
-const TEXT_MAX_BYTES = 1024 * 1024
-const STORED_MAX_BYTES = 25 * 1024 * 1024
-const bytesOf = (text) => Buffer.byteLength(text, 'utf8')
-
 /** The file as a link, handed over whole: in a message it shows as that file and opens it (never assembled by the agent). */
 const linkOf = async (entry) => `[${markdownLiteral(entry.name)}](${await gugu.linkTo({ kind: 'file', file: entry.id })})`
 /** A file's link — a folder has none: it is listed and entered, never opened (子文件夹). */
@@ -88,47 +84,13 @@ function windowOf(rows) {
   return { from, to }
 }
 
-/** Absolute path of a file on this computer, read whole: what a tool puts in the folder as it is on disk. */
-async function localFile(path, what) {
-  if (typeof path !== 'string' || !isAbsolute(path)) throw new Error(`${what}: path must be an absolute path on this computer, got ${JSON.stringify(path)}`)
-  const info = await stat(path).catch((error) => {
-    throw new Error(`${what}: cannot read ${path} (${error.code ?? error.message})`)
-  })
-  if (!info.isFile()) throw new Error(`${what}: ${path} is not a file`)
-  if (info.size > STORED_MAX_BYTES) throw new Error(`${what}: ${path} is over the folder's 25 MiB`)
-  const bytes = await readFile(path)
-  // Changed while being read: nothing goes in rather than something nobody can name.
-  if (bytes.length !== info.size) throw new Error(`${what}: ${path} changed while it was read; nothing was put in the folder`)
-  return bytes
-}
-
 /** What the folder said, in the words an agent acts on; anything else as it was said. */
 function said(error, itemId) {
   if (error?.code === 'not-found') return new Error(`no file ${itemId} in a chat you are in: list shows what is there`)
   const reason = error?.detail?.reason
   // 子文件夹: a folder is listed, never read or changed as a file.
   if (error?.code === 'invalid' && reason === 'folder') return new Error(`${itemId} is a folder: list it (folder: its path or id) to see what is in it`)
-  if (error?.code === 'content-changed' && reason === 'old-not-found') {
-    return new Error('old is not in the file: it changed since you downloaded it, or old does not match it exactly. Download it again (message_download_file) and retry.')
-  }
-  if (error?.code === 'ambiguous' && reason === 'old-matches-many') {
-    return new Error('old matches several places: include more of the text around it, so it matches exactly one.')
-  }
   return error
-}
-
-/** The file open for this call, closed when done: its last writes go to the file service before the answer does. */
-async function withFile(itemId, options, work) {
-  const f = await gugu.files.open({ id: itemId }, options).catch((error) => {
-    throw said(error, itemId)
-  })
-  try {
-    return await work(f)
-  } catch (error) {
-    throw said(error, itemId)
-  } finally {
-    f.close()
-  }
 }
 
 /** list's saved rows on this computer: one folder per agent, never one every caller shares. */
@@ -150,7 +112,7 @@ export const list = {
       kind: {
         type: 'string',
         enum: ['document', 'file', 'folder'],
-        description: 'document = a text or JSON file (edit it with old and new); file = stored bytes (an image, a PDF, a .pptx…); folder = a subfolder.',
+        description: 'document = a text or JSON file; file = stored bytes (an image, a PDF, a .pptx…); folder = a subfolder.',
       },
       rows: { type: 'string', description: 'Which rows: "20" the first 20 (default), "21-40" the next.' },
       save: { type: 'boolean', description: 'Save every row that matches (no rows window) as JSON on this computer and answer with its path and count: pick ids there (by, updated_at, path) for item_ids.' },
@@ -191,127 +153,52 @@ export const list = {
   },
 }
 
-export const create = {
-  description:
-    'Put a new text file in a chat\'s folder: title names it and its format (周报.md, data.json), content is its text; a file from this computer goes there with message_send\'s file_path. folder puts it in that subfolder (made when it is not there), and folder alone makes the subfolder. A name already in that folder gets " (2)", " (3)": the answer says the name it got. Its link, in a message, opens it. A file made from a topic is in its source group or private chat\'s shared folder.',
-  inputSchema: {
-    type: 'object',
-    required: ['chat_id'],
-    properties: {
-      chat_id: CHAT,
-      folder: FOLDER,
-      title: { type: 'string', description: 'The file\'s name with its type, needed with content: 周报.md, notes.txt, data.json (a JSON object), table.csv, page.html.' },
-      content: { type: 'string', description: 'The text of a new text file (up to 1 MiB), in the format its title names.' },
-      source_message_ids: { type: 'array', items: { type: 'string' }, description: 'The messages it came from, by id: shown under the file.' },
-    },
-  },
-  async run({ chat_id: given, folder, title, content, source_message_ids }) {
-    const chat_id = chatOf(given)
-    if (folder !== undefined && typeof folder !== 'string') throw new Error('folder is a folder\'s path from the top (合同/2026) or its id')
-    // 子文件夹: folder alone (no content) makes that folder, all the way down.
-    if (content === undefined && typeof folder === 'string' && folder.trim()) {
-      if (title !== undefined) throw new Error('create with folder alone makes that folder: name it in folder (合同/2026), without title')
-      const made = await gugu.files.mkdir({ chat: chat_id, path: folder })
-      return { created: { id: made.id, name: made.name, path: made.path, type: made.type } }
-    }
-    if (content === undefined) throw new Error('create takes content (a new text file), or folder alone to make that folder; a file from this computer goes with message_send\'s file_path')
-    if (typeof title !== 'string' || !title.trim()) throw new Error('create with content needs a title')
-    if (bytesOf(content) > TEXT_MAX_BYTES) throw new Error('content is over the 1 MiB of a text file: write it to a file and send it with message_send\'s file_path')
-    // The title is the file's name and its format: the folder refuses one without a text suffix (.md, .json…), saying so.
-    const sourceMessageIds = (source_message_ids ?? []).map((id) => String(id).replace(/^msg:/, ''))
-    const entry = await gugu.files.create({ chat: chat_id, name: title.trim(), ...(folder === undefined ? {} : { folder }) }, content, { sourceMessageIds })
-    return {
-      created: { id: entry.id, name: entry.name, path: entry.path, type: entry.type, size: entry.size },
-      link: await linkOf(entry),
-      stored_as: 'a text file people and agents edit together: change it with edit (old, new)',
-    }
-  },
-}
-
 export const edit = {
   description:
-    'Change a file of a chat\'s folder in place: old → new in a text or JSON file (old must match exactly one place; everyone who has it open sees the change at once), path with expected_version gives a stored file its next version (the earlier ones are kept), name renames it — a name with / moves it (合同/2026/甲方.pdf; /甲方.pdf to the top), a folder too, with all in it; a name ending in / (合同/2026/) moves it there keeping its name. item_ids with such a name moves several, stopping at the first refusal: moved counts them, stopped_at says which and why.',
+    'Rename or move a file of a chat\'s folder: name renames it — a name with / moves it (合同/2026/甲方.pdf; /甲方.pdf to the top), a folder too, with all in it; a name ending in / (合同/2026/) moves it there keeping its name. item_ids with such a name moves several, stopping at the first refusal: moved counts them, stopped_at says which and why. Its content changes through file_put: download it (message_download_file), change your copy, put it back with its file link.',
   inputSchema: {
     type: 'object',
     properties: {
       item_id: ITEM,
       item_ids: ITEMS,
-      old: { type: 'string', description: 'The text to replace, copied exactly from the file as message_download_file saved it. It must match one place.' },
-      new: { type: 'string', description: 'What goes in its place. A JSON file must still be a JSON object afterwards.' },
-      path: { type: 'string', description: 'Absolute path of a file on this computer: the stored file\'s next version, with expected_version.' },
-      expected_version: { type: 'integer', description: 'With path: the version you started from, as message_download_file gave it. If the file is no longer that version, nothing is written: download it again.' },
       name: {
         type: 'string',
         description: 'The file\'s new name: only its name changes. With /, its new place too: 合同/2026/甲方.pdf moves it into that folder (made when it is not there), /甲方.pdf to the top; ending in / (合同/2026/, / the top) keeps its name.',
       },
     },
   },
-  async run({ item_id, item_ids, old, new: next, path, expected_version, name }) {
+  async run({ item_id, item_ids, name, ...rest }) {
+    if (['old', 'new', 'path', 'expected_version'].some((key) => key in rest)) {
+      throw new Error('edit renames and moves only. To change what is in a file: message_download_file, change your copy, then file_put it back with its gugu-file://<id>?v=<n> link')
+    }
     const ids = idsOf(item_id, item_ids)
-    if (item_ids !== undefined && (typeof name !== 'string' || !name.trim().endsWith('/') || old !== undefined || next !== undefined || path !== undefined)) {
+    if (item_ids !== undefined && (typeof name !== 'string' || !name.trim().endsWith('/'))) {
       throw new Error('item_ids goes with a name ending in / alone: the folder they all move into (合同/2026/, / the top)')
     }
-    // Before the count: expected_version alone (nothing else) is told what it goes with, not that edit takes one change.
-    if (expected_version !== undefined && path === undefined) throw new Error('expected_version goes with path: the version a stored file\'s next version starts from')
-    const asked = [old !== undefined || next !== undefined, path !== undefined, name !== undefined].filter(Boolean).length
-    if (asked !== 1) throw new Error('edit takes one change: old and new (the text), path (a stored file\'s next version), or name')
-    if (name !== undefined) {
-      if (typeof name !== 'string' || !name.trim()) throw new Error('name must not be empty')
-      const wanted = name.trim()
-      const taken = (error, id) => {
-        if (error?.code === 'name-taken') return new Error(`${wanted}: that folder already has a file of that name (case not counted) — pick another name`)
-        return said(error, id)
-      }
-      // 子文件夹: a name with / says where it goes as well (a leading / is the top); ending in /, only where.
-      const slash = wanted.lastIndexOf('/')
-      const base = wanted.slice(slash + 1).trim()
-      const moveTo = (id) => gugu.files.move({ id }, { folder: wanted.slice(0, slash), ...(base ? { name: base } : {}) }).catch((error) => {
-        throw taken(error, id)
-      })
-      if (item_ids !== undefined) {
-        const { done, ...stopped } = await oneByOne(ids, moveTo)
-        return { moved: done, ...stopped }
-      }
-      if (slash >= 0) {
-        const moved = await moveTo(item_id)
-        return { moved: { id: moved.id, name: moved.name, path: moved.path }, ...await linked(moved) }
-      }
-      const renamed = await gugu.files.rename({ id: item_id }, wanted).catch((error) => {
-        throw taken(error, item_id)
-      })
-      return { renamed: { id: renamed.id, name: renamed.name, path: renamed.path }, ...await linked(renamed) }
+    if (typeof name !== 'string' || !name.trim()) throw new Error('name must not be empty')
+    const wanted = name.trim()
+    const taken = (error, id) => {
+      if (error?.code === 'name-taken') return new Error(`${wanted}: that folder already has a file of that name (case not counted) — pick another name`)
+      return said(error, id)
     }
-    if (path !== undefined) {
-      const bytes = await localFile(path, 'edit')
-      // Whether the version is there and still the file's is the folder's one check (files.replace, #7174) — the same for
-      // a person's page, a program and the phone. Here only what it says is put in an agent's words.
-      const expectedVersion = typeof expected_version === 'string' && /^\d+$/.test(expected_version) ? Number(expected_version) : expected_version
-      const replaced = await gugu.files.replace({ id: item_id }, new Blob([bytes]), { expectedVersion }).catch((error) => {
-        const reason = error?.detail?.reason
-        if (error?.code === 'invalid' && reason === 'live-text-file') {
-          throw new Error(`${item_id} is a text file: change it with old and new, never by replacing it`)
-        }
-        if (error?.code === 'invalid' && reason === 'expected-version') {
-          throw new Error(expectedVersion === undefined
-            ? 'edit with path needs expected_version: the version message_download_file gave for the file you changed'
-            : `expected_version is the version message_download_file gave, a whole number, not ${JSON.stringify(expected_version)}`)
-        }
-        if (error?.code === 'content-changed' && reason === 'replaced-since') {
-          const { name, now, expected } = error.detail
-          throw new Error(`${name}: you started from version ${expected}, it is version ${now} now — someone stored a newer one since you downloaded it, and nothing was written. Download it again, make your change there, and edit with that version.`)
-        }
-        throw said(error, item_id)
-      })
-      return { replaced: replaced.id, version: replaced.version, link: await linkOf(replaced) }
-    }
-    if (typeof old !== 'string' || !old) throw new Error('old must not be empty: copy the text to replace from the downloaded file')
-    if (typeof next !== 'string') throw new Error('new is the text that goes in old\'s place (an empty string removes it)')
-    if (old === next) throw new Error('old and new are the same: nothing to change')
-    return withFile(item_id, {}, async (f) => {
-      if (f.type === 'binary') throw new Error(`${f.entry.name} is a stored file: give its next version as path, with expected_version`)
-      f.edit(old, next)
-      return { edited: item_id }
+    // 子文件夹: a name with / says where it goes as well (a leading / is the top); ending in /, only where.
+    const slash = wanted.lastIndexOf('/')
+    const base = wanted.slice(slash + 1).trim()
+    const moveTo = (id) => gugu.files.move({ id }, { folder: wanted.slice(0, slash), ...(base ? { name: base } : {}) }).catch((error) => {
+      throw taken(error, id)
     })
+    if (item_ids !== undefined) {
+      const { done, ...stopped } = await oneByOne(ids, moveTo)
+      return { moved: done, ...stopped }
+    }
+    if (slash >= 0) {
+      const moved = await moveTo(item_id)
+      return { moved: { id: moved.id, name: moved.name, path: moved.path }, ...await linked(moved) }
+    }
+    const renamed = await gugu.files.rename({ id: item_id }, wanted).catch((error) => {
+      throw taken(error, item_id)
+    })
+    return { renamed: { id: renamed.id, name: renamed.name, path: renamed.path }, ...await linked(renamed) }
   },
 }
 

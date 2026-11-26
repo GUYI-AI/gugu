@@ -48,13 +48,18 @@ export const APP_PACK_ARGS = {
   chat_id: z.string().min(1).describe('A chat you are in: the packed App is sent there as an App card, and the answer carries its message_id.').optional(),
 };
 
-/** F102 The chat's data file: a new one ({title, content}) or a file already in the chat ({item_id}), opened as it is. */
+/**
+ * F102 The chat's data file: a file on this computer put in the chat ({file_path}, as file_put puts it — its name is its
+ * format, the App's file type included) or a file already in the chat ({item_id}), opened as it is.
+ */
 export const appInstallDataSchema = z.object({
-  title: z.string().min(1).describe('What the chat calls it (the App\'s file type is added).').optional(),
-  content: z.unknown().describe('What it starts with; a .json App: an object — text people type in together as {"$text": ""}.').optional(),
+  file_path: z.string().min(1).describe('A file on this computer, named with the App\'s file type (poll.vote.json); a .json App: an object — text people type in together as {"$text": ""}.').optional(),
+  file_name: z.string().min(1).describe('The name it goes in under, if not the file\'s own.').optional(),
   item_id: z.string().min(1).describe('Instead: a file already in the chat, opened as it is (claimed by its name or suffix), never copied.').optional(),
-}).strict().refine((data) => (data.item_id === undefined) !== (data.title === undefined), {
-  message: 'data is {title, content} for a new file, or {item_id} for one already in the chat',
+}).strict().refine((data) => (data.item_id === undefined) !== (data.file_path === undefined), {
+  message: 'data is {file_path} for a new file, or {item_id} for one already in the chat',
+}).refine((data) => data.file_name === undefined || data.file_path !== undefined, {
+  message: 'data.file_name names the file_path it goes with',
 }).describe('The chat\'s data file; one already there under that name is kept.');
 
 export const APP_INSTALL_ARGS = {

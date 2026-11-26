@@ -177,7 +177,10 @@ export const EXTENSION_WIDGET_READY_API_VERSION = 64;
 // 65 (app-credentials.ts): `gugu.credentials.choose(site, { hint?, help? })` opens the host's dialog, in the person's click, to
 // pick one of their saved credentials for the App on that website or save a new one (`hint`: what to save; `help`: the https
 // page that makes one); answers `{ chosen }`. `typeof gugu.credentials.choose` tells an older host.
-export const EXTENSION_API_VERSION = 65;
+// 66 (app-files-core): `files.replace(file, content, { expectedVersion })` takes a text or JSON document too — its next
+// version, refused (`content-changed`) when the text changed since that version, nothing written; and `files.create` takes
+// no `contentType`: a file's name is its format. An older host refuses a document (`live-text-file`).
+export const EXTENSION_API_VERSION = 66;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;

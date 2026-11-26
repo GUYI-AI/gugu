@@ -1,8 +1,8 @@
 // 群文件夹 App 给 agent 的文件夹工具(群文件夹工具搬进 App,2026-10-11):
-// list / create / edit / delete,经 catalog 叫 workspace__<tool>。每个工具只用 gugu.files 和 Node 自带的模块;
+// list / edit(改名、移动)/ delete,经 catalog 叫 workspace__<tool>。每个工具只用 gugu.files 和 Node 自带的模块;
 // 交来的群、交来的文件在网关按调用的 agent 本人核过,所以每个 chat_id / item_id 都必须标 format、标在顶层(方案 R5,
 // PR-1 评审第 3 条)。程序的 gugu 换成假的,跑的是真的 tools.js / folder.mjs。父提交上没有 folder.mjs,这些格全红。
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
@@ -19,7 +19,6 @@ const CHAT = '33333333-3333-4333-8333-333333333333'
 const DOC = '0d000000-0000-4000-8000-000000000001'
 const SHEET = '0d000000-0000-4000-8000-000000000002'
 const PDF = '0d000000-0000-4000-8000-000000000003'
-const MESSAGE = '55555555-5555-4555-8555-555555555555'
 const by = { id: 'user:22222222-2222-4222-8222-222222222222', name: 'Kip', kind: 'agent' }
 const entry = (id: string, name: string, type: string, more: Record<string, unknown> = {}) => {
   const file = {
@@ -74,14 +73,6 @@ beforeEach(() => {
         const binary = file.name.endsWith('.bin')
         return [entry('0d000000-0000-4000-8000-00000000000a', file.name, binary ? 'binary' : 'text', binary ? { contentType: 'application/octet-stream' } : {})]
       },
-      // The folder decides a text file's format by its name, and refuses a name without a text suffix (gugu-supabase
-      // workspace_document_type): here only that refusal, in its words, so the tool is seen handing it on.
-      create: async (place: unknown, content: unknown, options: unknown) => {
-        const { name, ...where } = place as { name: string }
-        calls.push(['create', where, name, content, options])
-        if (!/\.(md|json|html)$/.test(name)) throw coded('invalid', `「${name}」没有文本文件的后缀:文档的名字以它的类型结尾,如 .md、.txt、.json、.csv、.html`)
-        return entry('0d000000-0000-4000-8000-00000000000a', name, name.endsWith('.json') ? 'json' : 'text')
-      },
       rename: async (ref: unknown, name: string) => (calls.push(['rename', ref, name]), entry(DOC, name, 'text')),
       // The folder's own version check (app-files-core, #7174), its functions not a copy of them; the fake only knows
       // which version the file is at. In the order files.replace asks: a version first, then the kind of file.
@@ -103,7 +94,7 @@ describe('the folder\'s tools as tools.js gives them', () => {
   // R5 / PR-1 评审第 3 条:没标 format 的 chat_id / item_id 让程序退回人的身份(#6492 的泄漏形状)。标在顶层才算数。
   test('every chat_id is a handed chat and every item_id a handed file, on the tool\'s own parameters — never nested', async () => {
     const all = await tools()
-    expect(Object.keys(all).sort()).toEqual(['create', 'delete', 'edit', 'list'])
+    expect(Object.keys(all).sort()).toEqual(['delete', 'edit', 'list'])
     const nested = (schema: unknown): string[] => {
       if (!schema || typeof schema !== 'object') return []
       const props = (schema as { properties?: Record<string, unknown>; items?: unknown }).properties ?? {}
@@ -144,10 +135,10 @@ describe('the folder\'s tools as tools.js gives them', () => {
 
   // chat_id 的说明请 agent 给「the number people see」:agent 照着传 JSON 数字 211178(A/B 10-12)。那个数要在网关里变成
   // 文字 —— 交出、按 agent 本人核、换成群 id;在程序里才转,就绕开了核(PR-2 评审 605898b,#6492 的泄漏形状)。
-  // 真的 handedIds + 这个 App 真的 schema;list 和 create 共用 folder.mjs 的 chatOf,只收文字。
+  // 真的 handedIds + 这个 App 真的 schema;list 用 folder.mjs 的 chatOf,只收文字。
   test('chat_id: the gateway hands a JSON number as its text, checked as the agent; the program takes text only, anything else refused saying what it takes', async () => {
-    const { list, create } = await tools()
-    for (const tool of [list!, create!]) {
+    const { list } = await tools()
+    for (const tool of [list!]) {
       expect(handedIds(tool as never, { chat_id: 211178 }, HANDED_CHAT_FORMAT)).toEqual(['211178'])
       expect(handedIds(tool as never, { chat_id: '211178' }, HANDED_CHAT_FORMAT)).toEqual(['211178'])
       expect(handedIds(tool as never, { chat_id: CHAT }, HANDED_CHAT_FORMAT)).toEqual([CHAT])
@@ -156,83 +147,29 @@ describe('the folder\'s tools as tools.js gives them', () => {
     }
     // Text reaches the folder as given.
     await list!.run({ chat_id: '211178' })
-    await create!.run({ chat_id: CHAT, title: 'n.md', content: 'x' })
-    expect(calls.map((call) => call.slice(0, 2))).toEqual([['list', { chat: '211178' }], ['create', { chat: CHAT }]])
+    expect(calls.map((call) => call.slice(0, 2))).toEqual([['list', { chat: '211178' }]])
     // Not text — a number the gateway did not hand included — refused before the folder is asked.
     const refused = /^chat_id is a chat's id or the number people see \(its 咕咕号\), not /
     for (const bad of [211178, 1.5, -3, 0, Number.NaN, '', null, undefined, true, { chat: CHAT }]) {
       await expect(list!.run({ chat_id: bad })).rejects.toThrow(refused)
-      await expect(create!.run({ chat_id: bad, title: 'n.md', content: 'x' })).rejects.toThrow(refused)
     }
     await expect(list!.run({ chat_id: -3 })).rejects.toThrow(/, not -3$/)
-    expect(calls).toHaveLength(2)
+    expect(calls).toHaveLength(1)
   })
 
-  test('create with content: a text file named with its format, made by the folder as it is named; its source messages', async () => {
-    const { create } = await tools()
-    const made = await create!.run({ chat_id: CHAT, title: '周报.md', content: '# 周报', source_message_ids: [`msg:${MESSAGE}`] })
-    expect(calls.at(-1)).toEqual(['create', { chat: CHAT }, '周报.md', '# 周报', { sourceMessageIds: [MESSAGE] }])
-    expect(made).toMatchObject({ created: { name: '周报.md', type: 'text' }, stored_as: expect.stringMatching(/^a text file/) })
-    await create!.run({ chat_id: CHAT, title: 'state.json', content: '{"votes":{}}' })
-    expect(calls.at(-1)?.slice(0, 4)).toEqual(['create', { chat: CHAT }, 'state.json', '{"votes":{}}'])
-    // Never guessed: a title without its type is the folder's refusal, said as the folder said it.
-    await expect(create!.run({ chat_id: CHAT, title: '周报', content: '# 周报' })).rejects.toThrow('「周报」没有文本文件的后缀')
-    await expect(create!.run({ chat_id: CHAT, content: 'x' })).rejects.toThrow(/needs a title/)
-    await expect(create!.run({ chat_id: CHAT, title: 'big.md', content: 'y'.repeat(1024 * 1024 + 1) })).rejects.toThrow(/over the 1 MiB/)
-  })
-
-  // 同时跑的 A/B(10-12、10-13)里,「种子只在文件名里、正文没有」只出现在参数叫 name 的这一臂(合计 9 比 1,全是 Codex);
-  // 对照臂原生的 workspace_create_document 一直叫 title。参数名对齐它(148 10-13)。
-  test('create names its file with title, as the native workspace_create_document did — never name', async () => {
-    const { create } = await tools()
-    const params = Object.keys(create!.inputSchema.properties)
-    expect(params).toContain('title')
-    expect(params).not.toContain('name')
-  })
-
-  test('edit: old → new on the open file, then closed; what the folder refused, said as the next step', async () => {
-    const { edit } = await tools()
-    expect(await edit!.run({ item_id: DOC, old: '## Two', new: '## Second' })).toEqual({ edited: DOC })
-    expect(texts[DOC]).toContain('## Second\nsecond')
-    expect(closed).toEqual([DOC])
-    await expect(edit!.run({ item_id: DOC, old: '## Gone', new: 'x' })).rejects.toThrow(/changed since you downloaded it, or old does not match it exactly/)
-    await expect(edit!.run({ item_id: DOC, old: '##', new: 'x' })).rejects.toThrow(/matches several places/)
-    await expect(edit!.run({ item_id: DOC, old: 'x', new: 'x' })).rejects.toThrow(/the same: nothing to change/)
-    await expect(edit!.run({ item_id: PDF, old: 'a', new: 'b' })).rejects.toThrow(/stored file: give its next version as path/)
-    await expect(edit!.run({ item_id: DOC, old: 'a', new: 'b', name: 'c.md' })).rejects.toThrow(/edit takes one change/)
-  })
-
-  test('edit: name renames it; path with expected_version gives a stored file its next version — a text file is never replaced', async () => {
+  // Content goes in with file_put (a file on this computer, its next version from the version downloaded): edit renames
+  // and moves, and says where a content change goes instead.
+  test('edit: name renames it; old/new or path is not edit\'s any more and says file_put, before the folder is asked', async () => {
     const { edit } = await tools()
     expect(await edit!.run({ item_id: DOC, name: ' plan.md ' })).toMatchObject({ renamed: { id: DOC, name: 'plan.md' } })
     expect(calls.at(-1)).toEqual(['rename', { id: DOC }, 'plan.md'])
-    const path = join(mkdtempSync(join(tmpdir(), 'folder-tools-')), 'deck-v2.pdf')
-    writeFileSync(path, Buffer.from([9, 8, 7]))
-    expect(await edit!.run({ item_id: PDF, path, expected_version: 1 })).toMatchObject({ replaced: PDF, version: 2 })
-    expect(calls.at(-1)).toEqual(['replace', { id: PDF }, new Uint8Array([9, 8, 7]), { expectedVersion: 1 }])
-    // A version as digits in a string (a bridge that sends every argument as text) is the same number.
-    expect(await edit!.run({ item_id: PDF, path, expected_version: '2' })).toMatchObject({ replaced: PDF, version: 3 })
-    await expect(edit!.run({ item_id: DOC, path, expected_version: 1 })).rejects.toThrow(/is a text file: change it with old and new/)
-  })
-
-  // 存成下一版要说清从哪一版改起(#7174):检查只在 files.replace 那一处 —— folder.mjs 原样交过去,只把它说的话换成 agent
-  // 的话。没带版本那次 replace 真被调了(带着 undefined),拒的是文件夹的那一处。
-  test('edit with path: no version, or one that is no number, is refused by the folder\'s one check and said as the next step; expected_version without path is refused here', async () => {
-    const { edit } = await tools()
-    const path = join(mkdtempSync(join(tmpdir(), 'folder-tools-')), 'deck-v2.pdf')
-    writeFileSync(path, Buffer.from([9, 8, 7]))
-    await expect(edit!.run({ item_id: PDF, path })).rejects.toThrow('edit with path needs expected_version: the version message_download_file gave for the file you changed')
-    expect(calls.at(-1)).toEqual(['replace', { id: PDF }, new Uint8Array([9, 8, 7]), { expectedVersion: undefined }])
-    for (const bad of ['v1', 1.5]) {
-      await expect(edit!.run({ item_id: PDF, path, expected_version: bad })).rejects.toThrow(`expected_version is the version message_download_file gave, a whole number, not ${JSON.stringify(bad)}`)
-    }
-    expect(ENTRIES.find((candidate) => candidate.id === PDF)!.version).toBe(1)
     const asked = calls.length
-    await expect(edit!.run({ item_id: DOC, old: 'first', new: 'one', expected_version: 1 })).rejects.toThrow(/expected_version goes with path/)
-    await expect(edit!.run({ item_id: DOC, name: 'n.md', expected_version: 1 })).rejects.toThrow(/expected_version goes with path/)
-    // expected_version and nothing else: what it goes with, not「edit takes one change」(评审 5afe7e6bc7).
-    await expect(edit!.run({ item_id: PDF, expected_version: 1 })).rejects.toThrow(/^expected_version goes with path/)
+    for (const args of [{ old: '## Two', new: '## Second' }, { path: '/tmp/deck-v2.pdf', expected_version: 1 }]) {
+      await expect(edit!.run({ item_id: DOC, ...args })).rejects.toThrow(/^edit renames and moves only\. To change what is in a file: message_download_file, change your copy, then file_put it back/)
+    }
     expect(calls).toHaveLength(asked)
+    const params = Object.keys(edit!.inputSchema.properties).sort()
+    expect(params).toEqual(['item_id', 'item_ids', 'name'])
   })
 
   test('delete: the file, by its id', async () => {
@@ -280,17 +217,6 @@ describe('the tools and subfolders', () => {
     await expect(list.run({ chat_id: CHAT, folder: 3 })).rejects.toThrow(/folder is a folder's path/)
   })
 
-  test('create puts a file in a folder; folder alone makes the folder; folder alone with a title is refused', async () => {
-    const { create } = await tools()
-    await create.run({ chat_id: CHAT, folder: '合同/2026', title: 'plan.md', content: 'x' })
-    expect(calls.at(-1)).toEqual(['create', { chat: CHAT, folder: '合同/2026' }, 'plan.md', 'x', { sourceMessageIds: [] }])
-    expect(await create.run({ chat_id: CHAT, folder: '合同/2026' })).toEqual({ created: { id: BOX, name: '2026', path: '合同/2026', type: 'folder' } })
-    expect(calls.at(-1)).toEqual(['mkdir', { chat: CHAT, path: '合同/2026' }])
-    await expect(create.run({ chat_id: CHAT, folder: '合同/2026', title: 'plan.md' })).rejects.toThrow(/folder alone makes that folder/)
-    // Control: neither content nor folder is refused, saying where a file from this computer goes.
-    await expect(create.run({ chat_id: CHAT, title: 'plan.md' })).rejects.toThrow(/create takes content \(a new text file\), or folder alone.*message_send's file_path/)
-  })
-
   test('edit\'s name with / moves it (a leading / to the top); a name the folder has is said in the agent\'s words', async () => {
     const { edit } = await tools()
     expect(await edit.run({ item_id: DOC, name: '合同/2026/notes.md' })).toMatchObject({ moved: { id: DOC, name: 'notes.md', path: '合同/2026/notes.md' } })
@@ -308,10 +234,6 @@ describe('the tools and subfolders', () => {
     expect(calls.at(-1)).toEqual(['rename', { id: DOC }, 'plain.md'])
   })
 
-  test('edit on a folder says to list it', async () => {
-    const { edit } = await tools()
-    await expect(edit.run({ item_id: BOX, old: 'a', new: 'b' })).rejects.toThrow(/is a folder: list it/)
-  })
 })
 
 // ws-batch(owner 11-05 msg:7d3bb92c):一组 id 挪进同一个文件夹 / 一起删;list 一次存下整份筛选结果。
@@ -339,7 +261,7 @@ describe('several files at once: item_ids, and list save', () => {
 
   test('item_ids: one of item_id or item_ids, at most 200, and in edit only with a folder name ending in /', async () => {
     const { edit, delete: remove } = await tools()
-    for (const args of [{ item_ids: ids(2), name: '证据/x.png' }, { item_ids: ids(2), old: 'a', new: 'b' }, { item_ids: ids(2) }]) {
+    for (const args of [{ item_ids: ids(2), name: '证据/x.png' }, { item_ids: ids(2) }]) {
       await expect(edit.run(args)).rejects.toThrow(/item_ids goes with a name ending in \/ alone/)
     }
     await expect(edit.run({ item_id: DOC, item_ids: ids(1), name: '证据/' })).rejects.toThrow(/item_id \(one file\) or item_ids/)
