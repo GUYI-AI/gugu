@@ -100,6 +100,8 @@ export const SessionTitleModelRow: React.FC<{ auxiliary?: boolean }> = ({ auxili
                   </SelectTrigger>
                   <SelectContent align="end" className="min-w-max">
                     {auxiliary && <SelectItem value="__recommended__">{translate('customModels.defaultRecommended')}</SelectItem>}
+                    {/* The two common choices first (B7-F09: 「不命名」 was the 17th row, below every model). */}
+                    <SelectItem value={TITLE_MODEL_OFF}>{translate('taskDefaults.titleModelOff')}</SelectItem>
                     {listed.map((option) => (
                       <SelectItem key={option.id} value={option.id} disabled={option.requiresMembership}>
                         <span className="flex items-center gap-2">
@@ -113,7 +115,6 @@ export const SessionTitleModelRow: React.FC<{ auxiliary?: boolean }> = ({ auxili
                     {catalog.state === 'unknown' ? <Unknown className="m-2 w-24" /> : catalog.state === 'error' ? (
                       <div className="p-2 text-sm text-muted-foreground">{translate('taskDefaults.titleModelsLoadFailed')}</div>
                     ) : null}
-                    <SelectItem value={TITLE_MODEL_OFF}>{translate('taskDefaults.titleModelOff')}</SelectItem>
                   </SelectContent>
                 </Select>
               </>

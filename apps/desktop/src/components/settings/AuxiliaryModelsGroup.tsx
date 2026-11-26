@@ -34,6 +34,8 @@ function AvailableAuxiliaryModelsGroup() {
     </span>} control={<SettingValue reading={reviewer.settings} placeholder="h-8 w-[355px]">
       {({ value }) => {
         if (options === null) return <Unknown className="h-8 w-[355px]" />;
+        // Nothing to choose besides the default: the value is said as it is, ❌ a dropdown that opens onto the one row.
+        if (options.length === 0) return <span className="text-sm text-muted-foreground" data-testid="auto-review-model">{translate('customModels.defaultRecommended')}</span>;
         const selected = value && options.find(option => option.connectionId === value.connectionId && option.modelId === value.modelId);
         return <Select value={selected ? customModelOptionId(selected) : '__default__'} disabled={reviewer.isSaving || models.state !== 'value'}
           onValueChange={next => {
