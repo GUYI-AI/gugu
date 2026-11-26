@@ -13,8 +13,9 @@ import '@renderer/index.css';
  * GUYI-AI/gugu#2548 叠一层(owner 11-12): beside the one list, the content is a card stacked on the list — the same
  * layering as the icon rail and the list. Direction A (owner 11-26, GUYI-AI/gugu-dev#1515, desktop-shell.css
  * @@@inner-on-card): a group's / project's inner column is the left part of that card — the card's face, its top and bottom
- * gap and left corners — and no line runs between it and the content; its modules float as one panel inside the card
- * (inner-sidebar-head.css @@@inner-modules); folded, the content surface is the whole card again.
+ * gap and left corners — and no line runs between it and the content; its modules float as one panel inside the card,
+ * filling the column down to the card's bottom gap (inner-sidebar-head.css @@@inner-modules); folded, the content surface is
+ * the whole card again.
  */
 
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
@@ -122,7 +123,7 @@ for (const theme of ['light', 'dark'] as const) {
     expect(col.borderLeftWidth).toBe('0px');
   });
 
-  it(`${theme}: the modules float as one panel inside the card: the lift, the surface radius, a gap, as tall as they are`, async () => {
+  it(`${theme}: the modules float as one panel inside the card: the lift, the surface radius, a gap, down to the card's bottom gap`, async () => {
     const { surface, column } = await renderDesktop(theme, true);
     const stack = column!.querySelector<HTMLElement>('[data-inner-module-stack]')!;
     const style = getComputedStyle(stack);
@@ -139,7 +140,11 @@ for (const theme of ['light', 'dark'] as const) {
     const col = column!.getBoundingClientRect();
     expect(box.left - col.left).toBeCloseTo(8);
     expect(col.right - box.right).toBeCloseTo(8);
-    expect(box.height, 'as tall as its modules, not the column').toBeLessThan(col.height - 300);
+    // V2 (owner 11-26): the panel fills the column under the head, its bottom --spacing-sm above the card's bottom edge — the
+    // composer's bottom line — so no L of empty space is left under it.
+    const head = column!.querySelector<HTMLElement>('[data-test-head]')!.getBoundingClientRect();
+    expect(box.top - head.bottom, 'right under the head').toBeCloseTo(0);
+    expect(col.bottom - box.bottom, 'the card\'s bottom gap').toBeCloseTo(8);
     expect([...stack.querySelectorAll('[data-inner-sidebar-section]')].map((e) => e.getAttribute('data-inner-sidebar-section'))).toEqual(['topics', 'agents']);
   });
 

@@ -75,10 +75,12 @@
 }
 .gg-inner-head-create svg { width: 13px; height: 13px; }
 
-/* @@@inner-modules: the modules float as one panel inside the group's card, as tall as they are (not the column's full height),
-   with the product's one lift (--shadow-lift) and the surface radius. The head row stays on the card above it. */
+/* @@@inner-modules: the modules float as one panel inside the group's card, with the product's one lift (--shadow-lift) and the
+   surface radius. The head row stays on the card above it. The panel fills the column down to the card's bottom gap, so its
+   bottom edge lines up with the composer's and the left side is one block (owner 11-26, V2: a panel only as tall as its modules
+   left an L of empty space under it and beside the composer, and the messages had nothing to hang on). */
 [data-region='inner-sidebar'] [data-inner-module-stack] {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   margin: 0 var(--spacing-sm) var(--spacing-sm);
   padding-block: var(--spacing-sm);
   border-radius: var(--radius-surface);
