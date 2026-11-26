@@ -7,6 +7,7 @@ type AbsoluteTimeProps = {
   className?: string;
   /** When true, includes the year regardless of recency. */
   includeYear?: boolean;
+  showTimeZone?: boolean;
 };
 
 function parseTimestamp(input: string | number | Date): Date | null {
@@ -24,14 +25,14 @@ function parseTimestamp(input: string | number | Date): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-export const AbsoluteTime: React.FC<AbsoluteTimeProps> = ({ value, className, includeYear }) => {
+export const AbsoluteTime: React.FC<AbsoluteTimeProps> = ({ value, className, includeYear, showTimeZone }) => {
   const { locale } = useSessionMessages();
   const date = useMemo(() => parseTimestamp(value), [value]);
   if (!date) return <span className={className}>—</span>;
 
   return (
     <time className={className} dateTime={date.toISOString()}>
-      {formatAbsoluteTime(date, locale, { includeYear })}
+      {formatAbsoluteTime(date, locale, { includeYear, showTimeZone })}
     </time>
   );
 };
