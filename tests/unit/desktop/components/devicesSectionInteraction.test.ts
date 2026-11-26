@@ -509,10 +509,13 @@ describe('DevicesSection interaction', () => {
     ;(window as unknown as { electronAPI: unknown }).electronAPI = { invoke, eventOn: () => () => undefined }
     try {
       const server = (id: string) => device({ device_id: id, label: id, platform: 'linux', capabilities: { terminals: [], runtimes: [], host_kind: 'server' } })
+      const otherSsh = server('other-ssh')
+      otherSsh.capabilities.connect_via = 'ssh'
       const value = store({
         devices: [
           server('ssh-srv'),
           server('tunnel-srv'),
+          otherSsh,
           device({ device_id: 'other-mac', label: 'Other Mac', platform: 'darwin', capabilities: { terminals: [], runtimes: [], host_kind: 'desktop' } }),
         ],
       })
@@ -526,6 +529,11 @@ describe('DevicesSection interaction', () => {
       await act(async () => { row('ssh-srv').querySelector<HTMLButtonElement>('[aria-expanded]')!.click() })
       expect(row('ssh-srv').querySelector('details')?.textContent).toContain('alice@box')
       expect(row('ssh-srv').textContent).not.toContain('远程隧道')
+      const otherSummary = row('other-ssh').querySelector<HTMLButtonElement>('[aria-expanded]')!
+      expect(otherSummary.textContent).toContain('SSH')
+      await act(async () => { otherSummary.click() })
+      expect(row('other-ssh').textContent).toContain('咕咕云')
+      expect(row('other-ssh').querySelector('[data-testid=device-recovery-primary]')).toBeNull()
       expect(row('tunnel-srv').textContent).toContain('远程隧道')
       expect(row('other-mac').dataset.kind).toBe('desktop')
       expect(row('other-mac').textContent).not.toContain('远程')
