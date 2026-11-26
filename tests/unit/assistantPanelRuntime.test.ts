@@ -391,6 +391,26 @@ it('cannot restore a rejected binding using a role read that began before the re
 
 })
 
+it('a restarted host starts no publisher for a restored session whose assistant the App is not bound to',async()=>{
+  vi.useFakeTimers();calls.stalled=false;calls.readable=true
+  const cwd=await mkdtemp(join(tmpdir(),'panel-restart-')),failed=vi.fn()
+  // A fresh runtime is a fresh process: nothing remembers the rejection from before the restart.
+  const runtime=createAssistantPanelRuntime({getAuth:async()=>({accessToken:'fixture',userId:'owner'}),instanceId:()=> 'runtime',deviceId:async()=> 'device',
+    local:{home:async()=>({cwd}),onSchedulesChanged:()=>()=>{}} as never,guguHome:cwd,kind:'computer',env:{},failed,locale:()=> 'en-US'})
+  try{
+    calls.sessionAgents={old:'stale',current:'live'};calls.boundAssistant='live';calls.rejectAssistant='stale'
+    await runtime.publish('old')
+    const ordinary=await runtime.prepare('old','ordinary task')
+    expect(ordinary.assistantPanel).toBeUndefined()
+    await runtime.publish('current')
+    await vi.advanceTimersByTimeAsync(600_001)
+    expect(calls.requests.filter(row=>row.assistant==='stale')).toEqual([])
+    expect(calls.requests.some(row=>row.assistant==='live' && row.name==='assistant_panel_pending')).toBe(true)
+    expect(calls.roleChecks.filter(key=>key==='owner:stale')).toEqual(['owner:stale'])
+    expect(failed).not.toHaveBeenCalled()
+  }finally{runtime.dispose();await rm(cwd,{recursive:true,force:true})}
+})
+
 async function freshlyPreparedProfile() {
   calls.stalled=false
   const root=await mkdtemp(join(tmpdir(),'panel-fresh-profile-')), home=join(root,'home'),guguHome=join(root,'gugu')
