@@ -65,6 +65,11 @@ export interface AgentRuntimeStateWrite {
   lastActionAt?: string | null
   /** 这个 agent 的会话最后一次有动静(开工、停下、等人、出错)的时刻;SQL 侧 COALESCE,省略 = 保留现值。 */
   lastInteractedAt?: string | null
+  /**
+   * #3938 The model the agent runs, as its host's model list names it. Omitted / null = keep the stored value;
+   * '' = clear it (the host knows there is no concrete model to name).
+   */
+  modelName?: string | null
 }
 
 // @@@2151 gone-agent 判定器：agent 在别处删 / 非本 owner 时，set_agent_runtime_state 命中 migration 036
@@ -108,6 +113,8 @@ export function createAgentRuntimeStateReporter(
         p_agent_status: state.agentStatus ?? null,
         p_agent_status_detail: state.agentStatusDetail ?? null,
         p_last_interacted_at: state.lastInteractedAt ?? null,
+        // #3938 Needs gugu-supabase 20261126213000_presence_model_name: an older schema rejects the unknown parameter.
+        p_model_name: state.modelName ?? null,
       }),
     )
     if (!error) return

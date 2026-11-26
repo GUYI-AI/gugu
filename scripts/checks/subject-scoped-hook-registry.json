@@ -50,6 +50,10 @@
     "how": "keyed-map",
     "why": "#3938:useSyncExternalStore 在渲染期用当前 agentId 读取 presence map 的 model_name;切换 agent 同步更换 snapshot 与订阅,还没读到就是 null(那一格不渲染),不会拿上一个 agent 的模型。"
   },
+  "apps/desktop/src/hooks/useAgentModelName.ts::useAgentModelNames": {
+    "how": "keyed-map",
+    "why": "#3938:没有自己的 state:结果按 agentUserId 存 map,每次都按当前 ids 在渲染期读 presence 快照;换一组 ids 就换订阅,行按自己的 id 取用,不会拿到别的 agent 的模型。"
+  },
   "apps/desktop/src/hooks/useSessionpageAgentProjection.ts::useSessionpageAgentProjection": {
     "how": "keyed-map",
     "why": "#3911:读数是按 agentUserId 做键的 replica 条目(agentSessionContext),渲染期按当前参数取;换 agent 的那一帧读到的是新 agent 的条目(没答过 = 还不知道),不会是上一个 agent 的答案。"

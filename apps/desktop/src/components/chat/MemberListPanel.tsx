@@ -13,7 +13,8 @@ import { useShownAgentName } from '@/hooks/useShownAgentName'
 //   · 引擎:权威快照的 group_agent_states.client 目前全产品没有写者(永远 null),所以引擎退回**联系人档**
 //     的 agent_type —— 与单聊头栏取引擎的来源是同一个(ChatAreaPanel「单聊 Agent 的联系人档」)。
 //     这条来源**只覆盖主人自己的 agent**:别人的 agent 不在主人通讯录里,那一格就空着。
-//   · 模型(model_source)/设备取不到 ⇒ **那一格不渲染**,让「空」看得出是空。
+//   · 模型:agent presence 的 model_name(#3938,宿主按模型清单的叫法上报,别人的 agent 也读得到);
+//     group_agent_states.model_source 没有写者,❌ 再读它。模型/设备取不到 ⇒ **那一格不渲染**,让「空」看得出是空。
 //     ❌ 不拿「未知引擎」「默认模型」这类占位值糊上去 —— 空得看得出是空,才知道是数据缺了。
 //   · 在线态复用 agent presence 这份现成真值(useAgentDisplayStatuses → Avatar 角标),#2178 ②。
 //     **人这一段没有在线态**:产品里压根没有「某个人在不在线」的真值(聊天列表、通讯录的绿点都只画 agent),
@@ -55,6 +56,7 @@ import { chatService } from '../../lib/chat'
 import { groupAgentDisplayStatus } from '../../lib/groupAgentStatus'
 import type { DisplayIdentity } from '../../lib/displayIdentity'
 import { useAgentDisplayStatuses } from '../../hooks/useAgentDisplayStatus'
+import { useAgentModelNames } from '../../hooks/useAgentModelName'
 import { useShownAgentStatus } from './useAgentsOnCloudComputer'
 import { useAuth } from '../../store/auth'
 import { useChatStore } from '../../store/chatContext'
@@ -233,6 +235,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
   const agents = useMemo<GroupAgentItem[]>(() => snapshot?.agents ?? [], [snapshot])
   const agentIds = useMemo(() => agents.map((agent) => agent.id), [agents])
   const agentStatuses = useAgentDisplayStatuses(agentIds)
+  const agentModels = useAgentModelNames(agentIds)
   const shownAgent = useShownAgentStatus() // #7199 角标 / 资料画的那一格:宿主闲时收回着 ≠ 不在线
   const unified = useUnifiedMembers(snapshot)
   const people = useMemo(() => unified.filter((member) => member.type === 'human'), [unified])
@@ -313,7 +316,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
       identity?.display_name,
       identity ? agentOwnerDisplayName(identity, identities) : null,
       engineLabel(agent),
-      agent.model_source,
+      agentModels[agent.id],
       deviceLabel(identity),
     ])
   })
@@ -351,7 +354,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
           identity?.owner_user_id === user?.id ? null : <span key="owner" data-agent-meta="owner"><AgentOwnerLabel ownerUserId={identity?.owner_user_id} ownerDisplayName={identity ? agentOwnerDisplayName(identity, identities) : null} /></span>,
           // 取不到就整格不渲染 —— 空得看得出来,❌ 没有「未知引擎」这种占位。
           engine ? <span key="engine" data-agent-meta="engine">{engine}</span> : null,
-          agent.model_source ? <span key="model" data-agent-meta="model">{agent.model_source}</span> : null,
+          agentModels[agent.id] ? <span key="model" data-agent-meta="model">{agentModels[agent.id]}</span> : null,
           device ? <span key="device" data-agent-meta="device">{device}</span> : null,
         ])}
         trailing={(
