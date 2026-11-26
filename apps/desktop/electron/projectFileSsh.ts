@@ -44,7 +44,7 @@ export function ownSshFileProvider(links: HeldFileSshLinks, tempRoot: string) {
         if (response.error) throw new Error(`File read refused: ${response.error.code}`)
         return response.result as ProjectFileChunk
       }
-      // Protocol 19+: one stream of raw bytes. Older servers answer parts until MIN_SERVER_PROTOCOL reaches FILE_STREAM_PROTOCOL.
+      // Protocol 19+: one stream of raw bytes. MIN_SERVER_PROTOCOL (20) is past FILE_STREAM_PROTOCOL: the part branch is left to delete.
       const source = (links.protocol(deviceId) ?? 0) >= FILE_STREAM_PROTOCOL
         ? await openProjectFileStream(revision, { links, deviceId, accountId, signal: context.signal }, context.progress)
         : await openProjectFileSource(revision, read, context.download ? undefined : context.progress)
@@ -73,7 +73,7 @@ export function remoteFileStreams(links: () => HeldFileSshLinks | null, account:
   return {
     /**
      * A linked machine whose server streams (protocol 19+); it opens the link to ask, as the read will use it. A server
-     * below 19 is false: it still has the per-piece reader, over the same link (deleted at protocol 20).
+     * below 19 is false (the per-piece reader, left to delete now that MIN_SERVER_PROTOCOL is 20).
      */
     async linked(deviceId: string): Promise<boolean> {
       if (!await reaches(deviceId)) return false

@@ -16,13 +16,14 @@ export const SERVER_ACTIVITY_STALE_MS = 60_000
  * 照 VS Code / Zed 的「客户端与 server 版本对不上就明说」(Zed 发了旧客户端不认的消息直接断线:zed#42474),
  * 只是不要求逐版本相等 —— server 自动升级、桌面自动升级,两边总有先后。
  */
-// 19 adds `file.stream` / `files.stream` on a device link (raw `D` frames, FILE_STREAM_PROTOCOL); 18 hosts keep the
-// `file.read` parts and the working copy's `filesRead` pieces. 18 adds the task input admission decision.
-export const REMOTE_PROTOCOL_VERSION = 19
+// 20: a stream's head names the version it streams, so a first read names none. 19 adds
+// `file.stream` / `files.stream` on a device link (raw `D` frames, FILE_STREAM_PROTOCOL); 18 hosts keep the `file.read`
+// parts and the working copy's `filesRead` pieces. 18 adds the task input admission decision.
+export const REMOTE_PROTOCOL_VERSION = 20
 /**
- * The first remote protocol whose device link streams a file (`file.stream`, `files.stream`). Below it the desktop reads
- * `file.read` parts and `filesRead` pieces; when MIN_SERVER_PROTOCOL reaches it (the next bump, to 20), the part reader and
- * `file.read` go, and `filesRead` pieces stay only for machines no device link reaches.
+ * The first remote protocol whose device link streams a file (`file.stream`, `files.stream`). Below it the desktop read
+ * `file.read` parts and `filesRead` pieces. MIN_SERVER_PROTOCOL is past it since 20, so a linked machine below it is
+ * upgraded, not read; the part reader and `file.read` are left to delete.
  */
 export const FILE_STREAM_PROTOCOL = 19
 /**
@@ -86,6 +87,10 @@ export const FILE_STREAM_PROTOCOL = 19
  * 18: task input replies report accepted/rejected/uncertain independently of diagnostic codes.
  * 19: a device link streams a file: `file.stream` (a held version) and `files.stream` (a working copy's file), answered by raw
  *     `D` frames, then its reply (FILE_STREAM_PROTOCOL). `files.stream` joined 19 before any release carried 19.
+ * 20: a stream's head (`<type>.head`) says the size and etag it streams, so the desktop's first read names no version (no
+ *     zero-byte read before it). A 19 server refuses a stream with no etag, so the desktop needs 20 (MIN_SERVER_PROTOCOL;
+ *     owner 11-26: a machine below it is upgraded when the desktop reaches it, over SSH as for any version mismatch). The
+ *     server still answers 18 and 19 desktops (their zero-byte read and pinned streams), so MIN_CLIENT_PROTOCOL stays.
  *
  * 向下兼容一档(owner 10-28,换版打断 7 条车道之后):两边只差一档时照常连,由**新的一侧**降级 ——
  * 16 ↔ 15 的文字与窗口照常互通;附件输入要求 16，旧宿主明确拒绝。14 的改文件降级在升到 16 时移除。
@@ -94,8 +99,11 @@ export const FILE_STREAM_PROTOCOL = 19
  * 下一次加一时,两个下沿跟着抬到新号减一,并删掉上一档的降级。
  */
 export const MIN_CLIENT_PROTOCOL = 18
-/** 桌面 / 手机自己的要求:那台机器报的协议版本低于它 = 那台机器上的咕咕太旧(同样向下兼容一档)。 */
-export const MIN_SERVER_PROTOCOL = 18
+/**
+ * 桌面 / 手机自己的要求:那台机器报的协议版本低于它 = 那台机器上的咕咕太旧。20 不留降级一档:19 的 server 不认不带 etag 的
+ * 读,而这台桌面的第一次读不带(见上 20)。
+ */
+export const MIN_SERVER_PROTOCOL = 20
 
 /** 开窗时报给那台机器的协议:它比这台低、但还在兼容的一档里,就照它的报(见上);说不出 = 报自己的。纯函数。 */
 export function helloProtocol(serverProtocol: number | null | undefined, own = REMOTE_PROTOCOL_VERSION, minServer = MIN_SERVER_PROTOCOL): number {
