@@ -1089,6 +1089,9 @@ const ComposerForStore = observer(function ComposerForStore({
   }, [liveUnrecordedEffort, store.sessionId]);
   const querySlashItems = useComposerSlashItems({ store, promptLibrary, promptOverrides, translate, providerId });
 
+  const selectedModelOption = composerSelectedOptionId({ platformModel: runningPlatformModel, model: store.model, customModel: runningCustomModel });
+  // 换了模型、新模型还没报读数:记录里那份已用量,分母换成此刻模型的窗口(recordedContextUsage)。
+  const usage = store.usageIn(selectedModelOption ? sessionModelOptions?.[selectedModelOption]?.modelFeatures?.contextWindowSize : undefined);
   const a = store.affordances;
   const agentUserId = sessionAgentBindings.bindingFor(store.sessionId)?.agentUserId ?? null;
 
@@ -1194,11 +1197,7 @@ const ComposerForStore = observer(function ComposerForStore({
         // 「哪几条现在切不了」由 sessionModelOptions 判,见 @@@session-options-disabled。
         modelOptions={sessionModelOptions}
         modelUnknown={merged === undefined || !platformCatalog.known}
-        selectedModel={composerSelectedOptionId({
-          platformModel: runningPlatformModel,
-          model: store.model,
-          customModel: runningCustomModel,
-        })}
+        selectedModel={selectedModelOption}
         onModelChange={handleModelChange}
         effortOptionsForModel={effortOptionsForModel}
         modelMenuOpenRequest={modelMenuRequest}
@@ -1241,17 +1240,7 @@ const ComposerForStore = observer(function ComposerForStore({
         agentLocked
         onAgentChange={() => {}}
         contextThresholds={contextThresholds}
-        contextUsage={
-          store.usage
-            ? {
-                used: store.usage.contextUsed,
-                size: store.usage.contextSize,
-                autoCompact: store.usage.autoCompact,
-                cost: store.usage.cost,
-                costSource,
-              }
-            : null
-        }
+        contextUsage={usage ? { used: usage.contextUsed, size: usage.contextSize, autoCompact: usage.autoCompact, cost: usage.cost, costSource } : null}
         mentionProvider={mentionProvider}
         renderMentionIcon={renderMentionIcon}
         queryCommands={querySlashItems}

@@ -393,7 +393,6 @@ export class AcpChatStore {
       commands: computed,
       permissionQueue: computed,
       queuedPrompts: computed,
-      usage: computed,
       affordances: computed,
       bootstrap: action,
       releaseTranscript: action,
@@ -636,7 +635,8 @@ export class AcpChatStore {
     return prompts;
   }
 
-  get usage(): {
+  /** `currentWindow`:此刻模型的上下文窗口(选项里的 `contextWindowSize`),给换了模型之后的记录读数当分母。 */
+  usageIn(currentWindow?: number): {
     contextUsed: number;
     contextSize: number;
     autoCompact?: { defaultTokens: number; ceiling: number };
@@ -647,11 +647,11 @@ export class AcpChatStore {
     // 分叉的侧边聊天借的是来源会话的 id:记录里那份是来源的读数,❌ 拿来当它自己的。
     if (live || this.isTransient) return live;
     // #7342 活会话没有读数(停下了 / 还在起 / 重开后还没跑完一轮):画记录里那份最后读数,归属判据见 recordedContextUsage。
-    // 停下时 ❌ 拿记录里的模型去比:那是另一套 id(平台模型不在那一格),作废归写者(换模型时它清掉)。
+    // 停下时 ❌ 拿记录里的模型去比:那是另一套 id(平台模型不在那一格)。
     const currentModelId = session
       ? (session.config.current().modelOptions?.selected ?? null)
       : (this.startupChoice.model ?? null);
-    return recordedContextUsage(this._sessionRecord(), currentModelId);
+    return recordedContextUsage(this._sessionRecord(), currentModelId, currentWindow);
   }
 
   /**

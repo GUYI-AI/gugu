@@ -2,7 +2,7 @@
  * #7342 通用模式会话停下后,输入框还要画得出最后那份上下文读数 —— 读数得落进会话记录。
  *
  * 判据两半:
- * - `contextUsageChange`(纯判据):一轮落定才写、流式中不写、读数要属于此刻的模型、换了模型作废;
+ * - `contextUsageChange`(纯判据):一轮落定才写、流式中不写、读数要属于此刻的模型;换了模型不作废(owner 2026-11-27);
  * - 落库:只动 `config.contextUsage` 这一格(别的事实原样留着),盖上此刻行上的原生会话 id,经 `session:changed` 发出去。
  *
  * 能判假:把 `contextUsageChange` 里的 `!summary.isGenerating` 去掉,「流式中不写」当场红;
@@ -51,29 +51,30 @@ describe('contextUsageChange —— 要不要改记录里的读数', () => {
     expect(contextUsageChange(null, { ...atRest, contextSize: null })).toBeNull();
   });
 
-  it('热切之后、新读数到之前:手里那份是旧模型量的 —— 不写,记录里旧模型那份作废', () => {
+  it('热切之后、新读数到之前:手里那份是旧模型量的 —— 不写;记录里那份留着(owner 2026-11-27:换模型保留已用量)', () => {
     const switched = { ...atRest, modelId: 'gpt-5.5-mini' };
     expect(contextUsageChange(null, switched)).toBeNull();
-    expect(contextUsageChange({ used: 42_000, size: 200_000, modelId: 'gpt-5.5' }, switched)).toEqual({ kind: 'clear' });
+    expect(contextUsageChange({ used: 42_000, size: 200_000, modelId: 'gpt-5.5' }, switched)).toBeNull();
   });
 
-  it('重开成了别的模型、还没读数:作废', () => {
+  it('重开成了别的模型、还没读数:记录里那份留着,新模型报了读数再覆盖', () => {
     const reopened = { lifecycle: 'ready' as const, isGenerating: false, contextTokens: null, contextSize: null, contextModelId: null, modelId: 'gpt-5.5-mini' };
-    expect(contextUsageChange({ used: 1, size: 2, modelId: 'gpt-5.5' }, reopened)).toEqual({ kind: 'clear' });
+    expect(contextUsageChange({ used: 1, size: 2, modelId: 'gpt-5.5' }, reopened)).toBeNull();
+    expect(contextUsageChange({ used: 1, size: 2, modelId: 'gpt-5.5' }, { ...reopened, contextTokens: 3, contextSize: 4, contextModelId: 'gpt-5.5-mini' }))
+      .toEqual({ kind: 'write', reading: { used: 3, size: 4, modelId: 'gpt-5.5-mini' } });
   });
 
-  it('重开时的重放窗口里模型在过渡(先报引擎默认、再设回记录那个):不作废、不写(mac1 真机实撞)', () => {
+  it('重开时的重放窗口里模型在过渡(先报引擎默认、再设回记录那个):不写(mac1 真机实撞)', () => {
     const recorded = { used: 26_647, size: 828_400, modelId: 'gpt-5.6-terra' };
     for (const lifecycle of ['starting', 'replaying'] as const) {
       expect(contextUsageChange(recorded, { ...atRest, lifecycle, contextModelId: 'gpt-5.5', modelId: 'gpt-5.5' })).toBeNull();
     }
-    // 阳性对照:同一份摘要落定之后,换了模型就作废 —— 判据没被整个关掉。
-    expect(
-      contextUsageChange(recorded, { ...atRest, contextTokens: null, contextSize: null, contextModelId: null, modelId: 'gpt-5.5' })
-    ).toEqual({ kind: 'clear' });
+    // 阳性对照:同一份摘要落定之后照写 —— 判据没被整个关掉。
+    expect(contextUsageChange(recorded, { ...atRest, contextModelId: 'gpt-5.5', modelId: 'gpt-5.5' }))
+      .toEqual({ kind: 'write', reading: { used: 42_000, size: 200_000, modelId: 'gpt-5.5' } });
   });
 
-  it('阴控 —— 模型还说不出(引擎不报):不作废', () => {
+  it('阴控 —— 模型还说不出(引擎不报):不动', () => {
     const starting = { lifecycle: 'ready' as const, isGenerating: false, contextTokens: null, contextSize: null, contextModelId: null, modelId: null };
     expect(contextUsageChange({ used: 1, size: 2, modelId: 'gpt-5.5' }, starting)).toBeNull();
   });
@@ -125,15 +126,6 @@ describe('落库', () => {
     expect(readRecordedContextUsage('acp-1')).toEqual(written);
   });
 
-  it('作废:删键,别的事实原样留着,发 `null`(过得了 JSON)', () => {
-    fixture.sqlite
-      .prepare('UPDATE sessions SET config = ? WHERE id = ?')
-      .run(config({ contextUsage: { used: 1, size: 2, modelId: 'gpt-5.5', providerSessionId: 'native-1' } }), 'acp-1');
-    applyContextUsageChange('acp-1', { kind: 'clear' });
-    expect(row('acp-1')).not.toHaveProperty('contextUsage');
-    expect(row('acp-1')).toMatchObject({ model: 'gpt-5.5', firstUtterance: '你好' });
-    expect(mocks.emit.mock.calls[0]?.[1]).toMatchObject({ changes: { contextUsage: null } });
-  });
 
   it('原生会话换了(重来):旧读数不算它的', () => {
     fixture.sqlite
