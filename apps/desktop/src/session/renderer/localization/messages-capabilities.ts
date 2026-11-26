@@ -620,7 +620,7 @@ export const enUSCapabilityMessages = {
   'automations.executionDevice': 'Run on',
   'automations.deleteTitle': 'Delete automation',
   'automations.deleteDescription':
-    '"{name}" and its run history will be permanently deleted. Tasks from its runs are archived and can be restored from Task history; tasks converted to regular tasks are not affected.',
+    '"{name}" and its run history will be permanently deleted. Sessions from its runs are archived and can be restored from Task history; converted sessions are not affected.',
   'automations.detailsLabel': 'Automation details',
   'automations.namePlaceholder': 'Name this automation',
   'automations.pause': 'Pause automation',
@@ -1604,7 +1604,7 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'automations.inactiveGroup': '已停用或结束',
   'automations.executionDevice': '运行设备',
   'automations.deleteTitle': '删除自动化',
-  'automations.deleteDescription': '“{name}”及其运行历史将被永久删除。它运行出的会话会归档，可在「会话历史」中恢复；已转为普通任务的不受影响。',
+  'automations.deleteDescription': '“{name}”及其运行历史将被永久删除。它运行出的会话会归档，可在「会话历史」中恢复；已转为普通会话的不受影响。',
   'automations.detailsLabel': '自动化详情',
   'automations.namePlaceholder': '为这个自动化命名',
   'automations.pause': '暂停自动化',
