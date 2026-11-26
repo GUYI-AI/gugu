@@ -21,3 +21,8 @@ it('preserves private-use text even when escapes need placeholders', () => {
 it('excludes fenced code with CR-only line endings', () => {
   expect(markdownPlainText('before\r'+String.fromCharCode(96).repeat(3)+'\rhidden\r'+String.fromCharCode(96).repeat(3)+'\rafter')).toBe('before after')
 })
+
+it('shows autolink text without Markdown angle brackets', () => {
+  expect(markdownPlainText('<https://example.test/a> <a@example.test>')).toBe('https://example.test/a a@example.test')
+  expect(markdownPlainText('\\<literal\\>')).toBe('<literal>')
+})

@@ -53,6 +53,7 @@ function plainSegment(text: string): string {
     return `${marker}${literals.length - 1}${marker}`;
   });
   return replaceInlineLinks(escaped)
+    .replace(/<([a-z][a-z\d+.-]{1,31}:[^<>\s]*|[a-z\d.!#$%&'*+/=?^_`{|}~-]+@[a-z\d](?:[a-z\d.-]*[a-z\d])?)>/gi, '$1')
     .replace(/^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]+#+[ \t]*$/gm, '$1')
     .replace(/^\s{0,3}#{1,6}\s+/gm, '')
     .replace(/^\s*>\s?/gm, '')
