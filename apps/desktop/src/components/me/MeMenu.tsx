@@ -67,7 +67,7 @@ interface RailItemProps extends Omit<React.ComponentPropsWithRef<'button'>, 'tit
   badge?: number | null
   /** Which entry this is (`tasks` / `chats` / …): its own small move on hover hangs off this (Sidebar.css). */
   rail?: string
-  /** An App that is running: a dot to the left of its icon, as the macOS dock marks one (#7050). */
+  /** An App that is running: a dot below its icon, as the macOS dock marks one (#7050). */
   running?: boolean
   onContextMenu?: (event: React.MouseEvent) => void
   /** Its right-click menu is open: it stays lit like under the pointer, so the menu reads as this one's. */
@@ -90,10 +90,8 @@ function RailItem({
   className,
   ...button
 }: RailItemProps) {
-  // @@@4323 说明文字走产品自己的浮层。原生 title 在这条竖排图标栏上最难受:
-  // 图标只有形状没有文字,而 title 要等操作系统那 ~1s、扫过一排时一个都不弹、触屏上永远不弹。
   return (
-    <Hint label={title}>
+    <Hint label={title} side="top" withArrow>
       <ButtonPrimitive
         {...button}
         type="button"
