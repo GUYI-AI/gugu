@@ -83,7 +83,6 @@ export function PhoneRecentPhotos({ selected, onSelect, onRemove }: {
 
   if (!photos?.length) return null
   return <section className="gg-phone-recent-photos" aria-label={t('composer.recentPhotos')}>
-    <h3>{t('composer.recentPhotos')}</h3>
     <div className="gg-phone-recent-grid">
       {photos.map(photo => <RecentPhotoButton key={photo.version} scope={scope} photo={photo}
         selected={selected.has(photo.id)} onClick={() => { void toggle(photo) }} />)}

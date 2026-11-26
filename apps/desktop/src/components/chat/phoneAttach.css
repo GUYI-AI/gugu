@@ -28,11 +28,6 @@
 }
 .gg-phone-attach-icon > svg { width: 26px; height: 26px; }
 .gg-phone-recent-photos { grid-column: 1 / -1; min-width: 0; container-type: inline-size; }
-.gg-phone-recent-photos h3 {
-  margin: 0 0 var(--spacing-sm);
-  font-size: var(--font-caption);
-  font-weight: var(--font-weight-semibold);
-}
 .gg-phone-recent-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
