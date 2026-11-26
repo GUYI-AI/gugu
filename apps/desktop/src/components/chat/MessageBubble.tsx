@@ -233,7 +233,7 @@ export const MessageBubble = memo(function MessageBubble({
 
   const avatarIsAgent = memberProfile?.type === 'agent' || (!msg.is_mine && isAgent)
   const senderIdentity = useAvatarIdentity(avatarIsAgent ? msg.sender_user_id ?? '' : '')
-  const avatarName = useShownAgentName({ name: memberProfile?.displayName ?? '', createdAt: avatarIsAgent ? senderIdentity?.created_at ?? undefined : undefined })
+  const avatarName = useShownAgentName({ name: memberProfile?.displayName ?? msg.via_webhook_name ?? '', createdAt: avatarIsAgent ? senderIdentity?.created_at ?? undefined : undefined })
   const avatarUrl = memberProfile?.avatar ?? null
   // @@@avatar-status-badge (#793 rollout) - the agent sender's status lives on its memberProfile
   // (populated for both group agents and the DM peer in ChatAreaPanel's messageMemberProfiles).
@@ -241,7 +241,7 @@ export const MessageBubble = memo(function MessageBubble({
   // @@@msg-avatar (#1102) - 消息头像对齐设计稿 .av.s(28–32px 小号);原 md=40 偏大显「旧/重」。
   // @@@1355 sender avatars are projected only from the canonical sender URL.
   // Display-only naming never changes the sender id or profile actions.
-  const avatar = <MessageSenderAvatar senderUserId={msg.sender_user_id} name={avatarName} avatarUrl={avatarUrl} seed={msg.is_mine ? user?.id : (msg.sender_user_id ?? undefined)} size="sm" isAgent={avatarIsAgent} agentStatus={avatarIsAgent ? memberProfile?.agentStatus : undefined} still />
+  const avatar = <MessageSenderAvatar senderUserId={msg.sender_user_id} webhook={!!msg.via_webhook} name={avatarName} avatarUrl={avatarUrl} seed={msg.is_mine ? user?.id : (msg.sender_user_id ?? undefined)} size="sm" isAgent={avatarIsAgent} agentStatus={avatarIsAgent ? memberProfile?.agentStatus : undefined} still />
   const profile = memberProfile && memberProfileOpener ? { handle: memberProfileOpener.handle, payload: { member: memberProfile, preferredSide: msg.is_mine ? 'left' as const : 'right' as const } } : null
 
   if (msg.content_type === 'system') return <SystemMessageNotice message={msg} senderName={avatarName} onOpenTopic={onOpenTopicAnchor} />
@@ -374,7 +374,7 @@ export const MessageBubble = memo(function MessageBubble({
             onPointerDownCapture={(e) => setMenuLink(e.target instanceof Element ? e.target.closest<HTMLAnchorElement>('a[href]') : null)}
           >
             {/* 名字只在群里收到的、一组的第一条上(DM 头栏已经说了是谁);任务卡自己写着是谁发的。 */}
-            {showSender && <BubbleSender member={memberProfile} displayName={avatarName} senderId={msg.sender_user_id} replyMark={replyQuote} profile={compactMobile ? null : profile} />}
+            {showSender && <BubbleSender member={memberProfile} displayName={avatarName} senderId={msg.sender_user_id} replyMark={replyQuote} profile={compactMobile ? null : profile} webhook={msg.via_webhook ? { chatId: msg.chat_id, id: msg.via_webhook } : null} />}
             {isRetracted ? (
               // #1323 模块3 — 撤回文字 --text-tertiary→--muted-fg(原偏淡)
               <span className="msg-time-room-inline" style={{ color: 'var(--muted-fg)', fontStyle: 'italic', '--msg-time-room': timeRoom } as React.CSSProperties}>{t('message.retracted')}</span>

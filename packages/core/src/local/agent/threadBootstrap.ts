@@ -6,7 +6,8 @@
 // 进 deliver 文本，让 agent 先读到前情、只回应新消息。
 
 export interface ThreadMessageRow {
-  senderUserId: string
+  /** null = a row with no sender account: a server notice or a group webhook's message (#3934). */
+  senderUserId: string | null
   content: string
   createdAt: string
 }
@@ -38,7 +39,8 @@ export function buildThreadBootstrapBody(
   const usable = rows.filter((r) => oneLine(r.content).length > 0)
   if (usable.length === 0) return null
   const maxChars = opts.maxChars ?? 4000
-  const label = (id: string) => (id === opts.selfAgentUserId ? 'you (this agent)' : opts.labelFor?.(id) ?? id)
+  const label = (id: string | null) => id === null ? 'no sender account (a notice or a webhook)'
+    : id === opts.selfAgentUserId ? 'you (this agent)' : opts.labelFor?.(id) ?? id
   const lines = usable.map((r) => {
     const t = hhmm(r.createdAt)
     return `${t ? `[${t}] ` : ''}${label(r.senderUserId)}: ${oneLine(r.content)}`

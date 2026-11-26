@@ -11,7 +11,7 @@ export const CORE_TOOL_RISKS: Readonly<Record<string, ToolRisk>> = {
     message_conversations message_download_file message_history message_invitations message_search owner_friends_list
     project_list schedule_list session_children session_get session_list_tabs session_peers group_join_requests
     profile_lookup profile_whoami session_devices message_members message_rules topic_list topic_members group_info group_list
-    widget_get`),
+    widget_get group_webhooks`),
   ...entries('write', 'medium', `profile_update project_create schedule_cancel schedule_create
     session_close_tab session_open_in_tab session_set_parent session_stop group_avatar_set group_leave
     group_announcement_delete group_announcement_post group_announcement_update topic_delete`),
@@ -20,6 +20,7 @@ export const CORE_TOOL_RISKS: Readonly<Record<string, ToolRisk>> = {
   ...entries('owner', 'high', `message_send_as_owner`),
   ...entries('social', 'high', `contact_friend message_invite topic_invite topic_open group_create group_add_agent group_join_decide project_get`),
   ...entries('permission', 'high', `app_install app_manage group_remove_member group_set_role group_update
+    group_webhook_create group_webhook_update group_webhook_address group_webhook_rotate group_webhook_set_disabled group_webhook_delete
     project_add_folder project_remove_folder project_add_device project_remove_device project_restore_device session_archive`),
   ...entries('send', 'medium', 'web_search'),
   // html_preview runs the agent's own page in a sandboxed, storage-less window; like a fence in chat, that page may

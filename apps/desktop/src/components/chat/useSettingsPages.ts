@@ -4,17 +4,29 @@ import { useCallback, useEffect, useState } from 'react'
 // MemberListPanel),一级页只留一行入口 ⇒ 不再有第二份名单(#2178 的头像网格)与第二套成员操作。一级页:群资料 / 成员入口 /
 // 公告·规则·描述 / 聊天(查找·通知·置顶·清空,与单聊同一份) / 群管理入口 / 离开·解散。群成员、群公告、群管理(仅群主/管理员)、
 // 规则、描述各是一页,页头同一个、返回回上一层;打开时的那一页没有上一层。所有改动即时生效,没有底部「保存」。
-export type SettingsPage = 'main' | 'members' | 'announcement' | 'manage' | 'rules' | 'description'
+// #3934 群管理下面:Webhook 列表('webhooks')与每个 Webhook 一页(`webhook:<id>`)。
+export type WebhookPage = `webhook:${string}`
+export type ManagePage = 'manage' | 'webhooks' | WebhookPage
+export type SettingsPage = 'main' | 'members' | 'announcement' | 'rules' | 'description' | ManagePage
+/** Where the group info can be opened (its members' button, a webhook's message card). */
+export type OpenablePage = 'main' | 'members' | 'announcement' | WebhookPage
+
+export const webhookPage = (webhookId: string): WebhookPage => `webhook:${webhookId}`
+export const webhookIdOf = (page: SettingsPage): string | null => (page.startsWith('webhook:') ? page.slice('webhook:'.length) : null)
+export const isManagePage = (page: SettingsPage): page is ManagePage => page === 'manage' || page === 'webhooks' || webhookIdOf(page) !== null
+
+// Opened at a webhook, the way back walks its list and the group management above it.
+const openedAt = (page: OpenablePage): SettingsPage[] => (webhookIdOf(page) ? ['main', 'manage', 'webhooks', page] : [page])
 
 /**
  * The group info's page stack: where it was opened, then what was walked into. Opened at `initialPage` (the members'
  * button: their list), that page is the bottom, with nothing to go back to; another chat, or another open of the tab
  * (the caller keys it), starts over.
  */
-export function useSettingsPages(chatId: string, initialPage: 'main' | 'members' | 'announcement' = 'main') {
-  const [pages, setPages] = useState<SettingsPage[]>([initialPage])
+export function useSettingsPages(chatId: string, initialPage: OpenablePage = 'main') {
+  const [pages, setPages] = useState<SettingsPage[]>(() => openedAt(initialPage))
   const push = useCallback((next: SettingsPage) => setPages((stack) => [...stack, next]), [])
   const pop = useCallback(() => setPages((stack) => (stack.length > 1 ? stack.slice(0, -1) : stack)), [])
-  useEffect(() => { setPages([initialPage]) }, [chatId, initialPage])
+  useEffect(() => { setPages(openedAt(initialPage)) }, [chatId, initialPage])
   return { page: pages[pages.length - 1], push, pop, canPop: pages.length > 1 }
 }

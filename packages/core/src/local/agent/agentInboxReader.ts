@@ -79,6 +79,8 @@ export interface AgentInboxUnreadRow {
   isWhisper: boolean
   /** App 以人的名义送来的那一行(`gugu.dispatch`,#6835):App 的 extension id。 */
   viaApp?: string | null
+  /** 群 Webhook 送来的那一行(#3934,没有发送者):Webhook 的 id 与它此刻的名字。 */
+  viaWebhook?: { id: string; name: string } | null
   /**
    * #7290 附件消息指向群文件夹的条目与版本(新式附件);条目删了 ⇒ itemId 为 null。从 pull_agent_inbox_v2 来的行一定带着
    * (fileRefOf 要求库回这两列);本机会话直投的行不是附件,没有。
@@ -305,6 +307,15 @@ function fileRefOf(raw: Record<string, unknown>): { fileItemId: string | null; f
   }
 }
 
+/** pull_agent_inbox_v2 returns the webhook's name beside its id; an id without a name is a broken row. */
+function webhookOf(raw: Record<string, unknown>): AgentInboxUnreadRow['viaWebhook'] {
+  if (raw.via_webhook === null || raw.via_webhook === undefined) return null
+  if (typeof raw.via_webhook !== 'string' || typeof raw.via_webhook_name !== 'string' || !raw.via_webhook_name) {
+    throw new Error('pull_agent_inbox_v2 returned a webhook message without its webhook name')
+  }
+  return { id: raw.via_webhook, name: raw.via_webhook_name }
+}
+
 export function unreadRowFromRpc(raw: Record<string, unknown>): AgentInboxUnreadRow {
   const text = (value: unknown): string | null => (typeof value === 'string' ? value : null)
   const num = (value: unknown): number | null => (typeof value === 'number' ? value : null)
@@ -331,6 +342,7 @@ export function unreadRowFromRpc(raw: Record<string, unknown>): AgentInboxUnread
       : null,
     isWhisper: raw.is_whisper === true,
     viaApp: text(raw.via_app) || null,
+    viaWebhook: webhookOf(raw),
     ...fileRefOf(raw),
     sendGroupId: text(raw.send_group_id),
     sendGroupSize: num(raw.send_group_size),
@@ -972,7 +984,7 @@ async function prepareMessage(
       const seed = threadSeedCache.get(key) ?? (async () => {
         try {
           const threadRows = await fetchThreadMessages(row.chatId, effectiveThreadRoot)
-          const senders = [...new Set(threadRows.map((entry) => entry.senderUserId))]
+          const senders = [...new Set(threadRows.flatMap((entry) => entry.senderUserId ?? []))]
           const labels = deps.resolveGuguIds
             ? await deps.resolveGuguIds(senders, deps.accessToken).catch((error: unknown) => {
                 log.warn({ err: error instanceof Error ? error.message : String(error) }, 'thread-bootstrap identity resolve failed')
@@ -1027,6 +1039,7 @@ async function prepareMessage(
       threadRootId: effectiveThreadRoot,
       whisperTo: row.isWhisper ? row.toUserIds : null,
       viaApp: row.viaApp ?? null,
+      viaWebhook: row.viaWebhook ?? null,
     },
     identities,
     chat,
@@ -1070,6 +1083,7 @@ function rebuildEnvelopeWithThreadContext(
       threadRootId: row.threadRootId ?? (row.isThreadRoot ? row.id : null),
       whisperTo: row.isWhisper ? row.toUserIds : null,
       viaApp: row.viaApp ?? null,
+      viaWebhook: row.viaWebhook ?? null,
     },
     identities,
     chat,

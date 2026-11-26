@@ -31,7 +31,7 @@ import {
 } from '@gugu/core/local/agent/agentInboxReader'
 import { resolveListenModeDefault } from '@gugu/core/cloud/listenMode'
 import { memoryGroupRulesLedger } from '@gugu/core/local/agent/groupRulesDelivery'
-import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope'
+import { buildAgentDeliveryEnvelope, readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope'
 import { parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import { storedMessageLink } from '@gugu/core/shared/ui/guguLink'
 import { appInboxUnreadRow } from '@gugu/core/local/agent/appInbox'
@@ -674,6 +674,44 @@ describe('reader 对 RPC 交来的行不做资格判断', () => {
     resetAgentInboxReaderStateForTests()
     expect((await pullAgentInbox(AGENT, deps)).injected).toBe(0)
     expect(injected).toHaveLength(2)
+  })
+
+  it('delivers a group webhook row under the webhook, which is no address (#3934)', async () => {
+    const hook = { id: '30000000-0000-4000-8000-000000000001', name: '部署告警' }
+    const rows: AgentInboxUnreadRow[] = [
+      { ...base, id: '10000000-0000-4000-8000-000000000031', senderUserId: null, senderType: null, contentType: 'text', content: '@Claude 部署失败', toUserIds: [AGENT], viaWebhook: hook },
+    ]
+    const injected: AgentInboxInjectionInput[] = []
+    const deps: AgentInboxReaderDeps = {
+      accessToken: 'test',
+      groupRulesLedger: memoryGroupRulesLedger(),
+      fetchUnread: async () => rows,
+      inject: async (input) => { injected.push(input); return 'accepted' },
+      markRead: async () => {},
+    }
+    await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ pulled: 1, injected: 1, verdict: 'accepted' })
+    const text = injected[0]!.text
+    expect(text).toContain(`from="部署告警" from_id="webhook:${hook.id}" from_type="webhook"`)
+    expect(text).not.toContain('user:null')
+    expect(text).not.toContain('mode="notice"')
+    expect(readDeliveryEnvelope(text)?.segments[0]?.facts).toMatchObject({ from: '部署告警', fromId: `webhook:${hook.id}`, fromType: 'webhook' })
+  })
+
+  it('a sender-less row is either a system notice or a webhook\'s message; anything else is refused', () => {
+    const input = { guguUserId: AGENT, chatId: base.chatId, messageId: base.id, senderUserId: null, contentType: 'text', content: 'x', replyTo: null, threadRootId: null }
+    const chat = { publicId: 1, name: 'g', kind: 'group' as const }
+    expect(() => buildAgentDeliveryEnvelope(input, new Map(), chat, 'now')).toThrow('only a system or webhook chat message may omit its sender identity')
+    expect(buildAgentDeliveryEnvelope({ ...input, viaWebhook: { id: 'h', name: 'CI' } }, new Map(), chat, 'now')).toContain('from_id="webhook:h"')
+    // A real sender wins: the webhook column never renames a person.
+    expect(buildAgentDeliveryEnvelope({ ...input, senderUserId: HUMAN, viaWebhook: { id: 'h', name: 'CI' } }, new Map(), chat, 'now')).toContain(`from_id="user:${HUMAN}"`)
+  })
+
+  it('pull_agent_inbox_v2 names the webhook beside its id; an id without its name is a broken row', () => {
+    const row = { chat_id: 'c', id: '10000000-0000-4000-8000-000000000032', seq: 1, content: 'x', created_at: '2026-11-26T00:00:00Z',
+      file_item_id: null, file_version: null, file_blob_id: null, group_rules: null, named_identities: {}, sender_user_id: null }
+    expect(unreadRowFromRpc(row).viaWebhook).toBeNull()
+    expect(unreadRowFromRpc({ ...row, via_webhook: 'h', via_webhook_name: 'CI' }).viaWebhook).toEqual({ id: 'h', name: 'CI' })
+    expect(() => unreadRowFromRpc({ ...row, via_webhook: 'h', via_webhook_name: null })).toThrow('webhook message without its webhook name')
   })
 
   // @@@5856 档位收成两档之后,字符串 'adaptive' 仍然躺在老设备的本地队列、未落地的组队

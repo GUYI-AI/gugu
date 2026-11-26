@@ -30,7 +30,7 @@ export async function fetchThreadMessagesViaRest(
   if (!accessToken) throw new Error('fetchThreadMessagesViaRest: no accessToken')
   const resp = await postIdentityRpc(accessToken, 'get_thread_messages', { p_chat_id: chatId, p_thread_root_id: threadRootId })
   if (!resp.ok) throw new Error(`get_thread_messages ${resp.status}`)
-  const data = (await resp.json()) as Array<{ sender_user_id: string; content: string; created_at: string }> | null
+  const data = (await resp.json()) as Array<{ sender_user_id: string | null; content: string; created_at: string }> | null
   if (!Array.isArray(data)) throw new Error('get_thread_messages returned non-array')
   return data.map((r) => ({ senderUserId: r.sender_user_id, content: r.content, createdAt: r.created_at }))
 }
