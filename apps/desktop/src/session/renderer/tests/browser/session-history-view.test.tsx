@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from 'react';
-import { CommandShortcutBinder } from '@renderer/lib/commands/command-shortcut-binder';
+import { KeyboardDispatcher } from '@renderer/lib/commands/keyboard-dispatcher';
 import { useFindBar } from '@renderer/lib/ui/use-find-bar';
 import { FindBar } from '@renderer/lib/ui/find-bar';
 import { page, userEvent } from '@vitest/browser/context';
@@ -365,7 +365,7 @@ describe('会话历史(按目录分节)核心合同', () => {
 
   it('k4/k5 routes find by focus while the real history SearchInput stays mounted', async () => {
     const findShortcut = isMacHost() ? '{Meta>}f{/Meta}' : '{Control>}f{/Control}';
-    render(<><CommandShortcutBinder /><TranscriptFindControl /></>);
+    render(<><KeyboardDispatcher /><TranscriptFindControl /></>);
     await expect.element(screen.getByTestId('session-history-search')).toBeVisible();
     const history = screen.getByTestId('session-history-search').element();
     const filter = screen.getByTestId('session-history-filter').element() as HTMLElement;

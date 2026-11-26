@@ -9,7 +9,8 @@ import { resolveVisualEvidenceAttachmentDataUrl } from './acp-chat-resource-mana
 
 /** 任务页用户消息里一件附件的图:字节在哪就照哪读,读不到给 null(中性占位块)。 */
 export function resolveAttachmentDataUrl(store: AcpChatStore, id: string): Promise<string | null> {
-  if (id.startsWith('gugu-message-file://')) return resolveDeliveredAttachment(id);
+  // A message's file, or a version in the agent's folder (a picture sent with the words): read the way a chat reads it.
+  if (id.startsWith('gugu-message-file://') || id.startsWith('gugu-file://')) return resolveDeliveredAttachment(id);
   const fixtureDataUrl = resolveVisualEvidenceAttachmentDataUrl(store, id);
   if (fixtureDataUrl) return Promise.resolve(fixtureDataUrl);
   const machine = machineRegistry.machineOf(store.runtimeSessionId);

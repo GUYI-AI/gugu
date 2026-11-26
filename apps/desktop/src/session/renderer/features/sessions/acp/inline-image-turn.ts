@@ -10,7 +10,7 @@ export function inlineImageOrder(text: string, chipIds: readonly string[]): stri
 /**
  * The words as the agent and the transcript get them: each picture placed in them names its folder file at its place,
  * `![Image N](gugu-file://<id>?v=<n>)`, N counted in document order as the composer's chip shows it. The runtime puts the
- * picture there (session-runtime `inline-images.ts`); the transcript draws it as a chip that opens the file.
+ * picture there (session-runtime `inline-images.ts`); the transcript draws it above the words, as a chat draws one.
  * A picture the composer no longer holds leaves no trace.
  */
 export function inlineImageTurnText(text: string, fileOf: (chipId: string) => TurnFileRef | undefined, label: string): string {
