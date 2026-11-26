@@ -360,6 +360,9 @@ describe('桌面主进程:每台机器一条设备连接', () => {
     expect(classifyLinkExit({ code: 5, stderr: '' }).reason).toBe('notSignedIn')
     expect(classifyLinkExit({ code: 127, stderr: 'gugu-server: not found' }).reason).toBe('notInstalled')
     expect(classifySignInExit(0, '')).toEqual({ ok: true })
+    const changed = 'REMOTE HOST IDENTIFICATION HAS CHANGED!\nThe fingerprint for the ED25519 key sent by the remote host is\nSHA256:abc123.'
+    expect(classifySignInExit(255, changed)).toEqual({ ok: false, reason: 'hostKeyChanged', fingerprint: 'SHA256:abc123' })
+    expect(classifySignInExit(255, 'REMOTE HOST IDENTIFICATION HAS CHANGED!')).toEqual({ ok: false, reason: 'hostKeyChanged', fingerprint: null })
     expect(classifySignInExit(255, 'Permission denied')).toEqual({ ok: false, reason: 'signInRequired' })
     expect(classifySignInExit(255, 'Network is unreachable')).toEqual({ ok: false, reason: 'unreachable' })
   })

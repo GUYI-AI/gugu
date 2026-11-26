@@ -542,7 +542,7 @@ export default {
     "link": {
       "connecting": "Connecting to {{name}} over SSH…",
       "signIn": "Sign in",
-      "hostKeyChanged": "{{name}}'s host key changed. Confirm it is safe, remove its entry from ~/.ssh/known_hosts, then",
+      "hostKeyChanged": "{{name}}’s SSH host key changed. Verify the new fingerprint with the device administrator, then update this device’s entry in your SSH known hosts file and retry.",
       "updateFailed": "Gugu server on {{name}} is too old and could not be updated.",
       "updating": "Gugu server on {{name}} is too old. Updating…",
       "retryUpdate": "Retry",
@@ -849,6 +849,8 @@ export default {
       "matchFailed": "Update failed",
       "matchRetrying": "Updating…",
       "sshSignIn": "Needs SSH sign-in",
+      "sshHostKeyChanged": "SSH host key changed",
+      "sshSignInIncomplete": "SSH sign-in did not complete. Check your credentials and try again.",
       "sshSignInAction": "Sign in",
       "expired": "Sign-in expired (since {{time}})",
       "offlineHint": "Run gugu-server status on the device to see why.",

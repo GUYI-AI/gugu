@@ -21,7 +21,7 @@ import type { TunnelMachines } from './tunnel-machines'
 import type { SshKeyInstallOutcome } from '../../src/session/shared/ssh-prompt'
 import type { DirectTerminalAskpass } from '../session/main/core/pty/direct-terminal/ssh-connect'
 import { createSshAutoUpgrader, sshServerUpgradeRunner, type SshAutoUpgrader } from './ssh-install/auto-upgrade'
-import { buildEnsureMasterArgs, classifySshFailure } from './ssh-install/logic'
+import { buildEnsureMasterArgs, changedHostKey, classifySshFailure } from './ssh-install/logic'
 import { systemSpawnSsh } from './ssh-install/system'
 import type { DeviceCapabilities } from '@gugu/core/shared/types/chat'
 import type { DeviceRpcRequester } from '@gugu/core/cloud/deviceRpcRequester'
@@ -51,11 +51,14 @@ export function openOutcome(
 }
 
 /** 登录那一下的 ssh 结束了:成没成、没成为什么。纯函数。 */
-export function classifySignInExit(code: number | null, stderr: string): { ok: true } | { ok: false; reason: SshLinkFailure } {
+export function classifySignInExit(code: number | null, stderr: string): SshLinkOpenResult {
   if (code === 0) return { ok: true }
   const failure = classifySshFailure(stderr)
   if (failure === 'authFailed' || failure === 'hostKeyRejected') return { ok: false, reason: 'signInRequired' }
-  if (failure === 'hostKeyChanged') return { ok: false, reason: 'hostKeyChanged' }
+  if (failure === 'hostKeyChanged') {
+    const { fingerprint } = changedHostKey(stderr, '')
+    return { ok: false, reason: 'hostKeyChanged', fingerprint }
+  }
   return { ok: false, reason: 'unreachable' }
 }
 
