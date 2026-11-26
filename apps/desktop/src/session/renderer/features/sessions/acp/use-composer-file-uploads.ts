@@ -144,9 +144,14 @@ export function createComposerFileUploads(readArgs: () => ComposerFileUploadArgs
       readArgs().setAttachments((prev) => prev.some((att) => att.id === chip.id)
         ? prev.map((att) => (att.id === chip.id ? placing : att))
         : [...prev, placing]);
+      const settled = start(chip.id, file);
       // 粘贴的截图由 start 按选中的那份出预览;其余还没有预览的图片在这里读一份缩略图。
-      if (chip.kind === 'image' && !chip.previewUrl && !screenshotQuality(file)) void readFileAsDataUrl(file).then((previewUrl) => { if (previewUrl) patch(chip.id, { previewUrl }); });
-      return start(chip.id, file);
+      if (chip.kind === 'image' && !chip.previewUrl && !screenshotQuality(file)) {
+        void readFileAsDataUrl(file).then((previewUrl) => {
+          if (previewUrl && uploads.get(chip.id)?.file === file) patch(chip.id, { previewUrl });
+        });
+      }
+      return settled;
     }
   );
 
@@ -200,6 +205,13 @@ export function createComposerFileUploads(readArgs: () => ComposerFileUploadArgs
     named.delete(chipId);
   });
 
+  const replaceImage = (chipId: string, original: File, edited: File, hasLocalPreview?: boolean) => {
+    if (uploads.get(chipId)?.file !== original) throw new Error(readArgs().translate('attachmentViewer.unavailable'));
+    // Keep the editor's attachment ID at its inline position. The new bytes start a new placement.
+    forget(chipId);
+    void add({ id: chipId, kind: 'image', name: edited.name, mimeType: edited.type, hasLocalPreview }, edited);
+  };
+
   /** 这枚 chip 是不是这里在管(放着、放好、失败)。 */
   const has = ((chipId: string) => uploads.has(chipId));
 
@@ -211,7 +223,7 @@ export function createComposerFileUploads(readArgs: () => ComposerFileUploadArgs
     target.current = null;
   });
 
-  return { add, retry, toggleQuality, keepOnly, prepare, waitForUploads, unsettled, files, has, forget, clear,
+  return { add, replaceImage, retry, toggleQuality, keepOnly, prepare, waitForUploads, unsettled, files, has, forget, clear,
     draftFile: (chipId: string) => uploads.get(chipId)?.file };
 }
 

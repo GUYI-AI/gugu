@@ -8,6 +8,7 @@ import { ThemeProvider } from '@/store/theme'
 import { writeThemePreference } from '@renderer/lib/theme/host-theme'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { followRendererSession } from '@/lib/replica'
+import { registerImageViewerHost, type ImageViewerItem } from '@/lib/imageViewer'
 import { CreateSessionPage } from '@/mobile/agent-watch/CreateSessionPage'
 import { composerDrafts } from '@renderer/features/sessions/composer-drafts'
 import { mobileCreationDraftKey } from '@/mobile/agent-watch/create-session-draft'
@@ -136,6 +137,38 @@ it.each(['light', 'dark'] as const)('%s: New task opens its picker without a dra
   await page.elementLocator(host!.querySelector<HTMLElement>('[data-slot="composer-attachment"] button[aria-label]')!).click()
   await until('file removed', () => !host?.querySelector('[data-slot="composer-attachment"]'))
   expect(fixture.ports.create).not.toHaveBeenCalled(); expect(fixture.legacyCreate).not.toHaveBeenCalled()
+})
+it('replaces only the chosen draft image and places the edited File on first send', async () => {
+  await mount('light')
+  const first = new File(['first'], 'first.png', { type: 'image/png' })
+  const second = new File(['second'], 'second.png', { type: 'image/png' })
+  const edited = new File(['edited first'], 'first-annotated.png', { type: 'image/png' })
+  const draft = composerDrafts.forKey(mobileCreationDraftKey(fixture.owner))
+  const chips = () => host!.querySelectorAll<HTMLElement>('[data-slot="composer-attachment"]')
+  await choose(first)
+  await choose(second)
+  await until('both images staged and rendered', () => draft.pending.length === 2 && chips().length === 2)
+  const ids = draft.pending.map(({ chip }) => chip.id)
+  const open = vi.fn<(item: ImageViewerItem) => void>()
+  const unregister = registerImageViewerHost(({ items, index }) => open(items[index]!))
+  try {
+    await page.elementLocator(chips()[1]!).click()
+    expect(open.mock.lastCall?.[0].alt).toBe(second.name)
+    expect(draft.pending.map(({ file }) => file)).toEqual([first, second])
+
+    await page.elementLocator(chips()[0]!).click()
+    const image = open.mock.lastCall?.[0]
+    expect(image?.alt).toBe(first.name)
+    expect(image?.replace).toBeDefined()
+    await image!.replace!(edited, '')
+    expect(draft.pending.map(({ chip }) => chip.id)).toEqual(ids)
+    expect(draft.pending.map(({ file }) => file)).toEqual([edited, second])
+    await send()
+    await until('first turn admitted', () => fixture.created.mock.calls.length === 1)
+    expect(fixture.ports.place.mock.calls.map(([file]) => file)).toEqual([edited, second])
+  } finally {
+    unregister()
+  }
 })
 it('retains the original File after placement fails, then retries the same task before first-turn admission', async () => {
   await mount('dark')
