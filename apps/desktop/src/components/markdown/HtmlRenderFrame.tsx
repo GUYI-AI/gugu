@@ -100,7 +100,7 @@ export function HtmlRenderFrame({ code, declaredHeight }: { code: string; declar
   const near = useNearViewport(box, true, HTML_RENDER_NEAR_MARGIN, true)
   const height = htmlRenderOpeningHeight(contentHeight, declaredHeight)
   return (
-    <div ref={box} className="gg-md-html-render" style={{ minHeight: height }}>
+    <div ref={box} className="gg-md-html-render" data-height={height}>
       {near && (
         <HtmlRenderDocument
           code={code}

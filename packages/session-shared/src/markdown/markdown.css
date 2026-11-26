@@ -294,6 +294,8 @@
 /* A ```html-render page (HtmlRenderFrame): the frame is as tall as its page, on the message's own background. The expand
    button shows while the page is hovered or focused, always on touch. */
 .gg-md .gg-md-html-render { position: relative; margin: var(--md-gap) 0; }
+/* The box keeps the page's height (data-height, px) while its frame is unmounted off screen, so nothing moves. */
+.gg-md .gg-md-html-render[data-height] { min-height: attr(data-height px); }
 .gg-md .gg-md-html-render__expand {
   position: absolute; top: 6px; right: 6px;
   background: var(--bg-primary, Canvas);
