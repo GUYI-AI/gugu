@@ -38,3 +38,8 @@ it('preserves an absolute drive root when normalizing file-tree paths', () => {
   expect(normalizeFileTreePath('C:\\')).toBe('C:/')
   expect(normalizeFileTreePath('/')).toBe('/')
 })
+
+it('strips filesystem roots once from changes paths', () => {
+  expect(displayPathForChange('/src/main.ts', '/')).toBe('src/main.ts')
+  expect(displayPathForChange('C:/src/main.ts', 'C:/')).toBe('src/main.ts')
+})
