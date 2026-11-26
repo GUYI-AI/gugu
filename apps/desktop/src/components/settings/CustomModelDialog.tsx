@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { CatalogModelFields, CustomModelCatalog, ModelCatalogPicker } from './CustomModelCatalog';
+import { useEffect, useId, useRef, useState } from 'react';
 import {
-  CUSTOM_MODEL_EFFORT_LEVELS, CUSTOM_MODEL_KEY_CHANNEL, FAST_PROTOCOLS, customModelAcceptsImages, customModelCatalogLevels, customModelRouteSchema,
+  CUSTOM_MODEL_EFFORT_LEVELS, CUSTOM_MODEL_KEY_CHANNEL, FAST_PROTOCOLS, customModelApiUrl, customModelAcceptsImages, customModelCatalogLevels, customModelRouteSchema,
   customModelThinks, modelProtocolSchema, normalizeModelBaseUrl, proposedDefaultEffort,
   type CustomModelConnection, type CustomModelEffortLevel, type CustomModelEntry, type CustomModelMeta, type CustomModelRoute, type ModelProtocol,
 } from '@gugu/session-core/models/custom-model';
@@ -72,10 +73,11 @@ const CUSTOM_PROVIDER = 'custom';
 type ConnectionTest = { kind: 'idle' } | { kind: 'testing' } | { kind: 'ok' } | { kind: 'failed'; message: string };
 
 export function CustomModelDialog({ machine, connection, modelId, group = providerPresets.find(preset => preset.id === connection?.preset)?.group ?? 'custom',
-  initialAccount, initialRoute, onClose }: {
+  initialAccount, initialRoute, manageCatalog = false, onClose }: {
   machine: string | null; connection?: CustomModelConnection; group?: 'coding-plan' | 'api' | 'custom';
   /** The model of `connection` this dialog edits; its other models are kept as they are. */
   modelId?: string;
+  manageCatalog?: boolean;
   initialAccount?: 'claude' | 'codex' | 'antigravity'; initialRoute?: Omit<CustomModelRoute, 'id'>; onClose: () => void;
 }) {
   const { translate } = useSessionMessages();
@@ -101,7 +103,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     return icon && <span className="gg-model-provider-icon" aria-hidden="true">{icon}</span>;
   };
   const providerLabel = (id: string) => <span className="gg-model-provider-option">{iconOf(id)}<span>{labelOf(id)}</span></span>;
-  const editedModel = modelId === undefined ? connection?.models[0] : connection?.models.find(({ id }) => id === modelId);
+  const editedModel = modelId === undefined ? connection?.models[0] : [...(connection?.models ?? []), ...(connection?.disabledModels ?? [])].find(({ id }) => id === modelId);
   const [endpoints, setEndpoints] = useState<CustomModelMeta['endpoints']>(connection?.endpoints ?? initialPreset?.endpoints ?? [{ protocol: 'openai-chat-completions', baseUrl: '' }]);
   const [apiKey, setApiKey] = useState('');
   const keyInput = useRef<HTMLInputElement>(null);
@@ -113,6 +115,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
   // A typed key can always be shown; a saved one only where this device can read it back.
   const keyRevealable = !!apiKey || !connection?.keySaved || keyReadable;
   const typedKey = apiKey !== heldKey ? apiKey : '';
+  const [pickedModels, setPickedModels] = useState<string[]>([]);
   const [modelName, setModelName] = useState(editedModel?.id ?? '');
   const [routes, setRoutes] = useState<CustomModelRoute[]>(() => {
     const existing = connection?.routes ?? [];
@@ -132,9 +135,13 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
   catch (error) { addressProblem = errorText(error); }
   // A custom address, whether its key is typed here or held by the connection: the host recognizes which protocols it
   // speaks while it reads the models, and saving keeps what it found.
-  const address = !preset && normalized?.[0] ? normalized[0].baseUrl : null;
+  const savedAddress = connection ? customModelApiUrl(connection) : null;
+  const address = !preset && normalized?.[0] ? (endpoints[0]?.baseUrl === connection?.endpoints[0]?.baseUrl ? savedAddress : normalized[0].baseUrl) : null;
   const keySource = typedKey ? { apiKey: typedKey } : connection?.keySaved ? { connectionId: connection.id } : null;
-  const source: ConnectionModelSource | null = !keySource || !normalized ? null : address ? { ...keySource, baseUrl: address } : { ...keySource, endpoints: normalized };
+  const savedConnectionUnchanged = manageCatalog && connection?.keySaved && !typedKey && endpoints === connection.endpoints;
+  const source: ConnectionModelSource | null = !keySource || !normalized ? null
+    : savedConnectionUnchanged && connection ? { connectionId: connection.id }
+    : address ? { ...keySource, baseUrl: address } : { ...keySource, endpoints: normalized };
   const list = useConnectionModelList(machine, source);
   // What the background read found wrong with the key or address, until the person's own test replaces it. A preset has no
   // address field, so an address reason is said as what is known rather than "check this address" (B7-F03).
@@ -157,8 +164,15 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
   const addRoute = () => setRoutes(current => [{
     id: crypto.randomUUID(), incoming: 'any', outgoing: routeEndpoints[0]?.protocol ?? 'openai-chat-completions',
   }, ...current]);
-  const model = modelName.trim();
+  const chooseFromCatalog = !connection && list.kind === 'listed';
+  const model = chooseFromCatalog ? pickedModels[0] ?? '' : modelName.trim();
 
+  const [enabledModels, setEnabledModels] = useState(() => connection?.models.map(({ id }) => id) ?? []);
+  const [modelEdits, setModelEdits] = useState<Map<string, CustomModelEntry>>(() => new Map());
+  const catalogEntries = new Map([...(connection?.disabledModels ?? []), ...(connection?.models ?? []), ...modelEdits.values()].map(entry => [entry.id, entry]));
+  const catalogChanged = modelEdits.size > 0 || enabledModels.length !== connection?.models.length ||
+    Boolean(connection?.models.some(({ id }) => !enabledModels.includes(id)));
+  const catalogModelId = enabledModels[0] ?? connection?.models[0]?.id;
   // The levels models.dev knows for the named model are checked for the person, once per name, until they check their own.
   const [lookupId, setLookupId] = useState(model);
   useEffect(() => {
@@ -207,7 +221,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     setKeyShown(!keyShown);
   };
   const setAddress = (baseUrl: string) => {
-    setTest({ kind: 'idle' });
+    setPickedModels([]); setTest({ kind: 'idle' });
     setEndpoints((current) => current.map((endpoint, i) => i === 0 ? { ...endpoint, baseUrl } : endpoint));
   };
   const testConnection = async () => {
@@ -216,7 +230,8 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     setTest({ kind: 'testing' });
     try {
       const client = await getAgentConfigRuntimeClient(machine);
-      const named = model ? { modelId: model } : {};
+      const targetModel = manageCatalog ? catalogModelId : model;
+      const named = targetModel ? { modelId: targetModel } : {};
       if (address) {
         const probe = await client.detectCustomModelProtocols({ ...keySource, baseUrl: address, ...named });
         if (!probe.success) throw new Error(errorText(probe.error));
@@ -235,7 +250,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     } catch (error) { setTest({ kind: 'failed', message: errorText(error) }); }
   };
   const chooseProvider = (id: string) => {
-    setPresetId(id); setRoutes([]); setTest({ kind: 'idle' });
+    setPickedModels([]); setPresetId(id); setRoutes([]); setTest({ kind: 'idle' });
     setAdvanced(advancedReset());
     effortsChosen.current = false;
     const next = providerPresets.find((item) => item.id === id);
@@ -244,17 +259,17 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
   const save = async () => {
     setFailure('');
     if (!normalized) { setFailure(addressProblem); return; }
-    if (!model) { setFailure(translate('subscriptions.connections.modelsRequired')); return; }
+    if (!manageCatalog && !model) { setFailure(translate('subscriptions.connections.modelsRequired')); return; }
     setBusy('save');
     try {
       const client = await getAgentConfigRuntimeClient(machine);
       let saved = normalized;
       let unverified: boolean | undefined;
-      if (address && keySource) {
+      if (address && keySource && !savedConnectionUnchanged) {
         // What the background check found; an address with no model list is checked again with the model named here.
         saved = list.kind === 'listed' || list.kind === 'unlisted' ? list.endpoints ?? [] : [];
         if (!saved.length) {
-          const probe = await client.detectCustomModelProtocols({ ...keySource, baseUrl: address, modelId: model });
+          const probe = await client.detectCustomModelProtocols({ ...keySource, baseUrl: address, modelId: manageCatalog ? catalogModelId : model });
           if (!probe.success) throw new Error(errorText(probe.error));
           saved = probe.data.endpoints;
           if (!saved.length) {
@@ -274,7 +289,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
       const savedRoutes = (advanced.customProtocol ? routes : []).map((route) => customModelRouteSchema.parse({
         ...route,
         baseUrl: route.baseUrl?.trim() || undefined,
-        modelId: route.modelId === editedModel?.id ? model : route.modelId,
+        modelId: !manageCatalog && editedModel && route.modelId === editedModel.id ? model : route.modelId,
       }));
       if (savedRoutes.some(({ outgoing, baseUrl }) => !baseUrl && !saved.some(endpoint => endpoint.protocol === outgoing))) {
         throw new Error(translate('customModels.routeAddressRequired'));
@@ -296,15 +311,24 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
       };
       // The edited model keeps its place; the connection's other models are saved as they are.
       const models = (connection?.models ?? []).flatMap(item => item.id === editedModel?.id ? [entry] : item.id === model ? [] : [stored(item)]);
+      const enabled = new Set(enabledModels);
+      const catalogModels = enabledModels.map(id => stored(catalogEntries.get(id) ?? { id }));
+      const catalogDisabled = [...catalogEntries.values()].filter(item => !enabled.has(item.id)).map(stored);
+      if (manageCatalog && !catalogModels.length && !catalogDisabled.length) {
+        setFailure(translate('subscriptions.connections.modelsRequired'));
+        return;
+      }
+      const disabledModels = connection?.disabledModels?.flatMap(item => item.id === editedModel?.id ? [entry] : item.id === model ? [] : [stored(item)]);
       const result = await client.saveCustomModel({
         ...(connection ? { id: connection.id } : {}),
         name: connection?.name || preset?.name || new URL(saved[0]!.baseUrl).host,
-        preset: preset?.id ?? null, endpoints: saved,
+        preset: preset?.id ?? null, endpoints: saved, apiUrl: address ?? (connection ? customModelApiUrl(connection) : undefined),
         routes: savedRoutes,
         harnessProtocols: connection?.harnessProtocols,
         ...(unverified === undefined ? {} : { unverified }),
         ...(typedKey ? { apiKey: typedKey } : {}),
-        models: editedModel ? models : [entry, ...models],
+        models: manageCatalog ? catalogModels : chooseFromCatalog ? pickedModels.map(id => ({ id })) : editedModel ? models : [entry, ...models],
+        disabledModels: manageCatalog ? catalogDisabled : disabledModels,
       });
       if (!result.success) throw new Error(errorText(result.error));
       await customModels.refresh(machine);
@@ -328,17 +352,70 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
   const droppingRoutes = advanced.customProtocol ? 0 : connection?.routes?.length ?? 0;
   const checkbox = (testId: string, label: string, checked: boolean, onChange: (checked: boolean) => void) =>
     <label className="gg-model-check" data-testid={testId}><Checkbox checked={checked} onCheckedChange={onChange} />{label}</label>;
+  const protocolCheckbox = checkbox('custom-model-custom-protocol', translate('customModels.customProtocol'), advanced.customProtocol, checkCustomProtocol);
+  const protocolControl = <>
+    {droppingRoutes > 0 ? <div className="gg-model-check-row">
+      {protocolCheckbox}
+      <p className="gg-model-hint" data-tone="warning" role="status" data-testid="custom-model-drop-routes">
+        {translate('customModels.dropRoutes', { count: droppingRoutes })}
+      </p>
+    </div> : protocolCheckbox}
+    {advanced.customProtocol && <fieldset className="gg-model-routes" data-testid="custom-model-routes">
+      <legend className="gg-model-field-label">{translate('customModels.routing')}</legend>
+      {routes.map((route, index) => (
+        <div key={route.id} className={`grid items-end gap-2 ${routeAddresses
+          ? 'grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.15fr)_auto]'
+          : 'grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_minmax(0,1fr)_auto]'}`}>
+          <label className="gg-model-route-cell">{translate('customModels.incoming')}
+            <Select value={route.incoming} onValueChange={(value) => { if (value) updateRoute(route.id, { incoming: value }); }}>
+              <SelectTrigger className="w-full" data-testid={`custom-model-route-incoming-${index}`}><SelectValue>{route.incoming === 'any' ? translate('customModels.anyProtocol') : protocolLabel(route.incoming)}</SelectValue></SelectTrigger>
+              <SelectContent><SelectItem value="any">{translate('customModels.anyProtocol')}</SelectItem>
+                {modelProtocolSchema.options.map(protocol => <SelectItem key={protocol} value={protocol}>{protocolLabel(protocol)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </label>
+          <span className="self-end pb-2 text-foreground-muted" aria-hidden="true">→</span>
+          <label className="gg-model-route-cell">{translate('customModels.outgoing')}
+            <Select value={route.outgoing} onValueChange={(value) => { if (value) updateRoute(route.id, { outgoing: value }); }}>
+              <SelectTrigger className="w-full" data-testid={`custom-model-route-outgoing-${index}`}><SelectValue>{protocolLabel(route.outgoing)}</SelectValue></SelectTrigger>
+              <SelectContent>
+                {modelProtocolSchema.options.map(protocol => <SelectItem key={protocol} value={protocol}>{protocolLabel(protocol)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="gg-model-route-cell">{translate('customModels.applicableModel')}
+            <Select value={route.modelId ?? ''} onValueChange={(value) => updateRoute(route.id, { modelId: value || undefined })}>
+              <SelectTrigger className="w-full" data-testid={`custom-model-route-model-${index}`}><SelectValue>{route.modelId ?? translate('customModels.allModels')}</SelectValue></SelectTrigger>
+              <SelectContent><SelectItem value="">{translate('customModels.allModels')}</SelectItem>
+                {(manageCatalog ? [...new Set([...enabledModels, ...(route.modelId ? [route.modelId] : [])])] : [...new Set([...(model ? [model] : []), ...(connection?.models ?? []).map(({ id }) => id).filter(id => id !== editedModel?.id)])])
+                  .map(id => <SelectItem key={id} value={id}>{id}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </label>
+          {routeAddresses && <label className="gg-model-route-cell">{translate('customModels.routeAddressColumn')}
+            <Input type="url" aria-label={translate('customModels.routeAddress', { index: index + 1 })}
+              data-testid={`custom-model-route-address-${index}`} value={route.baseUrl ?? ''}
+              placeholder={routeAddressPlaceholder(route.outgoing)}
+              onChange={(event) => updateRoute(route.id, { baseUrl: event.target.value })} />
+          </label>}
+          <IconButton size="sm" aria-label={translate('customModels.removeRoute', { index: index + 1 })}
+            onClick={() => setRoutes(current => current.filter(({ id }) => id !== route.id))}><X aria-hidden className="size-4" /></IconButton>
+        </div>
+      ))}
+      <Button type="button" size="sm" variant="outline" className="self-start" disabled={routes.length >= 100} onClick={addRoute}>{translate('customModels.addRoute')}</Button>
+    </fieldset>}
+  </>;
   const fastCheckbox = <label className="gg-model-check" data-testid="custom-model-fast" data-disabled={fastSupported ? undefined : ''}>
     <Checkbox checked={advanced.fast && fastSupported} disabled={!fastSupported} onCheckedChange={checked => check('fast', checked)} />{translate('customModels.fast')}</label>;
-  const formId = 'custom-model-form';
+  const formId = useId();
   return <Dialog open onOpenChange={(open) => { if (!open && !busy && !accountCreating) onClose(); }}>
-    <DialogContent className="gg-model-dialog sm:max-w-[640px]" data-testid="custom-model-dialog"
+    <DialogContent className={"gg-model-dialog sm:max-w-[640px]"} data-testid="custom-model-dialog"
       initialFocus={connection && !connection.keySaved ? keyInput : undefined}>
       <DialogHeader>
         <DialogTitle>{translate(connection ? 'customModels.edit' : group === 'coding-plan' ? 'customModels.addPlan' : group === 'api' ? 'customModels.addApi' : 'customModels.add')}</DialogTitle>
       </DialogHeader>
       <DialogContentArea className="gg-model-dialog-body">
-        <div className="gg-model-field">
+        {!manageCatalog && <div className="gg-model-field">
           <span className="gg-model-field-label flex items-center justify-between">{translate(group === 'coding-plan' ? 'customModels.plan' : 'customModels.provider')}{(preset || accountProvider) && <Button type="button" size="sm" variant="link" className="gg-model-provider-link" onClick={() => openExternalLinkInBrowser(accountProvider === 'antigravity' ? 'https://antigravity.google/docs/plans' : accountProvider === 'claude' ? 'https://claude.ai/upgrade' : accountProvider === 'codex' ? 'https://chatgpt.com/pricing' : preset!.docsUrl)}>{translate(accountProvider ? 'customModels.purchasePlan' : 'customModels.docs')} ↗</Button>}</span>
           <Combobox
             value={presetId}
@@ -367,13 +444,13 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
               <ComboboxEmpty>{translate('customModels.noProviders')}</ComboboxEmpty>
             </ComboboxContent>
           </Combobox>
-        </div>
+        </div>}
         {accountProvider ? accountAgent ? <SubscriptionConnections key={accountProvider} agent={accountAgent} machine={machine} modelAccount={{ onClose, onBusyChange: setAccountCreating }} /> : agentsError ? <SettingsNote tone="danger" role="alert">{errorText(agentsError)} <Button size="sm" variant="outline" onClick={retryOf(agentsReading)}>{translate('common.retry')}</Button></SettingsNote> : agents ? <SettingsNote tone="danger">{translate('customModels.accountUnavailable')}</SettingsNote> : <Unknown className="h-9 w-full" /> : <form id={formId} className="gg-model-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-          {!preset && <label className="gg-model-field"><span className="gg-model-field-label">{translate('customModels.address')}</span><Input data-testid="custom-model-address-0" type="url" required spellCheck={false} placeholder={translate('customModels.addressPlaceholder')} value={endpoints[0]?.baseUrl ?? ''} onChange={(event) => setAddress(event.target.value)} /></label>}
+          {!preset && <label className="gg-model-field"><span className="gg-model-field-label">{translate('customModels.address')}</span><Input data-testid="custom-model-address-0" type="url" required spellCheck={false} placeholder={translate('customModels.addressPlaceholder')} value={connection && endpoints[0]?.baseUrl === connection.endpoints[0]?.baseUrl ? savedAddress ?? '' : endpoints[0]?.baseUrl ?? ''} onChange={(event) => setAddress(event.target.value)} /></label>}
           <div className="gg-model-field">
             <label className="gg-model-field-label" htmlFor="custom-model-key">API Key</label>
             <div className="gg-model-key-row">
-              <span className="relative flex min-w-0 flex-1 items-center"><Input id="custom-model-key" ref={keyInput} data-testid="custom-model-key" type={keyShown ? 'text' : 'password'} className={keyRevealable ? 'pr-9' : undefined} required={!connection?.keySaved} autoComplete="off" spellCheck={false} value={apiKey} aria-invalid={test.kind === 'failed' ? true : undefined} placeholder={connection?.keySaved ? `••••••••${connection.discovered?.keyLast4 ?? ''}` : translate('customModels.keyPlaceholder')} onChange={(event) => { setApiKey(event.target.value); setTest({ kind: 'idle' }); }} />
+              <span className="relative flex min-w-0 flex-1 items-center"><Input id="custom-model-key" ref={keyInput} data-testid="custom-model-key" type={keyShown ? 'text' : 'password'} className={keyRevealable ? 'pr-9' : undefined} required={!connection?.keySaved} autoComplete="off" spellCheck={false} value={apiKey} aria-invalid={test.kind === 'failed' ? true : undefined} placeholder={connection?.keySaved ? `••••••••${connection.discovered?.keyLast4 ?? ''}` : translate('customModels.keyPlaceholder')} onChange={(event) => { setPickedModels([]); setApiKey(event.target.value); setTest({ kind: 'idle' }); }} />
                 {keyRevealable && <IconButton size="sm" className="absolute right-1 top-1/2 -translate-y-1/2" aria-label={translate(keyShown ? 'customModels.hideKey' : 'customModels.showKey')} aria-pressed={keyShown} onClick={() => { void toggleKey(); }}>{keyShown ? <Eye aria-hidden className="size-4" /> : <EyeOff aria-hidden className="size-4" />}</IconButton>}</span>
               <Button type="button" variant="outline" data-testid="custom-model-test" disabled={!source || test.kind === 'testing' || !!busy} onClick={() => { void testConnection(); }}>
                 {translate(test.kind === 'testing' ? 'customModels.testing' : 'customModels.test')}
@@ -383,69 +460,37 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
             {test.kind === 'failed' && <p className="subscription-error" role="alert" data-testid="custom-model-test-result">{test.message}</p>}
             {test.kind === 'idle' && keyProblem && <p className="subscription-error" role="alert" data-testid="custom-model-key-problem">{keyProblem}</p>}
           </div>
-          <label className="gg-model-field gg-model-field-spaced"><span className="gg-model-field-label">{translate('customModels.modelName')}</span>
+          {manageCatalog && <CustomModelCatalog list={list} enabled={enabledModels} entries={catalogEntries} onChange={setEnabledModels}
+            allowManual={list.kind === 'failed' || list.kind === 'unlisted'} />}
+          {chooseFromCatalog ? <ModelCatalogPicker ids={list.models} value={pickedModels} onChange={setPickedModels} /> : <>
+          {!manageCatalog && <label className="gg-model-field gg-model-field-spaced"><span className="gg-model-field-label">{translate('customModels.modelName')}</span>
             <Input data-testid="custom-model-name" required spellCheck={false} maxLength={200} placeholder={translate('customModels.modelNamePlaceholder')} value={modelName} onChange={(event) => { setModelName(event.target.value); setTest({ kind: 'idle' }); }} />
-          </label>
+          </label>}
           <div className="gg-model-advanced" data-testid="custom-model-advanced">
             <span className="gg-model-field-label">{translate('customModels.advancedConfig')}</span>
-            <div className="gg-model-checks">
-              {checkbox('custom-model-tool-call', translate('customModels.toolCall'), advanced.toolCall, checked => check('toolCall', checked))}
+            {manageCatalog && enabledModels.length > 0 && <div className="gg-model-advanced-fields">
+              <CatalogModelFields entries={enabledModels.map(id => catalogEntries.get(id))} protocolControl={protocolControl} onChange={patch => {
+                setModelEdits(current => {
+                  const next = new Map(current);
+                  for (const id of enabledModels) {
+                    const entry = current.get(id) ?? catalogEntries.get(id);
+                    const fields = typeof patch === 'function' ? patch(entry) : patch;
+                    next.set(id, { ...entry, ...fields, id });
+                  }
+                  return next;
+                });
+              }} />
+            </div>}
+            {(!manageCatalog || !enabledModels.length) && <div className="gg-model-checks">
+              {!manageCatalog && <>{checkbox('custom-model-tool-call', translate('customModels.toolCall'), advanced.toolCall, checked => check('toolCall', checked))}
               {checkbox('custom-model-image', translate('customModels.image'), advanced.image, checked => check('image', checked))}
               {checkbox('custom-model-thinking', translate('customModels.thinking'), advanced.thinking, checkThinking)}
               {advanced.thinking && checkbox('custom-model-thinking-only', translate('customModels.thinkingOnly'), advanced.thinkingOnly, checked => check('thinkingOnly', checked))}
-              {advanced.thinking && checkbox('custom-model-thinking-optional', translate('customModels.thinkingOptional'), advanced.thinkingOptional, checked => check('thinkingOptional', checked))}
-              {fastCheckbox}
-              <div className="gg-model-check-row">
-                {checkbox('custom-model-custom-protocol', translate('customModels.customProtocol'), advanced.customProtocol, checkCustomProtocol)}
-                {droppingRoutes > 0 && <p className="gg-model-hint" data-tone="warning" role="status" data-testid="custom-model-drop-routes">
-                  {translate('customModels.dropRoutes', { count: droppingRoutes })}</p>}
-              </div>
-            </div>
-            {advanced.customProtocol && <fieldset className="gg-model-routes" data-testid="custom-model-routes">
-              <legend className="gg-model-field-label">{translate('customModels.routing')}</legend>
-              {routes.map((route, index) => (
-                <div key={route.id} className={`grid items-end gap-2 ${routeAddresses
-                  ? 'grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.15fr)_auto]'
-                  : 'grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_minmax(0,1fr)_auto]'}`}>
-                  <label className="gg-model-route-cell">{translate('customModels.incoming')}
-                    <Select value={route.incoming} onValueChange={(value) => { if (value) updateRoute(route.id, { incoming: value }); }}>
-                      <SelectTrigger className="w-full" data-testid={`custom-model-route-incoming-${index}`}><SelectValue>{route.incoming === 'any' ? translate('customModels.anyProtocol') : protocolLabel(route.incoming)}</SelectValue></SelectTrigger>
-                      <SelectContent><SelectItem value="any">{translate('customModels.anyProtocol')}</SelectItem>
-                        {modelProtocolSchema.options.map(protocol => <SelectItem key={protocol} value={protocol}>{protocolLabel(protocol)}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </label>
-                  <span className="self-end pb-2 text-foreground-muted" aria-hidden="true">→</span>
-                  <label className="gg-model-route-cell">{translate('customModels.outgoing')}
-                    <Select value={route.outgoing} onValueChange={(value) => { if (value) updateRoute(route.id, { outgoing: value }); }}>
-                      <SelectTrigger className="w-full" data-testid={`custom-model-route-outgoing-${index}`}><SelectValue>{protocolLabel(route.outgoing)}</SelectValue></SelectTrigger>
-                      <SelectContent>
-                        {modelProtocolSchema.options.map(protocol => <SelectItem key={protocol} value={protocol}>{protocolLabel(protocol)}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </label>
-                  <label className="gg-model-route-cell">{translate('customModels.applicableModel')}
-                    <Select value={route.modelId ?? ''} onValueChange={(value) => updateRoute(route.id, { modelId: value || undefined })}>
-                      <SelectTrigger className="w-full" data-testid={`custom-model-route-model-${index}`}><SelectValue>{route.modelId ?? translate('customModels.allModels')}</SelectValue></SelectTrigger>
-                      <SelectContent><SelectItem value="">{translate('customModels.allModels')}</SelectItem>
-                        {[...new Set([...(model ? [model] : []), ...(connection?.models ?? []).map(({ id }) => id).filter(id => id !== editedModel?.id)])]
-                          .map(id => <SelectItem key={id} value={id}>{id}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </label>
-                  {routeAddresses && <label className="gg-model-route-cell">{translate('customModels.routeAddressColumn')}
-                    <Input type="url" aria-label={translate('customModels.routeAddress', { index: index + 1 })}
-                      data-testid={`custom-model-route-address-${index}`} value={route.baseUrl ?? ''}
-                      placeholder={routeAddressPlaceholder(route.outgoing)}
-                      onChange={(event) => updateRoute(route.id, { baseUrl: event.target.value })} />
-                  </label>}
-                  <IconButton size="sm" aria-label={translate('customModels.removeRoute', { index: index + 1 })}
-                    onClick={() => setRoutes(current => current.filter(({ id }) => id !== route.id))}><X aria-hidden className="size-4" /></IconButton>
-                </div>
-              ))}
-              <Button type="button" size="sm" variant="outline" className="self-start" disabled={routes.length >= 100} onClick={addRoute}>{translate('customModels.addRoute')}</Button>
-            </fieldset>}
-            {advanced.thinking && <div className="gg-model-thinking" data-testid="custom-model-thinking-levels">
+              {advanced.thinking && checkbox('custom-model-thinking-optional', translate('customModels.thinkingOptional'), advanced.thinkingOptional, checked => check('thinkingOptional', checked))}</>}
+              {!manageCatalog && fastCheckbox}
+              {protocolControl}
+            </div>}
+            {!manageCatalog && <>{advanced.thinking && <div className="gg-model-thinking" data-testid="custom-model-thinking-levels">
               {!advanced.efforts.length && <p className="gg-model-hint" data-testid="custom-model-effort-hint">{translate('customModels.effortHint')}</p>}
               <div className="gg-model-field">
                 <span className="gg-model-field-label" id="custom-model-default-effort-label">{translate('customModels.defaultEffort')}</span>
@@ -477,13 +522,15 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
                   onChange={event => setDefaultContextLength(event.target.value ? Number(event.target.value) : undefined)} />
               </label>
             </div>
+          </>}
           </div>
+          </>}
           {failure && <p className="subscription-error" role="alert">{failure}</p>}
         </form>}
       </DialogContentArea>
       {!accountProvider && <div className="gg-model-dialog-footer">
         <Button type="button" variant="outline" disabled={!!busy} onClick={onClose}>{translate('common.cancel')}</Button>
-        <Button type="submit" form={formId} disabled={!!busy} data-testid="custom-model-save">{translate(busy === 'save' ? 'subscriptions.connections.saving' : 'common.save')}</Button>
+        <Button type="submit" form={formId} disabled={!!busy || (manageCatalog && !catalogChanged && !typedKey && endpoints === connection?.endpoints && routes === (connection?.routes ?? routes) && advanced.customProtocol === Boolean(connection?.routes?.length))} data-testid="custom-model-save">{translate(busy === 'save' ? 'subscriptions.connections.saving' : 'common.save')}</Button>
       </div>}
     </DialogContent>
   </Dialog>;

@@ -203,7 +203,7 @@ test('main renderer search fields share one visual contract', async ({ page }, t
   await expect(phoneSearchButton).toBeVisible()
   expect((await phoneSearchButton.boundingBox())?.height).toBeGreaterThanOrEqual(44)
   await phoneSearchButton.click()
-  const mobileSearch = page.getByTestId('phone-message-search').getByTestId('global-search-input')
+  const mobileSearch = page.getByTestId('global-search').getByTestId('global-search-input')
   await expect(mobileSearch).toBeVisible()
   await capture(page, testInfo, 'search-field-partners-mobile')
 

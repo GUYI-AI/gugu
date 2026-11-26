@@ -68,7 +68,7 @@ const loaded = async () => {
 describe('设置「模型」页', () => {
   it('opens the platform catalog dialog from its provider row in Your Models', async () => {
     await harness.render(createNode(ModelSection))
-    expect(harness.container.querySelector('[data-testid="settings-auxiliary-models"]')).not.toBeNull()
+    expect(harness.container.querySelector('[data-testid="settings-auxiliary-models"]')).toBeNull()
     const custom = harness.container.querySelector('[data-testid="settings-custom-models"]')!
     expect(custom.querySelector('[data-testid="settings-model-provided-manage"]')).not.toBeNull()
     expect(document.querySelector('[data-testid="settings-model-search"]')).toBeNull()
