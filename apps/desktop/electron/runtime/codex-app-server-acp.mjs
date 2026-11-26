@@ -973,6 +973,11 @@ const subagents = createCodexSubagents({ rootId: () => sessionId, emit: sessionU
  * 目标是 active 时 codex 自己注入目标、空闲时自己开一轮(app-server `thread_goal_processor.rs`)。
  */
 let lastGoalLine = null
+// Codex's goal notifications, counted. A response to our own request is older than any notification that reached us
+// while it was in flight (the response and the notifications after it can be read in one batch, before the request's
+// continuation runs), so such a response must not show its state after the newer one.
+let goalNotices = 0
+let latestGoal = null
 const GOAL_STATUS_TEXT = {
   active: 'Goal active', paused: 'Goal paused', blocked: 'Goal blocked',
   usageLimited: 'Goal stopped, usage limit reached', budgetLimited: 'Goal stopped, token budget reached',
@@ -1006,7 +1011,9 @@ async function runGoalCommand(command, insertion) {
   // The line is the person's own input: record it, as Codex records the goal change in its thread.
   insertedUserMessage({ id: `goal:${insertion.clientId}`, clientId: insertion.clientId })
   if (command.kind === 'show') {
-    const { goal } = await goalRequest('thread/goal/get', {})
+    const seen = goalNotices
+    const { goal: answered } = await goalRequest('thread/goal/get', {})
+    const goal = goalNotices === seen ? answered : latestGoal
     if (goal) noticeGoalStatus(goal, true)
     else sessionUpdate({ sessionUpdate: 'notice', severity: 'info', title: 'No goal set' })
     return
@@ -1020,8 +1027,9 @@ async function runGoalCommand(command, insertion) {
   const params = command.kind === 'set'
     ? { origin: 'user', objective: command.objective, status: 'active', ...(command.tokenBudget === null ? {} : { tokenBudget: command.tokenBudget }) }
     : { origin: 'user', status: command.kind === 'pause' ? 'paused' : 'active' }
+  const seen = goalNotices
   const { goal } = await goalRequest('thread/goal/set', params)
-  noticeGoalStatus(goal)
+  if (goalNotices === seen) noticeGoalStatus(goal)
 }
 
 /**
@@ -1507,10 +1515,14 @@ function onAppNotification(message) {
     return
   }
   if (method === 'thread/goal/updated') {
+    goalNotices += 1
+    latestGoal = params.goal ?? null
     noticeGoalStatus(params.goal)
     return
   }
   if (method === 'thread/goal/cleared') {
+    goalNotices += 1
+    latestGoal = null
     lastGoalLine = null
     return
   }
