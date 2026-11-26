@@ -1,10 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { createDeviceRpcRequester } from '@gugu/core/cloud/deviceRpcRequester'
 import { createDeviceRpcRequestEnvelope, parseDeviceRpcReply } from '@gugu/core/cloud/deviceRpcProtocol'
-import { FILE_STREAM_PROTOCOL } from '@gugu/core/cloud/serverMachineHealth'
 import { requireFileRange, requireFileRevision, type FileBytes, type FileContext, type FileRevision } from '@gugu/core/shared/fileResolver'
-import { attachSshDeviceRpcPipe, type SharedSshLinks } from './device-rpc-requester'
-import { PROJECT_FILE_READ, PROJECT_FILE_STREAM, openProjectFileSource, snapshotProjectFile, type ProjectFileChunk, type ProjectFileReader } from './projectFileHost'
+import type { SharedSshLinks } from './device-rpc-requester'
+import { PROJECT_FILE_STREAM, snapshotProjectFile } from './projectFileHost'
 
 export type HeldFileSshLinks = Pick<SharedSshLinks, 'tap' | 'send' | 'open'> & {
   /** Real owner SSH mappings only; tunnels and connections from another account are excluded. */
@@ -35,24 +33,16 @@ export function ownSshFileProvider(links: HeldFileSshLinks, tempRoot: string) {
     const deviceId = revision.host_device_id!, accountId = context.actor.accountId
     if (context.actor.actorId !== accountId || revision.host_account_id !== accountId || !await links.owned(deviceId, accountId)) return null
     const release = links.hold(deviceId)
-    const requester = createDeviceRpcRequester({ userId: async () => accountId, openPipe: async (device, handlers) => attachSshDeviceRpcPipe(links, device, handlers) })
     let held = false
     try {
       await openLink(links, deviceId)
-      const read = async (request: Parameters<ProjectFileReader>[0]) => {
-        const response = await requester.call(deviceId, PROJECT_FILE_READ, request, { timeoutMs: 30_000, signal: context.signal })
-        if (response.error) throw new Error(`File read refused: ${response.error.code}`)
-        return response.result as ProjectFileChunk
-      }
-      // Protocol 19+: one stream of raw bytes. MIN_SERVER_PROTOCOL (20) is past FILE_STREAM_PROTOCOL: the part branch is left to delete.
-      const source = (links.protocol(deviceId) ?? 0) >= FILE_STREAM_PROTOCOL
-        ? await openProjectFileStream(revision, { links, deviceId, accountId, signal: context.signal }, context.progress)
-        : await openProjectFileSource(revision, read, context.download ? undefined : context.progress)
+      // One stream of raw bytes; a server below MIN_SERVER_PROTOCOL refuses it as outdated (no part reader to fall back on).
+      const source = await openProjectFileStream(revision, { links, deviceId, accountId, signal: context.signal }, context.progress)
       // A snapshot is local once it is verified: the link is let go now. A download still reads the line until it is done.
       if (!context.download) return await snapshotProjectFile(revision, source, tempRoot, context.signal)
       held = true
-      return { ...source, async dispose() { try { await source.dispose() } finally { release(); requester.closeAll() } } }
-    } finally { if (!held) { release(); requester.closeAll() } } // Detach listeners only; the window still owns the SSH link.
+      return { ...source, async dispose() { try { await source.dispose() } finally { release() } } }
+    } finally { if (!held) release() } // The window still owns the SSH link.
   }
 }
 
@@ -72,16 +62,15 @@ export function remoteFileStreams(links: () => HeldFileSshLinks | null, account:
   }
   return {
     /**
-     * A linked machine whose server streams (protocol 19+); it opens the link to ask, as the read will use it. A server
-     * below 19 is false (the per-piece reader, left to delete now that MIN_SERVER_PROTOCOL is 20).
+     * A linked machine; it opens the link to ask, as the read will use it. Its file is streamed over that link: a server
+     * below MIN_SERVER_PROTOCOL refuses the stream as outdated (and is upgraded), it is not read another way.
      */
     async linked(deviceId: string): Promise<boolean> {
       if (!await reaches(deviceId)) return false
       const held = linkOf()
       await openLink(held, deviceId)
-      const protocol = held.protocol(deviceId)
-      if (protocol === null) throw new Error('The SSH connection to this machine closed while it was opened')
-      return protocol >= FILE_STREAM_PROTOCOL
+      if (held.protocol(deviceId) === null) throw new Error('The SSH connection to this machine closed while it was opened')
+      return true
     },
     async open(deviceId: string, type: string, request: (offset: number, stream: string, etag?: string) => Record<string, unknown>, pin: { etag?: string }, from: number, signal?: AbortSignal): Promise<LinkStream> {
       const accountId = await account(), held = linkOf()

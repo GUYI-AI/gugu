@@ -17,15 +17,10 @@ export const SERVER_ACTIVITY_STALE_MS = 60_000
  * 只是不要求逐版本相等 —— server 自动升级、桌面自动升级,两边总有先后。
  */
 // 20: a stream's head names the version it streams, so a first read names none. 19 adds
-// `file.stream` / `files.stream` on a device link (raw `D` frames, FILE_STREAM_PROTOCOL); 18 hosts keep the `file.read`
-// parts and the working copy's `filesRead` pieces. 18 adds the task input admission decision.
+// `file.stream` / `files.stream` on a device link (raw `D` frames). A desktop reads a linked machine's file only as that
+// stream; the server still answers `file.read` parts for 18 desktops (MIN_CLIENT_PROTOCOL). 18 adds the task input
+// admission decision.
 export const REMOTE_PROTOCOL_VERSION = 20
-/**
- * The first remote protocol whose device link streams a file (`file.stream`, `files.stream`). Below it the desktop read
- * `file.read` parts and `filesRead` pieces. MIN_SERVER_PROTOCOL is past it since 20, so a linked machine below it is
- * upgraded, not read; the part reader and `file.read` are left to delete.
- */
-export const FILE_STREAM_PROTOCOL = 19
 /**
  * server 报给桌面:桌面的协议版本低于它 = 这台电脑上的咕咕太旧。
  *
@@ -86,7 +81,7 @@ export const FILE_STREAM_PROTOCOL = 19
  * 17: durable task attachment upload/status/commit verbs; editor saves are unchanged.
  * 18: task input replies report accepted/rejected/uncertain independently of diagnostic codes.
  * 19: a device link streams a file: `file.stream` (a held version) and `files.stream` (a working copy's file), answered by raw
- *     `D` frames, then its reply (FILE_STREAM_PROTOCOL). `files.stream` joined 19 before any release carried 19.
+ *     `D` frames, then its reply. `files.stream` joined 19 before any release carried 19.
  * 20: a stream's head (`<type>.head`) says the size and etag it streams, so the desktop's first read names no version (no
  *     zero-byte read before it). A 19 server refuses a stream with no etag, so the desktop needs 20 (MIN_SERVER_PROTOCOL;
  *     owner 11-26: a machine below it is upgraded when the desktop reaches it, over SSH as for any version mismatch). The
