@@ -10,3 +10,9 @@ it('rejects reserved device names followed by an extension', () => {
   expect(safePathSegment('lpt9.log')).toBe('project')
   expect(safePathSegment('console.txt')).toBe('console.txt')
 })
+
+it('rejects superscript COM and LPT device names', () => {
+  expect(safePathSegment('COM¹')).toBe('project')
+  expect(safePathSegment('LPT².txt')).toBe('project')
+  expect(safePathSegment('COM³')).toBe('project')
+})
