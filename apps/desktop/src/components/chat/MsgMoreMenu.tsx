@@ -13,7 +13,7 @@ import { menuLayout } from '../../session/shared/menu-table'
  * 桌面:指针处(`x/y`)/ 工具条 ⋯ 的菜单(不给 x/y:画成 `DropdownMenu.Content`,放在 ⋯ 那颗 Trigger 的 Root 里)。
  * 手机长按(`lift`):同一份动作,换成「气泡浮起 + 旁边窄列表」那一层(PhoneMessageMenu)。
  */
-export function MsgMoreMenu({ hasHoverBar, onReact, onClose, lift, isRetracted, content, hasSelection, onReply, onCommentSelection, onCopy, onSelectText, onCopyLink, onOpenLink, onForward, onDownload, onKeep, onDelete, onSelect, onOpenTopic, onQuoteToComposer, onOpenFile, onEditMessage, onForkTask, x, y }: { x?: number; y?: number } & MessageActionTarget & MessageMenuCapabilities & {
+export function MsgMoreMenu({ hasHoverBar, onReact, onClose, lift, isRetracted, content, hasSelection, onReply, onQuoteSelection, onCommentSelection, onCopy, onSelectText, onCopyLink, onOpenLink, onForward, onDownload, onKeep, onDelete, onSelect, onOpenTopic, onQuoteToComposer, onOpenFile, onEditMessage, onForkTask, x, y }: { x?: number; y?: number } & MessageActionTarget & MessageMenuCapabilities & {
   onReact: (emoji: string) => void
   onClose: () => void
   /** 手机长按:被按的气泡、手指按下的高度;open=false 时播收起动画。 */
@@ -22,7 +22,7 @@ export function MsgMoreMenu({ hasHoverBar, onReact, onClose, lift, isRetracted, 
   const { t } = useTranslation('messaging')
   const [expanded, setExpanded] = useState(false)
   const { showReactions } = messageMenuModel({ hasHoverBar })
-  const items = messageActionItems({ isRetracted, content, hasSelection, onReply, onCommentSelection, onCopy, onSelectText, onCopyLink, onOpenLink, onForward, onDownload, onKeep, onDelete, onSelect, onOpenTopic, onQuoteToComposer, onOpenFile, onEditMessage, onForkTask }, t)
+  const items = messageActionItems({ isRetracted, content, hasSelection, onReply, onQuoteSelection, onCommentSelection, onCopy, onSelectText, onCopyLink, onOpenLink, onForward, onDownload, onKeep, onDelete, onSelect, onOpenTopic, onQuoteToComposer, onOpenFile, onEditMessage, onForkTask }, t)
   // The message table's layout, the same rule as every object menu (menu-table.ts @@@menu-order): the phone draws it flat.
   const { top, more } = menuLayout(items)
   if (lift) {

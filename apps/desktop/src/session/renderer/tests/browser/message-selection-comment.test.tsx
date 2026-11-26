@@ -68,7 +68,7 @@ it('comments on part of a message at the selection, into the chat\'s draft', asy
   await act(async () => { (document.elementFromPoint(box.left + 2, box.top + box.height / 2) ?? bubble).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: box.left + 10, clientY: box.bottom + 4 })) })
   await until('the message menu', () => !!document.querySelector('[data-testid="message-action-menu"]'))
   const rows = [...document.querySelectorAll('[role="menuitem"]')].map((row) => row.textContent?.trim())
-  expect(rows).toEqual(['评论', '复制'])
+  expect(rows).toEqual(['复制', '引用', '评论'])
   await act(async () => { await userEvent.click(document.querySelector<HTMLElement>('[data-testid="message-action-comment"]')!) })
   await until('the numbered box at the selection', () => !!document.querySelector('[data-selection-line] [data-annotation-editor]'))
   const line = document.querySelector<HTMLElement>('[data-selection-line]')!

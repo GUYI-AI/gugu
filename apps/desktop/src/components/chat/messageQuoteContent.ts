@@ -1,5 +1,10 @@
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 
+/** An excerpt quote: the words picked come as the quote's content; the message's whole text says it is an excerpt. */
+export interface QuoteSelection {
+  originalContent: string | null
+}
+
 /** Existing composer wire format; ordinary Markdown blockquotes are left alone. */
 export function parseQuotedContent(content: string): { senderName: string; quoteText: string; replyText: string } | null {
   if (!content.startsWith('> ')) return null
@@ -19,8 +24,23 @@ export function partialQuotedContent(msg: Pick<MessageItem, 'content' | 'reply_t
   return parsed?.replyText && parsed.quoteText !== msg.reply_to_content ? parsed : null
 }
 
-export function contentWithQuote(typed: string, quote?: { messageId?: string; senderName: string; content: string } | null) {
-  if (!typed || !quote || quote.messageId) return typed
+export function contentWithQuote(typed: string, quote?: { messageId?: string; senderName: string; content: string; originalContent?: string | null } | null) {
+  if (!typed || !quote) return typed
+  // A whole message travels as the reply's link alone; an excerpt also carries its words, quoted before the reply.
+  const partial = quote.originalContent != null && quote.content !== quote.originalContent
+  if (quote.messageId && !partial) return typed
   // A blank line ends the quoted block even when the reply itself begins with Markdown `> `.
   return `> [${quote.senderName}]: ${quote.content.split('\n').join('\n> ')}\n\n${typed}`
+}
+
+/**
+ * A message's selected words, as its menu offers them: 引用, a reply that carries only them, and 评论, the comment box at
+ * the selection (when its place is known). Each closes the menu once done.
+ */
+export function selectionActions(selection: string, at: DOMRect | null, quote: () => void, comment: (at: DOMRect, text: string) => void, close: () => void): { onQuoteSelection?: () => void; onCommentSelection?: () => void } {
+  if (!selection) return {}
+  return {
+    onQuoteSelection: () => { quote(); close() },
+    ...(at ? { onCommentSelection: () => { comment(at, selection); close() } } : {}),
+  }
 }

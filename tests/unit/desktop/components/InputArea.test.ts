@@ -65,6 +65,19 @@ describe('ChatMessageComposer', () => {
     source.remove()
   })
 
+  it.each([false, true])('sends a selected excerpt in the existing quote format while preserving its message ID (phone=%s)', async mobile => {
+    mobileShellState.enabled = mobile
+    const onSend = vi.fn(async () => {})
+    await harness.render(createElement(ChatMessageComposer, {
+      onSend,
+      quoteContent: { messageId: 'source-1', senderName: 'Ada', content: 'Beta paragraph\n\nFirst item', originalContent: 'Alpha paragraph\n\nBeta paragraph\n\nFirst item', source: message({ id: 'source-1' }) },
+    }))
+    await flush()
+    await typeInComposer('Please explain this part.')
+    await clickSend()
+    expect(onSend).toHaveBeenCalledWith('> [Ada]: Beta paragraph\n> \n> First item\n\nPlease explain this part.', expect.objectContaining({ replyToMessageId: 'source-1' }))
+  })
+
   it.each([false, true])('sends an image-only reply with its source message ID (phone=%s)', async mobile => {
     mobileShellState.enabled = mobile
     const onSend = vi.fn(async () => {})

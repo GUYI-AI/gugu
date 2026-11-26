@@ -107,13 +107,15 @@ export function useSessionMessageQuotes(store: (Pick<AcpChatStore, 'sessionId' |
         x: event.clientX, y: event.clientY, isRetracted: false, content: text, hasSelection: selection !== undefined,
         ...(acts.phone ? { lift: { bubble: menuRoot, touchY: event.clientY, mine: message.role === 'user' } } : {}),
         onCopy: usable(() => copy(text)),
-        // The whole message is quoted into the composer; a selection is commented on, at the selection, into the draft.
-        ...(selection === undefined ? { onQuoteToComposer: usable(() => {
+        // Quoted into the composer: the whole message, or on a computer the selection, which is also commented on, at the
+        // selection, into the draft: 复制 · 引用 · 评论. A phone's selection is copied only.
+        ...(selection === undefined || !acts.phone ? { onQuoteToComposer: usable(() => {
           const quoted = quotedIntoDraft(editor.current?.getText() ?? '', text);
           current.setDraftText(quoted);
           editor.current?.setText(quoted);
           editor.current?.focus('end');
-        }) } : at && !acts.phone ? { onCommentSelection: usable(() => openCommentLine({ kind: 'session', sessionId: current.sessionId }, at,
+        }) } : {}),
+        ...(selection !== undefined && at && !acts.phone ? { onCommentSelection: usable(() => openCommentLine({ kind: 'session', sessionId: current.sessionId }, at,
           target.root.closest<HTMLElement>('[data-chat-scroll]') ?? target.root, {
             kind: 'message', messageId: target.itemId, authorId: null, text: selection,
             authorName: target.sender?.() ?? latest.current.translate(message.role === 'user' ? 'globalSearch.you' : 'globalSearch.agent'),

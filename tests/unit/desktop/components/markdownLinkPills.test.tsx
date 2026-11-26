@@ -74,11 +74,11 @@ async function render(content: string, trust: 'chat' | 'document' = 'chat', surf
 const settle = (check: () => void) => vi.waitFor(async () => { await act(async () => { await vi.dynamicImportSettled() }); check() }, { timeout: 10000 })
 const pills = () => [...container.querySelectorAll<HTMLAnchorElement>('a.gg-md-mention')]
 
-describe('a message a past Cite composed (files are commented on now; what was cited still reads)', () => {
+describe('a message Cite composed reads as it was written', () => {
   it("draws a chat folder file's cite as the pill to its lines, and a computer file's as its quote and its path", async () => {
     mocks.fileMetadata.mockResolvedValue({ status: 'ready', revision: { source: 'managed-object', version: 2, file_name: 'pricing.txt', content_type: 'text/plain', size_bytes: 120 } })
     const target = groupFileLink(DOC, { version: 2, at: { lines: '2' } })
-    // Word for word what Cite drafted (selectionCite, since removed): a pill per place, named by the file and its lines.
+    // Word for word what Cite drafts (selectionCite): a pill per place, named by the file and its lines.
     const folder = pillCite('', [{ label: 'pricing.txt (Line 2)', target }]).draft
     const computer = '> Pro: 99 a month, 5 seats included\n\nnotes.txt (Line 2): /home/me/notes.txt'
     await render(`${folder}\n\n${computer}`)

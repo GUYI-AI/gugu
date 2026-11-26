@@ -35,7 +35,7 @@ import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reaso
 import { keepAction } from './messageKeep'
 import { buildBubbleStyle } from './messageBubbleStyle'
 import { MessageBody } from './MessageBody'
-import { parseQuotedContent } from './messageQuoteContent'
+import { parseQuotedContent, selectionActions, type QuoteSelection } from './messageQuoteContent'
 import { openCommentLine } from '@renderer/features/sessions/annotations/selection-line'
 import { DirectMessageQuote, MessageQuote } from './MessageQuote'
 import { parseComposerCard } from '@gugu/core/shared/ui/taskCardModels'
@@ -65,7 +65,7 @@ interface BubbleProps {
   readReceiptTotal?: number
   // @@@1313 点开已读名单（谁读谁没读）：环是父层（持 roster+profiles）那张名单浮层的 Trigger，稳定 handle，避免把 reader 列表作对象 prop 传进破 memo。
   readReceiptHandle?: ReadReceiptHandle
-  onQuote: (msg: MessageItem) => void; onShowMessage?: (id: string) => void
+  onQuote: (msg: MessageItem, selection?: QuoteSelection) => void; onShowMessage?: (id: string) => void
   onForward: (msg: MessageItem) => void
   onDelete: (messageId: string) => void
   isAgent?: boolean; hideAvatar?: boolean; streaming?: boolean // Live IM text shares the settled bubble's layout.
@@ -170,7 +170,7 @@ export const MessageBubble = memo(function MessageBubble({
     isRetracted: !!msg.retracted_at, content: copyText, hasHoverBar: !compactMobile, hasSelection: !compactMobile && !!menuSelection, onClose: close,
     onReply: () => { onQuote(msg); close() },
     onReact: (emoji: string) => { onReaction(msg.id, emoji); close() },
-    onCommentSelection: menuSelection && msg.content_type === 'text' && menuSelectionAt.current ? () => { commentOn(menuSelectionAt.current!, menuSelection); close() } : undefined,
+    ...(msg.content_type === 'text' ? selectionActions(menuSelection, menuSelectionAt.current, () => onQuote({ ...msg, content: menuSelection }, { originalContent: msg.content }), commentOn, close) : {}),
     onCopy: (content = menuSelection || undefined) => { void handleCopyText(content); close() },
     onSelectText: compactMobile && (msg.content_type === 'text' || !!sendCaption(album ?? [msg])) && phone.source ? () => { phone.setSelecting(true); close() } : undefined,
     onCopyLink: menuLink ? () => { void handleCopyText(menuLink.href); close() } : undefined, onOpenLink: menuLink ? () => { menuLink.click(); close() } : undefined,

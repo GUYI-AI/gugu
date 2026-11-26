@@ -154,7 +154,7 @@ it('offers the selection menu for selected text on the phone web build', async (
     expect(capture).toHaveBeenCalledOnce();
     const request = (capture.mock.calls[0][0] as CustomEvent<RendererMessageMenu>).detail;
     expect(request.hasSelection).toBe(true);
-    // A selection is commented on, not quoted; the phone has no comment box yet.
+    // A phone's selection is copied only (its quote and comment come with the phone's own change).
     expect(request.onQuoteToComposer).toBeUndefined();
     expect(request.onCommentSelection).toBeUndefined();
     request.onCopy?.();
@@ -163,7 +163,7 @@ it('offers the selection menu for selected text on the phone web build', async (
   } finally { window.removeEventListener(RENDERER_MESSAGE_MENU_OPEN, capture); }
 });
 
-it('comments on a desktop selection at the selection, into the task\'s draft; the whole message is still quoted', async () => {
+it('offers 引用 and 评论 on a desktop selection: the comment at the selection, into the task\'s draft; the whole message is still quoted', async () => {
   const draft = sessionAnnotations.forSession('task-a');
   draft.clear();
   const layerHost = document.createElement('div');
@@ -181,7 +181,7 @@ it('comments on a desktop selection at the selection, into the task\'s draft; th
     const box = range.getBoundingClientRect();
     text.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: box.left, clientY: box.bottom }));
     const request = (capture.mock.calls[0][0] as CustomEvent<RendererMessageMenu>).detail;
-    expect(request.onQuoteToComposer).toBeUndefined();
+    expect(request.onQuoteToComposer).toBeDefined();
     await act(async () => request.onCommentSelection!());
     await until('the numbered comment box at the selection', () => document.querySelector('[data-selection-line] [data-annotation-editor]')?.textContent?.includes('1') ?? false);
     await userEvent.keyboard('Say why');
