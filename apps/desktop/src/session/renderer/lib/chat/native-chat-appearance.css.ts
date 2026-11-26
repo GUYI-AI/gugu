@@ -59,7 +59,7 @@ globalStyle(`${nativeChatAppearance} [data-slot="day-separator-rule"]`, { displa
 // phone's (dark: --background-secondary-1 = --card over a --bg page).
 globalStyle(`${nativeChatAppearance}:is([data-phone-shell] *)`, { vars: { '--chat-bg': 'var(--ta-panel-bg)' } });
 
-// Viewport-bound fades soften both scrolling messages and the pinned user card.
+// Viewport-bound fades soften the scrolling messages.
 // They do not intercept input or change measured row heights. The lower fade
 // follows the actual composer layer as drafts and attachments change its height.
 globalStyle(`${nativeChatAppearance} [data-chat-root]::before`, {

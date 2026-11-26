@@ -31,21 +31,6 @@ function intersect(a: ElementBox, b: ElementBox): ElementBox {
     height: Math.max(0, Math.min(a.top + a.height, b.top + b.height) - top) }
 }
 
-/**
- * A transcript sticks a turn's user summary to the top of its scroller: the bubble covers what is under it. A summary
- * covers once its row says it is drawn stuck (data-pin-stuck); one at rest lies behind its own message and cuts nothing.
- * Only the bubble is drawn, so a clip beside it is not cut.
- */
-function belowPins(scroller: Element, clip: ElementBox): ElementBox {
-  let edge = clip.top
-  for (const summary of scroller.querySelectorAll('[data-pin-stuck="true"] [data-pin-summary]')) {
-    const box = summary.getBoundingClientRect()
-    if (box.right <= clip.left || box.left >= clip.left + clip.width) continue
-    edge = Math.max(edge, box.bottom)
-  }
-  return edge > clip.top ? intersect(clip, { left: clip.left, top: edge, width: clip.width, height: clip.top + clip.height - edge }) : clip
-}
-
 /** The resident layer and widget ownership measure the same ancestor clipping. */
 export function clippedElementBox(element: HTMLElement, bounds: ElementBox): { full: ElementBox; clip: ElementBox } {
   const full = elementBox(element)
@@ -63,9 +48,6 @@ export function clippedElementBox(element: HTMLElement, bounds: ElementBox): { f
           left: clipsX ? box.left : clip.left, width: clipsX ? box.width : clip.width,
           top: clipsY ? box.top : clip.top, height: clipsY ? box.height : clip.height,
         })
-        // Pins only stick inside a transcript's own scroller (ChatRoot marks it data-chat-scroll); every other clipping ancestor
-        // (panes, frames) holds whole conversations, and searching those for pins grew with the mounted messages.
-        if (node.hasAttribute('data-chat-scroll')) clip = belowPins(node, clip)
       }
       // A conversation's composer floats over the end of its message list (ChatBottomDock): behind its cards is not seen.
       const composer = node.hasAttribute('data-chat-dock-column') ? node.querySelector(':scope > [data-chat-bottom-dock]')?.lastElementChild : null

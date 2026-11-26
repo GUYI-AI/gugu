@@ -16,9 +16,6 @@ export const CHAT_CONTENT_GUTTER_PX = 16;
 /** The painted fade above a bottom composer also needs real reading clearance. */
 export const CHAT_COMPOSER_EDGE_FADE_PX = 24;
 
-/** Room below a pinned summary before its lane ends; source jumps keep the same reading clearance. */
-export const PIN_SUMMARY_GAP = 8;
-
 /**
  * 非用户行左右各缩进的这一档(`row-metrics` 的同名常量)。嵌在别处画的一段转录(手机会话页的附件卡)
  * 要与宿主自己的正文对齐时,用它抵掉这一档。

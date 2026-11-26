@@ -6,14 +6,13 @@
  * should now pass a VE class or a raw CSS class string.
  */
 
-import { globalStyle, keyframes, style } from '@vanilla-extract/css';
+import { keyframes, style } from '@vanilla-extract/css';
 import { vars } from './styles/theme.css';
 import {
   CHAT_CONTENT_GUTTER_PX,
   CHAT_CONTENT_MAX_WIDTH_REM,
   CHAT_CONTENT_MAX_WIDTH_WIDE_REM,
   CHAT_CONTENT_WIDE_BREAKPOINT_REM,
-  PIN_SUMMARY_GAP,
 } from './layout-geometry';
 
 /** Max-width of the centered content column — matches user message cards. */
@@ -152,49 +151,6 @@ export const unitRowWrapper = style({
 });
 
 /**
- * A pin lane (@@@sticky-user-lanes in ChatRoot): spans its turn, so its sticky element stays at the top
- * while the turn is on screen and is pushed off by the next lane. Clicks pass through everywhere but
- * the row itself and a shown summary.
- *
- * Every row wrapper is its own stacking context at z-index auto (contain: paint, will-change), so
- * nothing inside a reply (KaTeX struts, code blocks, positioned spans) can rise above a lane.
- */
-export const pinLane = style({
-  zIndex: 1,
-  pointerEvents: 'none',
-});
-/** Whatever the message positions or raises inside itself stays under its own summary. */
-export const pinMessageRow = style({ isolation: 'isolate', marginTop: 'calc(-1 * var(--pin-layer-h))' });
-
-/** The user's summary sticking inside its lane. */
-export const pinSticky = style({
-  // `top` is per row (ChatRoot): the card lands on the pin line whatever the row's collapsed top gap.
-  position: 'sticky',
-  '@media': { '(prefers-reduced-motion: reduce)': {
-    selectors: { '[data-pin-leaving="true"] &': { visibility: 'hidden' } },
-  } },
-});
-
-/**
- * A user message's summary (@@@pin-cover in ChatRoot): it rests behind the bubble it repeats and comes in front of
- * it once stuck. Only the bubble is drawn: rows scrolling beneath show around it.
- */
-export const pinSummaryLayer = style({
-  // Takes no room: the message row after it moves up by its height (pinMessageRow). A negative margin here
-  // would instead let the sticky box run past its lane's end by that much before it is pushed off.
-  height: 'var(--pin-layer-h)',
-  boxSizing: 'border-box',
-  paddingBottom: PIN_SUMMARY_GAP,
-  zIndex: -1,
-  pointerEvents: 'none',
-  selectors: { '[data-pin-stuck="true"] > &': { zIndex: 1 } },
-});
-// Only the bubble covers anything, so only the bubble takes clicks: beside it they reach the rows beneath.
-globalStyle(`[data-pin-stuck="true"] > ${pinSummaryLayer} [data-pin-summary]`, { pointerEvents: 'auto' });
-// A message without a bubble (attachments only, or being edited) has nothing to rest behind.
-globalStyle(`[data-pin-stuck="false"] > ${pinSummaryLayer} [data-pin-summary][data-pin-bare]`, { visibility: 'hidden' });
-
-/**
  * Default content centering class.
  * Replaces `mx-auto w-full max-w-2xl` from Tailwind.
  * Hosts can override via the `contentClass` prop.
@@ -211,7 +167,7 @@ export const defaultContentClass = style({
  * Content overlay slot — non-scrolling cover above the transcript/scroll,
  * below the composer. Click-through by default so an empty/transparent overlay
  * never blocks scrolling; host content opts into pointer-events as needed.
- * z-index 15: above the pin lanes in the scroller, below composerSlotClass (20).
+ * z-index 15: above the rows in the scroller, below composerSlotClass (20).
  */
 export const contentOverlaySlotClass = style({
   position: 'absolute',
