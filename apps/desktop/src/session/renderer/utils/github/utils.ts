@@ -78,5 +78,5 @@ export function formatCheckDuration(startedAt?: string, completedAt?: string): s
 
   if (hours > 0) return `${hours}h ${minutes}m`;
   if (minutes > 0) return `${minutes}m ${totalSeconds % 60}s`;
-  return '<1m';
+  return `${totalSeconds}s`;
 }

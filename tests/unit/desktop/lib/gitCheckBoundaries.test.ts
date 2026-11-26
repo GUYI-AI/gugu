@@ -11,3 +11,9 @@ it('keeps requested GitHub checks pending', () => {
   expect(computeCheckBucket(check)).toBe('pending')
   expect(computeCheckRunsSummary([check])).toMatchObject({ completed: 0, pending: 1, skipped: 0 })
 })
+
+it('shows seconds for completed sub-minute checks', () => {
+  expect(formatCheckDuration('2026-11-26T00:00:00Z', '2026-11-26T00:00:42Z')).toBe('42s')
+  expect(formatCheckDuration('2026-11-26T00:00:00Z', '2026-11-26T00:00:00Z')).toBe('0s')
+  expect(formatCheckDuration('2026-11-26T00:00:00Z', '2026-11-26T00:01:02Z')).toBe('1m 2s')
+})
