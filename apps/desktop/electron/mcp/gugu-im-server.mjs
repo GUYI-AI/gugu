@@ -625,9 +625,9 @@ async function ownerDirectChatId(address, deps) {
 }
 
 async function resolveChatIdInput(chatId, deps) {
-  if (UUID_RE.test(String(chatId))) return String(chatId)
   const publicId = String(chatId ?? '').trim()
   if (!publicId) return null
+  if (UUID_RE.test(publicId)) return publicId
   if (/^(aid|user|gugu):/.test(publicId)) return await ownerDirectChatId(publicId, deps)
   // A typed id names its kind: `chat:` is a chat, any other kind (an agent's own `session:` id) is not one, and
   // passed on as an opaque id it would only fail later as an unreadable member list.
