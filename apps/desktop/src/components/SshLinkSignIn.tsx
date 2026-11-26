@@ -90,7 +90,7 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
   return null
 
   function card(shown: SshLinkNotice): Omit<Notice, 'key'> {
-    const confirmableUpdate = update?.state === 'ready' && canRestartServerUpdate(update, machine.capabilities) ? update : null
+    const confirmableUpdate = !ssh && update?.state === 'ready' && canRestartServerUpdate(update, machine.capabilities) ? update : null
 
     const startSignIn = () => {
       const deviceId = shown.deviceId
