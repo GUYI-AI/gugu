@@ -273,6 +273,14 @@ describe('text runs', () => {
     expect(blockPlainText(blocks[6]!)).toBe('<svg/>');
   });
 
+  it('gives a closed html-render fence a page block, and keeps one still streaming as code', () => {
+    const closed = parseMarkdownToBlocks('t', 'a\n\n```html-render\n<div>bars</div>\n```');
+    expect(closed.map((block) => block.kind)).toEqual(['html', 'html-render']);
+    expect(blockPlainText(closed[1]!)).toBe('<div>bars</div>');
+    const streaming = parseMarkdownToBlocks('t', 'a\n\n```html-render\n<div>ba');
+    expect(streaming.map((block) => block.kind)).toEqual(['html', 'code']);
+  });
+
   it('leads a web link with its site icon, GitHub with its mark and a private address with the globe, neither requested', () => {
     const root = rendered('[docs](https://example.org/a) [repo](https://github.com/o/r) [box](http://192.168.1.2/x)');
     const icons = [...root.querySelectorAll<HTMLElement>('a .gg-md-link-icon')];

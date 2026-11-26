@@ -30,7 +30,7 @@ export type CodeLaidOut = {
 // Produced by `measureBlockCached` in `core/layout/block-stack.ts`.
 // Used by `renderBlockLeaf` and `BlockStackView` to render without a lookup.
 
-import type { CodeBlock, HtmlBlock, MathBlock, MermaidBlock, SvgBlock } from '@session-chat/core/markdown/document';
+import type { CodeBlock, HtmlBlock, HtmlRenderBlock, MathBlock, MermaidBlock, SvgBlock } from '@session-chat/core/markdown/document';
 
 /** Html block: its box was read from the DOM (components/rows/markdown/html/layout.ts). */
 export type HtmlLeafLayout = {
@@ -88,4 +88,14 @@ export type MathLaidOut = {
 
 export type MathLeafLayout = MathLaidOut & { raw: MathBlock };
 
-export type BlockLeafLayout = HtmlLeafLayout | CodeLeafLayout | MermaidLeafLayout | SvgLeafLayout | MathLeafLayout;
+/** Layout for a ```html-render page — the row's width, as tall as the page last said it is. */
+export type HtmlRenderLeafLayout = {
+  kind: 'html-render';
+  id: string;
+  top: number;
+  height: number;
+  contentWidth: number;
+  raw: HtmlRenderBlock;
+};
+
+export type BlockLeafLayout = HtmlLeafLayout | CodeLeafLayout | MermaidLeafLayout | SvgLeafLayout | HtmlRenderLeafLayout | MathLeafLayout;

@@ -291,6 +291,16 @@
 /* A ```svg figure (session-chat-ui `svgFigure`): its viewBox is its natural size, never wider than the column. */
 .gg-md .gg-md-svg { display: block; max-width: 100%; height: auto; margin: var(--md-gap) 0; }
 .gg-md .gg-md-svg-failed { margin-top: var(--md-gap); font-size: 0.86em; color: var(--text-secondary); }
+/* A ```html-render page (HtmlRenderFrame): the frame is as tall as its page, on the message's own background. The expand
+   button shows while the page is hovered or focused, always on touch. */
+.gg-md .gg-md-html-render { position: relative; margin: var(--md-gap) 0; }
+.gg-md .gg-md-html-render__expand {
+  position: absolute; top: 6px; right: 6px;
+  background: var(--bg-primary, Canvas);
+  opacity: 0; transition: opacity 150ms;
+}
+.gg-md .gg-md-html-render:is(:hover, :focus-within) .gg-md-html-render__expand { opacity: 1; }
+@media (pointer: coarse) { .gg-md .gg-md-html-render__expand { opacity: 1; } }
 /* A web link led by its site's icon (link-icons.ts); the icon never wraps away from the first letters. One that cannot
    load, or a host with no public name, is the globe, drawn in the link's colour; so is GitHub's mark (Octicons, MIT). */
 .gg-md .gg-md-link-lead { white-space: nowrap; }

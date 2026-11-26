@@ -12,6 +12,7 @@ let container: HTMLDivElement
 let root: Root
 beforeEach(() => {
   container = document.createElement('div')
+  container.style.color = 'rgb(1, 2, 3)'
   document.body.appendChild(container)
   root = createRoot(container)
 })
@@ -28,6 +29,21 @@ async function draw(content: string, streaming = false) {
 }
 
 describe('chat markdown rich rendering', () => {
+  it('draws a complete ```html-render fence as a sandboxed, themed page', async () => {
+    await draw('```html-render\n<div id="chart">bars</div>\n```')
+    const frame = container.querySelector('iframe')
+    expect(frame?.getAttribute('sandbox')).toBe('allow-scripts')
+    const doc = frame?.getAttribute('srcdoc') ?? ''
+    expect(doc).toContain('Content-Security-Policy')
+    expect(doc).toContain('--fg:rgb(1, 2, 3)')
+    expect(doc).toContain('<div id="chart">bars</div>')
+  })
+
+  it('keeps an ```html fence as code', async () => {
+    await draw('```html\n<div>sample</div>\n```')
+    expect(container.querySelector('iframe')).toBeNull()
+  })
+
   it('leads a public web link with its site icon and asks nothing for a private address', async () => {
     await draw('[docs](https://example.org/a) and [box](http://192.168.1.2/x)')
     const icons = [...container.querySelectorAll('.gg-md-link-icon img')].map((img) => img.getAttribute('src'))

@@ -35,6 +35,8 @@ import { markdownCodeHighlighter } from './codeHighlight'
 import { PlatformCodeBlock } from './PlatformCodeBlock'
 import { PlatformCopyButton } from './PlatformCopyButton'
 import { PlatformTable } from './PlatformTable'
+import { HtmlRenderFrame } from './HtmlRenderFrame'
+import { HTML_RENDER_LANGUAGE, HTML_RENDER_MAX_BYTES } from '@gugu/session-chat-ui/html-render'
 import { MarkdownStreamingContext } from './markdownStreaming'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { FILE_PILL_CLASS, hookFilePillCopy, rehypeGroupFilePills } from './filePills'
@@ -123,11 +125,22 @@ function SvgRenderer({ code, isIncomplete }: CustomRendererProps) {
   )
 }
 
+/** A ```html-render fence: the agent's page in a sandboxed frame (HtmlRenderFrame); while it streams, its source. */
+function HtmlRenderRenderer({ code, isIncomplete }: CustomRendererProps) {
+  if (!isIncomplete && new Blob([code]).size <= HTML_RENDER_MAX_BYTES) return <HtmlRenderFrame code={code} />
+  return (
+    <CodeBlock code={code} language="html" isIncomplete={isIncomplete} lineNumbers={false}>
+      <PlatformCopyButton key={code} text={code} kind="code" />
+    </CodeBlock>
+  )
+}
+
 const PLUGINS: PluginConfig = {
   code: markdownCodeHighlighter,
   renderers: [
     { language: 'mermaid', component: MermaidRenderer },
     { language: 'svg', component: SvgRenderer },
+    { language: HTML_RENDER_LANGUAGE, component: HtmlRenderRenderer },
   ],
 }
 
