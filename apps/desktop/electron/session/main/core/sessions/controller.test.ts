@@ -8,6 +8,7 @@ vi.mock('@main/core/agent-hooks/agent-hook-service', () => ({ agentHookService: 
 const hydrate = vi.fn();
 vi.mock('./hydrateSession', () => ({ hydrateSession: (...args: unknown[]) => hydrate(...args) }));
 vi.mock('./archiveSession', () => ({ archiveSession: vi.fn(), restoreSession: vi.fn() }));
+vi.mock('./permanently-delete-session', () => ({ permanentlyDeleteSessions: vi.fn() }));
 vi.mock('./dehydrateSession', () => ({ dehydrateSession: vi.fn() }));
 vi.mock('./getSessions', () => ({ getSessions: vi.fn() }));
 vi.mock('./getSessionsForProject', () => ({ getSessionsForProject: vi.fn() }));

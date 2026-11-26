@@ -18,7 +18,7 @@ import type {
   SessionShellPeer,
 } from '../../src/session/shared/lib/ipc/shell-port'
 import { localAgentForSession } from './sessionpage-session-agent'
-import { listAgents, provisionSessionpageAgentOneTrip, writeAgentName } from '@gugu/core'
+import { listAgents, listReapedAgentsForSession, provisionSessionpageAgentOneTrip, writeAgentName } from '@gugu/core'
 import { agentOwnerUserId, agentsForOwner } from '@gugu/core/local/state/agentOwner'
 import { uniqueAgentDisplayName } from '@gugu/core/shared/agentDefaultName'
 import { createLogger } from '../lib/logger'
@@ -40,7 +40,7 @@ import { resolveSessionpageSessionPeers } from './session-addressing'
 import { agentNamesFromPeers } from '../../src/session/shared/lib/ipc/shell-port'
 import type { LocalSessionFacts } from './emdash-agent-registry'
 import { loadSessionpageCanonicalAgentIdentities } from './sessionpage-agent-identity'
-import { archiveIdentity } from '@gugu/core/cloud/agentIdentityRemoval'
+import { archiveIdentity, purgeOwnedAgentHistory } from '@gugu/core/cloud/agentIdentityRemoval'
 import type { SessionIdentityHost } from '../session/main/core/sessions/session-identity-host'
 import { releaseAgentLocalFootprint } from './agent-local-footprint'
 import { createNativePublicationTransport } from './native-publication-transport'
@@ -234,6 +234,20 @@ export function createSessionpageIdentityHost(deps: SessionpageIdentityHostDeps)
     },
     async release(identity) {
       await releaseAgentLocalFootprint({ agentUserId: identity.userId, identityRemoved: true, env })
+    },
+    async historyIdentities(sessionId, current) {
+      const auth = await deps.getAuth()
+      // 归档回执里的当前这个 + 墓碑按会话记下的(每次「移出身份归档 → 恢复」各一块;登录着就只认这个账号的)。
+      return [...new Set([
+        ...(current ? [current.userId] : []),
+        ...(await listReapedAgentsForSession(sessionId, env, auth?.userId)).map((entry) => entry.gugu_user_id),
+      ])]
+    },
+    async purgeHistory(agentUserIds) {
+      if (!agentUserIds.length) return []
+      const auth = await deps.getAuth()
+      if (!auth) throw new Error('Permanently deleting a task needs a connection and a signed-in account')
+      return (await purgeOwnedAgentHistory(makeIdentityClient(auth.accessToken), agentUserIds)).purged
     },
     async restore(target, removedIdentity) {
       if (!(await deps.getAuth())) throw new Error('Restoring this task needs a connection and a signed-in account')

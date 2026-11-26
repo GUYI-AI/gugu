@@ -1,5 +1,5 @@
 import { statSync } from 'node:fs';
-import { appendFile, mkdir, open, readFile, rename, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { app } from 'electron';
 import { markHistoryReverted, type TranscriptTurn } from '@gugu/session-core/acp';
@@ -30,6 +30,11 @@ function fileOf(sessionId: string): string {
   // A session id goes into a file name.
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) throw new Error(`not a session id: ${sessionId}`);
   return join(root(), `${sessionId}.jsonl`);
+}
+
+/** 永久删除(已归档 → 永久删除)删掉这条会话的咕咕日志;没有就算了。 */
+export async function dropJournal(sessionId: string): Promise<void> {
+  await rm(fileOf(sessionId), { force: true });
 }
 
 export function journalLocator(sessionId: string): SessionRecordLocator {

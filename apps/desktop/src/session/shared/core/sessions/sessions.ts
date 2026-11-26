@@ -309,9 +309,12 @@ export type ArchivedSessionRef = {
 export type ArchiveOutcome = { archived: ArchivedSessionRef[]; unreached: UnreachedMachine[] };
 
 /**
- * 「已归档」里的永久删除的回执(owner 2026-11-26)。`deleted` 是这次真正删掉的行(子会话在前、点名的在后,
- * 含别的机器上删掉的);`unreached` 是够不着的机器,它们上面的行原样留着;`failed` 是这次没删成的行和原因
- * (云端没回执、还没归档……),一条失败不拦别的。
+ * 「已归档」里的永久删除的回执(owner 2026-11-26),`sessions.permanentlyDeleteSessions(targets ≤50, { withChildren })`。
+ * - 一台机器只报**它自己删掉的**行:`deleted` 是这台机器上删掉的(子会话在前、点名的在后);别的机器上的行(包括
+ *   子会话)由渲染侧直接问那台机器。`withChildren` 只带这台机器上已归档的子会话。
+ * - 幂等:已经被这条路删掉的行再请求一次,照样回在 `deleted` 里(云端那一半同样重放不变)。
+ * - `failed` 是这次没删成的行和原因(这台机器上没有这一行、还没归档、云端没回执……),一条失败不拦别的。
+ * - `unreached`:找子会话时没问到的机器。回执里没提到的行按失败算。
  */
 export type PermanentDeleteOutcome = { deleted: ArchivedSessionRef[]; unreached: UnreachedMachine[]; failed: Array<ArchivedSessionRef & { reason: string }> };
 
