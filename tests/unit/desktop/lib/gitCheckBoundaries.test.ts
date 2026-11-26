@@ -17,3 +17,18 @@ it('shows seconds for completed sub-minute checks', () => {
   expect(formatCheckDuration('2026-11-26T00:00:00Z', '2026-11-26T00:00:00Z')).toBe('0s')
   expect(formatCheckDuration('2026-11-26T00:00:00Z', '2026-11-26T00:01:02Z')).toBe('1m 2s')
 })
+
+it('reads every remote in CRLF output', async () => {
+  const repository = new GitRepository({
+    gitCommonDir: '/repo/.git', objectStoreDir: '/repo/.git/objects',
+    exec: { exec: async () => ({ stdout: 'origin\thttps://example.test/origin.git (fetch)\r\norigin\thttps://example.test/origin.git (push)\r\nupstream\thttps://example.test/upstream.git (fetch)\r\n', stderr: '' }) },
+    watcher: { watch: () => ({ ready: async () => {}, release: async () => {} }) },
+    objectStoreMutex: {},
+  } as unknown as GitRepositoryOptions)
+  try {
+    expect(await repository.getRemotes()).toEqual({ remotes: [
+      { name: 'origin', url: 'https://example.test/origin.git' },
+      { name: 'upstream', url: 'https://example.test/upstream.git' },
+    ] })
+  } finally { await repository.dispose() }
+})
