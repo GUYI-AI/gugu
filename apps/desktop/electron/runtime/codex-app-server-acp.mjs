@@ -31,6 +31,7 @@ import { codexFilePatches } from '../../../../packages/session-core/src/acp/tran
 import { codexMcpCall } from '../../../../packages/session-core/src/acp/transport/codex-mcp-call.ts'
 import { isCodexKeyRefusal, withCodexHttpStatus } from '../../../../packages/session-core/src/acp/transport/codex-http-status.ts'
 import { createCodexSubagents } from './codex-subagents.mjs'
+import { GOAL_TOKENS_FLAG, parseGoalCommand } from '../../../../packages/session-core/src/acp/commands.ts'
 import { CODEX_AUTONOMY_BY_MODE, CODEX_PERMISSION_MODES } from '../../../../packages/session-plugins/src/agents/impl/codex/permission-modes.ts'
 import { redactAll } from '../../../../packages/session-shared/src/logger/redact.ts'
 
@@ -966,6 +967,64 @@ function sessionUpdate(update, targetSessionId = sessionId) {
 const subagents = createCodexSubagents({ rootId: () => sessionId, emit: sessionUpdate, request: appRequest, itemTool, reasoningText: codexReasoningText })
 
 /**
+ * behavior `/goal 透传给 codex` —— 目标、续跑、token 预算全是 codex 自己的(`thread/goal/set`
+ * 的 `tokenBudget`;到了预算 codex 把状态置成 `budgetLimited` 并停下)。这一层只做两件事:
+ * 把用户那一行翻成 `thread/goal/*`,把状态的**变化**落成一行 notice。❌ 不数 token、不起 turn ——
+ * 目标是 active 时 codex 自己注入目标、空闲时自己开一轮(app-server `thread_goal_processor.rs`)。
+ */
+let lastGoalLine = null
+const GOAL_STATUS_TEXT = {
+  active: 'Goal active', paused: 'Goal paused', blocked: 'Goal blocked',
+  usageLimited: 'Goal stopped: usage limit reached', budgetLimited: 'Goal stopped: token budget reached',
+  complete: 'Goal complete',
+}
+function goalLine(goal) {
+  const used = Number(goal.tokensUsed ?? 0).toLocaleString('en-US')
+  const tokens = goal.tokenBudget == null ? `${used} tokens used`
+    : `${used} / ${Number(goal.tokenBudget).toLocaleString('en-US')} tokens`
+  return `${GOAL_STATUS_TEXT[goal.status] ?? `Goal ${goal.status}`} · ${tokens}`
+}
+// The set response and the `thread/goal/updated` that follows carry the same goal: one line for it. Token counts move
+// on every turn, so they are not part of what makes a line new.
+function noticeGoalStatus(goal, force = false) {
+  const key = goal && JSON.stringify([goal.status, goal.objective, goal.tokenBudget ?? null])
+  if (!goal || (!force && key === lastGoalLine)) return
+  lastGoalLine = key
+  sessionUpdate({ sessionUpdate: 'notice', severity: goal.status === 'active' || goal.status === 'complete' ? 'info' : 'warning',
+    title: goalLine(goal), description: goal.objective })
+}
+async function goalRequest(method, params) {
+  try {
+    return await appRequest(method, { threadId: sessionId, ...params })
+  } catch (error) {
+    if (error?.code === -32601) throw new Error('This Codex version has no /goal; update Codex to use it')
+    throw error
+  }
+}
+async function runGoalCommand(command, insertion) {
+  if (command.kind === 'invalid') throw new Error(command.reason)
+  // The line is the person's own input: record it, as Codex records the goal change in its thread.
+  insertedUserMessage({ id: `goal:${insertion.clientId}`, clientId: insertion.clientId })
+  if (command.kind === 'show') {
+    const { goal } = await goalRequest('thread/goal/get', {})
+    if (goal) noticeGoalStatus(goal, true)
+    else sessionUpdate({ sessionUpdate: 'notice', severity: 'info', title: 'No goal set' })
+    return
+  }
+  if (command.kind === 'clear') {
+    const { cleared } = await goalRequest('thread/goal/clear', { origin: 'user' })
+    lastGoalLine = null
+    sessionUpdate({ sessionUpdate: 'notice', severity: 'info', title: cleared ? 'Goal cleared' : 'No goal set' })
+    return
+  }
+  const params = command.kind === 'set'
+    ? { origin: 'user', objective: command.objective, status: 'active', ...(command.tokenBudget === null ? {} : { tokenBudget: command.tokenBudget }) }
+    : { origin: 'user', status: command.kind === 'pause' ? 'paused' : 'active' }
+  const { goal } = await goalRequest('thread/goal/set', params)
+  noticeGoalStatus(goal)
+}
+
+/**
  * behavior `codex 的 skill 进 / 面板` —— 把用户自己放的 skill 报成 ACP slash 命令。
  *
  * # 为什么名字带 `$`
@@ -1023,7 +1082,12 @@ async function publishAvailableCommandsInner(cwd, extraRoots) {
   }
   const seen = new Set()
   // `/compact` 是这条腿自己实现的那一条(session/prompt 里交给 `thread/compact/start`)。
-  const availableCommands = [{ name: 'compact', description: 'Compact the conversation context' }]
+  const availableCommands = [
+    { name: 'compact', description: 'Compact the conversation context' },
+    // `/goal` 交给 codex 自己的 `thread/goal/*`(见 session/prompt 里的 runGoalCommand)。
+    { name: 'goal', description: 'Set a goal Codex keeps working toward until it is done',
+      input: { hint: `[${GOAL_TOKENS_FLAG} N] <goal> | clear | pause | resume` } },
+  ]
   for (const entry of Array.isArray(response?.data) ? response.data : []) {
     for (const skill of Array.isArray(entry?.skills) ? entry.skills : []) {
       const raw = typeof skill?.name === 'string' ? skill.name.trim() : ''
@@ -1438,6 +1502,14 @@ function onAppNotification(message) {
     const action = params.action ?? {}
     const subject = action.command ?? action.toolName ?? action.host ?? action.reason ?? action.type ?? 'Action'
     sessionUpdate({ sessionUpdate: 'notice', severity: 'warning', title: redactAll(`${subject}: ${params.review.rationale ?? 'Permission denied by the AI reviewer'}`) })
+    return
+  }
+  if (method === 'thread/goal/updated') {
+    noticeGoalStatus(params.goal)
+    return
+  }
+  if (method === 'thread/goal/cleared') {
+    lastGoalLine = null
     return
   }
   if (method === 'thread/tokenUsage/updated') {
@@ -2580,6 +2652,14 @@ async function handleAcpRequest(message) {
     const insertion = expectPromptInsertion(id, params.prompt)
     await nativeAuthSession?.ensure()
     throwIfInsertionCancelled(insertion)
+    // The host puts a command in the first block and any context after it (cell `leadsWithCommand`): the goal is that block.
+    const lead = params.prompt?.[0]
+    const goalCommand = lead?.type === 'text' ? parseGoalCommand(String(lead.text ?? '')) : null
+    if (goalCommand) {
+      await runGoalCommand(goalCommand, insertion)
+      await receipt(id, insertion)
+      return
+    }
     if (joinPromptText(params.prompt).trim() === '/compact') {
       if (activeCycle || compactInsertion) throw new Error('local Codex cannot compact while foreground work is active')
       compactInsertion = insertion

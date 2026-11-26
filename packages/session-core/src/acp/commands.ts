@@ -81,3 +81,53 @@ export const GUGU_CLIENT_COMMAND_MCP = 'gugu-client:mcp';
 export function isGuguClientCommand(id: string): boolean {
   return id.startsWith('gugu-client:');
 }
+
+/**
+ * `/goal` 的参数 —— 两条腿共用一份解析,❌ 各写一份正则。
+ *
+ * 目标与它的停止条件都由 harness 自己跑(codex `thread/goal/*`,Claude Code 自带的 `/goal`),
+ * 咕咕这里只认用户敲的那一行:`/goal [--tokens N] <目标>`、`/goal clear|pause|resume`、裸 `/goal`。
+ * `--tokens` 是 codex 原生的 `tokenBudget`;❌ 咕咕不自己数 token、不自己续跑轮次。
+ */
+export const GOAL_TOKENS_FLAG = '--tokens';
+
+export type GoalCommand =
+  | { kind: 'show' }
+  | { kind: 'clear' | 'pause' | 'resume' }
+  | { kind: 'set'; objective: string; tokenBudget: number | null }
+  | { kind: 'invalid'; reason: string };
+
+const GOAL_HEAD = /^\/goal(?=\s|$)/;
+const TOKEN_AMOUNT = /^(\d+(?:\.\d+)?)([kKmM]?)$/;
+
+/** 不是 `/goal` 开头 ⇒ null。`--tokens` 接 `200000`、`200k`、`1.5m`。 */
+export function parseGoalCommand(text: string): GoalCommand | null {
+  const trimmed = text.trim();
+  if (!GOAL_HEAD.test(trimmed)) return null;
+  let rest = trimmed.slice('/goal'.length).trim();
+  if (!rest) return { kind: 'show' };
+  const lowered = rest.toLowerCase();
+  if (lowered === 'clear' || lowered === 'pause' || lowered === 'resume') return { kind: lowered };
+  let tokenBudget: number | null = null;
+  if (rest === GOAL_TOKENS_FLAG || rest.startsWith(`${GOAL_TOKENS_FLAG} `) || rest.startsWith(`${GOAL_TOKENS_FLAG}=`)) {
+    const flag = /^--tokens(?:=|\s+)(\S+)\s*([\s\S]*)$/.exec(rest);
+    const amount = flag ? TOKEN_AMOUNT.exec(flag[1]) : null;
+    const scale = { '': 1, k: 1_000, m: 1_000_000 }[(amount?.[2] ?? '').toLowerCase() as '' | 'k' | 'm'];
+    tokenBudget = amount ? Math.round(Number(amount[1]) * scale) : 0;
+    if (!flag || !Number.isSafeInteger(tokenBudget) || tokenBudget <= 0) {
+      return { kind: 'invalid', reason: `${GOAL_TOKENS_FLAG} needs a positive token count, such as ${GOAL_TOKENS_FLAG} 200k` };
+    }
+    rest = flag[2].trim();
+  }
+  if (!rest) return { kind: 'invalid', reason: 'Write the goal after /goal' };
+  return { kind: 'set', objective: rest, tokenBudget };
+}
+
+/**
+ * 这家 agent 报上来的 `/goal` 接不接 `--tokens`。判据是它自己报的参数提示,❌ 按厂商分叉:
+ * codex 腿把 `--tokens` 写进提示;Claude Code 的 `/goal` 只接条件,提示里没有它。
+ */
+export function goalAcceptsTokenBudget(commands: readonly { readonly name: string; readonly inputHint?: string }[]): boolean {
+  const goal = commands.find((command) => command.name.replace(/^\//, '') === 'goal');
+  return goal?.inputHint?.includes(GOAL_TOKENS_FLAG) === true;
+}
