@@ -137,13 +137,14 @@ export function modelTitle(item: ComposerModelItem, locale = 'en-US'): string | 
  * 什么都没有的那几格就不画 —— ❌ 写「未知」占位。
  */
 function ModelDetail({ item, contextThresholds, efforts, effort, onEffortChange, onContextCommit,
-  keyboardEntry, onReturn, fastControl, onDisabledAction }: {
+  contextEffort, keyboardEntry, onReturn, fastControl, onDisabledAction }: {
   item: ComposerModelItem;
   contextThresholds?: ComposerContextThresholds;
   efforts?: ComposerEffortItem[];
   effort?: ComposerEffortItem;
   onEffortChange?: (id: string) => void;
   onContextCommit: () => void;
+  contextEffort?: string;
   keyboardEntry: number;
   onReturn: () => void;
   fastControl?: React.ReactNode;
@@ -161,7 +162,7 @@ function ModelDetail({ item, contextThresholds, efforts, effort, onEffortChange,
   const canEditEffort = (efforts?.length ?? 0) > 1 && !!onEffortChange;
   const canChooseEffort = canEditEffort && !!efforts?.some(level => !level.disabled);
   const context = modelContextLengths(f?.contextLengths, f?.defaultContextLength, f?.contextWindowSize);
-  const threshold = !item.disabled ? contextThresholds?.(item.id, context?.defaultContextLength ?? f?.contextWindowSize) : undefined;
+  const threshold = !item.disabled ? contextThresholds?.(item.id, f?.contextWindowSize) : undefined;
   const canSetThreshold = !!threshold?.selectWindow && !!context && context.contextLengths.length > 1 &&
     context.contextLengths.every(value => value > threshold.minimum);
   const effortLabel = translate('composer.thinkingStrength');
@@ -266,7 +267,7 @@ function ModelDetail({ item, contextThresholds, efforts, effort, onEffortChange,
         }}>
         {submenu.open && (submenu.activeKey === 'context' ? (
           canSetThreshold && <ContextThresholdChoices threshold={threshold} onCommit={onContextCommit}
-            lengths={context.contextLengths} defaultLength={context.defaultContextLength} />
+            lengths={context.contextLengths} defaultLength={context.defaultContextLength} effort={contextEffort} />
         ) : (
           <>
             <div className={styles.contextThresholdHeading}>{effortLabel}</div>
@@ -682,10 +683,8 @@ export function ComposerModelMenu({
                   detailCard.close();
                   setKeyboardEntry(0);
                 }}
-                onContextCommit={() => {
-                  closeAfterSelection();
-                  if (!detailIsSelected) selectModel(detailItem);
-                }}
+                onContextCommit={closeAfterSelection}
+                contextEffort={detailIsSelected ? undefined : effortForModelSwitch(detailItem)}
                 fastControl={detailIsSelected && panel.modelRow === 'list' && !phoneActions && fastMode !== undefined
                   ? <ComposerFastMode detailRow picker={panelEl} enabled={fastMode} disabled={disabled} onChange={onFastModeChange} renderHint={renderFastModeHint} />
                   : undefined}

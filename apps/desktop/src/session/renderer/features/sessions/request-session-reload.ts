@@ -1,4 +1,5 @@
 import type { GuguPermissionMode } from '@gugu/session-core/acp';
+import type { SessionContextChoice } from '@shared/core/sessions/session-config';
 import { invokeOnMachine } from '@renderer/lib/ipc';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import {
@@ -30,6 +31,7 @@ export async function requestSessionReload(input: {
   modelSource?: 'platform' | 'own';
   /** 思考档位:字符串换档 / `null` 回默认 / 省略不碰(见契约)。 */
   effort?: string | null;
+  contextChoice?: SessionContextChoice;
   /** 换成这一档权限(咕咕四档);只给权限一维声明 `reload-session` 的家(见契约)。 */
   permissionMode?: GuguPermissionMode;
 }): Promise<SessionReloadResponse> {
@@ -40,6 +42,7 @@ export async function requestSessionReload(input: {
     ...(input.model ? { model: input.model, modelSource: input.modelSource } : {}),
     // `null` 有意义(回默认),所以判的是在场,❌ 不是真值。
     ...(input.effort !== undefined ? { effort: input.effort } : {}),
+    ...(input.contextChoice ? { contextChoice: input.contextChoice } : {}),
     // ⚠️ 用 `Array.isArray` 判在场,**不是真值判断** —— `[]` 是真值没错,但更要紧的是
     //    这里若写成 `input.mcpDisabledServers?.length ? …`,空数组就会被丢掉,
     //    而「用户把开关全打开又确认」正好产出空数组:这个明确决定仍须落库。

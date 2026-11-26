@@ -11,9 +11,8 @@ export interface ContextThreshold {
   value: number | null;
   unsupported?: boolean;
   set?: (value: number | null) => Promise<void>;
-  setMaximum?: (window: number) => Promise<void>;
   selectedWindow?: number;
-  selectWindow?: (window: number) => Promise<void>;
+  selectWindow?: (window: number, effort?: string) => Promise<void>;
 }
 
 export type ComposerContextThresholds = (
@@ -45,11 +44,12 @@ function parseContextThreshold(text: string, minimum: number, maximum: number): 
   return Number.isSafeInteger(tokens) && tokens >= minimum && tokens < maximum ? tokens : null;
 }
 
-export function ContextThresholdChoices({ threshold, onCommit, lengths, defaultLength, autoCompact }: {
+export function ContextThresholdChoices({ threshold, onCommit, lengths, defaultLength, effort, autoCompact }: {
   threshold: ContextThreshold;
   onCommit: () => void;
   lengths?: readonly number[];
   defaultLength?: number;
+  effort?: string;
   autoCompact?: AutoCompactLimits;
 }) {
   const { translate } = useMessages();
@@ -66,7 +66,7 @@ export function ContextThresholdChoices({ threshold, onCommit, lengths, defaultL
     if (saving) return;
     setSaving(true);
     try {
-      if (lengths && value != null) await threshold.selectWindow?.(value);
+      if (lengths && value != null) await threshold.selectWindow?.(value, effort);
       else await threshold.set?.(value);
       onCommit();
     } catch {

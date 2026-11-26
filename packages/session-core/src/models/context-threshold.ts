@@ -27,10 +27,10 @@ export interface ContextThresholdPreference {
 
 /** A smaller window preserves an existing threshold as far as the new strict bound permits. */
 export function contextThresholdForWindow(
-  previous: ContextThresholdPreference,
+  previous: ContextThresholdPreference | undefined,
   maximum: number,
 ): ContextThresholdPreference {
-  return { tokens: Math.min(previous.tokens, maximum - 1), maximum };
+  return { tokens: Math.min(previous?.tokens ?? maximum, maximum - 1), maximum };
 }
 
 export const CONTEXT_WINDOW_ENV = 'GUGU_MODEL_CONTEXT_WINDOW';

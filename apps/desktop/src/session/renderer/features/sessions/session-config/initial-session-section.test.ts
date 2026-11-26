@@ -1464,6 +1464,46 @@ describe('useInitialSessionState', () => {
     expect(buildInitialSession(latestState!)).toHaveProperty('platformModel', null);
   });
 
+  it('records a context choice only for its model in the new session', async () => {
+    platformCatalog({ models: [GLM], agentDefault: { modelId: 'glm-5.2' } });
+    await renderProbe('project-1');
+    await act(async () => latestState?.setPlatformModel('glm-5.2'));
+    expect(buildInitialSession(latestState!)).not.toHaveProperty('contextChoice');
+
+    const contextChoice = { model: 'platform:glm-5.2', window: 200_000 };
+    await act(async () => latestState?.setContextChoice?.(contextChoice));
+    expect(buildInitialSession(latestState!)).toMatchObject({
+      platformModel: { modelId: 'glm-5.2' },
+      contextChoice,
+    });
+    expect(settingsStore.get('contextThresholds')).toBeUndefined();
+
+    await act(async () => latestState?.setPlatformModel(null));
+    expect(buildInitialSession(latestState!)).not.toHaveProperty('contextChoice');
+  });
+
+  it('keeps a context choice with its draft and clears it once the new task exists', async () => {
+    const key = 'context-choice-creation';
+    const destination = 'context-choice-destination';
+    const choice = { model: 'platform:glm-5.2', window: 200_000 };
+    platformCatalog({ models: [GLM], agentDefault: { modelId: 'glm-5.2' } });
+    composerDrafts.set(key, 'first turn');
+    const pending = deferCreation();
+    await renderCreation(key);
+
+    await act(async () => latestState?.setPlatformModel('glm-5.2'));
+    await act(async () => latestState?.setContextChoice?.(choice));
+    await act(async () => composerDrafts.moveToEmpty(key, destination));
+    await remountCreation(destination);
+    await act(async () => latestState?.setPlatformModel('glm-5.2'));
+    expect(latestState?.contextChoice).toEqual(choice);
+
+    await act(async () => latestCreation?.handleCreateSession());
+    expect(mocks.createSession.mock.calls[0]?.[0].sessionConfig.initialSession.contextChoice).toEqual(choice);
+    await act(async () => pending.resolve());
+    expect(latestState?.contextChoice).toBeUndefined();
+  });
+
   it('selects the provider default model instead of showing a generic model placeholder', async () => {
     await renderProbe('project-1');
 

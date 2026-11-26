@@ -1,3 +1,4 @@
+import type { SessionContextChoice } from '@shared/core/sessions/session-config'
 import { customModelRefFromOption, customModelRuntimeOption, runtimeModelId } from '@gugu/session-core/models/custom-model'
 import { sessionBootTasks } from './core/boot-tasks'
 import { hasAgentInstallsInProgress } from './core/agents/install-progress-ledger'
@@ -1278,6 +1279,7 @@ async function reloadEmdashSessionNow(input: {
    * 写进进程,活进程经 ACP 改不了)。与 `model` 同一条纪律:宿主先写进会话记录、再停、再起,起不来就写回原样。
    */
   permissionMode?: GuguPermissionMode
+  contextChoice?: SessionContextChoice
 }): Promise<{ warning?: string; nativeSession: ReloadNativeSession }> {
   const { sessionId, reason } = input
   if (input.resetModel && typeof input.model === 'string' && input.model.trim()) {
@@ -1290,6 +1292,7 @@ async function reloadEmdashSessionNow(input: {
   const carriesModelChoice = (typeof input.model === 'string' && !!input.model.trim())
     || !!input.resetModel
     || input.effort !== undefined
+    || input.contextChoice !== undefined
   if (!providerSessionId && carriesModelChoice && !Array.isArray(input.mcpDisabledServers)) {
     await recordUnstartedSessionChoice({
       sessionId,
@@ -1299,6 +1302,7 @@ async function reloadEmdashSessionNow(input: {
       modelSource: input.modelSource,
       resetModel: input.resetModel,
       effort: input.effort,
+      contextChoice: input.contextChoice,
     })
     return { nativeSession: 'not-started' }
   }
@@ -1361,7 +1365,7 @@ async function reloadEmdashSessionNow(input: {
       configBeforePatch = await dropRecordedModel(sessionId, reason)
       await forgetSessionPlatformModel(sessionId)
       platformWritten = true
-    } else if (nextModel || effortChanged) {
+    } else if (nextModel || effortChanged || input.contextChoice) {
       const rows = await db.select({ config: sessions.config })
         .from(sessions).where(eq(sessions.id, sessionId))
       const current = rows[0]?.config
@@ -1370,6 +1374,7 @@ async function reloadEmdashSessionNow(input: {
       }
       configBeforePatch = current
       const nextConfig = { ...current }
+      if (input.contextChoice) nextConfig.contextChoice = input.contextChoice
       if (effortChanged) {
         if (nextEffort) nextConfig.effort = nextEffort
         else delete nextConfig.effort
@@ -1473,6 +1478,7 @@ async function reloadEmdashSessionNow(input: {
   //    ❌ 不由渲染层代劳:那条路要么走活 ACP(必然失败,见 `model` 字段的注释),要么多一次
   //    可能与重开之间被打断的往返。
   const configPatch: Record<string, unknown> = {}
+  if (input.contextChoice) configPatch.contextChoice = input.contextChoice
   if (nextModel && input.modelSource === 'own') configPatch.model = nextModel
   if (Array.isArray(input.mcpDisabledServers)) {
     // 参数**在场**就是「这条会话被显式决定过」——`[]` 也算,所以判的是 `Array.isArray` 而不是长度。
@@ -1521,8 +1527,11 @@ async function reloadEmdashSessionNow(input: {
       .set({ config: nextConfig })
       .where(eq(sessions.id, sessionId))
     // 权限档是渲染层从会话记录读的(这一维没有活会话报档),记录改了就得播出去,与 `recordLiveSessionSetting` 同一条广播。
-    if (input.permissionMode !== undefined) {
-      events.emit(sessionChangedChannel, { sessionId, projectId: session.projectId, changes: { permissionMode: input.permissionMode } })
+    if (input.permissionMode !== undefined || input.contextChoice) {
+      events.emit(sessionChangedChannel, { sessionId, projectId: session.projectId, changes: {
+        ...(input.permissionMode !== undefined ? { permissionMode: input.permissionMode } : {}),
+        ...(input.contextChoice ? { contextChoice: input.contextChoice } : {}),
+      } })
     }
   } else if (input.resetModel) {
     configBeforePatch = await dropRecordedModel(sessionId, reason)
@@ -1582,6 +1591,9 @@ async function reloadEmdashSessionNow(input: {
         // 回滚也播:否则界面停在没生效的那一档。播的是 spawn 按回滚后的记录会用的那一档(缺键 = 默认档)。
         const before = resolveSessionPermissionMode(configBeforePatch as { permissionMode?: GuguPermissionMode })
         events.emit(sessionChangedChannel, { sessionId, projectId: session.projectId, changes: { permissionMode: before } })
+      }
+      if (input.contextChoice) {
+        events.emit(sessionChangedChannel, { sessionId, projectId: session.projectId, changes: { contextChoice: configBeforePatch.contextChoice ?? null } })
       }
       // provider 会话 id 的回滚也经 `setSessionId` —— 它会广播(#5869)。
       // ⚠️ 这一步**不能省**:换计费路那一支上面已经 `clearSessionId` 过一次,渲染端此刻以为
