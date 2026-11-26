@@ -1,6 +1,7 @@
 import type { Result } from '@gugu/session-shared';
 import z from 'zod';
 import type {
+  HostDependencyDescriptor,
   InstallMethod,
   InstallOption,
   InstallTarget,
@@ -633,7 +634,7 @@ export interface DependencyDescriptor {
   /** Binary names to try in order; first success wins. */
   commands: string[];
   /** Vendor install locations tried when no `commands` entry is on PATH (`HostDependencyDescriptor.knownPaths`). */
-  knownPaths?: Partial<Record<Platform, string[]>>;
+  knownPaths?: HostDependencyDescriptor['knownPaths'];
   /** Args passed when probing for a version string. Defaults to ['--version']. */
   versionArgs?: string[];
   /** The line of its `--version` output that is its own (`HostDependencyDescriptor.versionLine`). */
