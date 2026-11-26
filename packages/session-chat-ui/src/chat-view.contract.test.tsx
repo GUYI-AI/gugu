@@ -114,45 +114,7 @@ describe('createChatView', () => {
     document.body.removeChild(host);
   });
 
-  it('aligns pinned user messages with the measured transcript column', async () => {
-    const ctx = createChatContext({ locale: () => 'en-US', theme: DEFAULT_THEME });
-    const state = createChatState(ctx);
-    state.transcript.history.seed(generateMockTranscript(80, 11));
-
-    const host = document.createElement('div');
-    host.style.cssText = 'position:fixed;top:0;left:0;width:800px;height:320px;';
-    document.body.appendChild(host);
-
-    const view = createChatView({ context: ctx, state, parent: host, pinUserMessages: true });
-    await nextPaint();
-
-    view.scrollToBottom();
-    // The stuck summary is the user bubble drawn at the scroller's top edge.
-    const pinnedCardEl = () => {
-      const top = host.querySelector<HTMLElement>('[data-chat-scroll]')!.getBoundingClientRect().top;
-      return [...host.querySelectorAll<HTMLElement>('[data-pin-summary]')].find((card) => {
-        const d = card.getBoundingClientRect().top - top;
-        return d >= 0 && d < 24;
-      });
-    };
-    await until('pinned user card appears after scrolling to the bottom', () => pinnedCardEl() != null);
-    const pinnedCard = pinnedCardEl();
-
-    const probe = host.querySelector('[data-chat-width-probe]') as HTMLElement | null;
-    expect(probe).not.toBeNull();
-
-    const pinRect = pinnedCard!.getBoundingClientRect();
-    const probeRect = probe!.getBoundingClientRect();
-    expect(Math.abs(pinRect.left - probeRect.left)).toBeLessThan(1);
-    expect(Math.abs(pinRect.width - probeRect.width)).toBeLessThan(1);
-
-    view.dispose();
-    ctx.dispose();
-    state.dispose();
-    document.body.removeChild(host);
-  });
-
-  it('keeps transcript rows disjoint while the pinned header is active', async () => {
+  it('keeps transcript rows disjoint at the bottom', async () => {
     const ctx = createChatContext({ locale: () => 'en-US', theme: DEFAULT_THEME });
     const state = createChatState(ctx);
     state.transcript.history.seed(generateMockTranscript(24, 17));
@@ -161,12 +123,11 @@ describe('createChatView', () => {
     host.style.cssText = 'position:fixed;top:0;left:0;width:800px;height:320px;';
     document.body.appendChild(host);
 
-    const view = createChatView({ context: ctx, state, parent: host, pinUserMessages: true });
+    const view = createChatView({ context: ctx, state, parent: host });
     await nextPaint();
     view.scrollToBottom();
     await nextPaint();
 
-    // A row's own box: a pin lane spans its whole turn, so take the row inside it at its natural place.
     const rows = Array.from(host.querySelectorAll<HTMLElement>('[data-index]'))
       .map((el) => {
         const top = el.getBoundingClientRect().top;
@@ -383,7 +344,7 @@ it('stops a pinned instruction before an independently sent reply at the unread 
   }]);
   const host = document.body.appendChild(document.createElement('div'));
   host.style.cssText = 'position:fixed;top:45px;left:0;width:800px;height:600px;';
-  const view = createChatView({ context: ctx, state, parent: host, pinUserMessages: true });
+  const view = createChatView({ context: ctx, state, parent: host });
   try {
     await nextPaint();
     view.setScrollMode({ kind: 'anchor', itemId: sent[0].id, edge: 'top', offset: -8 });

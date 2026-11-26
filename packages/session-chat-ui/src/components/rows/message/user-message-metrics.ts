@@ -8,46 +8,39 @@ import { inputSendStatusHeight } from './InputSendStatus';
 import { sentBodiesLayout } from './SentMessageBodies';
 import {
   actionGap, attachStripHeight, effectiveMessageVars, messageAttachmentGap, userAvailableWidth, userInnerWidth,
-  userMessageActionsHeight, userPillWidth, type MessageVars,
+  userMessageActionsHeight, type MessageVars,
 } from './metrics';
 
 /** Both typed and delivered inputs use the same measured user-message body. */
 export function measureUserMessage(item: ChatMessage, ctx: MeasureCtx, baseVars: MessageVars): number {
   const editing = !item.guguDelivery && isMessageEditing(item.id, ctx);
-  return userBubbleBox(item, ctx, baseVars).bottom + inputSendStatusHeight(item)
+  return userBubbleBottom(item, ctx, baseVars) + inputSendStatusHeight(item)
     + (editing ? 0 : userMessageActionsHeight(effectiveMessageVars(baseVars, ctx.theme.layout), actionGap(ctx.theme.layout)));
 }
 
-/**
- * The bubble as drawn, below the top of the message card: where it ends (its attachments sit above it) and how wide it is.
- * The row's height and the pinned summary's rest position both read it, so they cannot disagree. What a row draws above
- * the card (a delivered message's sender line) is added by each of them from one helper of that row (#2629).
- */
-export function userBubbleBox(item: ChatMessage, ctx: MeasureCtx, baseVars: MessageVars): { bottom: number; width: number; drawn: boolean; height?: number } {
+/** Where the bubble as drawn ends below the top of the message card (its attachments sit above it). */
+function userBubbleBottom(item: ChatMessage, ctx: MeasureCtx, baseVars: MessageVars): number {
   const vars = effectiveMessageVars(baseVars, ctx.theme.layout);
   const available = userAvailableWidth(ctx.width, ctx.theme.layout);
-  if (!item.guguDelivery && isMessageEditing(item.id, ctx)) return {
-    bottom: attachStripHeight(item.attachments, available, vars) + messageEditorMetrics(ctx.editingMessage!.text, ctx).height,
-    width: available, drawn: false,
-  };
+  if (!item.guguDelivery && isMessageEditing(item.id, ctx)) {
+    return attachStripHeight(item.attachments, available, vars) + messageEditorMetrics(ctx.editingMessage!.text, ctx).height;
+  }
   const inner = userInnerWidth(available, vars);
   const destination = conversationDestinationLayout(item, ctx, inner);
   const body = userBubbleBody(item, ctx, inner);
   const attachGap = messageAttachmentGap(vars, ctx.theme.layout, body !== null);
   const strip = attachStripHeight(item.attachments, available, { attachGap });
   // 没有正文就没有气泡(UserMessageCard);还在流、一个字没到的除外,那时先占一行。
-  if (!body) return { bottom: strip + (item.attachments?.length ? destination?.height ?? 0 : 0), width: available, drawn: false };
+  if (!body) return strip + (item.attachments?.length ? destination?.height ?? 0 : 0);
   const cap = ctx.expandedId === item.id ? vars.expandedMaxH : vars.collapsedMaxH;
-  const height = Math.min(body.height + 2 * vars.userCardPadY + 2 * vars.cardBorder, cap);
-  return { bottom: strip + height + (destination?.height ?? 0), height,
-    width: userPillWidth(available, Math.max(body.width, destination?.width ?? 0), vars, ctx.theme.layout), drawn: true };
+  return strip + Math.min(body.height + 2 * vars.userCardPadY + 2 * vars.cardBorder, cap) + (destination?.height ?? 0);
 }
 
 /** The bubble's unfolded text or sent bodies, or null when there is no bubble. */
-function userBubbleBody(item: ChatMessage, ctx: MeasureCtx, inner: number): { width: number; height: number } | null {
+function userBubbleBody(item: ChatMessage, ctx: MeasureCtx, inner: number): { height: number } | null {
   if (item.sentMessages?.length) return sentBodiesLayout(item.sentMessages, ctx, inner);
   const blocks = item.streaming ? ctx.caches.parseBlocksStreaming(item.id, item.text) : ctx.caches.parseBlocks(item.id, item.text);
-  if (blocks.length === 0) return item.streaming ? { width: 0, height: ctx.theme.fonts.body.lineHeight } : null;
+  if (blocks.length === 0) return item.streaming ? { height: ctx.theme.fonts.body.lineHeight } : null;
   return layoutBlockStack(blocks, { ...ctx, width: inner }, { isCollapsed: ctx.isCollapsed });
 }
 

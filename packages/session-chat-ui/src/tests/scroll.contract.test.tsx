@@ -110,7 +110,7 @@ async function mountTranscript(
   itemCount: number,
   opts: {
     composer?: 'slot' | 'none'; height?: number; turns?: TranscriptTurn[];
-    pinUserMessages?: boolean; unreadId?: string; top?: number; agentConversation?: boolean;
+    unreadId?: string; top?: number; agentConversation?: boolean;
   } = {}
 ): Promise<Mounted> {
   const ctx = createChatContext(opts.agentConversation ? { locale: () => 'en-US', layout: { preset: 'double', userGutter: 0, agentConversation: true } } : { locale: () => 'en-US', theme: DEFAULT_THEME });
@@ -124,7 +124,7 @@ async function mountTranscript(
 
   const mountView = async () => {
     const view = createChatView({
-      context: ctx, state, parent: host, composer: opts.composer, pinUserMessages: opts.pinUserMessages,
+      context: ctx, state, parent: host, composer: opts.composer,
       onViewMounted: ready => {
         if (!opts.unreadId) return;
         ready.setScrollMode({ kind: 'anchor', itemId: opts.unreadId, edge: 'top', offset: -8 });
@@ -176,7 +176,7 @@ afterEach(() => {
 
 describe('transcript scroll behaviour across the P3 row redraw', () => {
   it.each(['done', 'cancelled'] as const)('keeps a short reply at its natural position while active, %s, and reopened', async status => {
-    const { state, host, scrollEl, remount } = await mountTranscript(0, { pinUserMessages: true, height: 600 });
+    const { state, host, scrollEl, remount } = await mountTranscript(0, { height: 600 });
     state.transcript.activeTurn.set({
       id: 'short', seq: 0, initiator: 'user', items: [
         { kind: 'message', id: 'short-user', seq: 0, role: 'user', text: 'A short question.' },
@@ -271,7 +271,7 @@ describe('transcript scroll behaviour across the P3 row redraw', () => {
       }],
     }));
     const id = `call-12:sent:${receipt(12)}`;
-    const { view, host, scrollEl } = await mountTranscript(0, { composer: 'slot', height: 600, turns, pinUserMessages: true, unreadId: id, top: 45, agentConversation: true });
+    const { view, host, scrollEl } = await mountTranscript(0, { composer: 'slot', height: 600, turns, unreadId: id, top: 45, agentConversation: true });
     const body = () => host.querySelector<HTMLElement>(`[data-agent-conversation-message="${id}"] [data-user-card]`);
     await until('unread body is mounted', () => body() !== null);
     await settled(scrollEl);

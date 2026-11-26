@@ -16,6 +16,8 @@ export { createServerPasswordAgent } from '../password-vault/server-agent'
 export { passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
 export { serverTaskPrivateLogin } from '../session/main/core/extensions/task-page-host'
 export { archiveSession } from '../session/main/core/sessions/archiveSession'
+// #3884 The host's quit intent reaches session starts before the shutdown closes what an engine needs.
+export { beginSessionLifeHostQuit } from '../session/main/core/sessions/session-life'
 export { createDesktopAccountClosureHost } from '../session/main/core/desktop-account-closure'
 export { createDesktopAccountClosureV2Host } from '../session/main/core/desktop-account-closure-v2'
 // Session ids written as a prefix are matched against this machine's session list (main.ts localAddressRows).

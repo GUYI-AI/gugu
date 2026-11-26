@@ -57,13 +57,9 @@ import { continuedActivityHeader, foldActivityUnits, hasUnconfirmedSend, incomin
  *                               — the day context a tier hands to the next one.
  * UnitsView                     — virtual two-tier concat: .length / .at(i).
  * makeUnitsView(c, a)           — combine committedUnits + activeUnits.
- * collectUserTurnUnits(committed, units)
- *                               — absolute unit indices of the first unit of
- *                                 each committed user-message group; used by
- *                                 ChatRoot for the pinned-header overlay.
  */
 
-import { isDeliveryEnvelope, readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
+import { isDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { agentSendOf, replyItems } from '@gugu/session-core/session-record/reply-process';
 import { CONVERSATION_BLOCK_GAP, CONVERSATION_UTTERANCE_GAP, resolveSeamGap } from '@session-chat/core/spacing';
 import type { FoldGate, ItemSegmenter, Margin, RenderUnit, SegmentCtx } from '@session-chat/core/units';
@@ -78,7 +74,6 @@ import { tallyToolRun, toolRunCategory, toolRunLabel, toolRunNow } from '@sessio
 import { completedTurnResult, itemIsUser, pendingTurnHeader, placeholderTurnHeader, planTurnFoldRuns, turnFoldView, turnProcessExpanded } from '@session-chat/state/turn-fold';
 import { isEmptyAgentTurn } from './turn-visibility';
 import { processHookNotice } from '@session-chat/lib/hook-notice';
-import { messagePresentation } from './message-presentation';
 
 export { lastConversationMessage } from './conversation-density';
 export { planTurnFold, turnProcessId } from '@session-chat/state/turn-fold';
@@ -91,26 +86,14 @@ export type { TurnFoldPlan, TurnFoldSegment } from '@session-chat/state/turn-fol
  *
  * owner 2026-09-06:「别的 agent 给这个 agent 发的信息其实也是通知，也不应该计入消息，
  * 更不应该有 stick 效果」。⇒ 它照旧显示（投递卡），但**不占「人刚发言」那个身份**：
- * 不被钉到顶端、不触发底部预留把视图拽过去、「取回指令」也不会把别人的话塞进你的输入框。
+ * 不触发底部预留把视图拽过去、「取回指令」也不会把别人的话塞进你的输入框。
  * 判据是 core 的 `isDeliveryEnvelope`：以信封开头的都算，读方一时读不出的那条也不冒充人说的话。
  */
 export function isDeliveredFromAgent(item: ChatItem): boolean {
   if (item.kind !== 'message' || (item as ChatMessage).role !== 'user') return false;
   const message = item as ChatMessage;
-  // The message presenter replaces the envelope with its body. Pinning also
-  // reads those normalized units, where the authenticated source remains here.
+  // The message presenter replaces the envelope with its body; the authenticated source remains here.
   return !!message.guguDelivery || message._meta?.guguOwnerInput === false || isDeliveryEnvelope(message.text);
-}
-
-/** The viewer's authenticated human delivery is their own input, including on another client. */
-export function isViewerInput(item: ChatItem, viewerId?: string): boolean {
-  if (!itemIsUser(item)) return false;
-  if (!isDeliveredFromAgent(item)) return true;
-  const self = viewerId?.replace(/^user:/, '');
-  const message = item as ChatMessage;
-  const segments = (message.guguDelivery ?? readDeliveryEnvelope(message.text))?.segments;
-  return !!self && !!segments?.length && segments.every(segment =>
-    segment.facts?.fromType === 'human' && segment.facts.fromId === `user:${self}`);
 }
 
 /**
@@ -819,44 +802,4 @@ export function makeUnitsView(committed: RenderUnit[], active: RenderUnit[]): Un
       return i === continued?.index ? continued.unit : i < cl ? committed[i] : active[i - cl];
     },
   };
-}
-
-// ── collectUserTurnUnits ──────────────────────────────────────────────────────
-
-/**
- * Returns the unit indices (in `units`) of the *first unit* of each user
- * message in `turns`, in ascending order.
- *
- * ChatRoot's pin anchors (@@@sticky-user-lanes): called once per tier — the
- * committed turns, and the active tier's one turn. Either tier can hold several
- * user messages per turn (an inserted message joins the running turn).
- */
-export function collectUserTurnUnits(
-  turns: readonly TranscriptTurn[],
-  units: UnitsView,
-  options: { delivered?: boolean; viewerId?: string } = {}
-): number[] {
-  const userItemIds = new Set<string>();
-  for (const turn of turns) {
-    for (const item of turn.items) {
-      // 投递进来的通知不进这个集合 —— 这个集合就是「钉到顶端」的名单。
-      // `delivered`:要的是「钉顶在哪儿让位」,投递进来的那条也算(对话布局里它是右侧的一个气泡)。
-      if (itemIsUser(item) && (options.delivered || isViewerInput(item, options.viewerId))) userItemIds.add(item.id);
-    }
-  }
-
-  if (userItemIds.size === 0) return [];
-
-  // Walk the flat unit view once, recording the first unit index per group.
-  const result: number[] = [];
-  const seen = new Set<string>();
-  for (let i = 0; i < units.length; i++) {
-    const u = units.at(i);
-    if (u && userItemIds.has(u.itemId) && !seen.has(u.itemId)
-      && (u.kind !== 'message' || messagePresentation(u.data as ChatMessage).pinSummary)) {
-      seen.add(u.itemId);
-      result.push(i);
-    }
-  }
-  return result;
 }

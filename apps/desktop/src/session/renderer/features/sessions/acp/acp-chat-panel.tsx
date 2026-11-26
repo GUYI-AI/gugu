@@ -2332,7 +2332,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
             composer="slot"
             composerPlacement={store.isEmpty ? 'center' : 'bottom'}
             stickToBottom
-            pinUserMessages={tabKind !== 'side-chat'}
             onReady={handleReady}
             onDisposed={handleTranscriptGone}
             commands={transcriptCommands}

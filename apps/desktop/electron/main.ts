@@ -273,7 +273,7 @@ import { assistantWorkCoordinator } from '@gugu/core/cloud/assistantWorkRouting'
 import { createDesktopAssistantWorkReconciler } from './assistant-work-reconciliation'
 import { enqueueAssistantWorkReport } from '@gugu/core/cloud/assistantWorkReports'
 import {withAssistantWorkReply} from '@gugu/core/shared/assistantWorkReply'
-import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision'
+import { ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC, pickAssistant } from '@gugu/core/shared/assistantProvision'
 import { assistantHomeKind } from '@gugu/core/shared/assistantPolicy'
 import { landTaskCardFirstTurn } from './sessionpage/task-card-first-turn'
 import { withQuestionCard } from './sessionpage/question-card'
@@ -996,6 +996,19 @@ let sessionpageAgentRehydration: Promise<void> = new Promise<void>((resolve, rej
 })
 void sessionpageAgentRehydration.catch(() => undefined)
 let isQuitting = false
+/**
+ * #3884 退出意图一立(按下安装更新、退出),会话就不再起新引擎:停机随后就关咕咕 MCP 端口和运行时,这时起的引擎握手撞上
+ * 关掉的端口,重启后那条会话显示「无法启动」(11-26 升级时两条定时任务的会话就是这样)。正在起的转成等下一个宿主登录再起,
+ * 排着的输入原样留给它。
+ */
+function noteQuitIntent(): void {
+  isQuitting = true
+  try {
+    emdashBridge?.beginSessionLifeHostQuit()
+  } catch (error) {
+    createLogger('shutdown').warn({ err: error }, 'session starts could not be held for the quit')
+  }
+}
 
 function getSessionpageLocalDelivery(): SessionpageLocalDeliveryRouter {
   // spec session-injection「认领者是注册表」:targets 来自注册表(内核角色由 owner-registry 登记,
@@ -1798,10 +1811,9 @@ function assistantWorkDeliveryHost(): AssistantWorkOutboxHost {
       if (assistantCache?.ownerId === current.ownerId && assistantCache.until > Date.now()) return assistantCache.value
       const auth = await desktopAuthProvider().getAuth()
       if (!auth?.accessToken || auth.userId !== current.ownerId) return null
-      const {data,error} = await makeIdentityClient(auth.accessToken).from('agent_provisions').select(ASSISTANT_PROVISION_SELECT)
-        .eq('owner_user_id',current.ownerId).eq('member_key','assistant')
+      const {data,error} = await makeIdentityClient(auth.accessToken).rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS)
       if (error) throw error
-      const value = pickAssistant((data ?? []) as AssistantProvisionRow[])
+      const value = pickAssistant(data)
       assistantCache = {ownerId:current.ownerId,until:Date.now()+60000,value}
       return value
   }
@@ -3390,9 +3402,7 @@ const squirrelHandoff = createSquirrelHandoff({
 
 // 顺序、看门狗、重复按下这三件事在 ./update-quit 里,连同 #5793 的根因一起写在那个文件的头注释。
 const updateQuit = createUpdateQuit({
-  markQuitIntent: () => {
-    isQuitting = true
-  },
+  markQuitIntent: noteQuitIntent,
   // NSIS shows installation progress and relaunches the app when installation finishes.
   handOff: () => {
     emitUpdateStatus({ success: true, status: 'installing', updateInfo: updaterState.current.updateInfo })
@@ -3565,6 +3575,7 @@ app.on('before-quit', createRuntimeBeforeQuitHandler({
   getHost: () => deviceRuntimeHost,
   setQuitting: (value) => {
     isQuitting = value
+    if (value) noteQuitIntent()
     if (value) projectionDeviceRuntime.invalidate()
     // @@@5793 停机已经开始,看门狗的使命结束 —— 别在停机中途再捅一次 app.quit()。
     if (value) updateQuit.noteShutdownStarted()
@@ -5086,10 +5097,9 @@ app.whenReady().then(async () => {
           const current = await assistantWorkDeliveryHost().context()
           if (!current || current.ownerId !== auth.userId) throw new Error('Work account changed')
           const identity = makeIdentityClient(auth.accessToken!)
-          const { data, error } = await identity.from('agent_provisions').select(ASSISTANT_PROVISION_SELECT)
-            .eq('owner_user_id', auth.userId).eq('member_key', 'assistant')
+          const { data, error } = await identity.rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS)
           if (error) throw error
-          const assistant = pickAssistant((data ?? []) as AssistantProvisionRow[])
+          const assistant = pickAssistant(data)
           if (!assistant) throw new Error('Personal assistant is not available')
           const receipt = await enqueueAssistantWorkReport({
             rpc: (name, args) => current.client.rpc(name, args),
