@@ -1,4 +1,4 @@
-const WINDOWS_RESERVED_DEVICE_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+const WINDOWS_RESERVED_DEVICE_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
 
 export function basenameFromAnyPath(input: string): string {
   const trimmed = input.trim().replace(/[\\/]+$/g, '');
