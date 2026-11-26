@@ -21,6 +21,7 @@ import type { ViewDefinition, ViewId } from './view-registry';
 import { useRecentSessions, type SessionParams } from './recent-session-pages';
 import { ScreenBlockContext } from './screen-block-context';
 import { anchoredToBlock, ScreenFrame, screenDropHandlers } from './screen-frame';
+import { onPanelFrame, rideFade } from '@renderer/lib/layout/panel-track';
 import { DropHighlightLayer, hideDropHighlight } from '@renderer/lib/drop-highlight';
 import { hasDraggedScreenContent } from '@renderer/lib/drag-screen-content';
 import { shieldNativeDrags } from '@renderer/lib/drag-shield';
@@ -202,6 +203,15 @@ const RetainedSessionPage = memo(function RetainedSessionPage({
   const shown = (blockId !== null && embedVisible) || peekBox !== null;
   const pageRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => (pageRef.current && peekBox ? followBox(pageRef.current, peekBox) : undefined), [peekBox]);
+  // On a block it rides the block's cell (@@@ride-the-track): a block coming or going fades as the pages in it do.
+  useLayoutEffect(() => {
+    const page = pageRef.current;
+    if (!page || !blockId) return undefined;
+    const ride = () => rideFade(page, page.ownerDocument.querySelector(`[data-screen-block="${CSS.escape(blockId)}"]`));
+    ride();
+    const stop = onPanelFrame(ride);
+    return () => { stop(); rideFade(page, null); };
+  }, [blockId]);
   const place = useMemo(() => ({ blockId, focused, topLeft, multi }), [blockId, focused, topLeft, multi]);
   return (
     <div

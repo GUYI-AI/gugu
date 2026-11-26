@@ -17,6 +17,7 @@ import { PaneLayoutProvider } from '@renderer/features/tabs/pane-layout-context'
 import { TabDragOverlay } from '@renderer/features/tabs/tab-bar/tab-drag-preview';
 import { useTabDrag } from '@renderer/features/tabs/use-tab-drag';
 import { edgeFirst } from '@renderer/features/tabs/pane-edge-drop';
+import { followBox } from '@renderer/lib/layout/follow-box';
 import { i18n } from '@/i18n';
 import '@renderer/index.css';
 import '@/styles/tokens.css';
@@ -635,4 +636,38 @@ it('keeps the tools\' strip on their card while it narrows, ❌ its + and button
   }
   expect(lefts.size, 'the tools narrowed over several frames').toBeGreaterThan(2);
   expect(new Set(frames), 'the strip left its card while the tools narrowed').toEqual(new Set([`overhang=${atRest} toggleIn=true`]));
+});
+
+it('the tools going off fade with their cell, page and tabs alike, and what is drawn over the page follows it every frame', async () => {
+  const { inside, mode, workspace, tool } = await mountWorkspace();
+  await mode('empty');
+  workspace.open('tool', { id: 'file' }, { from: null, intent: 'newTab' });
+  await mode('split');
+  await untilStable('the tools have landed', () => inside('[data-chat-tool-strip]')?.getBoundingClientRect().left);
+  const page = inside('[data-chat-tool-card]')!;
+  const open = page.getBoundingClientRect().width;
+  // An App's page is drawn over its slot outside the pane tree (extension-view-layer): it is placed when followBox says so.
+  const placed: number[] = [];
+  const stop = followBox(tool()!, () => placed.push(Math.round(tool()!.getBoundingClientRect().left)));
+  // Past its start, a follower hears only what moves the box (❌ its own first frames of following).
+  await new Promise((settled) => setTimeout(settled, 2_100));
+  placed.length = 0;
+  workspace.setChatToolLayout('hidden');
+  const frames: { left: number; body: number; page: number; strip: number; seen: number }[] = [];
+  while (inside('[data-chat-tool-strip]')) {
+    await new Promise((frame) => requestAnimationFrame(frame));
+    const strip = inside('[data-chat-tool-strip]');
+    const left = Math.round(page.getBoundingClientRect().left);
+    if (strip) frames.push({ left, body: Math.round(tool()!.getBoundingClientRect().left), page: Number(getComputedStyle(page).opacity), strip: Number(getComputedStyle(strip).opacity), seen: placed.at(-1) ?? NaN });
+  }
+  stop();
+  const moving = frames.filter((frame) => frame.page < 1);
+  expect(moving.length, JSON.stringify(frames)).toBeGreaterThan(4);
+  const cut = inside('[data-track-cut]')!.getBoundingClientRect().right;
+  for (const frame of moving) {
+    // Opaque to its last pixels, the page crept off on the spring's tail (owner 11-26「最后一点点有微妙的非平滑停顿」).
+    expect(frame.page, JSON.stringify(frame)).toBeCloseTo((cut - frame.left) / open, 1);
+    expect(frame.strip, 'the tabs fade with their page').toBeCloseTo(frame.page, 3);
+    expect(frame.seen, 'the layer over the page was left where it was').toBe(frame.body);
+  }
 });

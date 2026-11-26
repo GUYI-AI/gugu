@@ -11,6 +11,10 @@ import { playSpring } from './panel-clock';
  *    nothing it stays laid out at that size (a page kept off screen is measured as it will be shown, ❌ at nothing). A slot
  *    that stays and holds its content (the list through a fold) keeps it where it is laid out, clipped at the drawn edge:
  *    its avatars do not move, a rail fades its own text. Any other slot's content is its drawn size.
+ *  · @@@ride-the-track — what is laid over a cell from outside the track's boxes (a pane tree's pages and the strip above
+ *    them, a session page on a screen block or beside an App, an App's page, a browser page) rides it: in every frame a track
+ *    writes (`onPanelFrame`) it takes the fade above that cell (`rideFade`), and what places itself by a box follows the box
+ *    (followBox). ❌ opaque to its last pixels while the spring's tail slows them down, ❌ left where it was until a resize.
  */
 
 /** Every edge this close to where it goes ends the move: the spring's sub-pixel tail would hold the landing layout back. */
@@ -21,7 +25,39 @@ const OUT_OF_WINDOW = 'translate(-100000px, -100000px)';
 
 /** A fading slot's soft edge: transparent at its drawn edge, opaque this far in. */
 export const PANEL_SOFT_EDGE_PX = 24;
-const SOFT_EDGE = { x: `linear-gradient(to left, transparent 0, black ${PANEL_SOFT_EDGE_PX}px)`, y: `linear-gradient(to top, transparent 0, black ${PANEL_SOFT_EDGE_PX}px)` };
+const softEdge = (toward: string) => `linear-gradient(to ${toward}, transparent 0, black ${PANEL_SOFT_EDGE_PX}px)`;
+/** The drawn edge is a slot's far end, the fill's near end. */
+const SOFT_EDGE = { x: { slot: softEdge('left'), fill: softEdge('right') }, y: { slot: softEdge('top'), fill: softEdge('bottom') } };
+
+const frameListeners = new Set<() => void>();
+
+/** Called after every frame any track writes (@@@ride-the-track). */
+export function onPanelFrame(listener: () => void): () => void {
+  frameListeners.add(listener);
+  return () => frameListeners.delete(listener);
+}
+
+/** The fade written above `cell` (its tracks' windows) that `layer` is not inside of already: what `layer` laid over the
+ *  cell paints. The soft edge's gradient is the nearest window's, whose drawn edge is the cell's (a slot's far, the fill's
+ *  near). */
+export function fadeOver(cell: Element, layer?: Element): { opacity: number; mask: string } {
+  let opacity = 1;
+  let mask = '';
+  for (let node: Element | null = cell; node && !(layer && node.contains(layer)); node = node.parentElement ?? (node.parentNode instanceof ShadowRoot ? node.parentNode.host : null)) {
+    if (!(node instanceof HTMLElement)) continue;
+    if (node.style.opacity) opacity *= Number(node.style.opacity);
+    mask ||= node.style.maskImage;
+  }
+  return { opacity, mask };
+}
+
+/** `layer` takes the fade over `cell` (@@@ride-the-track). */
+export function rideFade(layer: HTMLElement, cell: Element | null): void {
+  const { opacity, mask } = cell ? fadeOver(cell, layer) : { opacity: 1, mask: '' };
+  const value = opacity < 1 ? String(opacity) : '';
+  if (layer.style.opacity !== value) layer.style.opacity = value;
+  if (layer.style.maskImage !== mask) layer.style.maskImage = mask;
+}
 
 export function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -96,7 +132,7 @@ export type PanelTrackListener = (drawn: ReadonlyMap<string, number>, landed: bo
 /** Slots (in order) and a fill, attached by PanelSlot; geometry is kept, and written when nodes come. */
 export class PanelTrack {
   private readonly slots: Slot[];
-  private fill: { place: HTMLElement; content: HTMLElement } | null = null;
+  private fill: { place: HTMLElement; window: HTMLElement; content: HTMLElement } | null = null;
   /** The track's length (px), when its owner measures it: what the fill's two ends are. */
   private extent = 0;
   private fillFrom = 0;
@@ -124,8 +160,8 @@ export class PanelTrack {
     if (nodes) this.write();
   }
 
-  attachFill(place: HTMLElement | null, content: HTMLElement | null = place): void {
-    this.fill = place && content ? { place, content } : null;
+  attachFill(place: HTMLElement | null, window: HTMLElement | null = place, content: HTMLElement | null = place): void {
+    this.fill = place && window && content ? { place, window, content } : null;
     if (this.fill) this.write();
   }
 
@@ -242,20 +278,25 @@ export class PanelTrack {
       nodes.content.style[size] = `${slot.geometry.content}px`;
       nodes.content.style[start] = px(p.offset);
       nodes.window.style.opacity = p.opacity < 1 ? String(p.opacity) : '';
-      nodes.window.style.maskImage = p.soft ? SOFT_EDGE[this.axis] : '';
+      nodes.window.style.maskImage = p.soft ? SOFT_EDGE[this.axis].slot : '';
       nodes.window.inert = p.hidden;
       nodes.window.style.transform = p.hidden ? OUT_OF_WINDOW : '';
     });
     if (this.fill) {
-      // A fill coming from or going to nothing keeps its open size, its near edge on the last slot's edge.
+      // A fill coming from or going to nothing keeps its open size, its near edge on the last slot's edge, and fades as a
+      // slot does.
       const ends = [this.fillFrom, this.fillAt('target')];
       if (!this.running && ends[1] >= PANEL_LANDED_PX) this.fillOpen = ends[1];
       const held = this.extent > 0 && Math.min(...ends) < PANEL_LANDED_PX ? Math.max(...ends) || this.fillOpen : 0;
+      const p = paintSlot({ drawn: this.fillAt('drawn'), content: held }, held > 0);
       this.fill.content.style[size] = held ? `${held}px` : '';
+      this.fill.window.style.opacity = p.opacity < 1 ? String(p.opacity) : '';
+      this.fill.window.style.maskImage = p.soft ? SOFT_EDGE[this.axis].fill : '';
     }
     const drawn = new Map(this.slots.map((slot) => [slot.id, slot.geometry.drawn]));
     const landed = !this.running;
     for (const listener of this.listeners) listener(drawn, landed);
+    for (const listener of frameListeners) listener();
   }
 }
 

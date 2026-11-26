@@ -1,3 +1,5 @@
+import { fadeOver, onPanelFrame } from './panel-track';
+
 /** Following a box after it starts being followed: until it holds still this many frames, or this long. */
 const FOLLOW_STILL_FRAMES = 10;
 const FOLLOW_MAX_MS = 2_000;
@@ -16,8 +18,9 @@ export function ancestorsOf(element: HTMLElement): Element[] {
 
 /**
  * @@@follow-box — a native view drawn over a box of the page (a browser tab's page, an App's page) moves with that box.
- * Nothing reports a box moving, so this watches what moves it: an ancestor resized, an ancestor restyled (a PanelTrack's
- * sizes and transforms, a framer slide, a class that hides it), the window resized or shown again, a scroll. A box that
+ * Nothing reports a box moving, so this watches what moves it: a frame of a PanelTrack (a box laid over a cell going to
+ * or from nothing moves without resizing, @@@ride-the-track), an ancestor resized, an ancestor restyled (a framer slide, a
+ * class that hides it), the window resized or shown again, a scroll. A box that
  * slides in by a CSS animation moves by a transform none of these see: from the start it is followed frame by frame until
  * it holds still, bounded for one that never settles. ❌ a resident frame loop: it keeps the main thread in every frame
  * beside any running animation (Air 11-23: renderer 6% → 25–30% beside a group page's spinners).
@@ -29,12 +32,19 @@ export function followBox(element: HTMLElement, onChange: (moving: boolean) => v
   const doc = element.ownerDocument;
   const win = doc.defaultView!;
   const rectOf = () => { const r = element.getBoundingClientRect(); return `${r.left},${r.top},${r.width},${r.height}`; };
+  // What a placing follows: the box, and the fade it rides (@@@ride-the-track).
+  const stateOf = () => { const fade = fadeOver(element); return `${rectOf()}|${fade.opacity}|${fade.mask}`; };
   // The caller has placed for the box as it is now.
-  let changedAt = rectOf();
+  let changedAt = stateOf();
   const change = (moving: boolean) => {
-    changedAt = rectOf();
+    changedAt = stateOf();
     onChange(moving);
   };
+  // In a frame a PanelTrack writes, its riders' fades restyle the ancestors (`restyled`) and the frame itself says so
+  // (`onPanelFrame`): placed once, after both, for what changed (❌ twice, each laying the page out again).
+  let panelFrame: number | null = null;
+  let stopped = false;
+  const frameNow = () => Number(doc.timeline?.currentTime ?? -1);
   const followUntil = win.performance.now() + FOLLOW_MAX_MS;
   let lastBox = '';
   let still = 0;
@@ -42,7 +52,7 @@ export function followBox(element: HTMLElement, onChange: (moving: boolean) => v
   const follow = () => {
     const box = rectOf();
     // A frame of a restyle is already followed by `restyled`; no need to change twice per frame.
-    if (box !== changedAt) change(true);
+    if (stateOf() !== changedAt) change(true);
     still = box === lastBox ? still + 1 : 0;
     lastBox = box;
     frame = still < FOLLOW_STILL_FRAMES && win.performance.now() < followUntil ? win.requestAnimationFrame(follow) : 0;
@@ -52,16 +62,26 @@ export function followBox(element: HTMLElement, onChange: (moving: boolean) => v
   const resized = new ResizeObserver(resample);
   // Hidden in place by a class or style above it (a slot covered by what opens beside its page, AppPeekSlot) moves no
   // box: the change itself says so.
-  const restyled = new MutationObserver(() => change(true));
+  const restyled = new MutationObserver(() => {
+    if (panelFrame === frameNow() && stateOf() === changedAt) return;
+    change(true);
+  });
   for (const node of ancestorsOf(element)) {
     resized.observe(node);
     restyled.observe(node, { attributes: true, attributeFilter: ['style', 'class', 'hidden', 'inert'] });
   }
+  const stopPanel = onPanelFrame(() => {
+    panelFrame = frameNow();
+    // After every rider of this frame has written its fade.
+    queueMicrotask(() => { if (!stopped && stateOf() !== changedAt) change(true); });
+  });
   win.addEventListener('resize', resample);
   doc.addEventListener('scroll', resample, true);
   doc.addEventListener('visibilitychange', resample);
   return () => {
+    stopped = true;
     if (frame) win.cancelAnimationFrame(frame);
+    stopPanel();
     resized.disconnect();
     restyled.disconnect();
     win.removeEventListener('resize', resample);

@@ -14,7 +14,7 @@ vi.mock('./panel-clock', () => ({
   },
 }));
 
-const { contentAt, paintSlot, PanelTrack } = await import('./panel-track');
+const { contentAt, fadeOver, onPanelFrame, paintSlot, PanelTrack, rideFade } = await import('./panel-track');
 
 afterEach(() => {
   frames.played.length = 0;
@@ -76,25 +76,49 @@ describe('PanelTrack', () => {
     frames.hold = true;
     const track = new PanelTrack([{ id: 'chat', at: { size: 1000 } }], 'x', 1000);
     track.attach('chat', nodes());
-    const place = document.createElement('div');
-    const content = document.createElement('div');
-    track.attachFill(place, content);
+    const { place, window, content } = nodes();
+    track.attachFill(place, window, content);
     track.to({ chat: { size: 600, reflows: true } });
-    // its near edge on the chat's drawn edge, the rest clipped at the track's end
+    // its near edge on the chat's drawn edge, the rest clipped at the track's end, fading as a slot does on that edge: what
+    // is laid over it from outside its boxes (a pane tree's page) takes that fade
     expect(content.style.width).toBe('400px');
     expect(content.style.left).toBe('');
+    expect(window.style.opacity).toBe('0.75');
+    expect(window.style.maskImage).toContain('to right');
+    window.appendChild(content);
+    const cell = content.appendChild(document.createElement('div'));
+    const page = document.createElement('div');
+    expect(fadeOver(cell, page)).toEqual({ opacity: 0.75, mask: window.style.maskImage });
+    rideFade(page, cell);
+    expect(page.style.opacity).toBe('0.75');
     track.jump({ chat: { size: 600, reflows: true } });
     expect(content.style.width).toBe('');
     expect(content.style.left).toBe('');
+    expect(window.style.opacity).toBe('');
+    expect(window.style.maskImage).toBe('');
+    rideFade(page, cell);
+    expect(page.style.opacity).toBe('');
+    expect(page.style.maskImage).toBe('');
+  });
+
+  it('every frame a track writes is heard by what rides a track (@@@ride-the-track)', () => {
+    const heard: number[] = [];
+    const stop = onPanelFrame(() => heard.push(heard.length));
+    const track = new PanelTrack([{ id: 'list', at: { size: 240 } }]);
+    track.attach('list', nodes());
+    track.to({ list: { size: 72 } });
+    stop();
+    track.to({ list: { size: 240 } });
+    // the attach, frame 0, three frames, the landing; none after it stopped listening
+    expect(heard).toHaveLength(6);
   });
 
   it('a slot or the fill at nothing stays laid out at its open size, landed and after a jump', () => {
     const track = new PanelTrack([{ id: 'chat', at: { size: 600 } }], 'x', 1000);
     const chat = nodes();
     track.attach('chat', chat);
-    const place = document.createElement('div');
-    const content = document.createElement('div');
-    track.attachFill(place, content);
+    const { place, window, content } = nodes();
+    track.attachFill(place, window, content);
     // the fill shut: it keeps the 400 it was open at
     track.to({ chat: { size: 1000 } });
     expect(content.style.width).toBe('400px');

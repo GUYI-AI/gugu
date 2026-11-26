@@ -7,6 +7,7 @@ import { BrowserPageHandle } from './browser-page-handle';
 import { isBrowserPageOccluded, type PageRect } from './browser-page-occlusion';
 import { isElementVisible } from '@/lib/elementVisibility';
 import { followBox } from '@renderer/lib/layout/follow-box';
+import { fadeOver } from '@renderer/lib/layout/panel-track';
 
 const surfaceLog = rendererLogger('browser/page-surface');
 
@@ -126,7 +127,9 @@ export function BrowserPageSurface({
         lastOcclusionCheck = now;
         occluded = coveredRef.current || isBrowserPageOccluded(element, rect);
       }
-      const mode: BrowserPageMode = !onScreen ? 'background' : occluded ? 'occluded' : 'shown';
+      // Riding a cell that fades (@@@ride-the-track), the page is its picture: a native view takes no CSS fade.
+      const faded = onScreen && fadeOver(element).opacity < 1;
+      const mode: BrowserPageMode = !onScreen ? 'background' : occluded || faded ? 'occluded' : 'shown';
       const key = `${mode}:${Math.round(rect.left)},${Math.round(rect.top)},${Math.round(rect.width)},${Math.round(rect.height)}`;
       if (key !== lastSent) {
         // 初次挂载或从后台回来也可能已经有浮层:每次进入遮挡态都先换上截图,不能留下纯白占位。

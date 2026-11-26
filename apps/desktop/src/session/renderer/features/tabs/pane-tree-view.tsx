@@ -14,6 +14,7 @@ import { TrackCut } from './pane-track-cut';
 import { ChatWorkspaceDropZones } from './chat-workspace-drop-zones';
 import { ChatWorkspaceChrome, type ChatWorkspaceChromeProps } from './chat-workspace-chrome';
 import { CutEdgeRelay } from './chat-workspace-edge';
+import { onPanelFrame, rideFade } from '@renderer/lib/layout/panel-track';
 
 /** `part`: 'all' = the pane's strip over its page; while paired the main pane's 'bar' is drawn above both 'body's. */
 type RenderPane = (paneId: string, first: boolean, last: boolean, part: 'all' | 'bar' | 'body') => ReactNode;
@@ -60,6 +61,12 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
   const paired = layout.sidePaneId !== null;
   const lifted = layout.groups.some(({ pane }) => tabFullscreen.isOn(pane));
   const [edge] = useState(() => new CutEdgeRelay());
+  // The pages are laid over the cells, outside the cuts' boxes: each rides its cell (@@@ride-the-track).
+  const pages = useRef(new Map<string, HTMLElement>());
+  const pagesBox = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => onPanelFrame(() => {
+    for (const [paneId, page] of pages.current) rideFade(page, pagesBox.current?.querySelector(`[data-pane-anchor="${paneId}"]`) ?? null);
+  }), []);
   return <PaneDimensionProvider sink={layout}>
     {/* What the content surface around it reads (desktop-shell.css): only while this workspace is on screen. A retained page
         hidden under it keeps its own two marks, and the surface took a hidden task's cards for the shown chat's (square corners). */}
@@ -74,13 +81,13 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
           the edge here. overflow clip, ❌ hidden or visible: what sticks out must not be scrollable overflow, or a page that
           takes focus while still off the edge (the browser's address bar) has the box around it scrolled, and the page beside
           it pushed past its place. */}
-      <div className="relative min-h-0 min-w-0 flex-1 overflow-clip" data-pane-tree-pages="" data-pane-tree-narrow={alone || undefined} data-chat-tool-dragging={draggingChatTool || undefined}>
+      <div ref={pagesBox} className="relative min-h-0 min-w-0 flex-1 overflow-clip" data-pane-tree-pages="" data-pane-tree-narrow={alone || undefined} data-chat-tool-dragging={draggingChatTool || undefined}>
         {/* The root is a cut even as one pane, so the side page coming and going moves on its track (going, live: @@@closing-pane). */}
         <Cut node={layout.layout} layout={layout} narrow={narrow} visiblePaneId={visiblePaneId} anchorOf={anchorOf} single={single} swap={swap} edge={scopedChrome ? edge : undefined} />
         {layout.groups.map(({ paneId }) => {
           const shown = layout.isPaneShown(paneId);
           const anchored = { position: 'absolute', positionAnchor: anchorOf(paneId), top: 'anchor(top)', bottom: 'anchor(bottom)', left: 'anchor(left)', right: 'anchor(right)' } as CSSProperties;
-          return <RetainedTabContent key={paneId} visible={shown} style={anchored} className="min-h-0 min-w-0" data-chat-tool-card={scopedChrome && paneId === layout.chatToolCardPaneId ? '' : undefined} data-chat-card={scopedChrome && layout.chatToolCardPaneId && paneId === layout.chatWorkspacePanes?.chat.paneId ? '' : undefined} inert={!shown || paneId === closing} aria-hidden={!shown || paneId === closing || undefined}>
+          return <RetainedTabContent key={paneId} ref={(page: HTMLDivElement | null) => { if (page) pages.current.set(paneId, page); else pages.current.delete(paneId); }} visible={shown} style={anchored} className="min-h-0 min-w-0" data-chat-tool-card={scopedChrome && paneId === layout.chatToolCardPaneId ? '' : undefined} data-chat-card={scopedChrome && layout.chatToolCardPaneId && paneId === layout.chatWorkspacePanes?.chat.paneId ? '' : undefined} inert={!shown || paneId === closing} aria-hidden={!shown || paneId === closing || undefined}>
             {renderPane(paneId, alone || paneId === first, alone || paneId === last, (scopedChrome || paired) ? 'body' : 'all')}
           </RetainedTabContent>;
         })}
@@ -93,7 +100,7 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
 type TreeProps = { node: PaneLayoutNode; layout: PaneLayoutStore; narrow: boolean; visiblePaneId: string; anchorOf: (paneId: string) => string; single?: string; swap?: boolean; edge?: CutEdgeRelay };
 
 const Tree = observer(function Tree({ node, ...rest }: TreeProps) {
-  if (node.type === 'pane') return <div className="relative h-full min-h-0 min-w-0" style={{ anchorName: rest.anchorOf(node.paneId) } as CSSProperties} />;
+  if (node.type === 'pane') return <div className="relative h-full min-h-0 min-w-0" style={{ anchorName: rest.anchorOf(node.paneId) } as CSSProperties} data-pane-anchor={node.paneId} />;
   return <Cut node={node} {...rest} />;
 });
 

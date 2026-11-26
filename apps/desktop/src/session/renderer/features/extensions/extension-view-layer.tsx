@@ -14,6 +14,7 @@ import { ExtensionGuestBinding, type ExtensionGuestTarget } from './extension-gu
 import { nativeAppSurfaceMetrics, observeNativeSurfaceOcclusion } from './native-app-surface';
 import { pageCorners } from './page-corners';
 import { ancestorsOf, followBox } from '@renderer/lib/layout/follow-box';
+import { fadeOver } from '@renderer/lib/layout/panel-track';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
 import { bindAppPageZoom } from '@/components/preview/file-content-zoom';
 import { clippedElementBox, elementBox, isElementVisible, type ElementBox as Box } from '@/lib/elementVisibility';
@@ -501,7 +502,12 @@ export const ExtensionPage = observer(function ExtensionPage({
               : ancestors.some((element) => element.hasAttribute('data-tab-fullscreen'))
                 ? 'var(--z-pane-fullscreen-resident)'
                 : 'var(--z-pane-resident)';
-            if (managed) box.style.opacity = shown ? '1' : '0';
+            // Shown, it takes the fade of the cell its page rides (@@@ride-the-track): the App is drawn here, outside the page.
+            // Hidden, ❌ opacity 0 on top: a guest under opacity 0 stops drawing, and shown again the window waited on its first
+            // frame (four frames held at the start of every expand, mac1 11-26).
+            const fade = shown ? fadeOver(claim.element, box) : { opacity: 1, mask: '' };
+            box.style.opacity = managed && !shown ? '0' : managed || fade.opacity < 1 ? String(fade.opacity) : '';
+            box.style.maskImage = fade.mask;
             box.inert = !shown;
             const inner = innerRef.current;
             if (inner) {

@@ -18,7 +18,7 @@ import { TabBar, TabStripShell } from './tab-bar';
 import { CHAT_TOOL_COMPACT_HEADER_MAX_WIDTH_PX } from './chat-tool-geometry';
 import { ChatWorkspaceTabContext } from './chat-workspace-context';
 import type { CutEdge, CutEdgeRelay } from './chat-workspace-edge';
-import { PANEL_LANDED_PX } from '@renderer/lib/layout/panel-track';
+import { PANEL_LANDED_PX, rideFade } from '@renderer/lib/layout/panel-track';
 
 export type ChatWorkspaceChromeProps = {
   actions: ReactNode;
@@ -103,9 +103,12 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
     const halfGap = workspace ? parseFloat(getComputedStyle(workspace).getPropertyValue('--chat-card-half-gap')) || 0 : 0;
     // The conversation's card body (pane-tree-view's [data-chat-card]) closes its right gap with its head.
     const chatCard = workspace ? [...workspace.querySelectorAll<HTMLElement>('[data-chat-card]')].find((card) => card.closest('[data-chat-tool-workspace]') === workspace) : undefined;
+    const toolsCell = tools ? workspace?.querySelector(`[data-pane-anchor="${tools.paneId}"]`) ?? null : null;
     const place = ({ drawn, from, to, extent }: CutEdge) => {
       // The tools on the right start where the edge is drawn; held open, where it is when they are widest.
       const toolsStart = Math.max(from, to) > extent - PANEL_LANDED_PX ? Math.min(from, to) : drawn;
+      // The tools' tabs ride the tools' cell as their page does (@@@ride-the-track).
+      if (toolNode) rideFade(toolNode, toolsCell);
       if (toolsFirst) {
         const open = Math.min(from, to) < PANEL_LANDED_PX ? Math.max(from, to) : drawn;
         if (toolNode) Object.assign(toolNode.style, { left: `${drawn - open}px`, width: `${open}px` });
@@ -137,7 +140,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       return () => { detach(); for (const card of [chatNode, chatCard]) card?.style.removeProperty('margin-right'); };
     }
     if (chatNode) Object.assign(chatNode.style, { flex: '', marginInlineStart: '' });
-    if (toolNode) Object.assign(toolNode.style, { left: '', width: '' });
+    if (toolNode) Object.assign(toolNode.style, { left: '', width: '', opacity: '', maskImage: '' });
     setChatRest(undefined);
     return undefined;
   });

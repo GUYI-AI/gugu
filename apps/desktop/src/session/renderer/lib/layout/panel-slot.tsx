@@ -37,7 +37,7 @@ export function PanelSlot({
       for (const { style } of [place, window, content]) style.width = style.height = style.left = style.top = style.opacity = style.maskImage = style.transform = '';
       window.inert = false;
     }
-    if (fill) track.attachFill(place ?? null, content ?? null);
+    if (fill) track.attachFill(place ?? null, window ?? null, content ?? null);
     else track.attach(id, place && window && content ? { place, window, content } : null);
   }, [track, id, fill]);
   const ref = (key: 'place' | 'window' | 'content') => (element: HTMLDivElement | null) => {

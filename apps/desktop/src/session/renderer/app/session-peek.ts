@@ -1,6 +1,7 @@
 import { action, makeObservable, observable } from 'mobx';
 import type { CSSProperties } from 'react';
 import type { SessionParams } from './recent-session-pages';
+import { onPanelFrame, rideFade } from '@renderer/lib/layout/panel-track';
 
 /**
  * A session shown beside an App (`gugu.showSession(id, { peek: true })`): its own retained session page — the same page,
@@ -50,10 +51,14 @@ export function followBox(page: HTMLElement, box: HTMLElement): () => void {
     if (got.left !== want.left || got.top !== want.top) set(2 * want.left - got.left, 2 * want.top - got.top);
   };
   place();
+  // Beside an App, the peek comes and goes on its slot's track without resizing: the page rides it (@@@ride-the-track).
+  const stopPanel = onPanelFrame(() => { place(); rideFade(page, box); });
   const observer = new ResizeObserver(place);
   for (let node: HTMLElement | null = box; node; node = node.parentElement) observer.observe(node);
   window.addEventListener('resize', place);
   return () => {
+    stopPanel();
+    rideFade(page, null);
     observer.disconnect();
     window.removeEventListener('resize', place);
     // Its place back to the style it goes to (a block's anchors, or hidden in its own box): that style sets the edges.
