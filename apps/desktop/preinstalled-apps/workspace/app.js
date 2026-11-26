@@ -159,7 +159,6 @@ const STRINGS = {
     jsonNotObject: 'JSON 文件的最外层必须是对象 {…}',
     jsonRemote: '别人刚改了这个文件。应用时只写你改过的键。',
     copied: '已复制',
-    cite: '引用',
     line: '第 {first} 行',
     lines: '第 {first}–{last} 行',
     placeMoved: '引用的那几行挪到了{lines}',
@@ -410,7 +409,6 @@ const STRINGS = {
     jsonNotObject: 'A JSON file must hold an object {…} at the top',
     jsonRemote: 'Someone just changed this file. Applying writes only the keys you changed.',
     copied: 'Copied',
-    cite: 'Cite',
     line: 'Line {first}',
     lines: 'Lines {first}–{last}',
     placeMoved: 'The cited lines moved: {lines}',
@@ -3276,7 +3274,7 @@ async function mountPlain(current) {
 
 // The selected text — in the editor (the source, each range of a multiple selection) or the preview — kept as it
 // changes, with the lines it was written on and where it is on screen. What can be done with it is the host's: the page
-// shows it (`gugu.files.showSelection`, API 60) and the runtime draws the host's selection menu here — Copy, Cite, Send, as
+// shows it (`gugu.files.showSelection`, API 60) and the runtime draws the host's selection menu here — Copy, Comment, as
 // the file's table says — again as the page scrolls, in the same frame. The page keeps only its editor's own tools: the
 // marks a selection in the source can be wrapped in, in a small bar above it.
 let selectionEnd = null // () => the selection's end on screen, read again as the page scrolls
@@ -3354,46 +3352,6 @@ document.addEventListener('selectionchange', () => {
 })
 document.addEventListener('scroll', placeSelection, true)
 
-// A place as the pill a cite makes (#7238): its lines (`at`: `{ lines, h }` — h finds them again once the file changes),
-// named by them; the file's name before them is gugu's. A preview block without lines names none: it points at the file.
-function refOf(current, { lines }) {
-  if (!lines) return { file: current.entry }
-  const [first, last] = lines
-  return { file: current.entry, at: placeOf(current.file.text, first, last), label: fmt(first === last ? state.t.line : state.t.lines, { first, last }) }
-}
-
-// Cite: the selection's places, each a pill into this chat's composer (a gugu.dispatch draft with refs) — its link names
-// the lines, so the words picked are not quoted beside it; the person says what to do with them, @s whom they like and
-// sends it; a code file's the same. A JSON file's view is not its text: its cite stays as it was, each range quoted with
-// the lines it is shown on, and a pill to the file. Called inside the click, as a draft needs.
-async function cite(current = state.current, picks = state.picks, whole = false) {
-  const cited = citeOf(current, picks, whole)
-  if (!cited) return
-  try {
-    await gugu.dispatch(cited.text, { draft: true, refs: cited.refs })
-    // Words picked go with the selection; a block cited from its menu had none on screen to drop.
-    if (!whole && picks.some((pick) => pick.text)) dropSelection()
-  } catch (error) {
-    showBanner(failureText(error), 'error')
-  }
-}
-
-// Cited, the words are on their way: the selection goes, as after a copy into somewhere else.
-function dropSelection() {
-  document.getSelection()?.removeAllRanges()
-  showSelection([], null)
-}
-
-// What a cite carries: a pill per place.
-function citeOf(current, picks, whole = false) {
-  if (!current || (!whole && !picks.length)) return null
-  if (whole) return { text: '', refs: [{ file: current.entry }] }
-  const quoted = ({ text, lines: [first, last] }) =>
-    `${fmt(first === last ? state.t.line : state.t.lines, { first, last })}\n${text.replace(/\s+$/, '').split('\n').map((line) => `> ${line}`).join('\n')}`
-  if (current.file.type === 'text' || current.file.type === 'source') return { text: '', refs: picks.map((pick) => refOf(current, pick)) }
-  return { text: picks.map(quoted).join('\n\n'), refs: [{ file: current.entry }] }
-}
-
 // The shared content menu keeps the App's existing refs/line fingerprints and editor history.
 function bindFileMenu(current) {
   for (const id of ['editor', 'preview']) {
@@ -3403,13 +3361,12 @@ function bindFileMenu(current) {
     const receive = ({ detail }) => {
       if (detail.action === 'snapshot') {
         const picks = (id === 'editor' ? !picksInPreview : picksInPreview) ? [...state.picks] : []
-        pending = { requestId: detail.requestId, picks, source: { entry: { ...current.entry }, file: { type: current.file.type, text: current.file.text } } }
+        pending = { requestId: detail.requestId }
         detail.selection = { text: picks.map(pick => pick.text).join('\n') }
         detail.editable = id === 'editor' && !!current.view && !current.view.state.readOnly
         if (detail.editable && (current.file.type !== 'text' || current.source)) detail.editorHistory = { undo: state.cm.commands.undoDepth(current.view.state) > 0, redo: state.cm.commands.redoDepth(current.view.state) > 0 }
         detail.customSelectAll = id === 'editor'
       } else if (pending?.requestId === detail.requestId) {
-        const captured = pending
         pending = null
         if (detail.action === 'select-all') {
           current.view?.dispatch({ selection: { anchor: 0, head: current.view.state.doc.length } })
@@ -3417,8 +3374,6 @@ function bindFileMenu(current) {
         } else if (detail.action === 'undo' || detail.action === 'redo') {
           current.view?.focus()
           if (current.view && !current.view.state.readOnly) state.cm.commands[detail.action](current.view)
-        } else if (detail.action === 'quote-selection' || detail.action === 'quote-file') {
-          void cite(captured.source, captured.picks, detail.action === 'quote-file')
         }
       }
     }
@@ -3843,14 +3798,13 @@ function blockMenu(box) {
 function blockLinks(current, pick) {
   return [
     ...(inCopy(current.entry) ? [] : [[state.t.copyBlockLink, blockAction(() => { const p = pick(); return copyLink(current.entry, placeOf(current.file.text, p.lines[0], p.lines[1])) })]]),
-    [state.t.cite, blockAction(() => cite(current, [{ lines: pick().lines, text: '' }]))],
   ]
 }
 
 function readBlockMenu(event) {
   const current = state.current
   if (document.body.dataset.mode !== 'preview' || current?.file.type !== 'text' || current.previewPending) return
-  // While text is selected here, a press belongs to the selection: its bar (Copy, Cite) is its one menu. A
+  // While text is selected here, a press belongs to the selection: its bar (Copy, Comment) is its one menu. A
   // phone's long-press selects a word and then sends this event, which would open the block's menu over that bar.
   const picked = document.getSelection()
   if (picked && !picked.isCollapsed && $('preview').contains(picked.anchorNode)) return event.preventDefault()

@@ -158,9 +158,9 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // box in the page). Presentation only, as 51: an older host opens the one image.
 // 58: frame-bound, App-owned projection presentation, without granting input or surface authority.
 // 59: withdrawn (the preinstalled Files App's `files.annotateSelection`, and with 60 also 54/55's `files.sendSelection`).
-// 60 (file-selection.ts): an opened file carries its selection menu (the host's table: Copy · Cite · Comment, wire `send`);
-// `files.showSelection({ file, places, text?, code?, rect } | null)` draws it in the page, moved in the same frame; Cite and
-// Comment pressed there go to the host in the person's gesture — a draft, or the host's comment box, into the conversation's draft.
+// 60 (file-selection.ts): an opened file carries its selection menu (the host's table: Copy · Comment, wire `send`; Cite until the comments change);
+// `files.showSelection({ file, places, text?, code?, rect } | null)` draws it in the page, moved in the same frame; Comment
+// pressed there goes to the host in the person's gesture — the host's comment box, into the conversation's draft.
 // 61 (app-credentials.ts): `permissions.credentials` and `gugu.credentials.read(site, url, options?)` /
 // `.write(site, method, url, body?, options?)`: a request the host sends with the saved credential the person picked for the
 // App on that website, in the declared header; answers `{ status, data, headers }`. A computer's pages only.
@@ -1135,7 +1135,7 @@ export const BRIDGE_VERBS = {
   filesRead: { needs: ({ ref }) => ref !== null && typeof ref === 'object' && 'workspace' in ref ? 'files:read' : null, machine: 'place', reads: true },
   /** A working copy's text whole, and whether it is there, in those pieces: gated as filesOpen, in `app-files.ts`. */
   filesReadText: { needs: null },
-  /** 60 (file-selection.ts): Cite or Send pressed on the page's selection menu, in the person's gesture: a draft, or the host's own box. */
+  /** 60 (file-selection.ts): Comment (wire `send`) pressed on the page's selection menu, in the person's gesture: the host's comment box. */
   filesSelectionAction: { needs: null, only: 'page', gesture: true },
   filesExists: { needs: null },
   /** What survives a crash of a file's unsaved edits, on the file's machine: read, kept (`text`), dropped (`text: null`). */

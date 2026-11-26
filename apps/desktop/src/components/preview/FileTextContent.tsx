@@ -10,7 +10,7 @@ import { i18n } from '@/i18n'
 import { fileTextRange, sourceLineRange, type FileTextRange } from './file-text-range'
 import { openCommentLine } from '@renderer/features/sessions/annotations/selection-line'
 import { FileSelectionMenu } from './FileSelectionMenu'
-import { linesPlace, selectionCite, type SelectionCite } from './quote-preview-file'
+import { linesPlace } from './quote-preview-file'
 import { useOpenWebLink } from '@/hooks/useOpenWebLink'
 import './file-text-content.css'
 
@@ -18,12 +18,11 @@ type Selection = { range: Range; quote: FileTextRange }
 
 /**
  * What a file's text preview can do with a selection: whose conversation it is and how its readers name the file
- * (file-selection.ts), where a cite goes on this platform, and whether its composer sends comments (`sends`).
+ * (file-selection.ts), and whether its composer sends comments (`sends`).
  */
 export interface FileTextSelection {
   conversation: AnnotationConversation | null
   file: FileReference | null
-  cite: (cite: SelectionCite) => void | Promise<void>
   sends: boolean
 }
 
@@ -96,8 +95,6 @@ export function FileTextContent({ content, kind, style, selectable }: {
   const items = useMemo(() => selectable ? selectionMenu(selectable.conversation, Boolean(selectable.file), selectable.sends, i18n.language) : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps -- by value: callers hand a new object each render
     [JSON.stringify(selectable?.conversation ?? null), Boolean(selectable?.file), selectable?.sends])
-  const citeOf = ({ quote: { startLine, endLine, text } }: Selection) =>
-    selectionCite(conversation!, file!, { text, places: [linesPlace(startLine, endLine)], ...(kind === 'text' ? { code: true } : {}) })
   return <>
     <div ref={root} style={style} data-file-cite={selectable ? '' : undefined}
       onPointerDown={event => {
@@ -131,11 +128,7 @@ export function FileTextContent({ content, kind, style, selectable }: {
     {selection && selectable ? <FileSelectionMenu items={items} text={selection.quote.text} container={container} onClose={close}
       anchor={() => selection.range.collapsed
         ? root.current!.querySelector(`[data-file-line="${selection.quote.startLine}"]`)!.parentElement!.getBoundingClientRect() : selection.range.getBoundingClientRect()}
-      onCite={() => {
-        void selectable.cite(citeOf(selection))
-        root.current?.ownerDocument.getSelection()?.removeAllRanges()
-      }}
-      onSend={() => {
+      onComment={() => {
         const { quote: { startLine, endLine, text } } = selection
         if (conversation && file && root.current) openCommentLine(conversation, selection.range.getBoundingClientRect(), root.current, { kind: 'file', file, places: [linesPlace(startLine, endLine)], ...(text ? { text } : {}) }, container ?? null)
         root.current?.ownerDocument.getSelection()?.removeAllRanges()

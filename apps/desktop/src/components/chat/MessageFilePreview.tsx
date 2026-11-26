@@ -5,7 +5,9 @@ import { messageActionItems } from './messageActionItems'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { readOnce } from '../../lib/replica'
 import { bindFileViewerMenu } from '../preview/file-viewer-menu'
-import { quoteChatFile, selectedTextQuote } from '../preview/quote-preview-file'
+import { viewerPick } from '../preview/quote-preview-file'
+import { openCommentLine } from '@renderer/features/sessions/annotations/selection-line'
+import { groupFileLink } from '@gugu/core/shared/ui/guguLink'
 import { isMpegTsVideo, type ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
@@ -47,7 +49,6 @@ export interface HostedPreviewSource {
   key: string
   read: () => Promise<Blob>
   registerHtml?: (documentHtml: string) => Promise<HtmlPreviewRegistration>
-  quote?: (selection: FileViewerSelection | null) => Promise<void>
   /** Its text's selection menu (FileSelectionMenu). */
   selectable?: FileTextSelection
   /** A session's HTML page takes comments on the page itself. */
@@ -139,7 +140,7 @@ async function readPreview(file: PreviewFile | HostedPreviewFile, kind: Document
 }
 
 /** The host's preview wherever a file opens: messages, the chat's folder and an App's peek. */
-export function MessageFilePreview({ file, mobile = false, fill = false, tabbed = false, readOnly = false, message, onForward, onBack, onClose }: { file: PreviewFile | HostedPreviewFile; mobile?: boolean; fill?: boolean; tabbed?: boolean; readOnly?: boolean; message?: MessageItem; onForward?: (message: MessageItem) => void; onBack?: () => void; onClose: () => void }) {
+export function MessageFilePreview({ file, mobile = false, fill = false, tabbed = false, readOnly = false, chatId, message, onForward, onBack, onClose }: { file: PreviewFile | HostedPreviewFile; mobile?: boolean; fill?: boolean; tabbed?: boolean; readOnly?: boolean; /** The chat a chat file is open in: a selection's comment goes into its draft. */ chatId?: string; message?: MessageItem; onForward?: (message: MessageItem) => void; onBack?: () => void; onClose: () => void }) {
   const { t } = useTranslation('messaging')
   const { toast } = useToast()
   const kind = classifyDocumentPreview(file)
@@ -147,20 +148,22 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   const activeKey = useRef(key)
   const viewerRef = useRef<HTMLElement>(null)
   useEffect(() => {
-    const hostedQuote = file.source.kind === 'hosted' ? file.source.quote : undefined
-    if (readOnly || !viewerRef.current || (file.source.kind !== 'item' && !hostedQuote && !message)) return
-    return bindFileViewerMenu(viewerRef.current, () => ({
+    // Where a selection's comment goes and how its readers name the file: the opener's (a workspace file), or the chat's
+    // own file by its link. A selection is commented on, never quoted: quoting is for a whole message.
+    const hosted = file.source.kind === 'hosted' ? file.source.selectable : undefined
+    const chat = chatId ?? message?.chat_id
+    const commentOn = hosted?.conversation && hosted.file && hosted.sends ? { conversation: hosted.conversation, file: hosted.file }
+      : file.source.kind === 'item' && chat ? { conversation: { kind: 'chat' as const, chatId: chat }, file: { name: file.fileName, target: groupFileLink(file.source.itemId, { version: file.source.version }) } } : null
+    const element = viewerRef.current
+    if (readOnly || !element || (file.source.kind !== 'item' && !commentOn)) return
+    return bindFileViewerMenu(element, () => ({
       resource: file.source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: file.source.itemId, version: file.source.version } } : undefined,
-      quote: async (selection) => {
-        if (hostedQuote) return hostedQuote(selection)
-        if (file.source.kind === 'item') return quoteChatFile(file.source.itemId, file.source.version, selection)
-        const { UI_EVENTS } = await import('@/lib/uiEvents')
-        window.dispatchEvent(new CustomEvent(UI_EVENTS.quoteMessage, { detail: { messageId: message!.id, source: message, senderName: file.fileName, content: selection ? selectedTextQuote(selection) : file.fileName } }))
-      },
+      ...(commentOn ? { comment: (selection: FileViewerSelection, at: DOMRect) => openCommentLine(commentOn.conversation, at, element,
+        { kind: 'file', file: commentOn.file, places: viewerPick(selection).places, ...(selection.text ? { text: selection.text } : {}) }) } : {}),
       canSelectAll: !(mobile && kind === 'html') && kind !== 'image' && kind !== 'video' && kind !== 'unsupported',
     }), (error) => toast(error instanceof Error ? error.message : String(error), 'error'))
     // eslint-disable-next-line react-hooks/exhaustive-deps -- source identity retains the menu snapshot across unrelated renders
-  }, [key, file.fileName, message?.id, kind, mobile, toast, readOnly])
+  }, [key, file.fileName, chatId, message?.chat_id, kind, mobile, toast, readOnly])
   const [read, setRead] = useState<PreviewRead | null>(null)
   /** How far the bytes being read have come (0–1); unknown until the provider carrying them says. */
   const [fraction, setFraction] = useState<number | undefined>(undefined)

@@ -290,10 +290,9 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   const recoveryState = useRef({ text: composerDraft.text, attachments })
   recoveryState.current = { text: composerDraft.text, attachments }
   const recoveryComposer = useMemo(() => ({ getState: () => recoveryState.current, setText: composerDraft.setText }), [composerDraft.setText])
-  const quoteOutput = useCallback((text: string) => setDraftText(value => appendToDraft(value, text)), [setDraftText])
   const readOutput = useCallback((input: Parameters<typeof readConversationFile>[2]) => readConversationFile(true, deviceId, input), [deviceId])
   const readWorkingCopy = useMemo(() => sessionWorkingCopyReader({ id: sessionId, deviceId }), [sessionId, deviceId])
-  const outputs = useOpenedOutputOpener({ deviceId, sessionId, onQuote: quoteOutput, readFileChunk: local ? readOutput : undefined, readWorkingCopy })
+  const outputs = useOpenedOutputOpener({ deviceId, sessionId, readFileChunk: local ? readOutput : undefined, readWorkingCopy })
   const { openFile, handlers: outputHandlers } = outputs
   const background = usePhoneBackgroundTasks(deviceId, sessionId, timeline.turns, dismissals, !phoneHost, timeline.subagents, local)
   const nativeTurns = timeline.turns

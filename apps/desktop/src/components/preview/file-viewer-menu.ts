@@ -10,7 +10,8 @@ import { resourceMenuItems, runResourceAction } from '@/lib/resourceActions';
 
 export interface FileViewerSnapshot {
   resource?: ResourceContext;
-  quote: (selection: FileViewerSelection | null) => Promise<void> | void;
+  /** A comment on the selection, in the viewer's conversation: the comment box at `at` (the selection's box, else the viewer's). */
+  comment?: (selection: FileViewerSelection, at: DOMRect) => void;
   selection?: FileViewerSelection;
   selectAll?: () => void;
   canSelectAll?: boolean;
@@ -27,13 +28,17 @@ export function bindFileViewerMenu(
   onError: (error: unknown) => void,
 ): () => void {
   const id = crypto.randomUUID();
-  let pending: { requestId: string; snapshot: FileViewerSnapshot } | null = null;
+  let pending: { requestId: string; snapshot: FileViewerSnapshot; at: DOMRect } | null = null;
   element.setAttribute(FILE_VIEWER_ATTRIBUTE, id);
   const receive = (event: Event) => {
     const detail = (event as CustomEvent<FileViewerMenuRequest>).detail;
     if (detail.action === 'snapshot') {
       const current = snapshot();
-      pending = { requestId: detail.requestId, snapshot: current };
+      // Where the selection is, read before the menu takes focus: the comment box opens there.
+      const picked = element.ownerDocument.getSelection();
+      const at = picked?.rangeCount && element.contains(picked.getRangeAt(0).commonAncestorContainer) ? picked.getRangeAt(0).getBoundingClientRect() : element.getBoundingClientRect();
+      pending = { requestId: detail.requestId, snapshot: current, at };
+      detail.commentable = Boolean(current.comment);
       if (current.resource) detail.resourceActions = resourceMenuItems(current.resource).map(({ id, label }) => ({ id, label }));
       if (current.selection) detail.selection = current.selection;
       if (current.canSelectAll !== undefined) detail.canSelectAll = current.canSelectAll;
@@ -48,7 +53,7 @@ export function bindFileViewerMenu(
       return;
     }
     if (!pending || pending.requestId !== detail.requestId) return;
-    const captured = pending.snapshot;
+    const { snapshot: captured, at } = pending;
     pending = null;
     if (detail.action === 'copy-resource-url' || detail.action === 'send-resource-url') {
       if (captured.resource) void runResourceAction(detail.action, captured.resource);
@@ -62,10 +67,8 @@ export function bindFileViewerMenu(
       captured.edit?.(detail.action);
       return;
     }
-    try {
-      void Promise.resolve(captured.quote(detail.action === 'quote-selection' ? detail.selection : null)).catch(onError);
-    } catch (error) {
-      onError(error);
+    if (detail.action === 'comment-selection') {
+      try { captured.comment?.(detail.selection, at); } catch (error) { onError(error); }
     }
   };
   element.addEventListener(FILE_VIEWER_MENU_EVENT, receive);

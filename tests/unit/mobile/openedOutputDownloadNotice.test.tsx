@@ -24,7 +24,7 @@ beforeEach(() => {
 afterEach(() => { h.cleanup(); vi.useRealTimers() })
 
 function Fixture() {
-  const { openFile, handlers, panel } = useOpenedOutputOpener({ deviceId: 'device', sessionId: 'task', onQuote: vi.fn(), readFileChunk: m.read })
+  const { openFile, handlers, panel } = useOpenedOutputOpener({ deviceId: 'device', sessionId: 'task', readFileChunk: m.read })
   return createNode('div', {}, createNode('button', { onClick: () => openFile('/workspace/report.txt') }, 'open preview'), createNode('button', {
     onClick: (event: MouseEvent<HTMLButtonElement>) => handlers.onOutputMenu?.({ output: { kind: 'file', path: '/workspace/report.txt' }, itemId: 'output', anchor: event.currentTarget }),
   }, 'file menu'), panel)

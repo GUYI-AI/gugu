@@ -6,10 +6,8 @@ import { extensionSurfaceStore } from '../../session/renderer/features/extension
 import { PHONE_HOST, useInstalledApps } from '../../session/renderer/features/extensions/installed-extensions'
 import {
   APP_SESSION_FRAME_NAME,
-  APP_SHOW_SESSION_EVENT,
   type AppOpenWithDetail,
   type AppShowMessageDetail,
-  type AppShowSessionDetail,
 } from '../../session/shared/extensions/app-runtime-protocol'
 import type { ExtensionCapability } from '../../session/shared/extensions/manifest'
 import { extensionProgramNotifiedChannel } from '../../session/shared/extensions/marketEvents'
@@ -253,13 +251,8 @@ export function PhoneAppFrame({
     // The frame stays visible under its placeholder: a hidden iframe gets no first paint at all (measured, Chromium).
     <div hidden={hidden} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       {workingCopy ? <Suspense fallback={null}><OpenedFilePreview
+        // A working copy is its session's file: a selection's comment goes into that session's draft (file-selection.ts).
         {...workingCopy} deviceId={session?.deviceId ?? ''} sessionId={session?.id ?? ''}
-        // A working copy is its session's file: its cite goes into that session's composer, the session brought up — the
-        // conversation its page belongs to (file-selection.ts `selectionConversationOf`).
-        onQuote={(text) => {
-          const listed = listedSession(devicesRef.current, liveDeviceSessions(), session?.id ?? '')
-          if ('row' in listed) window.dispatchEvent(new CustomEvent<AppShowSessionDetail>(APP_SHOW_SESSION_EVENT, { detail: { ...listed.row, draft: { text } } }))
-        }}
       /></Suspense> : null}
       <iframe
         // Another version or another account is another document: a new frame, and a new host for it.

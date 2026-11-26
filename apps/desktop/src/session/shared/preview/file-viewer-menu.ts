@@ -15,7 +15,7 @@ export interface FileViewerSelection {
 }
 
 export type FileViewerEditAction = 'undo' | 'redo' | 'cut' | 'paste';
-export type FileViewerMenuAction = 'quote-selection' | 'quote-file' | 'select-all' | FileViewerEditAction | (typeof RESOURCE_ACTIONS)[number]['id'];
+export type FileViewerMenuAction = 'comment-selection' | 'select-all' | FileViewerEditAction | (typeof RESOURCE_ACTIONS)[number]['id'];
 
 export interface FileViewerMenuRequest {
   action: 'snapshot' | FileViewerMenuAction;
@@ -28,13 +28,14 @@ export interface FileViewerMenuRequest {
   enabled?: TextContextMenu['enabled'];
   editorHistory?: EditorMenuHistory;
   resourceActions?: { id: (typeof RESOURCE_ACTIONS)[number]['id']; label: string }[];
+  /** The viewer takes a comment on its selection (its conversation's comment box). */
+  commentable?: boolean;
 }
 
 export interface FileViewerMenuLabels {
   copy: string;
   selectAll: string;
-  quoteSelection: string;
-  quoteFile: string;
+  comment: string;
   undo: string;
   redo: string;
   cut: string;
@@ -50,8 +51,8 @@ export function fileViewerMenuItems(context: FileViewerMenuRequest, labels: File
     } : {}) },
   };
   const extra: ContentMenuEntry[] = [
-    { id: 'quote-selection', icon: 'quote', label: labels.quoteSelection, enabled: context.selection.text.length > 0, click: () => run('quote-selection') },
-    { id: 'quote-file', icon: 'file', label: labels.quoteFile, click: () => run('quote-file') },
+    // A selection is commented on, never quoted: quoting is for a whole message.
+    ...(context.commentable ? [{ id: 'comment-selection', icon: 'comment' as const, label: labels.comment, enabled: context.selection.text.length > 0, click: () => run('comment-selection') }] : []),
     ...(context.resourceActions?.length ? [{ type: 'separator' as const }, ...context.resourceActions.map(item => ({ ...item, click: () => run(item.id) }))] : []),
   ];
   return textContextMenuItems(options, extra);

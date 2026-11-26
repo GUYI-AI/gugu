@@ -72,7 +72,7 @@ registerExtensionBridge();
 
 const place = { rect: { x: 10, y: 20, width: 100, height: 18 }, viewport: { width: 800, height: 600 } };
 const raw = (method: string, args: unknown, gesture: boolean) => handlers.get(EXTENSION_BRIDGE_CHANNEL)!({ sender: { id: 7, session: {} } }, { method, args, gesture });
-const press = (args: Record<string, unknown>, gesture = true) => raw('filesSelectionAction', { action: 'cite', places: [{ at: { lines: '3-4' } }], text: 'words', ...place, ...args }, gesture);
+const press = (args: Record<string, unknown>, gesture = true) => raw('filesSelectionAction', { action: 'send', places: [{ at: { lines: '3-4' } }], text: 'words', ...place, ...args }, gesture);
 const bind = (more: Record<string, unknown>) => bindExtensionSurface({ webContentsId: 7, extensionId: 'workspace', tabId: 'files-tab', tabKind: 'workspace.files', ...more });
 const asked = () => state.invoke.mock.calls.at(-1)?.[2] as Record<string, unknown>;
 const menuOf = async (ref: Record<string, unknown>) => ((await raw('filesOpen', { ref }, false)) as { value: { selectionMenu: { id: string }[] } }).value.selectionMenu.map(item => item.id);
@@ -85,21 +85,21 @@ beforeEach(async () => {
 });
 
 describe('an opened file\'s menu on this page', () => {
-  it('Cite and Send where the page has a conversation and the file can be named; Copy alone otherwise', async () => {
+  it('Comment where the page has a conversation and the file can be named; Copy alone otherwise; no Cite (a selection is commented on)', async () => {
     await bind({ workspace: sessionWorkspace('bound-task') });
-    expect(await menuOf({ workspace: 'session:bound-task', id: 'docs/proof.md' })).toEqual(['copy', 'cite', 'send']);
+    expect(await menuOf({ workspace: 'session:bound-task', id: 'docs/proof.md' })).toEqual(['copy', 'send']);
     unbindExtensionSurface(7);
     await bind({ workspace: 'project:p-1', filePath: 'a.md' });
     expect(await menuOf({ workspace: 'project:p-1', id: 'a.md' })).toEqual(['copy']);
   });
 });
 
-describe('a press on Cite or Send', () => {
+describe('a press on Comment', () => {
   it('a task page: its session, the file by its path on this computer, the pick as pressed', async () => {
     await bind({ workspace: sessionWorkspace('bound-task') });
     expect(await press({ file: { workspace: 'session:bound-task', id: 'docs/proof.md' }, text: 'a² 为偶数' })).toEqual({ ok: true, value: undefined });
     expect(state.invoke).toHaveBeenCalledExactlyOnceWith(42, 'extensions.fileSelection', {
-      webContentsId: 7, action: 'cite', conversation: { kind: 'session', sessionId: 'bound-task' },
+      webContentsId: 7, action: 'send', conversation: { kind: 'session', sessionId: 'bound-task' },
       file: { name: 'proof.md', target: '/home/me/task/docs/proof.md' }, pick: { places: [{ at: { lines: '3-4' } }], text: 'a² 为偶数' }, ...place,
     });
   });
@@ -138,6 +138,7 @@ describe('a press on Cite or Send', () => {
 it('refuses a press without the person\'s gesture, a malformed one, a file of a chat they are not in or of another place, a page with no conversation, and a page an agent works', async () => {
   await bind({ conversation: GROUP, resourceChat: GROUP });
   expect(await press({ file: { chat: GROUP, id: ITEM } }, false)).toMatchObject({ ok: false });
+  expect(await press({ action: 'cite', file: { chat: GROUP, id: ITEM } })).toMatchObject({ ok: false });
   expect(await press({ action: 'copy', file: { chat: GROUP, id: ITEM } })).toMatchObject({ ok: false, code: 'invalid' });
   expect(await press({ file: { chat: GROUP, id: ITEM }, rect: { ...place.rect, x: Number.NaN } })).toMatchObject({ ok: false, code: 'invalid' });
   expect(await press({ file: { id: ITEM_ELSEWHERE } })).toMatchObject({ ok: false, code: 'denied' });

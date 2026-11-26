@@ -7,7 +7,8 @@ import { OPENED_FILE_MAX_BYTES } from '@gugu/session-core/session-record/contrac
 import type { AttachmentMeta } from '@gugu/core/shared/ui/attachmentModels'
 import { formatBytes } from '@renderer/utils/formatBytes'
 import { bindFileViewerMenu } from '@/components/preview/file-viewer-menu'
-import { workspaceFileQuote } from '@/components/preview/quote-preview-file'
+import { viewerPick } from '@/components/preview/quote-preview-file'
+import { openCommentLine } from '@renderer/features/sessions/annotations/selection-line'
 import { selectionConversationOf } from '@/session/shared/extensions/file-selection'
 import { MessageFilePreviewPanel } from '@/components/chat/MessageFilePreviewPanel'
 import type { DocumentPreviewKind } from '@/components/chat/documentPreview'
@@ -45,8 +46,8 @@ type Preview = {
  * 读到了图进看图器、文档在这页里画(App 现成的那张预览,与聊天里的附件同一份)。
  * 读不到就在这页里说为什么(那台机器给的原因),❌ 点了没反应。
  */
-export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileChunk, readWorkingCopy }: {
-  deviceId: string; sessionId: string; onQuote: (text: string) => void
+export function useOpenedOutputOpener({ deviceId, sessionId, readFileChunk, readWorkingCopy }: {
+  deviceId: string; sessionId: string
   readFileChunk?: (input: import('@gugu/session-core/session-record/contract').SessionpageOpenedFileReadRequest) => Promise<import('@gugu/session-core/session-record/contract').SessionpageOpenedFileChunk>
   /** A file the timeline names (a link, an edited file): its working copy's, not the opened-output ledger's. */
   readWorkingCopy?: (input: import('@gugu/session-core/session-record/contract').SessionpageOpenedFileReadRequest) => Promise<import('@gugu/session-core/session-record/contract').SessionpageOpenedFileChunk>
@@ -82,13 +83,16 @@ export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileCh
 
   const path = preview?.path
   const previewKind = preview?.kind
+  const fileName = preview?.file.fileName
   const viewerRef = useCallback((element: HTMLElement | null) => {
-    if (!element || !path) return
+    if (!element || !path || !fileName) return
+    // A selection's comment goes into this session's draft, the file named by its path on its machine.
     return bindFileViewerMenu(element, () => ({
-      quote: selection => { onQuote(workspaceFileQuote(path, selection)); close() },
+      comment: (selection, at) => openCommentLine({ kind: 'session', sessionId }, at, element,
+        { kind: 'file', file: { name: fileName, target: path }, places: viewerPick(selection).places, ...(selection.text ? { text: selection.text } : {}) }),
       canSelectAll: previewKind !== 'html' && previewKind !== 'video' && previewKind !== 'unsupported',
     }), error => toast(String(error), 'error'))
-  }, [path, previewKind, onQuote, close, toast])
+  }, [path, fileName, previewKind, sessionId, toast])
 
   const describeFailure = useCallback(
     (error: unknown, source?: FileOpenSource): string => {
@@ -232,7 +236,7 @@ export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileCh
   const closed = () => {
     const blob = blobUrlRef.current
     const image = blob?.image
-    if (blob && image) openImageViewer([{ url: blob.url, alt: image.name, file: { name: image.name }, quote: () => onQuote(workspaceFileQuote(image.path, null)) }])
+    if (blob && image) openImageViewer([{ url: blob.url, alt: image.name, file: { name: image.name } }])
     else releaseBlobUrl()
   }
   const sheet = (
@@ -244,9 +248,8 @@ export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileCh
         videoUrl={preview.file.url || undefined}
         kind={preview.kind}
         content={preview.content}
-        // A phone's task page cites into this session's composer; it has no Send of its own: Copy · Cite.
-        selectable={{ conversation: selectionConversationOf({ session: sessionId }), file: { name: preview.file.fileName, target: preview.path },
-          cite: (cite) => { onQuote(cite.draft); close() }, sends: false }}
+        // A phone's task page comments into this session's draft, as the computer's does: Copy · Comment.
+        selectable={{ conversation: selectionConversationOf({ session: sessionId }), file: { name: preview.file.fileName, target: preview.path }, sends: true }}
         loading={preview.loading}
         loadingLabel={
           preview.progress

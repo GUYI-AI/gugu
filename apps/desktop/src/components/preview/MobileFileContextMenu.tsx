@@ -55,7 +55,7 @@ export function MobileFileContextMenu() {
   useEffect(() => {
     if (!mobile) return
     const down = (event: PointerEvent) => {
-      // Citable text keeps the platform's long-press selection handles; its range has its own Cite action.
+      // A file's text keeps the platform's long-press selection handles; its range has its own Comment action.
       if (event.target instanceof Element && event.target.closest('[data-file-cite]')) { viewer.current = null; return }
       viewer.current = viewerAt(event.target)
       if (viewer.current) longPress.onPointerDown(event)

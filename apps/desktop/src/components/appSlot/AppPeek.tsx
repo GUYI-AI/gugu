@@ -24,7 +24,7 @@ export function AppPeek({ target, slotKey, chatId, beside, onClose }: { target: 
   // A chat file nobody here opens is the host's own preview, header and all (its back closes the peek).
   if (target.kind === 'chat' && target.detail.choice.kind === 'none') {
     const { detail } = target
-    return <MessageFilePreview key={`${detail.itemId}:${detail.file.version}`} fill mobile={mobile} file={{ kind: 'file', document: detail.file.document, fileName: detail.name, mimeType: detail.file.contentType, sizeBytes: detail.file.size, source: { kind: 'item', itemId: detail.itemId, version: detail.file.version } }} onClose={onClose} />
+    return <MessageFilePreview key={`${detail.itemId}:${detail.file.version}`} fill mobile={mobile} chatId={chatId} file={{ kind: 'file', document: detail.file.document, fileName: detail.name, mimeType: detail.file.contentType, sizeBytes: detail.file.size, source: { kind: 'item', itemId: detail.itemId, version: detail.file.version } }} onClose={onClose} />
   }
   const title = target.kind === 'chat' ? target.detail.name : target.kind === 'folder' ? target.name : t('chatArea.peek.session')
   const full = openFull(target)
