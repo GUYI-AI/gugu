@@ -1,11 +1,9 @@
-import { useTranslation } from 'react-i18next'
 import type { CSSProperties } from 'react'
 import { agentIcons } from '@gugu/session-plugins/agent-icons'
 import { pluginIdForAgentType } from '@gugu/core/agentTypes'
 import { engineLabel } from '../lib/usage/engineLabel'
 import { CircleAlert, Cloud, Clock, UserMinus, type IconComponent } from '@/lib/icons'
-import { useAgentHarnessIdentity } from '../hooks/useAgentHarnessIdentity'
-import { useKnownPhoneAgent } from '../hooks/useKnownPhoneAgent'
+import { useAgentHarness } from '../hooks/useAgentHarness'
 import { htmlProp } from '../lib/innerHtml'
 import { useTheme } from '../store/theme'
 import { pickIconVariant } from '../session/renderer/lib/components/agent-icon-variant'
@@ -33,18 +31,9 @@ function sizeStyle(size: number): CSSProperties {
   return { '--agent-harness-size': `${size}px` } as CSSProperties
 }
 
-function useHarness(agentId: string | undefined) {
-  const type = useAgentHarnessIdentity(agentId)
-  const phone = useKnownPhoneAgent(agentId) && type !== 'removed'
-  const { t } = useTranslation('messaging')
-  const icon = phone ? undefined : agentIcons[pluginIdForAgentType(type)]
-  const label = phone ? t('agent.identity.phone') : icon?.alt ?? t(`agent.identity.${type === 'gugu-cloud' ? 'cloud' : type === 'removed' ? 'removed' : type === 'pending' ? 'pending' : 'unavailable'}`)
-  return { type, icon, label }
-}
-
 /** An inline harness glyph for status rows and other surfaces without an avatar. */
 export function AgentHarnessIcon({ agentId, size = 14 }: { agentId: string | undefined; size?: number }) {
-  const { type, icon, label } = useHarness(agentId)
+  const { type, icon, label } = useAgentHarness(agentId)
   return <HarnessGlyph type={type} icon={icon} label={label} size={size} />
 }
 

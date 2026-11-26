@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next'
 import { resolveMessagingValue } from '@/lib/localizedStoredValue'
 import { useAgentContactStatusLabel } from './contactAgentTone'
 import { useAgentDisplayStatus } from '../hooks/useAgentDisplayStatus'
+import { AgentHarnessModelChips } from './AgentHarnessModelChips'
 import { Button } from './ui/Button'
 import { Hint } from './ui/Tooltip'
 import { Unknown } from './ui/Unknown'
@@ -306,6 +307,8 @@ export function MemberProfileCard({
               <span className="min-w-0 line-clamp-2 [overflow-wrap:anywhere]" data-profile-agent-owner><AgentOwnerLabel ownerUserId={member.ownerUserId} ownerDisplayName={member.ownerDisplayName} /></span>
             </div>
           ) : null}
+          {/* 状态与主人那行之下:harness 与模型两枚胶囊(owner 11-26「看不出它是什么智能体」)。 */}
+          {isAgent ? <AgentHarnessModelChips agentId={member.id} className="mt-2" /> : null}
         </div>
       </div>
 
