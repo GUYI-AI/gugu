@@ -21,7 +21,7 @@ type DeviceRemoval = { deviceId: string; cascade?: boolean; client: { rpc(name: 
 /** Explicit permanent removal. Callers use their existing confirmation UI and backend authorization. */
 export async function permanentlyRemove(target: AgentRemoval | DeviceRemoval): Promise<void> {
   const { error } = 'agentId' in target
-    ? await target.client.rpc(PERMANENT_REMOVAL_RPCS.agent, { p_agent_user_id: target.agentId })
-    : await target.client.rpc(PERMANENT_REMOVAL_RPCS.device, { p_device_id: target.deviceId, p_cascade: target.cascade ?? false })
+    ? await target.client.rpc('remove_owned_agent', { p_agent_user_id: target.agentId })
+    : await target.client.rpc('remove_device', { p_device_id: target.deviceId, p_cascade: target.cascade ?? false })
   if (error) throw new Error(error.message, { cause: error })
 }
