@@ -296,7 +296,7 @@ describe('MessageBubble touch menu', () => {
     selectTextIn(link, 'https://example.com/path')
     await act(() => { link.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 2 })) })
     await contextMenu()
-    expect(actionKeys()).toEqual(['comment', 'copy', 'copyLink', 'openLink'])
+    expect(actionKeys()).toEqual(['comment', 'copy', 'openLink', 'openLinkSystem', 'copyLink'])
     window.getSelection()!.removeAllRanges()
     await clickElement(document.querySelector('[data-testid="message-action-copyLink"]')!)
     expect(writeText).toHaveBeenCalledWith('https://example.com/path')
