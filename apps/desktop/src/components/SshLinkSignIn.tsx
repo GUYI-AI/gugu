@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { serverMachineNotices, serverSupportsConfirmedRestart } from '@gugu/core/cloud/serverMachineHealth'
 import { readServerVersionSwitchBusyAgents, restartServerVersionNow, retryServerVersionMatch } from '../lib/serverVersionRetry'
@@ -6,7 +7,7 @@ import type { Device } from '@gugu/core/shared/types/chat'
 import { reportedSshUpdate } from '../lib/sshLinkOnline'
 import { openDeviceRecovery } from '@/lib/deviceActionsIntent'
 import type { SshLinkFailure, SshLinkOpenResult } from '../lib/sshLink'
-import { useSshStatusShown, sshLinkNoticeReason, type SshLinkNotice } from '../lib/sshLinkNotice'
+import { useSshPromptTarget, useSshStatusShown, sshLinkNoticeReason, type SshLinkNotice } from '../lib/sshLinkNotice'
 import {
   answerSshSignInPrompt,
   isSshMachine,
@@ -85,14 +86,25 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
     && serverMachineNotices(machine.capabilities).some(notice => notice.kind === 'server-too-old')
   const reason = prompt ? 'signInRequired' : signingIn ? (problem === 'hostKeyChanged' ? 'hostKeyChanged' : 'signInRequired') : sshLinkNoticeReason(reportedSshUpdate(machine, problem)) ?? (tunnelWaiting ? 'waitingIdle' : null)
   const inPlace = useSshStatusShown(machine.device_id, reason)
+  const promptTarget = useSshPromptTarget(machine.device_id)
   const pendingRestart = reason === 'waitingIdle' || reason === 'confirmationRequired'
   if (verification && problem !== 'hostKeyChanged') setVerification(null)
   if (confirmRestart && !pendingRestart) setConfirmRestart(null)
   if (dismissed !== null && dismissed !== reason) setDismissed(null)
   const shown = reason && (prompt || signingIn || reason !== dismissed)
     ? { deviceId: machine.device_id, name: machine.label, reason } : null
-  useNotice(`ssh-link:${machine.device_id}`, shown && card(shown))
-  return null
+  const question = prompt && <SshPromptCard
+    prompt={prompt}
+    pending={answered === prompt.id}
+    variant={promptTarget ? 'inline' : 'floating'}
+    cancellable
+    onAnswer={(value, extra) => {
+      if (value !== null) setAnswered(prompt.id)
+      answerSshSignInPrompt({ deviceId: machine.device_id, promptId: prompt.id, value, ...(extra?.installKey ? { installKey: true } : {}) })
+    }}
+  />
+  useNotice(`ssh-link:${machine.device_id}`, shown && !(question && promptTarget) ? card(shown) : null)
+  return question && promptTarget ? createPortal(question, promptTarget) : null
 
   function card(shown: SshLinkNotice): Omit<Notice, 'key'> {
     const confirmableUpdate = !ssh && update?.state === 'ready' && canRestartServerUpdate(update, machine.capabilities) ? update : null
@@ -169,22 +181,8 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
                     : t(shown.reason === 'confirmationRequired' ? 'devices.link.confirmationRequired' : 'devices.link.waitingIdle', { name: shown.name })}
               </p>
             </SshPromptFrame>
-          ) : activePrompt ? (
-            <SshPromptCard
-              prompt={activePrompt}
-              pending={answered === activePrompt.id}
-              variant="floating"
-              cancellable
-              onAnswer={(value, extra) => {
-                if (value !== null) setAnswered(activePrompt.id)
-                answerSshSignInPrompt({
-                  deviceId: shown.deviceId,
-                  promptId: activePrompt.id,
-                  value,
-                  ...(extra?.installKey ? { installKey: true } : {}),
-                })
-              }}
-            />
+          ) : question ? (
+            question
           ) : (
             <div>
               <p className="m-0 min-w-0 flex-1 text-[length:var(--font-body)] leading-[1.5]">

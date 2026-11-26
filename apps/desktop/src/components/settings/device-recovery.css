@@ -12,7 +12,7 @@
 .gg-recovery-status { display: inline-flex; align-items: center; gap: 6px; }
 .gg-recovery-status i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--muted-fg); }
 .gg-recovery-status[data-state='connected'] i { background: var(--live); }
-.gg-recovery-status:is([data-state='notRunning'],[data-state='signInRequired'],[data-state='notSignedIn'],[data-state='updateFailed']) i { background: var(--warning-fg, var(--muted-fg)); }
+.gg-recovery-status:is([data-state='notRunning'],[data-state='signInRequired'],[data-state='notSignedIn'],[data-state='updateFailed']) i { background: var(--warn); }
 .gg-recovery-status[data-state='hostKeyChanged'] i { background: var(--danger-fg); }
 .gg-device-chevron { color: var(--faint-fg); flex: none; }
 .gg-device-summary[aria-expanded='true'] .gg-device-chevron, .gg-recovery-details[open] > summary svg { transform: rotate(90deg); }
@@ -30,7 +30,7 @@
 .gg-recovery-fingerprint { display: grid; gap: 6px; margin-top: 12px; font-size: var(--font-caption); }
 .gg-recovery-fingerprint code { user-select: all; white-space: normal; }
 .gg-recovery-fingerprint label { display: flex; align-items: center; gap: 6px; }
-.gg-recovery-popover { width: min(320px,calc(100vw - 20px)); max-height: var(--available-height); overflow: auto; padding: 12px; background: var(--popover, var(--bg)); color: var(--fg); border: 1px solid var(--border-color); border-radius: var(--radius-panel, 12px); box-shadow: var(--shadow-popover); }
+.gg-recovery-popover { width: min(320px,calc(100vw - 20px)); max-height: var(--available-height); overflow: auto; padding: 12px; background: var(--popover, var(--bg)); color: var(--fg); border: 1px solid var(--border-color); border-radius: var(--radius-surface); box-shadow: var(--shadow-popover); }
 .gg-recovery-popover header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-inline: 4px; font-weight: var(--font-weight-medium); }
 .gg-recovery-popover .gg-device-recovery { background: transparent; padding: 6px 4px 4px; }
 .gg-recovery-trigger { display: inline-flex; align-items: center; gap: 5px; min-width: 0; cursor: pointer; }

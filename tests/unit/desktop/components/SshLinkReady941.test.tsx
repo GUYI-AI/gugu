@@ -40,7 +40,7 @@ import { reportedSshUpdate } from '@/lib/sshLinkOnline'
 import { showSshStatusInPlace } from '@/lib/sshLinkNotice'
 import { isInboxNotice, persistentNotices } from '@/lib/notices'
 import { NoticeHost } from '@/components/NoticeHost'
-import { requestSshServerUpgrade } from '@/lib/sshLinkChannel'
+import { answerSshSignInPrompt, requestSshServerUpgrade } from '@/lib/sshLinkChannel'
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { state.problem = 'waitingIdle'; state.ssh = false; state.devices = []; state.calls = []; state.busyAgents = 0; state.refused = false; state.restartError = false; harness = createReactHarness() })
@@ -235,4 +235,25 @@ it('shows reported update progress for a pending mismatch and keeps real transpo
   host.status = 'offline'
   expect(host.is_online).toBe(true)
   expect(reportedSshUpdate(host, 'confirmationRequired')).toBe('confirmationRequired')
+})
+
+it('lets the visible recovery panel answer the pending SSH question and returns it to the deck when the panel closes', async () => {
+  state.ssh = true
+  state.problem = 'signInRequired'
+  state.devices = [device('remote', [], { label: 'Remote' })]
+  const panel = document.createElement('div')
+  document.body.appendChild(panel)
+  const close = showSshStatusInPlace('remote', null, panel)
+  try {
+    await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
+    await act(async () => state.onPrompt?.({ deviceId: 'remote', prompt: { id: 'pw', kind: 'password', message: 'Password:', subject: 'remote' } }))
+    expect(panel.querySelector('input[type=password]')).not.toBeNull()
+    expect(document.querySelector('[data-testid=notice-deck]')).toBeNull()
+    await act(async () => close())
+    expect(panel.querySelector('input')).toBeNull()
+    const deck = document.querySelector('[data-testid=notice-deck]')!
+    expect(deck.querySelector('input[type=password]')).not.toBeNull()
+    await clickElement(deck.querySelector<HTMLButtonElement>('[data-notice-close]')!)
+    expect(answerSshSignInPrompt).toHaveBeenCalledWith({ deviceId: 'remote', promptId: 'pw', value: null })
+  } finally { close(); panel.remove() }
 })

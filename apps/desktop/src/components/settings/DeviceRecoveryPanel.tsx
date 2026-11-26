@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useConversationVisibility } from '../chat/useConversationVisibility'
 import { showSshStatusInPlace, sshLinkNoticeReason } from '@/lib/sshLinkNotice'
 import { useTranslation } from 'react-i18next'
@@ -47,11 +47,16 @@ export function DeviceRecoveryStatus({ deviceId, state }: { deviceId: string; st
 
 export function DeviceRecoveryPanel({ deviceId, state, name, address, version, progress, lastSync, inTask, onDone }: DeviceRecoveryProps) {
   const { t, i18n } = useTranslation('settings')
+  const [setup, setSetup] = useState<AddServerMethod | null>(null)
+  const promptTarget = useRef<HTMLDivElement>(null)
+  const { ref: panelRef, shown } = useConversationVisibility<HTMLElement>(!setup && typeof IntersectionObserver !== 'undefined')
+  useEffect(() => {
+    if (shown && promptTarget.current) return showSshStatusInPlace(deviceId, null, promptTarget.current)
+  }, [deviceId, shown])
   const [pending, setPending] = useState(false)
   const [failure, setFailure] = useState<Failure | null>(null)
   const [error, setError] = useState('')
   const [verified, setVerified] = useState(false)
-  const [setup, setSetup] = useState<AddServerMethod | null>(null)
   const [restart, setRestart] = useState<{ busy?: number } | null>(null)
   const { devices } = useDevicesStore()
   const machine = devices.find(row => row.device_id === deviceId)
@@ -139,7 +144,7 @@ export function DeviceRecoveryPanel({ deviceId, state, name, address, version, p
   if (setup) return <AddServerPanel method={setup} onMethodChange={setSetup} onClose={() => setSetup(null)}
     onAdded={() => { setSetup(null); requestReconnect() }}
     relogin={endpoint && state === 'notSignedIn' ? { deviceId, address: endpoint } : undefined} />
-  return <section className="gg-device-recovery" aria-label={key('title')}>
+  return <section ref={panelRef} className="gg-device-recovery" aria-label={key('title')}>
     <h3>{t(prefix + '.title')}</h3>
     <p>{restart ? typeof restart.busy === 'number'
       ? t('devices.update.updateNowConfirmCount', { name, count: restart.busy }) : key('restartHint') : t(prefix + '.body')}</p>
@@ -148,6 +153,7 @@ export function DeviceRecoveryPanel({ deviceId, state, name, address, version, p
       <span>{key('fingerprint')}</span><code>{hostKey.fingerprint ?? t('devices.versionUnknown')}</code>
       {hostKey.fingerprint && <label><input type="checkbox" checked={verified} onChange={e => setVerified(e.target.checked)} />{key('verified')}</label>}
     </div>}
+    <div ref={promptTarget} />
     {error && <p role="alert">{key(error)}</p>}
     {primary && <div className="gg-recovery-actions">
       <Button size="sm" variant={state === 'connected' ? 'secondary' : 'primary'} disabled={pending || (!!hostKey && (!hostKey.fingerprint || !verified))}

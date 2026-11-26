@@ -2,7 +2,7 @@
 // of its tab strip, the strip of a tab that went to its own window, and a minimal strip while the session is still
 // cold (its tabs are not mounted yet). Each block says its own machine; nothing is said for this computer.
 import { observer } from 'mobx-react-lite';
-import { type ReactNode, type RefObject, useLayoutEffect, useRef, useState } from 'react';
+import { type ReactNode, type RefObject, useContext, useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { ConnectionStatus } from '@/components/connection/ConnectionStatus';
@@ -15,6 +15,8 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { headerConnectionState } from '@renderer/features/remote-hosts/header-connection-state';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { machineRegistry } from '@renderer/lib/machine-routing';
+import { auxLayerOf } from '@renderer/app/aux-layers';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { useSessionViewContext } from '../session-view-context';
 import { TabBarActionRow } from '../titlebar-actions';
 
@@ -44,7 +46,9 @@ const STATE_WORD_KEY = { online: 'connection.online', connecting: 'connection.co
 
 function TaskDeviceRecovery({ sessionId, ...props }: Omit<DeviceRecoveryProps, 'onDone'> & { sessionId: string }) {
   const ref = useRef<HTMLSpanElement>(null);
-  const [open, setOpen] = useState(false);
+  const [portal, setPortal] = useState<HTMLElement | null>(null);
+  const shown = useContext(SurfaceShownContext);
+  useLayoutEffect(() => { if (!shown) setPortal(null); }, [shown]);
   const compact = useCompactWhenTabsSqueezed(ref);
   const { t } = useTranslation('settings');
   function composer() {
@@ -52,23 +56,26 @@ function TaskDeviceRecovery({ sessionId, ...props }: Omit<DeviceRecoveryProps, '
     if (!element) return null;
     const local = element.closest('[data-screen-block]')?.querySelector<HTMLElement>('[data-region="composer"] [contenteditable="true"]');
     if (local) return local;
-    const task = element.ownerDocument.querySelector(`[data-session-chat-session-id="${CSS.escape(sessionId)}"] [data-region="composer"] [contenteditable="true"]`);
-    return task instanceof HTMLElement ? task : null;
+    return element.ownerDocument.querySelector<HTMLElement>(`[data-session-chat-session-id="${CSS.escape(sessionId)}"] [data-region="composer"] [contenteditable="true"]`);
   }
   return <span ref={ref} data-slot="session-machine-status" data-compact={compact ? '' : undefined}
     className="window-no-drag-region inline-flex min-w-min items-center text-xs" data-testid="session-machine-status">
-    <Popover.Root open={open} onOpenChange={setOpen}>
+    <Popover.Root open={!!portal && shown} onOpenChange={open => {
+      const doc = ref.current?.ownerDocument;
+      // The task surface sits below window notices. Its recovery controls share the originating window's popup layer.
+      setPortal(open && doc ? auxLayerOf(doc) ?? doc.body : null);
+    }}>
       <Popover.Trigger className="gg-recovery-trigger" aria-label={props.name + ' · ' + t(`devices.recovery.${props.state}.status`)}>
         <DeviceRecoveryStatus deviceId={props.deviceId} state={props.state} /><ChevronRight size={12} aria-hidden />
       </Popover.Trigger>
-      <Popover.Portal><Popover.Positioner side="bottom" align="end" sideOffset={6}>
+      <Popover.Portal container={portal}><Popover.Positioner className="data-[anchor-hidden]:hidden" side="bottom" align="end" sideOffset={6}>
         <Popover.Popup className="gg-recovery-popover" finalFocus={interaction => {
           if (interaction === 'mouse' || interaction === 'touch') return true;
           return composer() ?? true;
         }}>
           <header><Popover.Title>{props.name}</Popover.Title><Popover.Close render={<IconButton size="sm" aria-label={t('devices.recovery.dismiss')}><X size={14} /></IconButton>} /></header>
           <DeviceRecoveryPanel key={props.state} {...props} inTask onDone={() => {
-            setOpen(false);
+            setPortal(null);
             requestAnimationFrame(() => composer()?.focus());
           }} />
         </Popover.Popup>
