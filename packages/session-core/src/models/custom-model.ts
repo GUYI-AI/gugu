@@ -225,7 +225,6 @@ export const customModelConnectionSchema = z.object({
   credentialRef: z.string(),
   keySaved: z.boolean(),
   managedNativeHarnesses: z.array(z.enum(['codex', 'claude'])).optional(),
-  keyConflict: z.boolean().optional(),
   keyLast4: z.string().max(4).optional(),
   ...customModelMetaSchema.shape,
   models: z.array(customModelViewSchema),

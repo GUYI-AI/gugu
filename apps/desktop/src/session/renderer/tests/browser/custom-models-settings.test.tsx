@@ -543,6 +543,28 @@ it('a converted third-party model is selectable and tagged with its vendor; an I
   expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent?.replace('deepseek-v4-flash', '')).not.toContain('deepseek');
   expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent).not.toContain('·');
 });
+it('#1552: configurations sharing an address, key and provider are numbered alike in the menu and Settings; a lone one is not', async () => {
+  const at = (id: string, baseUrl: string, model: string): CustomModelConnection => ({ ...record(), id, name: 'OpenAI', preset: 'openai', keySaved: true,
+    endpoints: [{ protocol: 'openai-responses', baseUrl }], models: [{ id: model }] });
+  const openai = 'https://api.openai.com/v1';
+  state.rows = [
+    at('e7d4a5a8-6f1e-4b52-9a51-0d4d1d0d0011', openai, 'gpt-luna'),
+    at('e7d4a5a8-6f1e-4b52-9a51-0d4d1d0d0012', openai, 'gpt-astra'),
+    { ...at('e7d4a5a8-6f1e-4b52-9a51-0d4d1d0d0013', 'https://api.deepseek.com/v1', 'deepseek-v4'), name: 'DeepSeek', preset: 'deepseek' },
+  ];
+  const codex = { id: 'codex', name: 'Codex', capabilities: { modelProtocols: ['openai-responses' as const], customModel: undefined } };
+  const menu = Object.values(customComposerOptions(state.rows, codex, translateSessionMessage));
+  expect(menu.map(({ name, tag, providerLabel }) => [name, tag, providerLabel])).toEqual([
+    ['gpt-luna', 'openai 1', 'openai 1'], ['gpt-astra', 'openai 2', 'openai 2'], ['deepseek-v4', 'deepseek', 'deepseek'],
+  ]);
+  expect(Object.values(customComposerOptions(state.rows.slice(1), codex, translateSessionMessage))[0]).toMatchObject({ tag: 'openai' });
+  render(<CustomModelsGroup />);
+  await until('all three configurations render', () => document.querySelectorAll('[data-custom-connection]').length === 3);
+  expect(state.rows.map(({ id }) => document.querySelector(`[data-custom-connection="${id}"]`)?.textContent)).toEqual([
+    expect.stringContaining('OpenAI 1'), expect.stringContaining('OpenAI 2'), expect.not.stringContaining('DeepSeek 1'),
+  ]);
+  expect(document.body.textContent).not.toContain('Choose API key');
+});
 it('owner 11-24: a coding plan says whose plan; pay-as-you-go says its domain, preset or typed', () => {
   const tag = (id: string, baseUrl?: string) => connectionTag(providerPresets.find((preset) => preset.id === id), baseUrl);
   // A key does not tell its tier: the vendor only, ❌ 「Coding Plan」, ❌ the domain.
