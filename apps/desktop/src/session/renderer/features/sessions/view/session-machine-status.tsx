@@ -46,37 +46,58 @@ const STATE_WORD_KEY = { online: 'connection.online', connecting: 'connection.co
 
 function TaskDeviceRecovery({ sessionId, ...props }: Omit<DeviceRecoveryProps, 'onDone'> & { sessionId: string }) {
   const ref = useRef<HTMLSpanElement>(null);
+  const [open, setOpen] = useState(false);
   const [portal, setPortal] = useState<HTMLElement | null>(null);
+  const returnToDraft = useRef(false);
+  const caret = useRef<Range | null>(null);
   const shown = useContext(SurfaceShownContext);
-  useLayoutEffect(() => { if (!shown) setPortal(null); }, [shown]);
+  useLayoutEffect(() => { if (!shown) setOpen(false); }, [shown]);
   const compact = useCompactWhenTabsSqueezed(ref);
   const { t } = useTranslation('settings');
   function composer() {
     const element = ref.current;
     if (!element) return null;
-    const local = element.closest('[data-screen-block]')?.querySelector<HTMLElement>('[data-region="composer"] [contenteditable="true"]');
-    if (local) return local;
-    return element.ownerDocument.querySelector<HTMLElement>(`[data-session-chat-session-id="${CSS.escape(sessionId)}"] [data-region="composer"] [contenteditable="true"]`);
+    const block = element.closest('[data-screen-block]');
+    const sameTask = `[data-session-chat-session-id="${CSS.escape(sessionId)}"] [data-testid="prompt-editor"]`;
+    return (block ?? element.ownerDocument).querySelector<HTMLElement>(sameTask)
+      ?? block?.querySelector<HTMLElement>('[data-region="composer"] [data-testid="prompt-editor"]') ?? null;
   }
   return <span ref={ref} data-slot="session-machine-status" data-compact={compact ? '' : undefined}
     className="window-no-drag-region inline-flex min-w-min items-center text-xs" data-testid="session-machine-status">
-    <Popover.Root open={!!portal && shown} onOpenChange={open => {
-      const doc = ref.current?.ownerDocument;
-      // The task surface sits below window notices. Its recovery controls share the originating window's popup layer.
-      setPortal(open && doc ? auxLayerOf(doc) ?? doc.body : null);
+    <Popover.Root open={open && shown} onOpenChange={(next, details) => {
+      if (next) {
+        const doc = ref.current?.ownerDocument;
+        if (!doc) return;
+        // The task surface sits below window notices. Keep the window's popup container stable through the exit transition.
+        setPortal(auxLayerOf(doc) ?? doc.body);
+        returnToDraft.current = false;
+        const selection = doc.getSelection();
+        const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+        caret.current = range && composer()?.contains(range.commonAncestorContainer) ? range.cloneRange() : null;
+      } else {
+        returnToDraft.current = details.reason === 'escape-key' || details.reason === 'close-press';
+      }
+      setOpen(next);
     }}>
       <Popover.Trigger className="gg-recovery-trigger" aria-label={props.name + ' · ' + t(`devices.recovery.${props.state}.status`)}>
         <DeviceRecoveryStatus deviceId={props.deviceId} state={props.state} /><ChevronRight size={12} aria-hidden />
       </Popover.Trigger>
       <Popover.Portal container={portal}><Popover.Positioner className="data-[anchor-hidden]:hidden" side="bottom" align="end" sideOffset={6}>
-        <Popover.Popup className="gg-recovery-popover" finalFocus={interaction => {
-          if (interaction === 'mouse' || interaction === 'touch') return true;
-          return composer() ?? true;
+        <Popover.Popup className="gg-recovery-popover" finalFocus={() => {
+          if (!returnToDraft.current) return true;
+          const editor = composer();
+          const range = caret.current;
+          if (editor && range && editor.contains(range.commonAncestorContainer)) {
+            const selection = editor.ownerDocument.getSelection();
+            selection?.removeAllRanges();
+            selection?.addRange(range);
+          }
+          return editor ?? true;
         }}>
           <header><Popover.Title>{props.name}</Popover.Title><Popover.Close render={<IconButton size="sm" aria-label={t('devices.recovery.dismiss')}><X size={14} /></IconButton>} /></header>
           <DeviceRecoveryPanel key={props.state} {...props} inTask onDone={() => {
-            setPortal(null);
-            requestAnimationFrame(() => composer()?.focus());
+            returnToDraft.current = true;
+            setOpen(false);
           }} />
         </Popover.Popup>
       </Popover.Positioner></Popover.Portal>
