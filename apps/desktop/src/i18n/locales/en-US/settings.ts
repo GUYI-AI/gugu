@@ -410,6 +410,7 @@ export default {
       "manual": "Run on the device",
       "verified": "I verified this fingerprint independently",
       "trust": "Update trust and connect",
+      "promptTitle": "SSH sign-in · {{name}}",
       "backToTask": "Back to task",
       "heartbeat": "Heartbeat",
       "reportedUpdate": "Last reported update",

@@ -37,7 +37,8 @@ vi.mock('@/lib/sshLinkChannel', () => ({
 }))
 import { SshLinkSignIn } from '@/components/SshLinkSignIn'
 import { reportedSshUpdate } from '@/lib/sshLinkOnline'
-import { persistentNotices } from '@/lib/notices'
+import { showSshStatusInPlace } from '@/lib/sshLinkNotice'
+import { isInboxNotice, persistentNotices } from '@/lib/notices'
 import { NoticeHost } from '@/components/NoticeHost'
 import { requestSshServerUpgrade } from '@/lib/sshLinkChannel'
 
@@ -185,6 +186,24 @@ it('a background link that needs sign-in shows nothing; a sign-in started elsewh
   })
   expect(document.querySelector('[data-testid=ssh-link-sign-in] input[type=password]')).not.toBeNull()
   expect(document.body.textContent).toContain('Remote')
+})
+
+it('keeps the visible device condition in the inbox and still surfaces an interactive SSH question', async () => {
+  state.ssh = true
+  state.problem = 'notRunning'
+  state.devices = [device('remote', [], { label: 'Remote' })]
+  const release = showSshStatusInPlace('remote', 'notRunning')
+  try {
+    await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
+    expect(document.querySelector('[data-notice-key]')).toBeNull()
+    expect(persistentNotices.read().filter(isInboxNotice).map(n => n.key)).toContain('ssh-link:remote')
+    await act(async () => state.onPrompt?.({ deviceId: 'remote', prompt: { id: 'p1', kind: 'password', message: 'Password:', subject: 'remote' } }))
+    expect(document.querySelector('[data-testid=ssh-link-sign-in] input[type=password]')).not.toBeNull()
+    await act(async () => state.onPrompt?.({ deviceId: 'remote', prompt: null }))
+    expect(document.querySelector('[data-notice-key]')).toBeNull()
+    await act(async () => release())
+    expect(document.querySelector('[data-notice-key]')?.getAttribute('data-notice-key')).toBe('ssh-link:remote')
+  } finally { release() }
 })
 
 it('defers one machine to the bell and immediately shows the other', async () => {

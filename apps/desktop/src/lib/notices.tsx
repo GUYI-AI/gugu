@@ -33,6 +33,8 @@ export interface Notice {
   variant?: 'default' | 'destructive'
   /** 这件事还没完、要你做个决定:进右上角那一叠卡(收起后在铃铛里),不按停留消失。 */
   ongoing?: boolean
+  /** This decision is already visible at its point of use. Keep it available from the notification list. */
+  shownInline?: boolean
   /**
    * 常驻的默认带关闭钮。`false` = 只能由它的结果收掉:它陈述的是一个持续为真、用户关了也改变不了的事实(登录失效)。
    * 只对常驻有意义。
@@ -155,6 +157,10 @@ function dismissToast(key: string): void {
 
 /** 一条常驻通知:就是那条 Notice,外加进来的先后(翻页按先后)和它在哪 —— 卡片叠里,还是用户收进了铃铛。 */
 export type PersistentNotice = Notice & { key: string; seq: number; deferred: boolean }
+
+export function isInboxNotice(notice: PersistentNotice): boolean {
+  return notice.deferred || notice.shownInline === true
+}
 
 /**
  * 常驻通知的状态。主 app 与会话页各是各的 bundle,模块变量不跨入口,所以挂在 globalThis 上(同 sonner 共用一份的道理):

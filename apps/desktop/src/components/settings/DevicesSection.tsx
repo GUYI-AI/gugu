@@ -549,11 +549,17 @@ function DeviceRow({
     : model.version
       ? t(model.kind === 'server' ? 'devices.serverVersion' : 'devices.appVersion', { version: model.version })
       : t('devices.versionUnknown')
+  const summaryRef = useRef<HTMLButtonElement>(null)
   const ssh = !!sshAddress || (sshLink !== undefined && sshLink !== 'unknown')
   const recovery: DeviceRecoveryProps['state'] = link ?? (signedOutText ? 'notSignedIn' : sshLink === 'checking' ? 'checking'
     : isDeviceOnline(device.status) && model.update?.state === 'ready' ? 'waitingIdle'
     : isDeviceOnline(device.status) && (model.update?.state === 'downloading' || model.update?.state === 'switching') ? 'updating'
     : isDeviceOnline(device.status) && failedUpdate ? 'updateFailed' : 'connected')
+  const compactRow = ssh || model.kind === 'this'
+  const closeDetails = () => {
+    onExpand(false)
+    summaryRef.current?.focus()
+  }
   const RowIcon = model.kind === 'phone' ? Smartphone : model.kind === 'server' ? Server : Monitor
   const detailsId = `device-recovery-${device.device_id}`
   const acceptsWork = deviceAcceptsWork(device)
@@ -571,26 +577,32 @@ function DeviceRow({
       data-testid={AUTOMATION_TEST_IDS.settingsDeviceRow}
       data-device-id={device.device_id}
       data-kind={model.kind}
-      className={cn('gg-settings-device-row flex items-start gap-3', { 'gg-settings-ssh-row': ssh })}
-      data-expanded={ssh && expanded ? '' : undefined}
+      className={cn('gg-settings-device-row flex items-start gap-3', { 'gg-settings-compact-row': compactRow })}
+      data-expanded={compactRow && expanded ? '' : undefined}
     >
-      {!ssh && <RowIcon size={19} className="gg-device-leading-icon" aria-hidden />}
+      {!compactRow && <RowIcon size={19} className="gg-device-leading-icon" aria-hidden />}
       <div className="min-w-0 flex-1">
         {editing ? (
           <DeviceRenameField label={device.label} onSave={onCommitRename} onCancel={onCancelRename} />
-        ) : ssh ? (
+        ) : compactRow ? (
           <>
-            <Button variant="ghost" className="gg-device-summary" aria-expanded={expanded} aria-controls={detailsId}
+            <Button ref={summaryRef} variant="ghost" className="gg-device-summary" aria-expanded={expanded} aria-controls={detailsId}
               onClick={() => onExpand(!expanded)} data-testid="settings-device-summary">
               <span className="gg-device-icon"><RowIcon size={19} aria-hidden /></span>
               <span className="gg-device-identity"><strong>{device.label}</strong>
-                <small>{[model.system, 'SSH'].filter(Boolean).join(' · ')}</small></span>
-              <DeviceRecoveryStatus state={recovery} /><ChevronRight className="gg-device-chevron" size={14} aria-hidden />
+                <small>{(ssh ? [model.system, 'SSH'] : [t('devices.current'), model.system]).filter(Boolean).join(' · ')}</small></span>
+              {ssh ? <DeviceRecoveryStatus deviceId={device.device_id} state={recovery} /> :
+                <span className="gg-recovery-status" data-state={device.is_online ? 'connected' : 'offline'}>
+                  <i aria-hidden="true" />{t(device.is_online ? 'devices.online' : 'devices.offline')}
+                </span>}
+              <ChevronRight className="gg-device-chevron" size={14} aria-hidden />
             </Button>
-            {expanded && <div id={detailsId} className="gg-device-expanded">
-              <DeviceRecoveryPanel key={device.device_id + recovery} deviceId={device.device_id} state={recovery} name={device.label}
-                version={model.version} address={sshAddress} progress={upgradePercent} onDone={() => onExpand(false)} />
-              {model.notices.filter(n => n.kind !== 'server-too-old').map(n => <DeviceNoticeChip key={n.kind} notice={n} />)}
+            {expanded && <div id={detailsId} className="gg-device-expanded" onKeyDown={event => {
+              if (event.key === 'Escape' && !event.defaultPrevented) { event.stopPropagation(); closeDetails() }
+            }}>
+              {ssh ? <DeviceRecoveryPanel key={device.device_id + recovery} deviceId={device.device_id} state={recovery} name={device.label}
+                version={model.version} address={sshAddress} progress={upgradePercent} onDone={closeDetails} /> : version && <p>{version}</p>}
+              {model.notices.filter(n => !ssh || n.kind !== 'server-too-old' || !link).map(n => <DeviceNoticeChip key={n.kind} notice={n} />)}
               {device.capabilities.runs_as_root && <span title={t('devices.runsAsRootHint')}>{t('devices.runsAsRoot')}</span>}
               {configurationCount > 1 && <span>{t('devices.configurationCount', { count: configurationCount })}</span>}
             </div>}
@@ -598,7 +610,6 @@ function DeviceRow({
         ) : (
           <div className="flex min-w-0 flex-wrap items-center gap-[7px]">
             <span className="truncate text-[length:var(--font-body)] text-[var(--fg)]">{device.label}</span>
-            {model.kind === 'this' && <Chip>{t('devices.current')}</Chip>}
             {restarting && <Chip tone="accent" data-testid="settings-device-restarting">{t('devices.update.restarting')}</Chip>}
             {!restarting && (model.update?.state === 'ready' || model.update?.state === 'downloading') && (
               <Chip
@@ -649,7 +660,7 @@ function DeviceRow({
             </Button>
           </div>
         )}
-        {!ssh && <div className="mt-[3px] flex flex-wrap items-center gap-x-2 gap-y-[2px] text-[length:var(--font-caption)] text-[var(--muted-fg)]">
+        {!compactRow && <div className="mt-[3px] flex flex-wrap items-center gap-x-2 gap-y-[2px] text-[length:var(--font-caption)] text-[var(--muted-fg)]">
           <span className="inline-flex items-center gap-[5px]">
             {/* 状态点:在线 = connected = live 蓝(design.md 唯一的 accent);离线退成墨色最淡一档。 */}
             <span
@@ -696,7 +707,7 @@ function DeviceRow({
             )}
           </span>
           {/* 本机那一行名字旁已有「本机」标签,❌ 再说一遍。 */}
-          {model.kind !== 'this' && <span data-testid="settings-device-kind">{t(`devices.kind.${model.kind}`)}</span>}
+          <span data-testid="settings-device-kind">{t(`devices.kind.${model.kind}`)}</span>
           {model.system && <span>{model.system}</span>}
           {version && <span>{version}</span>}
           {configurationCount > 1 && <span data-testid="settings-device-version-count">{t('devices.configurationCount', { count: configurationCount })}</span>}

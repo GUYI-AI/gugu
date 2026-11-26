@@ -6,7 +6,7 @@ import type { Device } from '@gugu/core/shared/types/chat'
 import { reportedSshUpdate } from '../lib/sshLinkOnline'
 import { openDeviceRecovery } from '@/lib/deviceActionsIntent'
 import type { SshLinkFailure, SshLinkOpenResult } from '../lib/sshLink'
-import { sshLinkNoticeReason, type SshLinkNotice } from '../lib/sshLinkNotice'
+import { useSshStatusShown, sshLinkNoticeReason, type SshLinkNotice } from '../lib/sshLinkNotice'
 import {
   answerSshSignInPrompt,
   isSshMachine,
@@ -84,6 +84,7 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
   const tunnelWaiting = !ssh && machine.is_online && update?.state === 'ready'
     && serverMachineNotices(machine.capabilities).some(notice => notice.kind === 'server-too-old')
   const reason = prompt ? 'signInRequired' : signingIn ? (problem === 'hostKeyChanged' ? 'hostKeyChanged' : 'signInRequired') : sshLinkNoticeReason(reportedSshUpdate(machine, problem)) ?? (tunnelWaiting ? 'waitingIdle' : null)
+  const inPlace = useSshStatusShown(machine.device_id, reason)
   const pendingRestart = reason === 'waitingIdle' || reason === 'confirmationRequired'
   if (verification && problem !== 'hostKeyChanged') setVerification(null)
   if (confirmRestart && !pendingRestart) setConfirmRestart(null)
@@ -139,7 +140,8 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
       else dismiss()
     }
     // 机器名是这条横幅的标题(带服务器图标),下面平铺那一句和按钮 —— ❌ 横幅里再套一张卡。
-    return { ongoing: true, onDismiss: close, title: shown.name, icon: <Server size={16} />, description: (
+    return { ongoing: true, shownInline: inPlace && !prompt && !signingIn, onDismiss: close,
+      title: prompt ? t('devices.recovery.promptTitle', { name: shown.name }) : shown.name, icon: <Server size={16} />, description: (
         <div data-testid="ssh-link-sign-in">
           {pendingRestart && !activePrompt ? (
             // 版本对不上、那台机器在等 agent 空闲:与 SSH 提问同一副卡(机器名一行 + 一句 + 底行按钮),「现在」先当面确认一次。

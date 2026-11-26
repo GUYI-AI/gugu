@@ -1,4 +1,4 @@
-.gg-settings-ssh-row { align-items: flex-start; }
+.gg-settings-compact-row { align-items: flex-start; }
 .gg-device-leading-icon { margin-block-start: 6px; color: var(--muted-fg); flex: none; }
 .gg-device-summary[data-slot], .gg-device-summary {
   display: flex; width: 100%; min-height: 42px; height: auto; gap: 12px; padding: 3px 2px;

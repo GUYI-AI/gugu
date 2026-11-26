@@ -59,7 +59,7 @@ function TaskDeviceRecovery({ sessionId, ...props }: Omit<DeviceRecoveryProps, '
     className="window-no-drag-region inline-flex min-w-min items-center text-xs" data-testid="session-machine-status">
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger className="gg-recovery-trigger" aria-label={props.name + ' · ' + t(`devices.recovery.${props.state}.status`)}>
-        <DeviceRecoveryStatus state={props.state} /><ChevronRight size={12} aria-hidden />
+        <DeviceRecoveryStatus deviceId={props.deviceId} state={props.state} /><ChevronRight size={12} aria-hidden />
       </Popover.Trigger>
       <Popover.Portal><Popover.Positioner side="bottom" align="end" sideOffset={6}>
         <Popover.Popup className="gg-recovery-popover" finalFocus={interaction => {

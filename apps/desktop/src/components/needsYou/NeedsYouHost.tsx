@@ -27,7 +27,7 @@ import { isAssistantAgent } from '@/session/renderer/features/assistant/assistan
 import { markNeedsYouTaskSeen, useNeedsYouTasks, type NeedsYouTask } from './useNeedsYouTasks'
 import { passwordNotifications, usePasswordVault, openPasswordRequest, openPasswordDevicePrompt } from '@/lib/passwordBetaNotifications'
 import { promptedRequests } from '../password/passwordModel'
-import { persistentNotices } from '@/lib/notices'
+import { isInboxNotice, persistentNotices } from '@/lib/notices'
 import { NoticeCard } from '../NoticeHost'
 
 const taskKey = (task: NeedsYouTask) => `${task.deviceId}/${task.session.conversationId}`
@@ -49,7 +49,7 @@ export const NeedsYouHost = observer(function NeedsYouHost() {
   const devices = promptedRequests(sync)
   // 右上角那一叠卡里点了「以后再说」的常驻通知,收在这里;在这里清掉才算关掉(lib/notices)。
   const notices = useSyncExternalStore(persistentNotices.subscribe, persistentNotices.read, persistentNotices.read)
-  const deferred = notices.filter(notice => notice.deferred)
+  const deferred = notices.filter(isInboxNotice)
   const notificationCount = count + passwords.length + devices.length + deferred.length
   const open = useSidebarNotificationsOpen()
   const slots = readShellSlots()

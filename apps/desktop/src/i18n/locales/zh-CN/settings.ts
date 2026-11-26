@@ -410,6 +410,7 @@ export default {
       "manual": "在设备上手动运行",
       "verified": "我已通过独立渠道核对，指纹一致",
       "trust": "更新信任并连接",
+      "promptTitle": "SSH 登录 · {{name}}",
       "backToTask": "返回任务",
       "heartbeat": "设备心跳",
       "reportedUpdate": "上次上报的更新",
