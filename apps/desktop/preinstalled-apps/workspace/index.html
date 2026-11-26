@@ -10,6 +10,8 @@
 <body class="reading" data-state="message" data-mode="split">
   <aside class="files" aria-label="files" tabindex="0">
     <header class="files-toolbar files-tools">
+      <!-- 全选 where the list has no table head (the columns of a wide list); it stays beside the bar while files are picked. -->
+      <button id="pick-all" class="pick-all" type="button" role="checkbox" aria-checked="false"></button>
       <div id="place-switch" class="place-switch" role="group">
         <button type="button" data-root="chat"><gugu-icon name="message-square"></gugu-icon><span></span><span class="short"></span></button>
         <button type="button" data-root="workspace"><gugu-icon name="monitor"></gugu-icon><span></span><span class="short"></span></button>
