@@ -15,6 +15,7 @@ import { OPEN_ASSISTANT_TASK_CHAT, readAssistantTaskChat, type AssistantTaskChat
 import { UI_EVENTS } from '../lib/uiEvents'
 import { chatService } from '../lib/chat'
 import { askReveal } from './useSourceMessageReveal'
+import { resolveChatId } from '../lib/chatSummariesBridge'
 import { readIdentityDirectoryBridge } from '../lib/identityDirectoryBridge'
 import { openOwnedAgentFile } from '../lib/ownedAgentConversation'
 
@@ -158,8 +159,9 @@ export function useLinkNavigation(input: {
         return
       }
       if (target.kind !== 'chat') throw new Error('This target is not available in the chat shell')
-      const chat = state.chats().find((row) => row.id === target.chatId)
-      if (!target || !chat) throw new Error('Conversation reference is unavailable')
+      const chatId = resolveChatId(target.chatId) ?? target.chatId
+      const chat = state.chats().find((row) => row.id === chatId)
+      if (!chat) throw new Error('Conversation reference is unavailable')
       if (target.messageId) {
         const message = await chatService.getMessageById(target.messageId, state.ownerId)
         if (!message || message.chat_id !== chat.id || message.retracted_at) throw new Error('Message reference is unavailable')
