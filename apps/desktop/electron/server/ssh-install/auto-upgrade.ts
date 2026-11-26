@@ -29,7 +29,7 @@ export type RunUpgrade = (
   deviceId: string,
   onState: (state: ServerSshInstallState) => void,
   options?: { now?: boolean },
-) => Promise<(ServerSshInstallState & { unconfirmed?: { request: number; reportedVersion: string | null; update: DeviceCapabilities['server_update'] | null } }) | null>
+) => Promise<(ServerSshInstallState & { awaitingConfirmation?: true; unconfirmed?: { request: number; reportedVersion: string | null; update: DeviceCapabilities['server_update'] | null } }) | null>
 
 /** 下载那一步此刻的百分比(不知道总量 = null)。纯函数。 */
 export function upgradePercent(state: ServerSshInstallState): number | null {
@@ -68,6 +68,11 @@ export function createSshAutoUpgrader(options: {
       })
       .then((final) => {
         running.delete(deviceId)
+        if (final?.awaitingConfirmation) {
+          failedAt.set(deviceId, now())
+          options.emit({ deviceId, phase: 'confirmationRequired' })
+          return
+        }
         if (final?.unconfirmed) {
           // Stop this click's observer without inventing a terminal host outcome or reconnecting.
           failedAt.set(deviceId, now())

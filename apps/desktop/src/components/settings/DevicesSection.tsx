@@ -22,7 +22,7 @@ import { rendererLogger } from '../../lib/log'
 import { useSshSignInStates } from '../../hooks/useSshSignInStates'
 import { useSshLinkProblems, useSshUpgrades } from '../../hooks/useSshLinkProblems'
 import { sshMachineAddresses, sshMachineIdsOf, watchSshMachineAddresses } from '../../lib/sshMachineAddresses'
-import { sshLinkFacts } from '../../lib/sshLinkOnline'
+import { sshLinkFacts, reportedSshUpdate } from '../../lib/sshLinkOnline'
 import { requestSshServerUpgrade, signInSshMachine } from '../../lib/sshLinkChannel'
 import { readServerVersionSwitchBusyAgents, retryServerVersionMatch, restartServerVersionNow, type VersionRestartResult } from '../../lib/serverVersionRetry'
 import type { SshLinkFailure } from '../../lib/sshLink'
@@ -469,7 +469,7 @@ function DeviceRow({
   const sshAddress = model.connection.via === 'ssh' ? model.connection.address : null
   const lastSeen = device.is_online ? null : formatRelativeTime(device.last_seen_at, { mode: 'elapsed', dateAfterDays: 30 })
   // 「登录已失效」「那台机器上已退出登录」替掉「上次在线」:机器是离线的,但真正的原因是这个,下一步是重新登录。
-  const link = sshLink === undefined || sshLink === 'unknown' ? null : sshLinkFacts(true, sshLink, device.is_online).sshLink ?? null
+  const link = sshLink === undefined || sshLink === 'unknown' ? null : sshLinkFacts(true, reportedSshUpdate(device, sshLink), device.is_online).sshLink ?? null
   // 点了「重试」、那台机器的心跳还没报回新状态之前:先说「正在更新」;报回来(不再是这一次失败)就让位给它。
   const failedUpdate = device.is_online && model.update?.state === 'failed' ? model.update.version : null
   const [retriedFor, setRetriedFor] = useState<string | null>(null)
@@ -552,7 +552,7 @@ function DeviceRow({
             )}
             {model.notices
               // 远程 SSH 的机器太旧:状态那一行已说「正在更新 / 更新没成功」,❌ 再挂一颗说「空闲时会自动更新」的标签。
-              .filter((notice) => !(notice.kind === 'server-too-old' && (link === 'updating' || link === 'outdated')))
+              .filter((notice) => !(notice.kind === 'server-too-old' && (link === 'updating' || link === 'updateFailed')))
               .map((notice) => (
                 <DeviceNoticeChip key={notice.kind} notice={notice} />
               ))}
@@ -604,7 +604,9 @@ function DeviceRow({
                   ? t('devices.loginState.updatingPercent', { percent: upgradePercent })
                   : t('devices.loginState.updating')}
               </span>
-            ) : link === 'outdated' ? (
+            ) : (link === 'waitingIdle' || link === 'confirmationRequired') && !model.update ? (
+              <span>{t(link === 'waitingIdle' ? 'devices.link.waitingIdle' : 'devices.link.confirmationRequired', { name: device.label })}</span>
+            ) : link === 'updateFailed' ? (
               <span className="text-[var(--danger-fg)]" data-testid="settings-device-outdated">
                 {t('devices.loginState.updateFailed')}
                 {onRetryUpdate && <>{' '}<InlineAction onClick={onRetryUpdate} testId="settings-device-update-retry">{t('devices.loginState.retryUpdate')}</InlineAction></>}
