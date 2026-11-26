@@ -12,7 +12,8 @@ export function computeCheckBucket(check: CheckRun): CheckRunBucket {
     status === 'IN_PROGRESS' ||
     status === 'QUEUED' ||
     status === 'WAITING' ||
-    status === 'PENDING'
+    status === 'PENDING' ||
+    status === 'REQUESTED'
   ) {
     return 'pending';
   }
