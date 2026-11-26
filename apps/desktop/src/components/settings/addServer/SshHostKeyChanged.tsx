@@ -6,7 +6,6 @@ import { messageForUser } from '../../../lib/userFacingError'
 import { InlineAction } from './InlineAction'
 import { useTranslation } from 'react-i18next'
 import { cn } from '../../../lib/cn'
-import { CommandBlock } from './CommandBlock'
 import { knownHostsRemoveCommand } from './addServerFormat'
 
 // #6264 这台机器的指纹和上次记下的不一样:这是拒绝,不是提问 —— ❌ 问「要不要信任」。
@@ -22,15 +21,21 @@ export function SshIdentityDetails({ hostKey }: { hostKey: Identity }) {
   const { toast } = useToast()
   const [copied, setCopied] = useState<string | null>(null)
   const fingerprint = hostKey.fingerprint
+  const command = hostKey.host && fingerprint ? knownHostsRemoveCommand(hostKey.host, hostKey.location) : null
+  function copy(value: string) {
+    void platform.writeClipboardText(value).then(() => setCopied(value),
+      error => toast(t('actions.copyFailed', { ns: 'common' }), 'error', messageForUser(error)))
+  }
   return <span className="block break-all select-all">
     {hostKey.host && <span className="block">{hostKey.host}</span>}
     {fingerprint && <span className="block">{t('devices.addServer.newFingerprint', { fingerprint })}{' '}
-      <InlineAction onClick={() => {
-        void platform.writeClipboardText(fingerprint).then(() => setCopied(fingerprint),
-          error => toast(t('actions.copyFailed', { ns: 'common' }), 'error', messageForUser(error)))
-      }}>{t(copied === fingerprint ? 'devices.addServer.copied' : 'devices.addServer.copy')}</InlineAction>
+      <InlineAction onClick={() => copy(fingerprint)}>{t(copied === fingerprint ? 'devices.addServer.copied' : 'devices.addServer.copy')}</InlineAction>
     </span>}
     {hostKey.location && <span className="block">{t('devices.loginState.sshOldEntry', { location: hostKey.location })}</span>}
+    {command && <span className="block" data-testid="ssh-host-key-remove">{t('devices.link.afterVerify')}{' '}
+      <code>{command}</code>{' '}
+      <InlineAction onClick={() => copy(command)}>{t(copied === command ? 'devices.addServer.copied' : 'devices.addServer.copy')}</InlineAction>
+    </span>}
   </span>
 }
 
@@ -47,7 +52,6 @@ export function SshHostKeyChanged({
     <>
       {explain && <div className={cn(text, 'text-[var(--fg)]')}>{t('devices.addServer.reasons.hostKeyChanged')}</div>}
       <div className={cn(caption, 'text-[var(--muted-fg)]')}><SshIdentityDetails hostKey={hostKey} /></div>
-      {hostKey.host && <CommandBlock command={knownHostsRemoveCommand(hostKey.host)} testId="ssh-host-key-remove" />}
     </>
   )
 }

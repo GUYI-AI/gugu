@@ -17,7 +17,8 @@ export function DeviceSshSignIn({ deviceId, name, hostKeyChanged }: {
 
   async function signIn() {
     setAttempt('pending')
-    setAttempt(await signInSshMachine(deviceId))
+    const result = await signInSshMachine(deviceId)
+    setAttempt(!result.ok && result.cancelled ? null : result)
   }
 
   const failure = attempt && attempt !== 'pending' && !attempt.ok ? attempt : null

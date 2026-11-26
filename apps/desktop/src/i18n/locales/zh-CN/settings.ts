@@ -404,6 +404,7 @@ export default {
       "disconnect": "断开连接",
       "openSystemSettings": "打开系统设置",
       "restartToApply": "重启咕咕",
+      "afterVerify": "独立核对指纹后，在本机移除这台设备的旧记录，再重新连接。",
       "connectFailed": "未完成：{{message}}",
       "connection": "{{name}} 权限",
       "status": "状态",
@@ -541,6 +542,8 @@ export default {
     },
     "link": {
       "startService": "请在设备上运行 gugu-server start，然后重新连接。",
+      "deviceGone": "这台设备已从你的设备列表移除。",
+      "connectFailed": "未能重新连接这台设备。",
       "disconnectFailed": "未能断开设备连接。",
       "outdated": "{{name}} 上的咕咕需要更新。",
       "connecting": "正在经 SSH 连接「{{name}}」…",
@@ -652,7 +655,7 @@ export default {
       },
       "prompt": {
         "hostKeyTitle": "第一次连接这台机器",
-        "hostKeyHint": "请确认指纹无误后再继续。",
+        "hostKeyHint": "请先通过管理员或机器控制台独立核对指纹，再选择信任。",
         "host": "主机",
         "keyType": "密钥类型",
         "fingerprint": "指纹",

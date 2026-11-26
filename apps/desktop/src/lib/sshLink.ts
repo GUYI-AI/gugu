@@ -15,6 +15,7 @@ export const SSH_LINK_CHANNELS = {
   send: 'ssh-link:send',
   /** 收掉这台的设备连接(invoke,设备 id)。 */
   close: 'ssh-link:close',
+  setPaused: 'ssh-link:set-paused',
   /** 主进程 → 渲染层:那台机器发来一条信封(event,{ deviceId, message })。 */
   message: 'ssh-link:message',
   /** 主进程 → 渲染层:接上之后断了(event,{ deviceId, reason })。 */
@@ -83,7 +84,7 @@ export type SshLinkState = SshLinkFailure
  * via = 'tunnel':这条设备连接开在远程隧道上(这台电脑没有它的 SSH 映射)。连不上的原因由远程隧道自己报
  * (tunnelMachines.ts),❌ 记成远程 SSH 的「要先登录」;主进程当场标,渲染层 ❌ 靠清单加载先后去猜。
  */
-export type SshLinkOpenResult = { ok: true } | { ok: false; reason: SshLinkFailure; hostKey?: ServerSshInstallFailure['hostKey']; detail?: string; via?: 'tunnel'; controlOnly?: true }
+export type SshLinkOpenResult = { ok: true } | { ok: false; reason: SshLinkFailure; cancelled?: true; hostKey?: ServerSshInstallFailure['hostKey']; detail?: string; via?: 'tunnel'; controlOnly?: true }
 
 export type SshLinkMessageEvent = { deviceId: string; message: unknown }
 export type SshLinkClosedEvent = { deviceId: string; reason: SshLinkFailure; via?: 'tunnel' }

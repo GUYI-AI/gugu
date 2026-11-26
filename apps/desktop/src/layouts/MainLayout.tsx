@@ -1,3 +1,4 @@
+import { deviceRecoveryTarget } from '../lib/deviceActionsIntent'
 import { messageForUser } from '@/lib/userFacingError';
 import { PAGE_MODAL_FRAME, Sheet } from '../components/ui/Sheet'
 import { ModalClose } from '../components/ui/ModalClose'
@@ -558,10 +559,12 @@ function InnerLayout({
   // 指了格就落到那一格;没指就照原样打开(上次停在哪一格就是哪一格)。
   useEffect(() => {
     const open = (event: Event) => {
-      const { section, action } = (event as CustomEvent<{
+      const { section, action, deviceId } = (event as CustomEvent<{
+        deviceId?: string
         section?: ActiveSection
         action?: 'add-custom-model'
       }>).detail ?? {}
+      if (section === 'devices' && typeof deviceId === 'string') deviceRecoveryTarget.set(deviceId)
       setAddCustomModel(section === 'model' && action === 'add-custom-model')
       if (section) openSettingsSection(section)
       else setSettingsModalOpen(true)

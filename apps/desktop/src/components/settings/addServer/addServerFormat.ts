@@ -44,8 +44,14 @@ function shellQuote(value: string): string {
 }
 
 /** 指纹变了时,删掉旧记录的那条命令。 */
-export function knownHostsRemoveCommand(host: string): string {
-  return `ssh-keygen -R ${shellQuote(host)}`
+export function knownHostsRemoveCommand(host: string, location?: string): string | null {
+  if (!/^(?!-)[a-zA-Z0-9._:%\[\]-]+$/.test(host)) return null
+  const remove = `ssh-keygen -R ${shellQuote(host)}`
+  if (!location) return remove
+  const file = /^(.+):[1-9]\d*$/.exec(location)?.[1]
+  // Show an executable command only for absolute paths that can be quoted identically in sh and PowerShell.
+  if (!file || !/^(?:\/|[a-zA-Z]:[\\/])[\p{L}\p{N}._ /\\:-]+$/u.test(file)) return null
+  return `${remove} -f ${shellQuote(file)}`
 }
 
 /** 请管理员开启「退出登录后继续运行」的那条命令。 */

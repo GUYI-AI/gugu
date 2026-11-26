@@ -127,8 +127,8 @@ function SshPromptBody({
     )
     const buttons = !busy && (
       <>
-        <Button size="sm" onClick={() => answer(null)}>{t('devices.addServer.prompt.rejectHost')}</Button>
-        <Button size="sm" variant="primary" autoFocus onClick={() => answer('yes')}>{t('devices.addServer.prompt.trustHost')}</Button>
+        <Button size="sm" autoFocus onClick={() => answer(null)}>{t('devices.addServer.prompt.rejectHost')}</Button>
+        <Button size="sm" variant="primary" onClick={() => answer('yes')}>{t('devices.addServer.prompt.trustHost')}</Button>
       </>
     )
     const title = <div className={cn(text, 'font-semibold text-[var(--fg)]')}>{t('devices.addServer.prompt.hostKeyTitle')}</div>

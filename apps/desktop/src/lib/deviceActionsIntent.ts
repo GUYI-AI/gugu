@@ -18,6 +18,5 @@ export function consumeDeviceActionsIntent(): string | null {
 // A recovery link opens the affected row, including when Devices is already mounted.
 export const deviceRecoveryTarget = createSelectStore<string | null>(null, { scope: 'account' })
 export function openDeviceRecovery(deviceId: string): void {
-  deviceRecoveryTarget.set(deviceId)
-  window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'devices' } }))
+  window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'devices', deviceId } }))
 }

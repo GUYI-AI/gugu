@@ -61,17 +61,13 @@ const sshConnectionStates = {
   updateFailed: 'update-failed', waitingIdle: 'waitingIdle', confirmationRequired: 'confirmationRequired',
 } as const satisfies Record<SshLinkState, string>;
 
-const sshAttention = {
-  disconnected: 'reconnect', unmapped: 'settings', hostKeyChanged: 'verify', notRunning: 'reconnect', notInstalled: 'settings',
-  notSignedIn: 'settings', refused: 'reconnect', waitingIdle: 'settings', confirmationRequired: 'settings',
-} as const;
-
-export type SshAttentionState = keyof typeof sshAttention;
+const sshAttentionStates = ['disconnected', 'unmapped', 'hostKeyChanged', 'notRunning', 'notInstalled',
+  'notSignedIn', 'refused', 'waitingIdle', 'confirmationRequired'] as const;
+export type SshAttentionState = typeof sshAttentionStates[number];
+const attentionStates: ReadonlySet<string> = new Set(sshAttentionStates);
 export function isSshAttention(state: string | null): state is SshAttentionState {
-  return state !== null && Object.hasOwn(sshAttention, state);
+  return state !== null && attentionStates.has(state);
 }
-
-
 
 export function hostConnectionState(input: {
   online: boolean;

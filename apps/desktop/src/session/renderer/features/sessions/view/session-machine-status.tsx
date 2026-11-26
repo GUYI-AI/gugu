@@ -30,10 +30,12 @@ export const SessionMachineStatus = observer(function SessionMachineStatus() {
   const lastList = remoteHostsStore.hosts.get(deviceId)?.lastTaskListAt;
   const interrupted = ssh && state !== 'online';
   const detail = interrupted ? [translate('remoteHost.ssh.taskUnknown'), lastList
-    ? translate('remoteHost.ssh.lastSync', { time: new Date(lastList).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) })
+    ? translate('remoteHost.ssh.lastSync', { time: new Date(lastList).toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) })
     : null].filter(Boolean).join(' · ') : null;
   const cause = attention ? translate(`remoteHost.ssh.${connection}`) : connection === 'sign-in' ? translate('machinePicker.needsSignIn')
-    : connection === 'updating' ? translate('machinePicker.updating') : connection === 'outdated' || connection === 'update-failed' ? translate('machinePicker.tooOld') : undefined;
+    : connection === 'updating' ? translate('machinePicker.updating') : connection === 'outdated' ? translate('machinePicker.tooOld')
+      : connection === 'update-failed' ? translate('machinePicker.updateFailed')
+      : ssh && connection === 'connected' ? translate('remoteHost.ssh.connected') : undefined;
   return <MachineStatusChip state={state} word={cause} detail={detail} lastSeenAt={device.lastSeenAt} label={device.label}
     action={interrupted ? { label: translate('remoteHost.ssh.settings'), run: () => openDeviceRecovery(deviceId) } : undefined} />;
 });
@@ -57,7 +59,7 @@ function MachineStatusChip({ state, lastSeenAt, label, word, detail, action }: {
     >
       {action ? <button type="button" onClick={action.run} className="min-w-0 text-inherit" aria-label={`${action.label} · ${label} · ${word ?? t(STATE_WORD_KEY[state])}`}>
         <ConnectionStatus state={state} word={word} subject={label} detail={detail} testId="session-machine-status" />
-      </button> : <ConnectionStatus state={state} lastSeenAt={lastSeenAt} subject={label} testId="session-machine-status" />}
+      </button> : <ConnectionStatus state={state} word={word} lastSeenAt={lastSeenAt} subject={label} testId="session-machine-status" />}
     </span>
   );
 }

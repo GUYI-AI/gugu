@@ -806,6 +806,9 @@ describe('addServerFormat', () => {
   it('要复制给别人执行的命令都引好号(zsh 会把 [ ] 当通配)', () => {
     expect(knownHostsRemoveCommand('[10.0.0.5]:2222')).toBe("ssh-keygen -R '[10.0.0.5]:2222'")
     expect(knownHostsRemoveCommand('box.example.com')).toBe('ssh-keygen -R box.example.com')
+    expect(knownHostsRemoveCommand('[box]:2222', '/Users/A B/known_hosts:7')).toBe("ssh-keygen -R '[box]:2222' -f '/Users/A B/known_hosts'")
+    expect(knownHostsRemoveCommand('box', 'C:\\Users\\Test User\\.ssh\\known_hosts:87')).toBe("ssh-keygen -R box -f 'C:\\Users\\Test User\\.ssh\\known_hosts'")
+    expect(knownHostsRemoveCommand('box', 'unknown')).toBeNull()
     expect(lingerCommand('alice')).toBe('sudo loginctl enable-linger alice')
   })
 

@@ -100,7 +100,7 @@ export function registerSshLinkIpc(options: {
   const links = createSshLinkManager({
     machineFor: async (deviceId) => {
       const machine = await machineFor(deviceId)
-      if (machine) return { target: sshTargetOf(machine), accountUserId: machine.ownerUserId }
+      if (machine) return { target: sshTargetOf(machine), accountUserId: machine.ownerUserId, deviceLinkPaused: machine.deviceLinkPaused }
       const tunnel = options.tunnels?.linkMachine(deviceId)
       return tunnel ? { ...tunnel, via: 'tunnel' } : null
     },
@@ -216,6 +216,17 @@ export function registerSshLinkIpc(options: {
     if (typeof deviceId === 'string') windowClose(deviceId)
   })
 
+  options.ipcMain.handle(SSH_LINK_CHANNELS.setPaused, async (_event, deviceId: unknown, paused: unknown) => {
+    if (typeof deviceId !== 'string' || !ID.test(deviceId) || typeof paused !== 'boolean') return false
+    const machine = await machineFor(deviceId)
+    if (!machine) return false
+    if ((machine.deviceLinkPaused === true) !== paused) {
+      options.store.remember({ ...machine, deviceLinkPaused: paused ? true : undefined })
+    }
+    if (paused) windowClose(deviceId)
+    return true
+  })
+
   // ── 登录(人点的那一下)──────────────────────────────────────────────────────
   const signIns = new Map<string, { askpass: DirectTerminalAskpass | null; done: Promise<SshLinkOpenResult> }>()
   options.ipcMain.handle(SSH_LINK_CHANNELS.signIn, async (_event, deviceId: unknown): Promise<SshLinkOpenResult> => {
@@ -230,12 +241,15 @@ export function registerSshLinkIpc(options: {
       const machine = await machineFor(deviceId)
       const controlPath = terminalControlPath()
       if (!machine) return { ok: false, reason: 'unmapped' }
+      if (machine.deviceLinkPaused) return { ok: false, reason: 'disconnected' }
       const install = options.installKey
       const askpass = await createTerminalAskpass(
         undefined,
         install ? (password) => install(machine, controlPath, password) : undefined,
       )
       entry.askpass = askpass
+      let cancelled = false
+      askpass.onSettled((_prompt, outcome) => { if (outcome === 'cancelled') cancelled = true })
       askpass.onPrompt((prompt) => send(SSH_LINK_CHANNELS.prompt, { deviceId, prompt }))
       askpass.onKeyInstall?.((outcome) => send(KEY_INSTALL_EVENT, { label: machine.display, outcome }))
       let installing: Promise<void> | void
@@ -252,6 +266,7 @@ export function registerSshLinkIpc(options: {
           child.on('error', (error) => resolve({ code: null, stderr: error.message }))
           child.on('close', (code) => resolve({ code, stderr }))
         })
+        if (cancelled) return { ok: false, reason: 'signInRequired', cancelled: true }
         const outcome = classifySignInExit(exit.code, exit.stderr, hostForKnownHosts(sshTargetOf(machine)))
         if (!outcome.ok) {
           options.log?.('ssh link: sign-in failed', { deviceId, code: exit.code, detail: exit.stderr.trim().split(/\r?\n/).slice(-3).join('\n') })

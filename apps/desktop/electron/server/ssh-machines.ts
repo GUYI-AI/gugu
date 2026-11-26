@@ -48,6 +48,8 @@ export type SshMachine = {
   /** 给人看的一串(`用户@主机:端口`)。 */
   display: string
   addedAt: string
+  /** Explicit pause of this desktop's device link; interactive terminals stay independent. */
+  deviceLinkPaused?: true
 }
 
 const ID = /^[A-Za-z0-9_-]{1,128}$/

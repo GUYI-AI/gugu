@@ -96,7 +96,10 @@ export function DevicesSection({
   // #7199 个人助理住的那台云端宿主不在这一页(owner 10-15:用户看不到它住在哪);开通、叫醒、关闭都在「助理」App 里。
   const cloudDeviceId = cloudSnapshotOf(cloudComputer)?.deviceId ?? null
   const machines = useMemo(() => deviceMachines(withoutAssistantHome(allDevices, cloudDeviceId)), [allDevices, cloudDeviceId])
-  const devices = useMemo(() => machines.map(machine => machine.device), [machines])
+  const [inspectedEndpoint, setInspectedEndpoint] = useState<string | null>(null)
+  const devices = useMemo(() => machines.map(machine =>
+    machine.configurations.find(device => device.device_id === inspectedEndpoint) ?? machine.device
+  ), [machines, inspectedEndpoint])
   // A reinstall or a new data directory leaves the old row behind: the online row that may have replaced it (a hint only).
   const replaced = useMemo(() => supersededBy(devices), [devices])
   const { addressOf, openRemove, openUninstall, openVersions, configurationActions, dialogs } = useDeviceRemoval(machines)
@@ -122,19 +125,6 @@ export function DevicesSection({
   // #7199 助理主页点了一台设备 = 一进来就是那台的「能做的事」(deviceActionsIntent)。
   const [actionsFor, setActionsFor] = useState<string | null>(() => consumeDeviceActionsIntent())
   const recoveryTarget = useSelect(deviceRecoveryTarget, value => value)
-  useEffect(() => {
-    if (!recoveryTarget) return
-    if (actionsFor || filter !== 'all' || query) {
-      setActionsFor(null)
-      setFilter('all')
-      setQuery('')
-      return
-    }
-    const row = document.querySelector<HTMLElement>(`[data-device-id="${CSS.escape(recoveryTarget)}"][role="listitem"]`)
-    if (!row) return
-    row.focus()
-    deviceRecoveryTarget.set(null)
-  }, [recoveryTarget, actionsFor, filter, query, machines])
   const thisDevice = machines.find(machine => machine.current)?.configurations.find(device => device.is_current_device) ?? null
 
   // 离线的 SSH 机器:问清是没开机 / 连不上,还是登录没了(照 VS Code Tunnels / Tailscale「Expired」)。
@@ -152,9 +142,36 @@ export function DevicesSection({
     [showTools, devices, query, filter, addressOf],
   )
   const { archived } = useDeviceMachineSections(machines)
-  const archivedIds = new Set(archived.map(machine => machine.device.device_id))
+  const [archiveOpen, setArchiveOpen] = useState(false)
+  const archivedIds = new Set(archived.flatMap(machine => machine.configurations.map(device => device.device_id)))
   const visibleActive = visible.filter(device => !archivedIds.has(device.device_id))
   const visibleArchived = visible.filter(device => archivedIds.has(device.device_id))
+  useEffect(() => {
+    if (!recoveryTarget) return
+    if (loading || error) return
+    const target = deviceMachineFor(machines, recoveryTarget)
+    if (!target) {
+      deviceRecoveryTarget.set(null)
+      toast(t('devices.link.deviceGone'), 'info')
+      return
+    }
+    if (actionsFor || filter !== 'all' || query || inspectedEndpoint !== recoveryTarget) {
+      setActionsFor(null)
+      setFilter('all')
+      setQuery('')
+      setInspectedEndpoint(recoveryTarget)
+      return
+    }
+    if (!archiveOpen && archived.some(machine => machine.key === target.key)) {
+      setArchiveOpen(true)
+      return
+    }
+    const row = document.querySelector<HTMLElement>(`[data-device-id="${CSS.escape(recoveryTarget)}"][role="listitem"]`)
+    if (row) {
+      row.focus()
+      deviceRecoveryTarget.set(null)
+    }
+  }, [recoveryTarget, actionsFor, filter, query, machines, inspectedEndpoint, loading, error, archived, archiveOpen, toast, t])
   const onlineCount = devices.filter((d) => deviceAcceptsWork(d)).length
   const filterItems = useMemo(() => [
     { value: 'all' as const, label: t('devices.filter.all', { n: devices.length }) },
@@ -277,7 +294,7 @@ export function DevicesSection({
         )}
       </SettingsGroup>
 
-      <DeviceMachineArchive count={visibleArchived.length} listClassName={DEVICE_LIST_CLASS}>{visibleArchived.map(renderRow)}</DeviceMachineArchive>
+      <DeviceMachineArchive expanded={archiveOpen} onExpand={setArchiveOpen} count={visibleArchived.length} listClassName={DEVICE_LIST_CLASS}>{visibleArchived.map(renderRow)}</DeviceMachineArchive>
 
       {showTools && visible.length === 0 && (
         <div className="text-[length:var(--font-body)] text-[var(--muted-fg)]" data-testid="settings-devices-no-match">{t('devices.noMatch')}</div>
@@ -606,7 +623,7 @@ function DeviceRow({
             {/* 状态点:在线 = connected = live 蓝(design.md 唯一的 accent);离线退成墨色最淡一档。 */}
             <span
               aria-hidden
-              className={cn('size-[7px] shrink-0 rounded-[var(--radius-circle)]', device.is_online && !link && sshLink !== 'checking' ? 'bg-live' : 'bg-[var(--faint-fg)]')}
+              className={cn('size-[7px] shrink-0 rounded-[var(--radius-circle)]', (sshLink === null || device.is_online) && !link && sshLink !== 'checking' ? 'bg-live' : 'bg-[var(--faint-fg)]')}
             />
             {link === 'signInRequired' || link === 'hostKeyChanged' ? (
               <DeviceSshSignIn deviceId={device.device_id} name={device.label} hostKeyChanged={link === 'hostKeyChanged'} />
@@ -626,7 +643,10 @@ function DeviceRow({
               </span>
             ) : link === 'disconnected' ? (
               <span>{translate('remoteHost.ssh.disconnected')}{' '}
-                <InlineAction onClick={() => { resumeSshDevice(device.device_id); reconnectDevice(device.device_id) }}>{translate('remoteHost.ssh.connect')}</InlineAction>
+                <InlineAction onClick={() => {
+                  void resumeSshDevice(device.device_id).then(() => reconnectDevice(device.device_id),
+                    error => toast(t('devices.link.connectFailed'), 'error', messageForUser(error)))
+                }}>{translate('remoteHost.ssh.connect')}</InlineAction>
               </span>
             ) : link === 'notRunning' || link === 'refused' || link === 'notInstalled' || link === 'unmapped' ? (
               <span>{translate(`remoteHost.ssh.${link}`)}{' '}
@@ -665,9 +685,9 @@ function DeviceRow({
                   >{t('devices.loginState.retryUpdate')}</InlineAction></>
                 )}
               </span>
-            ) : sshLink === 'checking' ? (
-              translate('remoteHost.ssh.checking')
-            ) : device.is_online ? (
+            ) : sshLink === 'checking' && !signedOutText ? (
+              <>{translate('remoteHost.ssh.checking')}{lastSeen && <> · {t('devices.lastSeen', { time: lastSeen })}</>}</>
+            ) : device.is_online || sshLink === null ? (
               sshLink === null ? translate('remoteHost.ssh.connected') : t('devices.online')
             ) : signedOutText ? (
               <span className="text-[var(--danger-fg)]" data-testid="settings-device-signed-out">{signedOutText}</span>
@@ -748,7 +768,7 @@ function DeviceRow({
                   {t('devices.addServer.newTask')}
                 </MenuItem>
               )}
-              {model.kind !== 'this' && model.kind !== 'cloud' && device.is_online && canReconnectDevice() && (
+              {model.kind !== 'this' && model.kind !== 'cloud' && device.is_online && !link && canReconnectDevice() && (
                 <MenuItem data-testid="settings-device-reconnect" icon={<RefreshCw size={16} />} onClick={() => reconnectDevice(device.device_id)}>
                   {t('devices.menu.reconnect')}
                 </MenuItem>

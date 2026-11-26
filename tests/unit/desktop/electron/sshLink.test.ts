@@ -407,6 +407,24 @@ describe('桌面主进程:每台机器一条设备连接', () => {
     expect(links.send('other', { ask: 1 })).toBe(false)
   })
 
+  it('keeps a saved manual disconnect across a fresh manager until the user reconnects', async () => {
+    let paused: true | undefined = true
+    const child = fakeChild()
+    const spawnSsh = vi.fn(() => child as unknown as ChildProcessWithoutNullStreams)
+    const links = createSshLinkManager({
+      machineFor: async () => ({ target, accountUserId: ACCOUNT, deviceLinkPaused: paused }),
+      controlPath: () => null, onMessage: vi.fn(), onClosed: vi.fn(), spawnSsh,
+    })
+    expect(await links.open('saved')).toMatchObject({ ok: false, reason: 'disconnected' })
+    expect(spawnSsh).not.toHaveBeenCalled()
+    paused = undefined
+    const opening = links.open('saved')
+    await flush()
+    child.stdout.write(`${LINK_READY_MARK}\n`)
+    await expect(opening).resolves.toEqual({ ok: true })
+    links.close('saved')
+  })
+
   it('接上之后断了 → 报「断了」;主动收掉 ❌ 报;没接上就结束 → 回原因、不留记录', async () => {
     const children: ReturnType<typeof fakeChild>[] = []
     const onClosed = vi.fn()

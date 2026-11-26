@@ -404,6 +404,7 @@ export default {
       "disconnect": "Disconnect",
       "openSystemSettings": "Open System Settings",
       "restartToApply": "Restart Gugu",
+      "afterVerify": "After verifying the fingerprint independently, remove the old entry on this computer and reconnect.",
       "connectFailed": "Not completed: {{message}}",
       "connection": "{{name}} permissions",
       "status": "Status",
@@ -541,6 +542,8 @@ export default {
     },
     "link": {
       "startService": "Run gugu-server start on the device, then reconnect.",
+      "deviceGone": "This device is no longer in your devices list.",
+      "connectFailed": "Could not reconnect to this device.",
       "disconnectFailed": "Could not disconnect the device.",
       "outdated": "Gugu on {{name}} needs an update.",
       "connecting": "Connecting to {{name}} over SSH…",
@@ -652,7 +655,7 @@ export default {
       },
       "prompt": {
         "hostKeyTitle": "First connection to this machine",
-        "hostKeyHint": "Continue only if the fingerprint is correct.",
+        "hostKeyHint": "Compare this fingerprint with the one from your administrator or the machine’s console before trusting it.",
         "host": "Host",
         "keyType": "Key type",
         "fingerprint": "Fingerprint",

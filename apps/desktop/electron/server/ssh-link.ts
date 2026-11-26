@@ -105,7 +105,7 @@ export function linkProtocolFromPreamble(preamble: Buffer): number | null {
 }
 
 /** via = tunnel:经远程隧道的中转连过去的(tunnel-machines.ts),不是这台电脑用远程 SSH 添加的。 */
-export type SshLinkMachine = { target: SshTarget; accountUserId: string; via?: 'ssh' | 'tunnel' }
+export type SshLinkMachine = { target: SshTarget; accountUserId: string; via?: 'ssh' | 'tunnel'; deviceLinkPaused?: true }
 
 export type SpawnLinkSsh = (args: string[]) => ChildProcessWithoutNullStreams
 
@@ -248,10 +248,9 @@ export function createSshLinkManager(options: {
 
   return {
     async open(deviceId) {
-      const existing = links.get(deviceId)
-      if (existing) return existing.ready
       const machine = await options.machineFor(deviceId)
       if (!machine) return { ok: false, reason: 'unmapped', detail: 'no ssh mapping for this device' }
+      if (machine.deviceLinkPaused) return { ok: false, reason: 'disconnected', detail: 'device link paused on this computer' }
       // 等 machineFor 的时候别处可能已经开了一条。
       const raced = links.get(deviceId)
       if (raced) return raced.ready

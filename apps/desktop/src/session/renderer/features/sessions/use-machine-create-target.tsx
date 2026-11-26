@@ -2,6 +2,7 @@
 // 发送都是本机那一套,只是数据问那台机器(LibraryHost + rpc 按实体所在机器路由)。
 // 项目与机器解耦:这里不再按路径找 / 建项目。选了项目时,那台机器上它绑的本地项目由项目块的文件夹选择定好了(projectId);
 // 没选项目 = 那台机器的任务工作区(#609)。
+import { sshLinkNoticeReason } from '@/lib/sshLinkNotice';
 import { replica, useReplica } from '@/lib/replica';
 import { onMachineReconnected } from '@renderer/lib/machine-clients';
 import { cloudWakeFailureText, TOO_OLD_CODES } from '@renderer/features/remote-hosts/connection-status';
@@ -97,8 +98,10 @@ export function useMachineCreateContext(target: MachineCreateTarget | null): Mac
   const failure = workspace.state === 'error' || workspace.state === 'value' ? workspace.error : null;
   const label = device?.label ?? target?.deviceId ?? '';
   // 选着的机器掉线了:右下角那条提示说(重连第几次 → 离线 / 失败,或 → 已连上),输入框照旧可写、写好的内容留着(不重挂)。
+  // Actionable SSH notices belong to the shared device card. A deliberate disconnect stays quiet.
+  const sharedNotice = device?.sshLink && sshLinkNoticeReason(device.sshLink);
   useMachineNotice(
-    target?.deviceId ?? null,
+    sharedNotice || connection === 'disconnected' ? null : target?.deviceId ?? null,
     label,
     target
       ? machineNotice({
