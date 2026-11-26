@@ -42,7 +42,7 @@ export const customModelProtocolProbeSchema = z.object({
   })),
   /**
    * The protocols whose request the address refused for the key (401/403), each with the base URL that refused it, in the
-   * order tried: the path exists, only the key was not accepted. "Add anyway" saves the first; absent when none was.
+   * order tried: the path exists, only the key was not accepted. A save through a refused key stores the first; absent when none was.
    */
   refused: z.array(modelEndpointSchema).optional(),
 });

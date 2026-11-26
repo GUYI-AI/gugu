@@ -28,6 +28,7 @@ const BUTTON_TEST_IDS: Record<GuguReasonButton['kind'], string> = {
   'join-membership': 'session-start-join-membership',
   'joined': 'session-start-membership-retry',
   'signed-in': 'session-start-signed-in-retry',
+  'model-settings': 'session-start-model-settings',
 };
 
 /** 失败页底下那一排按钮:原因表给的(`reasonActions`),重来的那颗在重试中禁用并如实写「正在重试…」。 */
