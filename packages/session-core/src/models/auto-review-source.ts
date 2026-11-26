@@ -1,6 +1,6 @@
 import type { CustomModelConnection } from './custom-model';
 import {
-  canSpecifyClaudeReviewModel, cliRefusesAutoMode, isAutoReviewCapable, isHaikuReviewModel, runsClaudeAutoMode,
+  cliRefusesAutoMode, isAutoReviewCapable, isHaikuReviewModel, runsClaudeAutoMode,
   type AutoReviewModel, type PlatformReviewCandidate,
 } from './auto-review-model';
 
@@ -65,7 +65,7 @@ function preferredReviewer(input: ClaudeReviewInput, preference: NonNullable<Aut
   }
   const connection = input.connections.find(candidate => candidate.id === preference.connectionId);
   if (!connection || connection.removed || !connection.keySaved || !connection.anthropicEndpoint
-    || !connection.models.some(model => model.id === preference.modelId) || !canSpecifyClaudeReviewModel(preference.modelId)) {
+    || !connection.models.some(model => model.id === preference.modelId) || !isAutoReviewCapable(preference.modelId)) {
     return { ok: false, reason: 'preferenceUnavailable' };
   }
   const label = `${labelOf(connection.models, preference.modelId)}${connection.name ? ` (${connection.name})` : ''}`;
@@ -118,7 +118,7 @@ export function nativeClaudeReviewEnv(env: Readonly<Record<string, string | unde
   const official = new URL(env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').hostname === 'api.anthropic.com';
   if (official && env.ANTHROPIC_API_KEY) return { CLAUDE_CODE_AUTO_MODE_MODEL: DEFAULT_CLAUDE_REVIEWER, CLAUDE_CODE_AUTO_MODE_SERVER: '0' };
   const model = env.ANTHROPIC_MODEL?.trim();
-  if (!official && model && canSpecifyClaudeReviewModel(model) && (env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN)) {
+  if (!official && model && isAutoReviewCapable(model) && (env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN)) {
     return { CLAUDE_CODE_AUTO_MODE_MODEL: model, CLAUDE_CODE_AUTO_MODE_SERVER: '0' };
   }
   return {};
