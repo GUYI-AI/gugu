@@ -724,7 +724,7 @@ it('a save the settings process refuses is said beside Save, translated, with th
   await page.viewport(1000, 640);
   setLocalePreference('zh-CN');
   state.probe = { endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }], models: ['m'], failures: [] };
-  state.saveError = 'This API address already has a key. Edit the existing configuration to replace it.';
+  state.saveError = 'Add a new connection to change this API address. Existing sessions still use this address.';
   render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
   await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test/v1');
   await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-other');
@@ -736,7 +736,7 @@ it('a save the settings process refuses is said beside Save, translated, with th
   expect(dialogBody().scrollHeight).toBeGreaterThan(dialogBody().clientHeight);
   await userEvent.click(page.getByTestId('custom-model-save'));
   const failure = page.getByTestId('custom-model-save-failure');
-  await expect.element(failure).toHaveTextContent('这个地址已有别的 Key，请去原配置里改。');
+  await expect.element(failure).toHaveTextContent('还有会话在用这个地址，请新加一条配置。');
   expect(failure.element().closest('.gg-model-dialog-footer')).toBe(page.getByTestId('custom-model-save').element().parentElement);
   const box = failure.element().getBoundingClientRect();
   expect(box.top >= 0 && box.bottom <= window.innerHeight).toBe(true);

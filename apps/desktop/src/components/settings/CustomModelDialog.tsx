@@ -34,6 +34,9 @@ import { Check, ChevronDownIcon, Eye, EyeOff, Sparkles, X } from '@/lib/icons';
 import { IconButton } from '@/components/ui/IconButton';
 import { SettingsNote } from './SettingsPrimitives';
 import './ModelSettings.css';
+import { rendererLogger } from '../../lib/log';
+
+const log = rendererLogger('settings/custom-model');
 
 /** What the dialog's advanced configuration holds; `customProtocol` shows the connection's protocol routes. */
 type Advanced = Required<Pick<CustomModelEntry, 'toolCall' | 'image' | 'thinking' | 'thinkingOnly' | 'thinkingOptional' | 'fast'>> & {
@@ -96,11 +99,6 @@ function uncheckedReason(probe: CustomModelProtocolProbe): 'model-not-found' | '
 
 /** The settings process's own (English) refusals a save can meet, each with the copy that says what to do next. */
 const SAVE_REFUSALS: readonly (readonly [string, SessionMessageLookupKey])[] = [
-  ['This API address already has a key', 'customModels.saveRefused.keyHeld'],
-  ['This API address has multiple saved keys', 'customModels.saveRefused.manyKeys'],
-  ['Choose a saved API key for this address', 'customModels.saveRefused.manyKeys'],
-  ['Choose which key to keep', 'customModels.saveRefused.manyKeys'],
-  ['This API address is already configured', 'customModels.saveRefused.configured'],
   ['Add a new connection to change this API address', 'customModels.saveRefused.addressInUse'],
   ['The custom model no longer exists', 'customModels.saveRefused.gone'],
   ['An API key is required on this device', 'customModels.saveRefused.keyMissing'],
@@ -337,7 +335,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
       };
       // The edited model keeps its place; the connection's other models are saved as they are.
       const models = (connection?.models ?? []).flatMap(item => item.id === editedModel?.id ? [entry] : item.id === model ? [] : [stored(item)]);
-      const result = await within(client.saveCustomModel({
+      const saving = client.saveCustomModel({
         ...(connection ? { id: connection.id } : {}),
         name: connection?.name || preset?.name || new URL(saved[0]!.baseUrl).host,
         preset: preset?.id ?? null, endpoints: saved,
@@ -347,8 +345,13 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
         ...(unverifiedReason ? { unverifiedReason } : {}),
         ...(typedKey ? { apiKey: typedKey } : {}),
         models: editedModel ? models : [entry, ...models],
-      }), SAVE_ANSWER_MS);
-      if (result === LATE) throw new Error(translate('customModels.saveNoAnswer'));
+      });
+      const result = await within(saving, SAVE_ANSWER_MS);
+      if (result === LATE) {
+        // A slow settings process may still store it after this says it did not answer: the list rereads when it does.
+        void saving.then((late) => { if (late.success) void customModels.refresh(machine); }, () => undefined);
+        throw new Error(translate('customModels.saveNoAnswer'));
+      }
       if (!result.success) throw new Error(saveRefusal(errorText(result.error)));
       // Saved: a list that is slow to reread does not hold the dialog open (it rereads on its own).
       await within(customModels.refresh(machine), SAVE_ANSWER_MS).catch(() => undefined);
@@ -361,7 +364,12 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     const key = SAVE_REFUSALS.find(([english]) => text.includes(english))?.[1];
     return key ? translate(key) : null;
   };
-  const saveRefusal = (text: string) => refusalText(text) ?? translate('customModels.saveFailed', { detail: text });
+  /** A refusal this dialog has no words for goes to the log; the person is told only that it was not saved. */
+  const saveRefusal = (text: string) => {
+    const known = refusalText(text);
+    if (!known) log.warn({ detail: text }, 'custom model save refused');
+    return known ?? translate('customModels.saveFailed');
+  };
   const limitField = (key: 'contextWindow' | 'maxOutput', presets: typeof INPUT_LIMITS | typeof OUTPUT_LIMITS) => {
     const label = translate(key === 'contextWindow' ? 'customModels.inputLimit' : 'customModels.outputLimit');
     return <label className="gg-model-field">
