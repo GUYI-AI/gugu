@@ -3,6 +3,7 @@ import { ShellSidebarToggle } from '@renderer/lib/components/titlebar/shell-titl
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { INNER_SIDEBAR_MIN_WIDTH_PX, innerSidebarMaxWidth, SIDEBAR_MIN_WIDTH_PX } from '@renderer/lib/layout/layout-provider';
 import { PanelSlot } from '@renderer/lib/layout/panel-slot';
+import { PANEL_LANDED_PX } from '@renderer/lib/layout/panel-track';
 import { PanelResizeDragGuard, PanelResizeHandle } from '@renderer/lib/layout/panel-resize-handle';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
@@ -64,7 +65,25 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     observer.observe(root);
     return () => observer.disconnect();
   }, [workspaceRootRef, setWorkspaceWidth]);
-  const fillRef = useCallback((element: HTMLDivElement | null) => track.attachFill(element), [track]);
+  const fillNode = useRef<HTMLDivElement | null>(null);
+  const fillRef = useCallback((element: HTMLDivElement | null) => {
+    fillNode.current = element;
+    track.attachFill(element);
+  }, [track]);
+  // @@@inner-fold-motion (owner 11-26) — every frame of the inner column's move: `--inner-open` on the shell (drawn ÷ laid-out
+  // width, 1 open … 0 folded), which the column's contents and the restore lane fade by (desktop-shell.css); and the card's
+  // `data-inner-column` (@@@inner-on-card), held while any of the column is drawn, so the card gives up its left corners at
+  // the start of an unfold and takes them back at the end of a fold, ❌ at the click (a seam for the whole move).
+  useLayoutEffect(() => {
+    const paint = () => {
+      const drawn = track.drawn('inner');
+      const content = track.content('inner');
+      workspaceRootRef.current?.style.setProperty('--inner-open', String(content > 0 ? Math.min(1, drawn / content) : 0));
+      fillNode.current?.toggleAttribute('data-inner-column', innerSidebarShown || drawn > PANEL_LANDED_PX);
+    };
+    paint();
+    return track.subscribe(paint);
+  }, [track, workspaceRootRef, innerSidebarShown]);
 
   const maxSidebarWidth = () => {
     const rootWidth = workspaceRootRef.current?.clientWidth ?? 0;
@@ -140,7 +159,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
       <PanelSlot track={track} id="inner">
         {innerSidebar}
       </PanelSlot>
-      <div ref={fillRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="" data-inner-column={innerSidebarShown ? '' : undefined}>
+      <div ref={fillRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="">
         {mainContent}
         {innerSidebarRestore}
       </div>

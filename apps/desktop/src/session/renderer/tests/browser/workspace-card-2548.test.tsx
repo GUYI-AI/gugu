@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
+import { act, useState } from 'react';
 import { WorkspaceLayout, WorkspaceContentLayout } from '@renderer/lib/layout/workspace-layout';
 import { useInnerSidebarFrame, WorkspaceLayoutContextProvider } from '@renderer/lib/layout/layout-provider';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
@@ -129,13 +130,16 @@ for (const theme of ['light', 'dark'] as const) {
     expect(style.boxShadow, 'no lift: not a floating card').toBe('none');
     expect(style.borderRadius).toBe('0px');
     expect(style.backgroundColor).toBe('rgba(0, 0, 0, 0)');
-    // The one line: the existing border colour, on the right edge only.
+    // The one line: the existing border colour, 1px on the stack's right end, its whole height (the stack's ::after, so it can
+    // ride the column's drawn edge through a fold and not fade with the modules).
     const probe = document.createElement('div');
     probe.style.color = 'var(--border-color)';
     stack.parentElement!.append(probe);
-    expect(style.borderRightColor).toBe(getComputedStyle(probe).color);
+    const line = getComputedStyle(stack, '::after');
+    expect(line.backgroundColor).toBe(getComputedStyle(probe).color);
     probe.remove();
-    expect([style.borderTopWidth, style.borderBottomWidth, style.borderLeftWidth, style.borderRightWidth]).toEqual(['0px', '0px', '0px', '1px']);
+    expect([line.position, line.width, line.right, line.top, line.bottom]).toEqual(['absolute', '1px', '0px', '0px', '0px']);
+    expect([style.borderTopWidth, style.borderBottomWidth, style.borderLeftWidth, style.borderRightWidth]).toEqual(['0px', '0px', '0px', '0px']);
     const box = stack.getBoundingClientRect();
     const col = column!.getBoundingClientRect();
     const head = column!.querySelector<HTMLElement>('[data-test-head]')!.getBoundingClientRect();
@@ -150,6 +154,74 @@ for (const theme of ['light', 'dark'] as const) {
     const { column } = await renderDesktop(theme, true, false, 'topics');
     const stack = column!.querySelector<HTMLElement>('[data-inner-module-stack]')!;
     expect([...stack.querySelectorAll('[data-inner-sidebar-section]')].map((e) => e.getAttribute('data-inner-sidebar-section'))).toEqual(['topics']);
+  });
+
+  it(`${theme}: folding, the column narrows from its right edge: the contents hold still and fade over the first half, the line rides the edge, the card keeps its seam shut`, async () => {
+    let setFolded: (folded: boolean) => void = () => {};
+    function Toggled() {
+      const [folded, set] = useState(false);
+      setFolded = set;
+      return <InnerColumn folded={folded} />;
+    }
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.windowMaterial = 'opaque';
+    harness = createReactHarness();
+    await harness.render(
+      <div className={`gugu-skin ${theme === 'light' ? 'emlight' : 'emdark'}`} style={{ position: 'fixed', inset: 0 }}>
+        <SessionLocalizationProvider><WorkspaceLayoutContextProvider>
+          <WorkspaceLayout leftSidebar={<div>one list</div>} innerSidebar={<Toggled />}
+            mainContent={<WorkspaceContentLayout titlebarSlot={null} mainPanel={<div>reading surface</div>} />} />
+        </WorkspaceLayoutContextProvider></SessionLocalizationProvider>
+      </div>
+    );
+    const place = harness.container.querySelector<HTMLElement>('[data-panel-slot="inner"]')!;
+    const surface = harness.container.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
+    const head = harness.container.querySelector<HTMLElement>('[data-test-head]')!;
+    const stack = harness.container.querySelector<HTMLElement>('[data-inner-module-stack]')!;
+    const fades = harness.container.querySelector<HTMLElement>('[data-inner-fades]')!;
+    const open = place.getBoundingClientRect().width;
+    expect(open, 'the column is open').toBeGreaterThan(150);
+    const headLeft = head.getBoundingClientRect().left;
+
+    type Frame = { drawn: number; headLeft: number; lineRight: number; placeRight: number; marked: boolean; opacity: number };
+    const read = (): Frame => {
+      const box = place.getBoundingClientRect();
+      const line = getComputedStyle(stack, '::after');
+      return {
+        drawn: box.width,
+        headLeft: head.getBoundingClientRect().left,
+        lineRight: stack.getBoundingClientRect().right - parseFloat(line.right),
+        placeRight: box.right,
+        marked: surface.hasAttribute('data-inner-column'),
+        opacity: Number(getComputedStyle(fades).opacity),
+      };
+    };
+    const frames: Frame[] = [];
+    const record = async (until: (frame: Frame) => boolean) => {
+      for (let n = 0; n < 240; n += 1) {
+        await new Promise(requestAnimationFrame);
+        const frame = read();
+        frames.push(frame);
+        if (until(frame)) return;
+      }
+    };
+    await act(async () => setFolded(true));
+    await record((frame) => frame.drawn < 0.5 && !frame.marked);
+    const moving = frames.filter((frame) => frame.drawn > 0.5 && frame.drawn < open - 0.5);
+    expect(moving.length, 'drawn on the way, not jumped').toBeGreaterThan(3);
+    for (const frame of moving) {
+      expect(frame.headLeft, 'the contents do not move').toBeCloseTo(headLeft, 0);
+      expect(frame.lineRight, 'the line is on the drawn edge').toBeCloseTo(frame.placeRight, 0);
+      expect(frame.marked, 'the card gives up its left corners until the column is gone').toBe(true);
+      expect(frame.opacity, 'faded out over the first half').toBeCloseTo(Math.max(0, Math.min(1, (2 * frame.drawn) / open - 1)), 1);
+    }
+    expect(frames.at(-1)!.marked, 'landed: the card has its corners back').toBe(false);
+
+    frames.length = 0;
+    await act(async () => setFolded(false));
+    await record((frame) => frame.drawn > open - 0.5);
+    expect(frames.every((frame) => frame.marked), 'unfolding: the card gives up its corners from the first frame').toBe(true);
+    expect(frames.at(-1)!.opacity).toBe(1);
   });
 
   it(`${theme}: folded, the content surface is the whole card again`, async () => {

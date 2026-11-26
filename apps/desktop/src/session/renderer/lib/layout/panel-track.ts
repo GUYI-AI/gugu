@@ -10,6 +10,10 @@ import { playSpring } from './panel-clock';
  *    pulled out (a slot's far edge on its drawn edge, the fill's near edge), fading behind a soft edge (owner 11-21). A slot
  *    that stays and holds its content (the list through a fold) keeps it where it is laid out, clipped at the drawn edge:
  *    its avatars do not move, a rail fades its own text. Any other slot's content is its drawn size.
+ *  · A slot made with `exit: 'clip'` goes to or from nothing the same held way: its content stays where it is laid out at its
+ *    open size and its drawn edge closes over it (the inner column, owner 11-26: the column narrows from its right edge, its
+ *    contents do not move). The track does not fade it; it writes `--panel-clip` (how much of the content is past the drawn
+ *    edge) on the content, so what rides that edge (the column's line) and what fades with it are the slot's own CSS.
  */
 
 /** Every edge this close to where it goes ends the move: the spring's sub-pixel tail would hold the landing layout back. */
@@ -24,6 +28,9 @@ export function clamp01(value: number): number {
 }
 
 /** Where a slot goes: the size it takes on screen, and the size its content is laid out at there (default: the same). */
+/** How a slot goes to or from nothing: slid out with its edge and faded (default), or held in place and clipped. */
+export type SlotExit = 'slide' | 'clip';
+
 export interface SlotTarget {
   size: number;
   content?: number;
@@ -81,6 +88,7 @@ export interface PanelSlotNodes {
 
 interface Slot {
   id: string;
+  exit: SlotExit;
   nodes: PanelSlotNodes | null;
   geometry: SlotGeometry;
   from: { size: number; content: number };
@@ -101,13 +109,13 @@ export class PanelTrack {
 
   /** `axis`: a row (x, sizes are widths) or a column (y, heights). `extent`: the track's length, if known. */
   constructor(
-    slots: readonly { id: string; at: SlotTarget }[],
+    slots: readonly { id: string; at: SlotTarget; exit?: SlotExit }[],
     private readonly axis: 'x' | 'y' = 'x',
     extent = 0
   ) {
-    this.slots = slots.map(({ id, at }) => {
+    this.slots = slots.map(({ id, at, exit = 'slide' }) => {
       const target = full(at);
-      return { id, nodes: null, from: { size: target.size, content: target.content }, target, geometry: { drawn: target.size, content: target.content } };
+      return { id, exit, nodes: null, from: { size: target.size, content: target.content }, target, geometry: { drawn: target.size, content: target.content } };
     });
     this.extent = extent;
     this.fillFrom = this.fillAt('drawn');
@@ -231,7 +239,11 @@ export class PanelTrack {
     this.slots.forEach((slot) => {
       const nodes = slot.nodes;
       if (!nodes) return;
-      const p = paintSlot(slot.geometry, Math.min(slot.from.size, slot.target.size) < PANEL_LANDED_PX);
+      const p = paintSlot(slot.geometry, slot.exit === 'slide' && Math.min(slot.from.size, slot.target.size) < PANEL_LANDED_PX);
+      if (slot.exit === 'clip') {
+        const clip = slot.geometry.content - slot.geometry.drawn;
+        nodes.content.style.setProperty('--panel-clip', clip > PANEL_LANDED_PX ? `${clip}px` : '');
+      }
       nodes.place.style[size] = `${slot.geometry.drawn}px`;
       nodes.content.style[size] = `${slot.geometry.content}px`;
       nodes.content.style[start] = px(p.offset);

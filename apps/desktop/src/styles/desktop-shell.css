@@ -74,7 +74,19 @@
  * column's edge: someone else's left-aligned messages do not sit against the column's rows, and still line up with the
  * composer. */
 .gugu-skin [data-workspace-content-surface][data-inner-column] [data-testid='session-chat-panel'] {
-  padding-inline-start: var(--spacing-lg);
+  padding-inline-start: calc(var(--spacing-lg) * var(--inner-open, 1));
+}
+
+/* @@@inner-fold-motion (owner 11-26) — folding, the column narrows from its right edge: its card face is clipped at the drawn
+ * edge, the line rides that edge (inner-sidebar-head.css), and the head and modules stay where they are and fade out over the
+ * first half; the restore lane's expand button and the room the tab strip leaves it come in over the second half. Unfolding
+ * is the same in reverse. `--inner-open` is the column's drawn share, 1 open … 0 folded, written each frame
+ * (workspace-layout.tsx); the conversation's extra room above follows it too. */
+.gugu-skin [data-workspace-shell] {
+  --shell-restore-lane-shown: clamp(0, calc(1 - 2 * var(--inner-open, 0)), 1);
+}
+.gugu-skin [data-workspace-shell] > [data-panel-slot='inner'] [data-inner-fades] {
+  opacity: clamp(0, calc(2 * var(--inner-open, 1) - 1), 1);
 }
 
 /* The curved content surface owns this boundary. Full-height list borders otherwise

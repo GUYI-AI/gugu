@@ -25,7 +25,7 @@ import { prepareProjectTask } from '@renderer/features/projects/project-task-ent
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { sampleProjectInView } from '@renderer/features/sample-project/sample-project-view';
 import { useSampleProject } from '@renderer/features/sample-project/use-sample-project';
-import { useInnerSidebarCrowded, useInnerSidebarFrame } from '@renderer/lib/layout/layout-provider';
+import { useInnerColumnMoving, useInnerSidebarCrowded, useInnerSidebarFrame } from '@renderer/lib/layout/layout-provider';
 import { ShellRestoreLane } from '@renderer/lib/components/titlebar/shell-restore-lane';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { Button } from '@renderer/lib/ui/button';
@@ -43,12 +43,13 @@ import {
   type InnerSidebarRoomAnchor,
   type InnerSidebarView,
 } from './inner-sidebar-anchor';
-import { innerSidebarAttached, innerSidebarFolded, setInnerSidebarCrowded, setInnerSidebarFolded } from './inner-sidebar-fold';
+import { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarCrowded, setInnerSidebarFolded } from './inner-sidebar-fold';
 import { chatScope, chatViewOf, roomOfEntry, sidebarFamilies } from './inner-sidebar-scope';
 import { setSidebarFold, sidebarFolds } from './sidebar-folds';
 import {
   InnerHeadRowLayout,
   InnerModuleStack,
+  InnerSidebarFoldButton,
   innerSectionEmptyClass,
 } from './inner-sidebar-parts';
 import { SidebarGroupToggle } from './sidebar-group-toggle';
@@ -73,7 +74,7 @@ import { SidebarSessionItem } from './sidebar-session-item';
 // 这一列只重排现有的组件:头一行是侧栏顶上那几行动作行(SidebarMenuButton)画这个群 / 项目自己,分区头是侧栏分区头,
 // 智能体行是任务区那一行(SidebarSessionItem,行首换成 agent 自己的头像:agentAvatar),话题行由壳画进「话题」那一格(components/ChatListSlotHost.tsx →
 // InnerSidebarTopics,同一个动作行的样子)。这一列里 ❌ 找的框:找东西用列表顶上那个搜索(开着群时先搜这个群,sidebar-search-trigger)。
-// 这一列可以收起(inner-sidebar-fold):收起是全局的;它的开关钮收起、展开都在正文左上角同一个位置(InnerSidebarRestore,owner 11-26)。
+// 这一列可以收起(inner-sidebar-fold):收起是全局的,正文左上角浮出展开钮(InnerSidebarRestore)。
 
 /**
  * 导航此刻在哪一页(读成内层侧栏要的样子)。认的是铺着的那一页(pageViewId),❌ currentViewId:市场、App 页这种浮在页上的
@@ -147,28 +148,30 @@ export const InnerSidebar = observer(function InnerSidebar() {
   const sample = useSampleProject();
   const sampleOwnerId = next === null && sample.shown && sampleProjectInView() ? sample.owner?.id : undefined;
   const attachedTo = next?.chatId ?? (sampleOwnerId ? 'sample' : null);
-  // 收起着:这一列照旧挂着(收起是它的格子合到 0,@@@panel-track),挂在哪照旧跟着(左边那一行照旧亮着、壳照旧收起页头上与它重复的钮)。
-  // 开关钮收起、展开都在正文左上角同一个位置(InnerSidebarRestore)。
+  // 收起着:这一列照旧挂着(收起是它的格子合到 0,@@@panel-track),挂在哪照旧跟着(左边那一行照旧亮着、壳照旧收起页头上与它重复的钮),正文左上角浮出展开钮。
   const crowded = useInnerSidebarCrowded();
   useLayoutEffect(() => setInnerSidebarCrowded(crowded), [crowded]);
   const folded = innerSidebarFolded.get();
   const shownFor = folded ? null : attachedTo;
-  const attached = attachedTo !== null;
+  // The expand button stays through the whole move, folding or unfolding: it fades in over a fold's second half and out over an
+  // unfold's first half (desktop-shell.css @@@inner-fold-motion), so it is there until the column's edge has landed.
+  const moving = useInnerColumnMoving();
+  const foldedAway = (folded || moving) && attachedTo !== null;
   useEffect(() => {
     runInAction(() => innerSidebarShownFor.set(shownFor));
     return () => runInAction(() => innerSidebarShownFor.set(null));
   }, [shownFor]);
-  // 开关钮是列表栏开关那一颗(ListColumnToggle),经同一张开关表下命令(@@@panel-toggles)。
-  // 两件都赶在这一帧画出来之前、按这个次序:这一列挂上的同一帧,开关钮(此刻那一态)与页签条让出的车道就在,❌ 中间空一帧。
+  // 展开钮是列表栏开关那一颗(ListColumnToggle),经同一张开关表下命令(@@@panel-toggles)。
+  // 两件都赶在这一帧画出来之前、按这个次序:这一列让开的同一帧,展开钮(已是「展开」那一态)与页签条让出的车道就在,❌ 中间空一帧。
   const foldLabel = translate(folded ? 'sidebar.expandInner' : 'sidebar.collapseInner');
   useLayoutEffect(
     () => publishPanelToggle('column:inner', { open: !folded, label: foldLabel, toggle: () => setInnerSidebarFolded(!folded) }),
     [folded, foldLabel]
   );
   useLayoutEffect(() => {
-    runInAction(() => innerSidebarAttached.set(attached));
-    return () => runInAction(() => innerSidebarAttached.set(false));
-  }, [attached]);
+    runInAction(() => innerSidebarFoldedAway.set(foldedAway));
+    return () => runInAction(() => innerSidebarFoldedAway.set(false));
+  }, [foldedAway]);
 
   return (
     <>
@@ -191,12 +194,11 @@ export const InnerSidebar = observer(function InnerSidebar() {
 });
 
 /**
- * 内层栏的开关钮(#2548 ⑤):列表栏开关那一颗,浮在正文左上角那条车道上,最左那条页签条给它让位(shellRestoreLaneTaken)。
- * 收起、展开都在这同一个位置(owner 11-26):这一列右边、消息流左上角、群 title 行左侧;头一行里不再另放一枚收起钮。
- * ❌ 挂数:话题里叫到你的记在左边群那一行的红数上。
+ * 内层栏收起时正文左上角那枚展开钮(#2548 ⑤):列表栏开关那一颗,浮在左边列表那枚「展开侧栏」的车道上,最左那条页签条给它让位
+ * (shellRestoreLaneTaken)。❌ 挂数:话题里叫到你的记在左边群那一行的红数上。
  */
 export const InnerSidebarRestore = observer(function InnerSidebarRestore() {
-  if (!innerSidebarAttached.get()) return null;
+  if (!innerSidebarFoldedAway.get()) return null;
   return (
     <ShellRestoreLane>
       <ListColumnToggle slot="column:inner" />
@@ -297,8 +299,10 @@ const InnerHeadRow = observer(function InnerHeadRow({
   // #2600 项目群和别的群一样戴群自己的头像(没设 = 成员拼图),❌ 文件夹封面。
   const avatar: ReactNode = <GroupHeadAvatar chatId={chatId} summary={summary} />;
   return (
-    <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={(beside) => { setInnerSidebarTopicsAll(null); navigateToGroupRoot(chatId, beside); }}
-      createAction={{ label: translate('sidebar.createAgent'), onClick: newAgent }} />
+    <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={(beside) => { setInnerSidebarTopicsAll(null); navigateToGroupRoot(chatId, beside); }} trailingButtons={1}
+      createAction={{ label: translate('sidebar.createAgent'), onClick: newAgent }}>
+      <InnerSidebarFoldButton />
+    </InnerHeadRowLayout>
   );
 });
 
