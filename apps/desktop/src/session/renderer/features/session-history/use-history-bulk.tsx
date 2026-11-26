@@ -1,4 +1,4 @@
-import { createElement, useCallback, useEffect, useRef, useState } from 'react';
+import { createElement, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { confirmArchive } from '@renderer/features/sessions/archive-session-flow';
 import { tellChildrenNotReached } from '@renderer/features/sessions/children-not-reached';
 import { leaveSessionView } from '@renderer/features/sessions/leave-session-view';
@@ -42,6 +42,51 @@ type Translate = (key: SessionMessageLookupKey, values?: SessionMessageValues) =
 export type HistoryJobKind = 'delete' | 'archive' | 'restore';
 /** 底部条上那一条进度(超过一批才有):「正在删除 120 / 300」+ 停止。 */
 export type HistoryJob = { id: number; kind: HistoryJobKind; processed: number; total: number; stopping: boolean };
+
+/**
+ * 在跑的批量:「正在删除 120 / 300」每批变一次,只有底部条订它的进度(useHistoryJob);面板只订「在跑的是哪一种」
+ * (useHistoryJobKind,开始 / 结束才变)。❌ 放进面板的 state —— 那样每批整页连同几百行重画一遍,跑批量时一卡一卡。
+ */
+export type HistoryJobs = {
+  subscribe: (listener: () => void) => () => void;
+  /** 最近开始、还在跑的那一条(底部条一次只画一条);没有 = null。没变就是同一个对象。 */
+  latest: () => HistoryJob | null;
+};
+
+function historyJobs() {
+  let jobs: readonly HistoryJob[] = [];
+  const listeners = new Set<() => void>();
+  const set = (next: readonly HistoryJob[]) => {
+    jobs = next;
+    for (const listener of listeners) listener();
+  };
+  return {
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    latest: (): HistoryJob | null => (jobs.length > 0 ? jobs[jobs.length - 1] : null),
+    start: (job: HistoryJob) => set([...jobs, job]),
+    update: (id: number, patch: Partial<HistoryJob>) => {
+      const job = jobs.find((candidate) => candidate.id === id);
+      if (!job || (Object.keys(patch) as Array<keyof HistoryJob>).every((key) => job[key] === patch[key])) return;
+      set(jobs.map((candidate) => (candidate === job ? { ...job, ...patch } : candidate)));
+    },
+    end: (id: number) => set(jobs.filter((job) => job.id !== id)),
+  };
+}
+
+/** 底部条:最近那一条批量的进度。 */
+export function useHistoryJob(jobs: HistoryJobs): HistoryJob | null {
+  return useSyncExternalStore(jobs.subscribe, jobs.latest);
+}
+
+/** 面板:在跑的是哪一种批量(没有 = null)。 */
+export function useHistoryJobKind(jobs: HistoryJobs): HistoryJobKind | null {
+  return useSyncExternalStore(jobs.subscribe, () => jobs.latest()?.kind ?? null);
+}
 
 /** 已经从列表里收起的行(等着删、正在删):它在哪一节、什么状态 —— 节头的数照它减。 */
 export type HiddenRow = { sectionKey: string; status: BulkStatus };
@@ -98,7 +143,7 @@ export function useHistoryBulk(deps: {
   depsRef.current = deps;
   const [selection, setSelection] = useState<HistorySelection>(EMPTY_SELECTION);
   const [hidden, setHidden] = useState<ReadonlyMap<string, HiddenRow>>(() => new Map());
-  const [jobs, setJobs] = useState<readonly HistoryJob[]>([]);
+  const [jobs] = useState(historyJobs);
   /** 正在跑的批量里的行:不能再勾(第 2 稿「正在删的行不能再勾」)。 */
   const [busyKeys, setBusyKeys] = useState<ReadonlySet<string>>(() => new Set());
   /** 有批量在跑:各台机器每收一条都发一次 session:changed,跑的时候由这里每批重读一次,❌ 跟着事件重读几百次。 */
@@ -143,14 +188,13 @@ export function useHistoryBulk(deps: {
   const startJob = (kind: HistoryJobKind, total: number, stop: () => void): number => {
     const id = ++jobSeq.current;
     jobControls.current.set(id, { stop });
-    setJobs((current) => [...current, { id, kind, processed: 0, total, stopping: false }]);
+    jobs.start({ id, kind, processed: 0, total, stopping: false });
     return id;
   };
-  const updateJob = (id: number, patch: Partial<HistoryJob>) =>
-    setJobs((current) => current.map((job) => (job.id === id ? { ...job, ...patch } : job)));
+  const updateJob = (id: number, patch: Partial<HistoryJob>) => jobs.update(id, patch);
   const endJob = (id: number) => {
     jobControls.current.delete(id);
-    setJobs((current) => current.filter((job) => job.id !== id));
+    jobs.end(id);
   };
 
   /**
@@ -487,8 +531,8 @@ export function useHistoryBulk(deps: {
     selection,
     hidden,
     busyKeys,
-    /** 最近开始、还在跑的那一条进度(底部条一次只画一条)。 */
-    job: jobs.length > 0 ? jobs[jobs.length - 1] : null,
+    /** 在跑的批量:底部条经 useHistoryJob 订进度,面板经 useHistoryJobKind 只订种类。 */
+    jobs: jobs as HistoryJobs,
     /** 有批量在跑:列表别跟着 session:changed 重读(每批自己重读一次)。 */
     isBusy: () => busyCount.current > 0,
     toggle: (row: SelectedSession, visible: readonly SelectedSession[], shift: boolean) =>
