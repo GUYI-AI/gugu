@@ -304,6 +304,126 @@ export default {
     "usageWindows": "Usage windows"
   },
   "devices": {
+    "recovery": {
+      "notRunning": {
+        "status": "Service stopped",
+        "title": "Start Gugu",
+        "body": "SSH is connected. Start Gugu on this machine to reach your tasks again.",
+        "action": "Start and reconnect"
+      },
+      "connected": {
+        "status": "Connected",
+        "title": "Device connected",
+        "body": "Your tasks are available on this device."
+      },
+      "unreachable": {
+        "status": "Reconnecting",
+        "title": "Reconnecting to the workstation",
+        "body": "Your task will sync here when the connection returns.",
+        "action": "Retry now"
+      },
+      "signInRequired": {
+        "status": "Sign-in needed",
+        "title": "Sign in to SSH",
+        "body": "The workstation needs you to sign in again before your task can reconnect.",
+        "action": "Sign in"
+      },
+      "hostKeyChanged": {
+        "status": "Verify identity",
+        "title": "The device identity changed",
+        "body": "Connection is paused. Verify the new fingerprint independently with your administrator.",
+        "action": "View fingerprint"
+      },
+      "disconnected": {
+        "status": "Disconnected here",
+        "title": "Disconnected on this computer",
+        "body": "Connect again when you need this device.",
+        "action": "Connect"
+      },
+      "refused": {
+        "status": "Connection refused",
+        "title": "The service refused the connection",
+        "body": "SSH is connected. Check the remote service, then try again.",
+        "action": "Reconnect"
+      },
+      "notInstalled": {
+        "status": "Install required",
+        "title": "Install Gugu on this device",
+        "body": "The installer will show the target device and ask before starting.",
+        "action": "Open installer"
+      },
+      "unmapped": {
+        "status": "SSH not configured",
+        "title": "Set up SSH on this computer",
+        "body": "Choose a local SSH connection for this registered device.",
+        "action": "Set up connection"
+      },
+      "notSignedIn": {
+        "status": "Signed out of Gugu",
+        "title": "Sign the device in to Gugu",
+        "body": "SSH is available. The remote service needs a new account authorization.",
+        "action": "Authorize device"
+      },
+      "outdated": {
+        "status": "Update required",
+        "title": "Update the remote service",
+        "body": "Update the service on the device to reconnect.",
+        "action": "Update service"
+      },
+      "updating": {
+        "status": "Updating",
+        "title": "Updating the remote service",
+        "body": "The device will reconnect when its update finishes."
+      },
+      "updateFailed": {
+        "status": "Update failed",
+        "title": "The update did not finish",
+        "body": "You can retry this update.",
+        "action": "Retry update"
+      },
+      "waitingIdle": {
+        "status": "Waiting for tasks",
+        "title": "The update is ready",
+        "body": "The device will switch versions once its running tasks finish."
+      },
+      "confirmationRequired": {
+        "status": "Restart needed",
+        "title": "The update is ready",
+        "body": "Restarting will temporarily disconnect the device.",
+        "action": "Review restart"
+      },
+      "offline": {
+        "status": "Unreachable",
+        "title": "Cannot reach the workstation",
+        "body": "Check the network or power on the remote device. Your task stays here.",
+        "action": "Reconnect"
+      },
+      "checking": {
+        "status": "Connecting",
+        "title": "Checking the connection",
+        "body": "Waiting for the device to respond."
+      },
+      "details": "Connection details",
+      "address": "SSH address",
+      "version": "Version",
+      "lastSync": "Tasks last synced",
+      "manual": "Run on the device",
+      "verified": "I verified this fingerprint independently",
+      "trust": "Update trust and connect",
+      "manualTrust": "This record needs a manual update. Verify the fingerprint, then follow the instructions under Connection details.",
+      "busy": "Working…",
+      "failed": "The device has not reconnected. Try again or open Connection details.",
+      "startFailed": "The service has not started. Check the service on the device, then retry.",
+      "close": "Done",
+      "fingerprint": "New fingerprint",
+      "title": "Device connection",
+      "dismiss": "Close connection details",
+      "seeUpdate": "Review update",
+      "restartHint": "Restarting may interrupt active tasks on this device.",
+      "noVersion": "Not reported",
+      "manualReconnect": "Reconnect after updating the record",
+      "pause": "Disconnect here"
+    },
     "bootTaskFailed": "Task {{task}} could not resume ({{operation}}): {{message}}. Other tasks remain available.",
     "longOffline": "Offline for a long time",
     "configurations": "Versions",

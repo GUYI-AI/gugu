@@ -7,9 +7,12 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { ConnectionStatus } from '@/components/connection/ConnectionStatus';
 import type { ConnectionState } from '@/components/connection/connectionState';
-import { openDeviceRecovery } from '@/lib/deviceActionsIntent';
+import { DeviceRecoveryPanel, DeviceRecoveryStatus, type DeviceRecoveryProps } from '@/components/settings/DeviceRecoveryPanel';
+import { Popover } from '@/components/ui/Popover';
+import { IconButton } from '@/components/ui/IconButton';
+import { ChevronRight, X } from '@/lib/icons';
+import { focusSessionComposer } from '@renderer/features/sidebar/session-keyboard-nav';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { isSshAttention } from '@renderer/features/remote-hosts/connection-status';
 import { headerConnectionState } from '@renderer/features/remote-hosts/header-connection-state';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { machineRegistry } from '@renderer/lib/machine-routing';
@@ -21,28 +24,55 @@ export const SessionMachineStatus = observer(function SessionMachineStatus() {
   const deviceId = machineRegistry.machineOf(projectId);
   const device = deviceId ? remoteHostsStore.device(deviceId) : null;
   const connection = deviceId ? remoteHostsStore.connectionState(deviceId) : null;
-  const { translate, locale } = useSessionMessages();
+  const { translate } = useSessionMessages();
   if (!device || !deviceId) return null;
   const ssh = !!device.directTerminal && !device.viaTunnel;
   const state = headerConnectionState(connection) ?? (ssh && connection ? 'device_offline' : null);
   if (!state) return null;
-  const attention = isSshAttention(connection);
-  const interrupted = ssh && state !== 'online';
-  const lastList = interrupted ? remoteHostsStore.hosts.get(deviceId)?.lastTaskListAt : undefined;
-  const detail = interrupted ? [translate('remoteHost.ssh.taskUnknown'), lastList
-    ? translate('remoteHost.ssh.lastSync', { time: new Date(lastList).toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) })
-    : null].filter(Boolean).join(' · ') : null;
-  const cause = attention ? translate(`remoteHost.ssh.${connection}`) : connection === 'sign-in' ? translate('machinePicker.needsSignIn')
-    : connection === 'updating' ? translate('machinePicker.updating') : connection === 'outdated' ? translate('machinePicker.tooOld')
-      : connection === 'update-failed' ? translate('machinePicker.updateFailed')
-      : ssh && connection === 'connected' ? translate('remoteHost.ssh.connected') : undefined;
-  return <MachineStatusChip state={state} word={cause} detail={detail} lastSeenAt={device.lastSeenAt} label={device.label}
-    action={interrupted ? { label: translate('remoteHost.ssh.settings'), run: () => openDeviceRecovery(deviceId) } : undefined} />;
+  if (ssh) {
+    const reason = device.sshLink ?? (connection === 'connected' ? 'connected' : connection === 'connecting' ? 'checking'
+      : connection === 'reconnecting' ? 'unreachable' : connection === 'sign-in' || device.signInExpiredAt !== undefined ? 'notSignedIn'
+      : connection === 'update-failed' ? 'updateFailed' : connection === 'outdated' || connection === 'updating' ? connection : 'offline');
+    const lastSync = connection === 'connected' ? undefined : remoteHostsStore.hosts.get(deviceId)?.lastTaskListAt;
+    return <TaskDeviceRecovery key={deviceId} deviceId={deviceId} name={device.label} state={reason}
+      lastSync={lastSync ?? undefined} version={device.version} />;
+  }
+  const word = connection === 'updating' ? translate('machinePicker.updating') : undefined;
+  return <MachineStatusChip state={state} word={word} lastSeenAt={device.lastSeenAt} label={device.label} />;
 });
 
 const STATE_WORD_KEY = { online: 'connection.online', connecting: 'connection.connecting', device_offline: 'connection.deviceOffline' } as const;
 
-function MachineStatusChip({ state, lastSeenAt, label, word, detail, action }: { state: ConnectionState; lastSeenAt?: string | null; label: string; word?: string; detail?: string | null; action?: { label: string; run: () => void } }) {
+function TaskDeviceRecovery(props: Omit<DeviceRecoveryProps, 'onDone'>) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [open, setOpen] = useState(false);
+  const compact = useCompactWhenTabsSqueezed(ref);
+  const { t } = useTranslation('settings');
+  return <span ref={ref} data-slot="session-machine-status" data-compact={compact ? '' : undefined}
+    className="window-no-drag-region inline-flex min-w-min items-center text-xs" data-testid="session-machine-status">
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger className="gg-recovery-trigger" aria-label={props.name + ' · ' + t(`devices.recovery.${props.state}.status`)}>
+        <DeviceRecoveryStatus state={props.state} /><ChevronRight size={12} aria-hidden />
+      </Popover.Trigger>
+      <Popover.Portal><Popover.Positioner side="bottom" align="end" sideOffset={6}>
+        <Popover.Popup className="gg-recovery-popover" finalFocus={interaction => {
+          if (interaction === 'mouse' || interaction === 'touch') return true;
+          const block = ref.current?.closest('[data-screen-block]') ?? ref.current?.closest('[data-slot="cold-session-strip"]');
+          return block?.querySelector<HTMLElement>('[data-region="composer"] [contenteditable="true"]') ?? true;
+        }}>
+          <header><Popover.Title>{props.name}</Popover.Title><Popover.Close render={<IconButton size="sm" aria-label={t('devices.recovery.dismiss')} />}><X size={14} /></Popover.Close></header>
+          <DeviceRecoveryPanel key={props.state} {...props} onDone={() => {
+            setOpen(false);
+            const block = ref.current?.closest('[data-screen-block]');
+            if (block) requestAnimationFrame(() => focusSessionComposer(block));
+          }} />
+        </Popover.Popup>
+      </Popover.Positioner></Popover.Portal>
+    </Popover.Root>
+  </span>;
+}
+
+function MachineStatusChip({ state, lastSeenAt, label, word }: { state: ConnectionState; lastSeenAt?: string | null; label: string; word?: string }) {
   const { t } = useTranslation('common');
   const ref = useRef<HTMLSpanElement>(null);
   const compact = useCompactWhenTabsSqueezed(ref);
@@ -55,11 +85,9 @@ function MachineStatusChip({ state, lastSeenAt, label, word, detail, action }: {
       className="flex min-w-min !shrink items-center overflow-hidden text-xs"
       data-slot="session-machine-status"
       data-compact={compact ? '' : undefined}
-      title={detail ?? (compact ? `${label}: ${word ?? t(STATE_WORD_KEY[state])}` : undefined)}
+      title={compact ? `${label}: ${word ?? t(STATE_WORD_KEY[state])}` : undefined}
     >
-      {action ? <button type="button" onClick={action.run} className="min-w-0 text-inherit" aria-label={`${action.label} · ${label} · ${word ?? t(STATE_WORD_KEY[state])}`}>
-        <ConnectionStatus state={state} word={word} subject={label} detail={detail} testId="session-machine-status" />
-      </button> : <ConnectionStatus state={state} word={word} lastSeenAt={lastSeenAt} subject={label} testId="session-machine-status" />}
+      <ConnectionStatus state={state} word={word} lastSeenAt={lastSeenAt} subject={label} testId="session-machine-status" />
     </span>
   );
 }

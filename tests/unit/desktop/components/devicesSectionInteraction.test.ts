@@ -112,6 +112,7 @@ describe('DevicesSection interaction', () => {
       invoke: (channel: string, id: string) => {
         if (channel === 'server-ssh-machines:describe') return Promise.resolve([{ deviceId, display: 'user@box' }])
         if (channel === 'ssh-link:sign-in') return signIn(id)
+        if (channel === 'ssh-link:verify-identity') return Promise.resolve(true)
         return Promise.resolve(null)
       },
     }
@@ -120,17 +121,20 @@ describe('DevicesSection interaction', () => {
       const value = store({ devices: [device({ device_id: deviceId, is_online: false })] })
       await act(async () => { root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection))) })
       await flush()
-      const action = () => container.querySelector<HTMLElement>('[data-testid="settings-device-ssh-sign-in-action"]')!
-      expect(action().parentElement?.textContent).toContain('设备身份已变化')
+      const summary = container.querySelector<HTMLElement>('[data-testid="settings-device-summary"]')!
+      const action = () => container.querySelector<HTMLButtonElement>('[data-testid="device-recovery-primary"]')!
+      expect(summary.textContent).toContain('待核对指纹')
+      expect(action()).toBeNull()
+      await act(async () => { summary.click() })
       await act(async () => { action().click() })
-      expect(container.querySelector('[role="status"]')?.textContent).toContain('SSH')
+      expect(action().disabled).toBe(true)
       await act(async () => { pending.resolve(refused) })
-      const alert = container.querySelector('[data-testid="settings-device-ssh-sign-in"] [role="alert"]')
-      expect(action().parentElement?.textContent).toContain('管理员')
-      expect(alert?.textContent).toContain('/test/known_hosts:17')
-      expect(alert?.textContent).toContain('SHA256:newKey')
+      expect(container.querySelector('.gg-recovery-fingerprint')?.textContent).toContain('SHA256:newKey')
+      expect(container.querySelector('.gg-recovery-details')?.textContent).toContain('/test/known_hosts:17')
+      expect(action().disabled).toBe(true)
+      await act(async () => { container.querySelector<HTMLInputElement>('input[type=checkbox]')!.click() })
       await act(async () => { action().click() })
-      expect(container.querySelector('[data-testid="settings-device-ssh-sign-in"]')).toBeNull()
+      expect(summary.textContent).toContain('已连接')
       expect(signIn.mock.calls).toEqual([[deviceId], [deviceId], [deviceId]])
     } finally {
       delete electron.electronAPI
@@ -508,7 +512,10 @@ describe('DevicesSection interaction', () => {
       })
       await flush()
       const row = (id: string) => container.querySelector<HTMLElement>(`[data-testid="settings-device-row"][data-device-id="${id}"]`)!
-      expect(row('ssh-srv').textContent).toContain('远程 SSH：alice@box')
+      expect(row('ssh-srv').textContent).toContain('SSH')
+      expect(row('ssh-srv').textContent).not.toContain('alice@box')
+      await act(async () => { row('ssh-srv').querySelector<HTMLButtonElement>('[aria-expanded]')!.click() })
+      expect(row('ssh-srv').querySelector('details')?.textContent).toContain('alice@box')
       expect(row('ssh-srv').textContent).not.toContain('远程隧道')
       expect(row('tunnel-srv').textContent).toContain('远程隧道')
       expect(row('other-mac').dataset.kind).toBe('desktop')

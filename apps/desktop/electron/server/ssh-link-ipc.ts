@@ -27,7 +27,10 @@ import type { DeviceCapabilities } from '@gugu/core/shared/types/chat'
 import type { DeviceRpcRequester } from '@gugu/core/cloud/deviceRpcRequester'
 import type { SharedSshLinks } from '../device-rpc-requester'
 import type { HeldFileSshLinks } from '../projectFileSsh'
-import { createSshLinkManager, type SshLinkManager } from './ssh-link'
+import { sshBatchArgs } from './ssh-batch'
+import { desktopServerChannel, remoteServerPaths } from './server-names'
+import { updateVerifiedHostKey } from './ssh-host-key-recovery'
+import { classifyLinkExit, createSshLinkManager, type SshLinkManager } from './ssh-link'
 import { findSshMachine, sshTargetOf, terminalControlPath, type SshMachine, type SshMachineStore } from './ssh-machines'
 import { createTerminalAskpass } from './ssh-prompts'
 
@@ -227,6 +230,48 @@ export function registerSshLinkIpc(options: {
     return true
   })
 
+  // Recovery is bound to a registered account/device pair; the renderer supplies no command or filename.
+  const starts = new Map<string, Promise<SshLinkOpenResult>>()
+  options.ipcMain.handle(SSH_LINK_CHANNELS.startService, async (_event, deviceId: unknown): Promise<SshLinkOpenResult> => {
+    if (typeof deviceId !== 'string' || !ID.test(deviceId)) return { ok: false, reason: 'unmapped' }
+    const machine = await machineFor(deviceId)
+    if (!machine) return { ok: false, reason: 'unmapped' }
+    if (machine.deviceLinkPaused) return { ok: false, reason: 'disconnected' }
+    const id = machine.ownerUserId + ':' + deviceId
+    const existing = starts.get(id)
+    if (existing) return existing
+    const start = async (): Promise<SshLinkOpenResult> => {
+      const before = await links.open(deviceId)
+      if (before.ok || before.reason !== 'notRunning') return before
+      const current = await machineFor(deviceId)
+      if (!current || JSON.stringify(current) !== JSON.stringify(machine)) return { ok: false, reason: 'unmapped' }
+      const command = remoteServerPaths(desktopServerChannel()).binTilde + ' start'
+      const args = ['-o', 'StrictHostKeyChecking=yes', ...sshBatchArgs(sshTargetOf(machine), 'exec ' + command, terminalControlPath())]
+      const result = await systemSpawnSsh(process.env)(args, { stdin: '', signal: AbortSignal.timeout(25_000) })
+      if (result.code !== 0) {
+        const failure = result.code === 255 ? classifyLinkExit(result).reason : 'notRunning'
+        return { ok: false, reason: failure, detail: command }
+      }
+      const after = await links.open(deviceId)
+      return after.ok ? after : { ...after, detail: command }
+    }
+    const operation = start().finally(() => starts.delete(id))
+    starts.set(id, operation)
+    return operation
+  })
+
+  type Conflict = NonNullable<Extract<SshLinkOpenResult, { ok: false }>['hostKey']>
+  const conflicts = new Map<string, { machine: SshMachine; key: Conflict }>()
+  options.ipcMain.handle(SSH_LINK_CHANNELS.verifyIdentity, async (_event, deviceId: unknown, fingerprint: unknown): Promise<boolean> => {
+    if (typeof deviceId !== 'string' || !ID.test(deviceId) || typeof fingerprint !== 'string') return false
+    const conflict = conflicts.get(deviceId)
+    if (!conflict || conflict.key.fingerprint !== fingerprint) return false
+    conflicts.delete(deviceId)
+    const stillOwned = async () => JSON.stringify(await machineFor(deviceId)) === JSON.stringify(conflict.machine)
+    if (!await stillOwned()) return false
+    return updateVerifiedHostKey(sshTargetOf(conflict.machine), conflict.key, stillOwned).catch(() => false)
+  })
+
   // ── 登录(人点的那一下)──────────────────────────────────────────────────────
   const signIns = new Map<string, { askpass: DirectTerminalAskpass | null; done: Promise<SshLinkOpenResult> }>()
   options.ipcMain.handle(SSH_LINK_CHANNELS.signIn, async (_event, deviceId: unknown): Promise<SshLinkOpenResult> => {
@@ -242,6 +287,7 @@ export function registerSshLinkIpc(options: {
       const controlPath = terminalControlPath()
       if (!machine) return { ok: false, reason: 'unmapped' }
       if (machine.deviceLinkPaused) return { ok: false, reason: 'disconnected' }
+      conflicts.delete(deviceId)
       const install = options.installKey
       const askpass = await createTerminalAskpass(
         undefined,
@@ -269,6 +315,9 @@ export function registerSshLinkIpc(options: {
         if (cancelled) return { ok: false, reason: 'signInRequired', cancelled: true }
         const outcome = classifySignInExit(exit.code, exit.stderr, hostForKnownHosts(sshTargetOf(machine)))
         if (!outcome.ok) {
+          if (outcome.reason === 'hostKeyChanged' && outcome.hostKey?.fingerprint && outcome.hostKey.location) {
+            conflicts.set(deviceId, { machine, key: outcome.hostKey })
+          }
           options.log?.('ssh link: sign-in failed', { deviceId, code: exit.code, detail: exit.stderr.trim().split(/\r?\n/).slice(-3).join('\n') })
           return outcome
         }

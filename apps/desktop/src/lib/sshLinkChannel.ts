@@ -323,17 +323,25 @@ export function signInSshMachine(deviceId: string): Promise<SshLinkOpenResult> {
   if (sshDisconnected(deviceId)) return Promise.resolve({ ok: false, reason: 'disconnected' })
   const active = signIns.get(deviceId)
   if (active) return active
-  const attempt = performSignIn(deviceId).finally(() => signIns.delete(deviceId))
+  const attempt = performRecovery(deviceId, SSH_LINK_CHANNELS.signIn).finally(() => signIns.delete(deviceId))
   signIns.set(deviceId, attempt)
   return attempt
 }
 
-async function performSignIn(deviceId: string): Promise<SshLinkOpenResult> {
+export async function startSshService(deviceId: string): Promise<SshLinkOpenResult> {
+  return performRecovery(deviceId, SSH_LINK_CHANNELS.startService)
+}
+
+export async function trustVerifiedIdentity(deviceId: string, fingerprint: string): Promise<boolean> {
+  return (await bridge()?.invoke(SSH_LINK_CHANNELS.verifyIdentity, deviceId, fingerprint)) === true
+}
+
+async function performRecovery(deviceId: string, channel: string): Promise<SshLinkOpenResult> {
   const electron = bridge()
   if (!electron) return { ok: false, reason: 'unmapped' }
   let result: SshLinkOpenResult
   try {
-    result = (await electron.invoke(SSH_LINK_CHANNELS.signIn, deviceId)) as SshLinkOpenResult
+    result = (await electron.invoke(channel, deviceId)) as SshLinkOpenResult
   } catch {
     result = { ok: false, reason: 'unreachable' }
   }

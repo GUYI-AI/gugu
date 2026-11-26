@@ -304,6 +304,126 @@ export default {
     "usageWindows": "用量窗口"
   },
   "devices": {
+    "recovery": {
+      "notRunning": {
+        "status": "服务已停止",
+        "title": "启动咕咕服务",
+        "body": "SSH 已连通。启动工作站上的咕咕服务后，即可继续查看任务。",
+        "action": "启动并重连"
+      },
+      "connected": {
+        "status": "已连接",
+        "title": "设备已连接",
+        "body": "可以在这台设备上继续任务。"
+      },
+      "unreachable": {
+        "status": "正在重连",
+        "title": "正在重新连接工作站",
+        "body": "连接恢复后，任务会在这里继续同步。",
+        "action": "立即重试"
+      },
+      "signInRequired": {
+        "status": "需要登录",
+        "title": "重新登录 SSH",
+        "body": "工作站要求重新验证身份。验证成功后会回到当前任务。",
+        "action": "登录 SSH"
+      },
+      "hostKeyChanged": {
+        "status": "待核对指纹",
+        "title": "工作站的身份已变化",
+        "body": "已暂停连接。请找管理员独立核对新指纹。",
+        "action": "查看指纹"
+      },
+      "disconnected": {
+        "status": "本机已断开",
+        "title": "已在这台电脑上断开连接",
+        "body": "需要此设备时，可在这里重新连接。",
+        "action": "连接"
+      },
+      "refused": {
+        "status": "服务拒绝连接",
+        "title": "服务还没有接受连接",
+        "body": "SSH 已连通。检查远端服务后，可以重新连接。",
+        "action": "重新连接"
+      },
+      "notInstalled": {
+        "status": "需要安装",
+        "title": "设备需要安装咕咕服务",
+        "body": "安装向导会展示目标设备，并在开始前请你确认。",
+        "action": "打开安装向导"
+      },
+      "unmapped": {
+        "status": "未配置 SSH",
+        "title": "补全这台电脑的 SSH 配置",
+        "body": "为这台已登记的设备选择本机的 SSH 连接。",
+        "action": "设置连接"
+      },
+      "notSignedIn": {
+        "status": "咕咕已登出",
+        "title": "在远端重新登录咕咕",
+        "body": "SSH 可以使用，远端服务需要重新获得账号授权。",
+        "action": "授权设备"
+      },
+      "outdated": {
+        "status": "需要更新",
+        "title": "服务版本需要更新",
+        "body": "更新设备上的服务后可以恢复连接。",
+        "action": "更新服务"
+      },
+      "updating": {
+        "status": "正在更新",
+        "title": "设备正在更新服务",
+        "body": "更新完成后会自动重连。"
+      },
+      "updateFailed": {
+        "status": "更新未完成",
+        "title": "本次更新没有完成",
+        "body": "可以重试这次更新。",
+        "action": "重试更新"
+      },
+      "waitingIdle": {
+        "status": "等待任务结束",
+        "title": "更新已准备好",
+        "body": "设备会等正在运行的任务结束，再切换版本。"
+      },
+      "confirmationRequired": {
+        "status": "等待重启",
+        "title": "更新已准备好",
+        "body": "重启将暂时中断与设备的连接。",
+        "action": "查看重启影响"
+      },
+      "offline": {
+        "status": "暂时连不上",
+        "title": "还没有连到工作站",
+        "body": "请检查设备的网络或电源。原任务保留在这里。",
+        "action": "重新连接"
+      },
+      "checking": {
+        "status": "正在连接",
+        "title": "正在检查连接",
+        "body": "正在等待设备响应。"
+      },
+      "details": "连接信息",
+      "address": "SSH 地址",
+      "version": "版本",
+      "lastSync": "任务上次同步",
+      "manual": "在设备上手动运行",
+      "verified": "我已通过独立渠道核对，指纹一致",
+      "trust": "更新信任并连接",
+      "manualTrust": "无法安全地自动更新此记录。请核对指纹后按连接信息里的说明处理。",
+      "busy": "正在处理…",
+      "failed": "设备尚未恢复连接，可以重试或查看连接信息。",
+      "startFailed": "服务尚未启动。请检查设备上的服务，然后重试。",
+      "close": "完成",
+      "fingerprint": "新指纹",
+      "title": "设备连接",
+      "dismiss": "收起连接信息",
+      "seeUpdate": "查看更新",
+      "restartHint": "重启可能中断这台设备上正在运行的任务。",
+      "noVersion": "未报告",
+      "manualReconnect": "处理后重新连接",
+      "pause": "在本机断开"
+    },
     "bootTaskFailed": "任务 {{task}} 恢复失败（{{operation}}）：{{message}}。其他任务仍可使用。",
     "longOffline": "长期离线",
     "configurations": "版本",

@@ -23,14 +23,14 @@ import { useSshSignInStates } from '../../hooks/useSshSignInStates'
 import { useSshLinkProblems, useSshUpgrades } from '../../hooks/useSshLinkProblems'
 import { sshMachineAddresses, sshMachineIdsOf, watchSshMachineAddresses } from '../../lib/sshMachineAddresses'
 import { sshLinkFacts, reportedSshUpdate } from '../../lib/sshLinkOnline'
-import { disconnectSshDevice, resumeSshDevice, requestSshServerUpgrade } from '../../lib/sshLinkChannel'
+import { disconnectSshDevice } from '../../lib/sshLinkChannel'
 import { readServerVersionSwitchBusyAgents, retryServerVersionMatch, restartServerVersionNow, type VersionRestartResult } from '../../lib/serverVersionRetry'
 import type { SshLinkFailure } from '../../lib/sshLink'
 import type { SshSignInState } from '../../lib/serverSshMachines'
 import { useDevicesStore } from '../../store/devicesContext'
 import { platform } from '../../platform'
 import { desktopIpc } from '../../platform/desktopIpc'
-import { ChevronRight, Copy, ListChecks, MoreHorizontal, Pencil, Plus, RefreshCw, SquarePen, Trash2, Unplug } from '@/lib/icons'
+import { ChevronRight, Monitor, Server, Smartphone, Copy, ListChecks, MoreHorizontal, Pencil, Plus, RefreshCw, SquarePen, Trash2, Unplug } from '@/lib/icons'
 import { canOpenNewSessionOnDevice, canReconnectDevice, openNewSessionOnDevice, reconnectDevice } from '../../lib/sessionpageNewSessionBridge'
 import { useToast } from '../toastContext'
 import { Button } from '../ui/Button'
@@ -44,7 +44,7 @@ import { AddServerPanel, type AddServerMethod, type AddedServer } from './AddSer
 import { InlineAction } from './addServer/InlineAction'
 import { useSessionMessages } from '@/session/renderer/localization/use-session-messages'
 import { isSshAttention } from '@/session/renderer/features/remote-hosts/connection-status'
-import { DeviceSshSignIn } from './DeviceSshSignIn'
+import { DeviceRecoveryPanel, DeviceRecoveryStatus, type DeviceRecoveryProps } from './DeviceRecoveryPanel'
 import { supersededBy } from '../../lib/deviceSuperseded'
 import { consumeAddServerIntent } from '../../lib/addServerIntent'
 import { useSelect } from '../../lib/selectStore'
@@ -124,6 +124,7 @@ export function DevicesSection({
   // #7199 第二步:正在看哪台设备「能做的事」(设备页里的一个内页:点设备进它的连接应用页)。
   // #7199 助理主页点了一台设备 = 一进来就是那台的「能做的事」(deviceActionsIntent)。
   const [actionsFor, setActionsFor] = useState<string | null>(() => consumeDeviceActionsIntent())
+  const [expandedId, setExpandedId] = useState<string | null>(null)
   const recoveryTarget = useSelect(deviceRecoveryTarget, value => value)
   const thisDevice = machines.find(machine => machine.current)?.configurations.find(device => device.is_current_device) ?? null
 
@@ -168,6 +169,7 @@ export function DevicesSection({
     }
     const row = document.getElementById(`settings-device-row-${recoveryTarget}`)
     if (row) {
+      setExpandedId(recoveryTarget)
       row.focus()
       deviceRecoveryTarget.set(null)
     }
@@ -195,6 +197,8 @@ export function DevicesSection({
   const renderRow = (device: Device) => (
     <DeviceRow
       key={device.device_id}
+      expanded={expandedId === device.device_id}
+      onExpand={open => setExpandedId(open ? device.device_id : null)}
       device={device}
       configurationCount={deviceMachineFor(machines, device.device_id)!.configurations.length}
       model={deviceRowModel(device, addressOf(device.device_id), cloudDeviceId)}
@@ -212,7 +216,6 @@ export function DevicesSection({
       signIn={signIns.get(device.device_id) ?? null}
       sshLink={sshMachines.state === 'unknown' ? 'unknown' : sshMachineIds?.has(device.device_id) ? (linkProblems.has(device.device_id) ? linkProblems.get(device.device_id) : 'checking') : undefined}
       upgradePercent={upgrades.get(device.device_id) ?? null}
-      onRetryUpdate={() => void requestSshServerUpgrade(device.device_id, { force: true })}
       onRetryVersionMatch={() => retryServerVersionMatch(device.device_id)}
       onRestartVersionNow={(version) => restartServerVersionNow(device.device_id, version, serverSupportsConfirmedRestart(device.capabilities))}
       onRelogin={canAddServer && addressOf(device.device_id)
@@ -438,6 +441,7 @@ function ReplacedHint({ by, onRemove }: { by: Device; onRemove: () => void }) {
 }
 
 function DeviceRow({
+  expanded, onExpand,
   device,
   model,
   configurationCount,
@@ -455,11 +459,12 @@ function DeviceRow({
   signIn,
   sshLink,
   upgradePercent,
-  onRetryUpdate,
   onRetryVersionMatch,
   onRestartVersionNow,
   onRelogin,
 }: {
+  expanded: boolean
+  onExpand: (open: boolean) => void
   device: Device
   model: DeviceRowModel
   configurationCount: number
@@ -484,8 +489,6 @@ function DeviceRow({
   sshLink?: SshLinkFailure | null | 'unknown' | 'checking'
   /** 正在替它升级时的进度百分比(不知道总量 = null)。 */
   upgradePercent?: number | null
-  /** 替它升级没成时,句中的「重试」。 */
-  onRetryUpdate?: () => void
   /** #6264 那台机器换成和桌面匹配的版本没成(心跳报 server_update.failed):请它再试一次。 */
   onRetryVersionMatch?: () => Promise<boolean>
   onRestartVersionNow?: (version: string) => Promise<VersionRestartResult>
@@ -545,6 +548,12 @@ function DeviceRow({
     : model.version
       ? t(model.kind === 'server' ? 'devices.serverVersion' : 'devices.appVersion', { version: model.version })
       : t('devices.versionUnknown')
+  const ssh = !!sshAddress || (sshLink !== undefined && sshLink !== 'unknown')
+  const recovery: DeviceRecoveryProps['state'] = link ?? (signedOutText ? 'notSignedIn' : sshLink === 'checking' ? 'checking'
+    : ssh && model.update?.state === 'ready' ? 'waitingIdle' : ssh && model.update?.state === 'downloading' ? 'updating'
+    : ssh && failedUpdate ? 'updateFailed' : 'connected')
+  const RowIcon = model.kind === 'phone' ? Smartphone : model.kind === 'server' ? Server : Monitor
+  const detailsId = `device-recovery-${device.device_id}`
   const acceptsWork = deviceAcceptsWork(device)
   const supervisorReady = model.update?.scope === 'supervisor' && model.update.state === 'ready'
   const hasBusyTasks = typeof model.update?.busy_agents === 'number' && model.update.busy_agents > 0
@@ -560,11 +569,30 @@ function DeviceRow({
       data-testid={AUTOMATION_TEST_IDS.settingsDeviceRow}
       data-device-id={device.device_id}
       data-kind={model.kind}
-      className="gg-settings-device-row flex items-start gap-3"
+      className={cn('gg-settings-device-row flex items-start gap-3', { 'gg-settings-ssh-row': ssh })}
+      data-expanded={ssh && expanded ? '' : undefined}
     >
+      {!ssh && <RowIcon size={19} className="gg-device-leading-icon" aria-hidden />}
       <div className="min-w-0 flex-1">
         {editing ? (
           <DeviceRenameField label={device.label} onSave={onCommitRename} onCancel={onCancelRename} />
+        ) : ssh ? (
+          <>
+            <Button variant="ghost" className="gg-device-summary" aria-expanded={expanded} aria-controls={detailsId}
+              onClick={() => onExpand(!expanded)} data-testid="settings-device-summary">
+              <span className="gg-device-icon"><RowIcon size={19} aria-hidden /></span>
+              <span className="gg-device-identity"><strong>{device.label}</strong>
+                <small>{[model.system, 'SSH'].filter(Boolean).join(' · ')}</small></span>
+              <DeviceRecoveryStatus state={recovery} /><ChevronRight className="gg-device-chevron" size={14} aria-hidden />
+            </Button>
+            {expanded && <div id={detailsId} className="gg-device-expanded">
+              <DeviceRecoveryPanel key={device.device_id + recovery} deviceId={device.device_id} state={recovery} name={device.label}
+                version={model.version} address={sshAddress} progress={upgradePercent} onDone={() => onExpand(false)} />
+              {model.notices.filter(n => n.kind !== 'server-too-old').map(n => <DeviceNoticeChip key={n.kind} notice={n} />)}
+              {device.capabilities.runs_as_root && <span title={t('devices.runsAsRootHint')}>{t('devices.runsAsRoot')}</span>}
+              {configurationCount > 1 && <span>{t('devices.configurationCount', { count: configurationCount })}</span>}
+            </div>}
+          </>
         ) : (
           <div className="flex min-w-0 flex-wrap items-center gap-[7px]">
             <span className="truncate text-[length:var(--font-body)] text-[var(--fg)]">{device.label}</span>
@@ -619,52 +647,14 @@ function DeviceRow({
             </Button>
           </div>
         )}
-        <div className="mt-[3px] flex flex-wrap items-center gap-x-2 gap-y-[2px] text-[length:var(--font-caption)] text-[var(--muted-fg)]">
+        {!ssh && <div className="mt-[3px] flex flex-wrap items-center gap-x-2 gap-y-[2px] text-[length:var(--font-caption)] text-[var(--muted-fg)]">
           <span className="inline-flex items-center gap-[5px]">
             {/* 状态点:在线 = connected = live 蓝(design.md 唯一的 accent);离线退成墨色最淡一档。 */}
             <span
               aria-hidden
               className={cn('size-[7px] shrink-0 rounded-[var(--radius-circle)]', (sshLink === null || device.is_online) && !link && sshLink !== 'checking' ? 'bg-live' : 'bg-[var(--faint-fg)]')}
             />
-            {link === 'signInRequired' || link === 'hostKeyChanged' ? (
-              <DeviceSshSignIn deviceId={device.device_id} name={device.label} hostKeyChanged={link === 'hostKeyChanged'} />
-            ) : link === 'updating' ? (
-              // 版本太旧、这台电脑正在替它升级(远程 SSH):说真实状态与进度,❌「重连中」。
-              <span data-testid="settings-device-updating">
-                {upgradePercent !== null && upgradePercent !== undefined
-                  ? t('devices.loginState.updatingPercent', { percent: upgradePercent })
-                  : t('devices.loginState.updating')}
-              </span>
-            ) : (link === 'waitingIdle' || link === 'confirmationRequired') && !model.update ? (
-              <span>{t(link === 'waitingIdle' ? 'devices.link.waitingIdle' : 'devices.link.confirmationRequired', { name: device.label })}</span>
-            ) : link === 'updateFailed' ? (
-              <span className="text-[var(--danger-fg)]" data-testid="settings-device-outdated">
-                {t('devices.loginState.updateFailed')}
-                {onRetryUpdate && <>{' '}<InlineAction onClick={onRetryUpdate} testId="settings-device-update-retry">{t('devices.loginState.retryUpdate')}</InlineAction></>}
-              </span>
-            ) : link === 'disconnected' ? (
-              <span>{translate('remoteHost.ssh.disconnected')}{' '}
-                <InlineAction onClick={() => {
-                  void resumeSshDevice(device.device_id).then(() => reconnectDevice(device.device_id),
-                    error => toast(t('devices.link.connectFailed'), 'error', messageForUser(error)))
-                }}>{translate('remoteHost.ssh.connect')}</InlineAction>
-              </span>
-            ) : link === 'notRunning' || link === 'refused' || link === 'notInstalled' || link === 'unmapped' ? (
-              <span>{translate(`remoteHost.ssh.${link}`)}{' '}
-                {link === 'notRunning' && <>{t('devices.link.startService')}{' '}</>}
-                {onRelogin && (link === 'notInstalled' || link === 'unmapped')
-                  ? <InlineAction onClick={onRelogin}>{t('devices.addServer.connect')}</InlineAction>
-                  : <InlineAction onClick={() => reconnectDevice(device.device_id)}>{t('devices.menu.reconnect')}</InlineAction>}
-              </span>
-            ) : link === 'unreachable' ? (
-              <span>{t('devices.loginState.reconnecting')}{' '}
-                <InlineAction onClick={() => reconnectDevice(device.device_id)}>{t('devices.menu.reconnect')}</InlineAction>
-              </span>
-            ) : link === 'outdated' ? (
-              <span>{t('devices.link.outdated', { name: device.label })}{' '}
-                {onRetryUpdate && <InlineAction onClick={onRetryUpdate}>{t('devices.link.retryUpdate')}</InlineAction>}
-              </span>
-            ) : failedUpdate !== null ? (
+            {failedUpdate !== null ? (
               <span className={retrying || restarting ? undefined : 'text-[var(--danger-fg)]'} data-testid="settings-device-match-failed">
                 {retrying || restarting ? t('devices.loginState.matchRetrying') : t('devices.loginState.matchFailed')}
                 {!retrying && !restarting && bootFailed && restartable && onRestartVersionNow && asking === null && (
@@ -726,7 +716,7 @@ function DeviceRow({
           {model.kind === 'server' && model.connection.via === 'cloud' && (
             <span title={t('devices.via.tunnelHint')}>{t('devices.via.tunnel')}</span>
           )}
-        </div>
+        </div>}
         {replacedBy && <ReplacedHint by={replacedBy} onRemove={onRemove} />}
         {renameFailed && (
           <div className="mt-1 text-[length:var(--font-caption)] text-[var(--danger-fg)]">{renameFailed}</div>

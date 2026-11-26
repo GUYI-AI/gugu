@@ -1,0 +1,41 @@
+.gg-settings-ssh-row { align-items: flex-start; }
+.gg-device-leading-icon { margin-block-start: 6px; color: var(--muted-fg); flex: none; }
+.gg-device-summary[data-slot], .gg-device-summary {
+  display: flex; width: 100%; min-height: 42px; height: auto; gap: 12px; padding: 3px 2px;
+  justify-content: initial; text-align: start; color: var(--fg); border: 0;
+}
+.gg-device-icon { display: grid; place-items: center; flex: none; width: 32px; height: 32px; color: var(--muted-fg); background: var(--muted); border-radius: var(--radius-control); }
+.gg-device-identity { display: grid; flex: 1; min-width: 0; gap: 2px; }
+.gg-device-identity strong, .gg-device-identity small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gg-device-identity strong { font-size: var(--font-body); font-weight: var(--font-weight-medium); }
+.gg-device-identity small, .gg-recovery-status { font-size: var(--font-caption); font-weight: normal; color: var(--muted-fg); }
+.gg-recovery-status { display: inline-flex; align-items: center; gap: 6px; }
+.gg-recovery-status i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--muted-fg); }
+.gg-recovery-status[data-state='connected'] i { background: var(--live); }
+.gg-recovery-status:is([data-state='notRunning'],[data-state='signInRequired'],[data-state='notSignedIn'],[data-state='updateFailed']) i { background: var(--warning-fg, var(--muted-fg)); }
+.gg-recovery-status[data-state='hostKeyChanged'] i { background: var(--danger-fg); }
+.gg-device-chevron { color: var(--faint-fg); flex: none; }
+.gg-device-summary[aria-expanded='true'] .gg-device-chevron, .gg-recovery-details[open] > summary svg { transform: rotate(90deg); }
+.gg-device-expanded { margin: 8px 0 2px 44px; padding: 0 0 4px; color: var(--muted-fg); font-size: var(--font-caption); }
+.gg-device-recovery { padding: 12px 14px; border-radius: var(--radius-control); background: var(--muted); color: var(--fg); text-align: start; overflow-wrap: anywhere; }
+.gg-device-recovery h3 { margin: 0; font-size: var(--font-body); font-weight: var(--font-weight-semibold, 600); }
+.gg-device-recovery p { margin: 4px 0 0; font-size: var(--font-caption); line-height: 1.5; color: var(--muted-fg); }
+.gg-device-recovery [role='alert'] { color: var(--danger-fg); }
+.gg-recovery-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.gg-recovery-details { margin-top: 12px; font-size: var(--font-caption); color: var(--muted-fg); }
+.gg-recovery-details > summary { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; list-style: none; }
+.gg-recovery-details > summary::-webkit-details-marker { display: none; }
+.gg-recovery-details dl { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 4px 12px; margin: 8px 0 0; }
+.gg-recovery-details dd { margin: 0; color: var(--fg); user-select: text; white-space: normal; }
+.gg-recovery-fingerprint { display: grid; gap: 6px; margin-top: 12px; font-size: var(--font-caption); }
+.gg-recovery-fingerprint code { user-select: all; white-space: normal; }
+.gg-recovery-fingerprint label { display: flex; align-items: center; gap: 6px; }
+.gg-recovery-popover { width: min(320px,calc(100vw - 20px)); max-height: var(--available-height); overflow: auto; padding: 12px; background: var(--popover, var(--bg)); color: var(--fg); border: 1px solid var(--border-color); border-radius: var(--radius-panel, 12px); box-shadow: var(--shadow-popover); }
+.gg-recovery-popover header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-inline: 4px; font-weight: var(--font-weight-medium); }
+.gg-recovery-popover .gg-device-recovery { background: transparent; padding: 6px 4px 4px; }
+.gg-recovery-trigger { display: inline-flex; align-items: center; gap: 5px; min-width: 0; cursor: pointer; }
+[data-compact] .gg-recovery-trigger .gg-recovery-status { font-size: 0; gap: 0; }
+@media (max-width: 500px) {
+  .gg-device-expanded { margin-inline-start: 0; }
+  .gg-device-summary { gap: 8px; }
+}

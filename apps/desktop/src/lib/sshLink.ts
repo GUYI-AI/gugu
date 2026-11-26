@@ -15,6 +15,8 @@ export const SSH_LINK_CHANNELS = {
   send: 'ssh-link:send',
   /** 收掉这台的设备连接(invoke,设备 id)。 */
   close: 'ssh-link:close',
+  startService: 'ssh-link:start-service',
+  verifyIdentity: 'ssh-link:verify-identity',
   setPaused: 'ssh-link:set-paused',
   /** 主进程 → 渲染层:那台机器发来一条信封(event,{ deviceId, message })。 */
   message: 'ssh-link:message',
