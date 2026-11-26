@@ -88,7 +88,7 @@ describe('TextModelRegistry', () => {
     const uri = await registry.registerModel('project', 'workspace', '/ws', 'large.txt', 'plaintext', 'disk', HEAD_REF, EDITOR_HARD_MAX_FILE_BYTES);
     await registry.registerModel('project', 'workspace', '/ws', 'large.txt', 'plaintext', 'buffer');
     fileMocks.readFile.mockImplementationOnce(async (...args: unknown[]) => ({ success: true, data: {
-      content: Number(args[3]) >= totalSize ? 'changed' : '', truncated: Number(args[3]) < totalSize, totalSize,
+      content: Number(args[3]) >= totalSize ? 'changed' : '', binary: false, truncated: Number(args[3]) < totalSize, totalSize,
     } }));
     await registry.invalidateModel(registry.toDiskUri(uri));
     expect(registry.getValue(uri)).toBe('changed');
