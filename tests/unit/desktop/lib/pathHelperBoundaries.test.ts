@@ -21,3 +21,9 @@ it('does not return a portable folder name ending in periods', () => {
   expect(safePathSegment('report...')).toBe('report')
   expect(safePathSegment('...')).toBe('project')
 })
+
+it('abbreviates Windows home paths with forward and mixed slashes', () => {
+  expect(shortHome('C:/Users/me/code')).toBe('~/code')
+  expect(shortHome('C:\\Users/me\\code')).toBe('~\\code')
+  expect(shortHome('C:/Users/me')).toBe('~')
+})
