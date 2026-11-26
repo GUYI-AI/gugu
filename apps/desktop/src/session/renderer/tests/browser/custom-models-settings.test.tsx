@@ -193,7 +193,7 @@ it('saves every declared field, keeps the other models, and reads them back', as
   await expect.element(page.getByTestId('custom-model-default-effort')).toHaveTextContent('High');
   expect(['tool-call', 'image', 'thinking', 'thinking-only', 'thinking-optional', 'fast', 'effort-low', 'effort-medium', 'effort-high'].map(id => isChecked(`custom-model-${id}`)))
     .toEqual([false, true, true, true, true, true, true, false, true]);
-  await expect.element(page.getByTestId('custom-model-contextWindow')).toHaveValue(131_072);
+  await expect.element(page.getByTestId('custom-model-contextWindow')).toHaveValue('128K');
   await expect.element(page.getByRole('button', { name: '16K', exact: true })).toHaveAttribute('aria-pressed', 'true');
 });
 it('offers Fast only for an address that answers OpenAI Chat or Responses', async () => {
@@ -676,3 +676,73 @@ for (const theme of ['light', 'dark'] as const) {
     } finally { document.documentElement.dataset.theme = 'light'; }
   });
 }
+
+// owner 11-27 02:38 / 02:53: one 「最大上下文」 with 300K / 600K / 900K beside 「输入」; values read as 1M / 300K, never raw digits.
+it('saves one max context as the menu lengths, shows tokens as K / M, and presses no tier when empty', async () => {
+  const connection: CustomModelConnection = { ...record(), keySaved: true, models: [{ id: 'm', contextWindow: 1_000_000, contextLengths: [262_144, 1_000_000], defaultContextLength: 262_144 }] };
+  state.probe = { endpoints: connection.endpoints, models: [], failures: [] };
+  render(<CustomModelDialog machine={null} connection={connection} modelId="m" onClose={() => {}} />);
+  await expect.element(page.getByTestId('custom-model-maxContext')).toHaveValue('1M');
+  await expect.element(page.getByTestId('custom-model-contextWindow')).toHaveValue('1M');
+  await userEvent.click(page.getByRole('button', { name: '600K', exact: true }));
+  await expect.element(page.getByTestId('custom-model-maxContext')).toHaveValue('600K');
+  await expect.element(page.getByRole('button', { name: '600K', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await userEvent.clear(page.getByTestId('custom-model-maxContext'));
+  expect(document.querySelectorAll('.gg-model-limit-presets button[aria-pressed="true"]')).toHaveLength(0);
+  await userEvent.fill(page.getByTestId('custom-model-maxContext'), '2M');
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await expect.element(page.getByRole('alert')).toHaveTextContent('Max context cannot be larger than the input limit.');
+  await userEvent.fill(page.getByTestId('custom-model-maxContext'), '450k');
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await until('the form saved', () => state.saved !== null);
+  expect(state.saved?.models[0]).toMatchObject({ contextWindow: 1_000_000, contextLengths: [300_000, 450_000], defaultContextLength: 300_000 });
+});
+
+it('an empty max context saves no lengths, and a typo is refused instead of saved', async () => {
+  const connection: CustomModelConnection = { ...record(), keySaved: true, models: [{ id: 'm' }] };
+  state.probe = { endpoints: connection.endpoints, models: [], failures: [] };
+  render(<CustomModelDialog machine={null} connection={connection} modelId="m" onClose={() => {}} />);
+  await expect.element(page.getByTestId('custom-model-maxContext')).toHaveValue('');
+  expect(document.querySelectorAll('.gg-model-limit-presets button[aria-pressed="true"]')).toHaveLength(0);
+  await userEvent.fill(page.getByTestId('custom-model-maxContext'), '3oo k');
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await expect.element(page.getByRole('alert')).toHaveTextContent('Enter a number of tokens such as 300K or 1M');
+  await userEvent.clear(page.getByTestId('custom-model-maxContext'));
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await until('the form saved', () => state.saved !== null);
+  expect(state.saved?.models[0]?.contextLengths).toBeUndefined();
+  expect(state.saved?.models[0]?.contextWindow).toBeUndefined();
+});
+
+it('shows a Codex model_context_window as the max context and says where it came from', async () => {
+  const connection: CustomModelConnection = { ...record(), keySaved: true, discovered: { source: 'codex-provider', keyLast4: 'WXYZ' }, models: [{ id: 'm', contextWindow: 400_000 }] };
+  state.probe = { endpoints: connection.endpoints, models: [], failures: [] };
+  render(<CustomModelDialog machine={null} connection={connection} modelId="m" onClose={() => {}} />);
+  await expect.element(page.getByTestId('custom-model-maxContext')).toHaveValue('400K');
+  await expect.element(page.getByText('From your Codex config', { exact: true })).toBeVisible();
+});
+
+it('labels the largest menu length Max, and a model with one length offers no switch', async () => {
+  const codex = { id: 'codex', name: 'Codex', capabilities: { modelProtocols: ['openai-responses' as const], customModel: undefined } };
+  const connection: CustomModelConnection = { ...record(), keySaved: true, models: [
+    { id: 'big', contextWindow: 1_000_000, contextLengths: [300_000, 600_000, 900_000, 1_000_000], defaultContextLength: 300_000 },
+    { id: 'plain' },
+  ] };
+  const options = customComposerOptions([connection], codex, translateSessionMessage);
+  render(<div style={{ position: 'fixed', right: 24, bottom: 24, width: 640 }}><ChatComposer modelOptions={options} selectedModel={Object.keys(options)[0]}
+    agentOptions={[{ id: 'codex', name: 'Codex' }]} selectedAgent="codex" onModelChange={() => {}} onSubmit={() => {}} onStop={() => {}}
+    contextThresholds={(_id, maximum) => maximum ? { minimum: 8_000, maximum, value: null, selectWindow: async () => {} } : undefined} /></div>);
+  await userEvent.click(page.getByTestId('composer-model-trigger'));
+  const row = (name: string) => [...document.querySelectorAll('[data-slot=composer-model-name]')].find(e => e.textContent?.trim() === name)!.closest('[role=option]') as HTMLElement;
+  await until('the menu lists both', () => !!document.querySelector('[data-slot=combobox-content] [role=option]') && !!row('plain'));
+  await userEvent.hover(row('plain'));
+  await until('the plain detail', () => document.querySelector('[data-slot=composer-model-detail]')?.textContent?.includes('plain') ?? false);
+  expect(document.querySelector('[data-slot=composer-model-detail]')?.textContent).not.toContain('Context window');
+  await userEvent.hover(row('big'));
+  await until('the big detail', () => document.querySelector('[data-slot=composer-model-detail]')?.textContent?.includes('Context window') ?? false);
+  const trigger = [...document.querySelectorAll<HTMLButtonElement>('[data-slot=composer-model-detail] button')].find(button => button.textContent?.includes('Context window'))!;
+  expect(trigger.textContent).toContain('300K');
+  await userEvent.click(trigger);
+  await until('the lengths open', () => [...document.querySelectorAll('button')].some(button => button.textContent === 'Max (1M)'));
+  expect([...document.querySelectorAll('button[aria-pressed]')].map(button => button.textContent).filter(text => /K|M\)/.test(text ?? ''))).toEqual(['300K', '600K', '900K', 'Max (1M)']);
+});

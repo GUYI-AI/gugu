@@ -139,9 +139,15 @@ export async function discoverLocalConnections(input: { root: string; claudeRoot
   let fileKey: string | undefined;
   const profiles = isRecord(config.profiles) ? Object.values(config.profiles).filter(isRecord) : [];
   const modelsFor = (provider: string) => {
-    const ids = [{ provider: defaultProvider, model: text(config.model) }, ...profiles.map(profile => ({ provider: text(profile.model_provider) ?? defaultProvider, model: text(profile.model) }))]
-      .filter(entry => entry.provider === provider && entry.model).map(entry => entry.model!);
-    return [...new Set(ids)].map(id => ({ id }));
+    // Codex's own `model_context_window` is the window that model already runs with; it becomes the model's max context.
+    const window = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+    const entries = [{ provider: defaultProvider, model: text(config.model), contextWindow: window(config.model_context_window) },
+      ...profiles.map(profile => ({ provider: text(profile.model_provider) ?? defaultProvider, model: text(profile.model),
+        contextWindow: window(profile.model_context_window) ?? window(config.model_context_window) }))]
+      .filter(entry => entry.provider === provider && entry.model);
+    const models = new Map<string, { id: string; contextWindow?: number }>();
+    for (const { model, contextWindow } of entries) if (!models.has(model!)) models.set(model!, { id: model!, ...(contextWindow ? { contextWindow } : {}) });
+    return [...models.values()];
   };
 
   // Where a key aimed at "OpenAI" really goes: the user's own override if there is one. Reported once, not per key.
