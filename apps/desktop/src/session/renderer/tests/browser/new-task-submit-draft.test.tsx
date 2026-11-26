@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({ create: vi.fn(), assertProtocol: vi.fn(), navi
 vi.mock('@renderer/features/sessions/stores/session-selectors', () => ({
   getSessionManagerStore: () => ({ createSession: mocks.create }), getSessionPageStore: () => ({ workspaceId: 'workspace' }), asProvisioned: (value: unknown) => value, sessionViewKind: () => 'ready',
 }));
-vi.mock('@/store/devicesCache', () => ({ readCachedDevices: () => [{ device_id: 'host', capabilities: { remote_protocol: 15 } }] }));
+vi.mock('@/store/devicesCache', async original => ({ ...(await original<object>()), readCachedDevices: () => [{ device_id: 'host', capabilities: { remote_protocol: 15 } }] }));
 vi.mock('@/lib/taskAttachmentTarget', async original => ({ ...(await original<object>()), assertTaskAttachmentProtocol: mocks.assertProtocol, taskAttachmentUsesSsh: () => false }));
 vi.mock('@renderer/lib/ipc', async original => ({ ...(await original<object>()), rpc: { sessions: { sendMessage: vi.fn() } }, rpcOn: () => ({ sessionCreate: { admitFirstMessages: async () => {} } }) }));
 vi.mock('@renderer/utils/logger', () => ({ log: { warn: mocks.warn, error: mocks.error } }));

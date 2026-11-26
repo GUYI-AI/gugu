@@ -6,7 +6,7 @@ import type { AgentRunContext } from '@gugu/session-core/agents/agent-run-contex
 import type { CustomModelConnection } from '@gugu/session-core/models/custom-model';
 import {
   resolveClaudeReviewer, reviewConnectionsOf, reviewerHonouredByAllowlist,
-  type ClaudeReviewInput, type ClaudeReviewResolution, type ClaudeReviewUnavailable,
+  type ClaudeReviewer, type ClaudeReviewInput, type ClaudeReviewResolution, type ClaudeReviewUnavailable,
 } from '@gugu/session-core/models/auto-review-source';
 import type { AutoReviewModel, PlatformReviewCandidate } from '@gugu/session-core/models/auto-review-model';
 import { log } from '@main/lib/logger';
@@ -49,6 +49,8 @@ export type HostClaudeReviewInput = Omit<ClaudeReviewInput, 'preference' | 'conn
   env?: NodeJS.ProcessEnv;
   /** Already-listed connections, to skip a second read. */
   connections?: readonly CustomModelConnection[];
+  /** The name the CLI is given for this reviewer (a platform model's gateway alias); the allowlist is matched on it. */
+  cliModelName?: (reviewer: ClaudeReviewer) => string;
 };
 
 async function storedPreference(): Promise<{ ok: true; value: AutoReviewModel } | { ok: false }> {
@@ -93,7 +95,7 @@ export async function resolveHostClaudeReviewer(input: HostClaudeReviewInput): P
   // A diverted reviewer is named by a per-session alias, which no hand-written allowlist lists.
   const honoured = reviewer.kind === 'connection' && reviewer.cross
     ? !allowlist
-    : reviewerHonouredByAllowlist(reviewer.modelId, allowlist?.models ?? null);
+    : reviewerHonouredByAllowlist(input.cliModelName?.(reviewer) ?? reviewer.modelId, allowlist?.models ?? null);
   return honoured ? resolution : { ok: false, reason: 'reviewerExcluded' };
 }
 
@@ -119,6 +121,29 @@ export function claudeReviewRunContext(resolution: ClaudeReviewResolution): Pick
     ...(reviewer.kind === 'connection' && reviewer.byHaiku ? { autoReviewByHaiku: true } : {}),
     autoReviewer: { label: reviewer.label, kind: reviewer.kind },
   };
+}
+
+/** The run-context fields one reviewer resolution sets. */
+export type ClaudeReviewRunContext = ReturnType<typeof claudeReviewRunContext>;
+
+/** The catalog offered a reviewer the session's ticket does not carry: picking it again in Settings would not help. */
+export const REVIEWER_NOT_ON_TICKET_KEY = 'taskConfig.reviewReviewerNotOnTicket';
+
+const REVIEW_FIELDS = ['autoReviewAllowed', 'autoReviewUnavailable', 'autoReviewByHaiku', 'autoReviewer', 'autoReviewReason'] as const;
+
+/**
+ * A Gugu-model session's menu verdict once its ticket is issued. The launch resolved the reviewer from the ticket's
+ * switchable models, the ones the CLI can actually call, and wrote that reviewer or `disableAutoMode` into the
+ * session's settings. The run context resolved it from the account catalog, which can list a model the ticket lacks
+ * (an old edge function sends no switchable models at all). The menu says what the CLI runs.
+ */
+export function withLaunchedReview<C extends Partial<AgentRunContext>>(context: C, launched: ClaudeReviewRunContext): C {
+  const next: Partial<AgentRunContext> = { ...context };
+  for (const field of REVIEW_FIELDS) delete next[field];
+  const notOnTicket = context.autoReviewAllowed === true && launched.autoReviewAllowed === false
+    && (launched.autoReviewReason === CLAUDE_REVIEW_REASON_KEYS.noReviewer
+      || launched.autoReviewReason === CLAUDE_REVIEW_REASON_KEYS.preferenceUnavailable);
+  return { ...next, ...launched, ...(notOnTicket ? { autoReviewReason: REVIEWER_NOT_ON_TICKET_KEY } : {}) } as C;
 }
 
 /** Register (or clear) the session's diverted reviewer for this resolution; returns the id to put in the settings. */

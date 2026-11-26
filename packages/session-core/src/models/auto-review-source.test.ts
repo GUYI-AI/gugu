@@ -3,11 +3,13 @@ import {
   DEFAULT_CLAUDE_REVIEWER, nativeClaudeReviewEnv, resolveClaudeReviewer, reviewConnectionsOf, reviewerHonouredByAllowlist,
   type ClaudeReviewInput,
 } from './auto-review-source';
-import { canSpecifyClaudeReviewModel, cliRefusesAutoMode, isAutoReviewCapable, platformAutoReviewModelOptions } from './auto-review-model';
+import {
+  autoReviewModelOptions, canSpecifyClaudeReviewModel, cliRefusesAutoMode, isAutoReviewCapable, platformAutoReviewModelOptions,
+} from './auto-review-model';
 
 const connectionId = '00000000-0000-4000-8000-000000000001';
 const otherId = '00000000-0000-4000-8000-000000000002';
-const model = { id: 'proxy/reviewer-v1' };
+const model = { id: 'anthropic/claude-sonnet-4-6' };
 const session = { connectionId, endpoint: 'https://compatible.example/v1', models: [model, { id: 'claude-sonnet-5' }] };
 const custom: ClaudeReviewInput = { route: 'custom', mainModel: 'claude-sonnet-5', preference: null, platformModels: [], connections: [], session };
 const haiku = { id: DEFAULT_CLAUDE_REVIEWER, displayName: 'Claude Haiku 5.5' };
@@ -36,6 +38,13 @@ describe('the review rule', () => {
       { id: 'claude-sonnet-5', requiresMembership: true }, { id: 'claude-opus-4-7', enabled: false },
       { id: 'claude-sonnet-4-7', protocols: ['openai-chat-completions'] },
     ])).toEqual([{ modelId: DEFAULT_CLAUDE_REVIEWER, label: 'Claude Haiku 5.5' }, { modelId: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6' }]);
+  });
+  it('offers only reviewable Claude models from an Anthropic-format connection, never GLM or DeepSeek on that wire', () => {
+    expect(autoReviewModelOptions([{
+      id: otherId, name: 'Relay', credentialRef: 'ref', keySaved: true, preset: null,
+      endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://relay.example' }],
+      models: [{ id: 'glm-5', label: 'GLM-5' }, { id: 'deepseek-v3.2' }, { id: 'claude-sonnet-4-5' }, { id: 'claude-opus-5-5' }, { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6' }],
+    }])).toEqual([{ connectionId: otherId, modelId: 'claude-sonnet-4-6', label: 'Sonnet 4.6', source: 'Relay' }]);
   });
 });
 
@@ -118,6 +127,19 @@ describe('a connection session', () => {
     expect(resolveClaudeReviewer({ ...custom, connections: [refused], preference: { ...preference, modelId: 'claude-opus-5-5' } }))
       .toEqual({ ok: false, reason: 'preferenceUnavailable' });
   });
+  it('turns Auto mode off when the picked connection model cannot review, as for Gugu models', () => {
+    // GLM or DeepSeek on an Anthropic-format connection: the CLI cannot parse their verdict and would block every action.
+    for (const modelId of ['glm-5', 'deepseek-v3.2', 'claude-sonnet-4-5']) {
+      const connection = { ...other, models: [{ id: modelId }] };
+      for (const input of [custom, platform]) {
+        expect(resolveClaudeReviewer({ ...input, connections: [connection], preference: { kind: 'custom', connectionId: otherId, modelId } }))
+          .toEqual({ ok: false, reason: 'preferenceUnavailable' });
+      }
+      const own = { id: connectionId, keySaved: true, anthropicEndpoint: session.endpoint, models: [{ id: modelId }] };
+      expect(resolveClaudeReviewer({ ...custom, mainModel: 'glm-5', connections: [own], preference: { kind: 'custom', connectionId, modelId } }))
+        .toEqual({ ok: false, reason: 'preferenceUnavailable' });
+    }
+  });
   it('leaves Gugu reviewers to Gugu-model sessions this release', () => {
     expect(resolveClaudeReviewer({ ...custom, platformModels: [haiku], preference: { kind: 'platform', modelId: haiku.id } }))
       .toEqual({ ok: false, reason: 'platformReviewerNeedsPlatformSession' });
@@ -152,5 +174,10 @@ describe('a native login', () => {
   it.each(['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'])('uses an explicitly selected model on a native compatible API (%s)', credential => {
     expect(nativeClaudeReviewEnv({ [credential]: 'fixture', ANTHROPIC_BASE_URL: 'https://compatible.example/v1', ANTHROPIC_MODEL: 'claude-sonnet-5' }))
       .toEqual({ CLAUDE_CODE_AUTO_MODE_MODEL: 'claude-sonnet-5', CLAUDE_CODE_AUTO_MODE_SERVER: '0' });
+  });
+  it('never names a model that cannot review, leaving the CLI on its own classifier', () => {
+    for (const model of ['glm-5', 'deepseek-v3.2', 'claude-opus-5-5']) {
+      expect(nativeClaudeReviewEnv({ ANTHROPIC_AUTH_TOKEN: 'fixture', ANTHROPIC_BASE_URL: 'https://compatible.example', ANTHROPIC_MODEL: model })).toEqual({});
+    }
   });
 });

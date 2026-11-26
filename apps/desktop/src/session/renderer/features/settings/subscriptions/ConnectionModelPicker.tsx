@@ -47,11 +47,12 @@ export function probeModelList(probe: CustomModelProtocolProbe): ModelList {
   const { endpoints, models, failures } = probe
   if (models.length) return { kind: 'listed', models, endpoints }
   if (failures.some(({ reason }) => reason === 'unauthorized')) return { kind: 'unlisted', reason: 'unauthorized', endpoints, refused: probe.refused ?? [] }
-  // The address answered, just without a list: the person names the model and the check reruns with it on save.
-  if (endpoints.length || failures.some(({ step, reason }) => step === 'models' && reason === 'no-list')) return { kind: 'unlisted', reason: 'no-list', endpoints }
-  const failure = failures.find(({ reason }) => reason !== 'no-list' && reason !== 'no-model' && reason !== 'refused')
+  // The address answered, just without a list (or only that it does not offer the model it was asked about): the person
+  // names the model and the check reruns with it on save.
+  if (endpoints.length || probe.unserved?.length || failures.some(({ step, reason }) => step === 'models' && reason === 'no-list')) return { kind: 'unlisted', reason: 'no-list', endpoints }
+  const failure = failures.find(({ reason }) => reason !== 'no-list' && reason !== 'no-model' && reason !== 'refused' && reason !== 'model-not-found')
   const reason = failure?.reason
-  return { kind: 'unlisted', reason: reason && reason !== 'no-model' && reason !== 'refused' ? reason : 'unreachable', endpoints }
+  return { kind: 'unlisted', reason: reason && reason !== 'no-model' && reason !== 'refused' && reason !== 'model-not-found' ? reason : 'unreachable', endpoints }
 }
 
 /** key / 地址一变就重读(表单里打字时等 400ms 停下再读);已存的连接立刻读。 */

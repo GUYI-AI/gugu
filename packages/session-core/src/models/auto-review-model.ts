@@ -70,11 +70,15 @@ export function isAutoReviewCapable(modelId: string): boolean {
   return runsClaudeAutoMode(modelId) && canSpecifyClaudeReviewModel(modelId);
 }
 
-/** Claude's native auto reviewer currently accepts Anthropic Messages connections only. */
+/**
+ * Claude's native auto reviewer currently accepts Anthropic Messages connections only, and the same rule as
+ * Gugu's catalog applies to their models: GLM or DeepSeek served on the Anthropic wire still answer in a form
+ * the CLI cannot parse, so they are never offered.
+ */
 export function autoReviewModelOptions(connections: readonly CustomModelConnection[]) {
   return connections.filter(connection => !connection.removed && connection.keySaved
     && connection.endpoints.some(endpoint => endpoint.protocol === 'anthropic-messages'))
-    .flatMap(connection => connection.models.filter(model => canSpecifyClaudeReviewModel(model.id)).map(model => ({
+    .flatMap(connection => connection.models.filter(model => isAutoReviewCapable(model.id)).map(model => ({
       connectionId: connection.id, modelId: model.id, label: model.label || model.id, source: connection.name,
     })));
 }

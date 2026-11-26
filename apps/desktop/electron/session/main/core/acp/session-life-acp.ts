@@ -21,6 +21,7 @@ import type { RuntimeFork } from '../sessions/session-life-forks';
 import { localAgentForSession } from '@main/core/sessionpage/sessionpage-session-agent';
 import { acpAgentStatusBridge } from './agent-status-bridge';
 import type { EmdashSessionIdentity } from './emdash-mcp-injector';
+import type { ClaudeReviewRunContext } from '../agents/claude-reviewer';
 import { prepareEmdashPlatformSession, releaseEmdashPlatformSession, releaseEmdashPlatformSessionForClosure } from './emdash-platform-injector';
 import { injectEmdashPromptDetached } from './inject-prompt';
 import {
@@ -63,7 +64,7 @@ type Worker = Awaited<ReturnType<typeof acpWorkerLease>>;
 // Branded leases: the reducer only carries them; their content belongs to this adapter.
 type Workspace = { workspaceId: string; path: string };
 type Capabilities = { injection: Awaited<ReturnType<typeof withEmdashMcpInjection<StartInput>>>; facts: Facts };
-type Platform = { command: StartInput; injected: boolean };
+type Platform = { command: StartInput; injected: boolean; autoReview?: ClaudeReviewRunContext };
 type Cli = { command: Parameters<Worker['client']['startSession']>[0] };
 const lease = <T>(value: T) => value as unknown;
 const read = <T>(value: object): T => value as T;
@@ -238,11 +239,12 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
         injection.capabilitySpawnEnv, injection.capabilitySpawnArgs, injection.platformConfigured,
         injection.platformAccessSessionId, injection.platformModel,
       );
-      return lease<Platform>({ command: platform.command, injected: platform.injected }) as PlatformTicket;
+      return lease<Platform>({ command: platform.command, injected: platform.injected,
+        ...(platform.autoReview ? { autoReview: platform.autoReview } : {}) }) as PlatformTicket;
     },
     async cli(have): Promise<ResolvedCli> {
       const platform = read<Platform>(have.platform);
-      const resolved = await withHostResolvedCli(platform.command);
+      const resolved = await withHostResolvedCli(platform.command, platform.autoReview);
       const history = await resumeHistoryFacts(resolved.input, {});
       return lease<Cli>({ command: { ...resolved, input: { ...resolved.input, ...history } } }) as ResolvedCli;
     },
