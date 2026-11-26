@@ -544,9 +544,6 @@ export function ChatRoot(props: ChatRootProps) {
   // Row height deltas waiting for above-viewport scroll compensation (applyAboveCompensation).
   let pendingSizeDeltas: Array<readonly [number, number]> = [];
   onCleanup(() => { itemScrollGeneration++; });
-  // Stable empty array passed to makeUnitsView when we need a committed-only
-  // view. Must not change identity so memos don't re-run on each access.
-  const NO_ACTIVE_UNITS: ReturnType<typeof flattenTier> = [];
   // An incremental append only reads the new tail's fold keys. Keep the full
   // fold snapshot reactive so older headers still rebuild their hidden rows.
   const committedFolds = createMemo(() => viewState().snapshot());
