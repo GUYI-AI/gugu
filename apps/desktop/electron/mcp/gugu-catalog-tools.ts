@@ -181,7 +181,8 @@ const callOf = (name: string, schema: Tool['inputSchema']): string => {
   const properties = (schema.properties ?? {}) as Record<string, unknown>
   const keys = Object.keys(properties)
   const param = (key: string, optional: boolean) => {
-    const values = shortEnum(properties[key])
+    const property = properties[key] as { type?: string; items?: { type?: string } } | undefined
+    const values = property?.type === 'array' ? `${property.items?.type ?? 'unknown'}[]` : shortEnum(property)
     return `${key}${optional ? '?' : ''}${values ? `: ${values}` : ''}`
   }
   const params = [...keys.filter((key) => required.has(key)).map((key) => param(key, false)), ...keys.filter((key) => !required.has(key)).map((key) => param(key, true))]

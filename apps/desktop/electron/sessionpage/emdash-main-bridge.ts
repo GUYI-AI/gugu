@@ -16,6 +16,8 @@ export { createServerPasswordAgent } from '../password-vault/server-agent'
 export { passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
 export { serverTaskPrivateLogin } from '../session/main/core/extensions/task-page-host'
 export { archiveSession } from '../session/main/core/sessions/archiveSession'
+// #3884 The host's quit intent reaches session starts before the shutdown closes what an engine needs.
+export { beginSessionLifeHostQuit } from '../session/main/core/sessions/session-life'
 export { createDesktopAccountClosureHost } from '../session/main/core/desktop-account-closure'
 export { createDesktopAccountClosureV2Host } from '../session/main/core/desktop-account-closure-v2'
 // Session ids written as a prefix are matched against this machine's session list (main.ts localAddressRows).
@@ -165,6 +167,7 @@ export {
   // @@@4972 会话发现工具的「咕咕提供的模型」读取口 —— 宿主装的就是 composer 那条 IPC 调的
   // 同一个 sessionpagePlatformCatalog,于是 agent 查到的和用户看到的是同一次计算。
   setPlatformModelCatalogResolver,
+  setCustomModelEffortResolver,
   // 那道门本身(composer 从 `agents.modelCatalog` 读它的答案,platform-model-catalog-hook.ts)。
   setPlatformModelGate,
   // @@@sessionpage TASKPAGE-FUSION — register the PTY-divert hook + teardown so a session-page codex TUI

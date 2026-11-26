@@ -272,7 +272,7 @@ const PageModal = observer(function PageModal({ viewId, onClose }: { viewId: str
   return (
     // In the session page's mount (its skin, and the layer an App's live page is drawn in); the frame rises above the
     // shell while it is open (MainLayout, pageModalOpen).
-    <Sheet onClose={onClose} {...PAGE_MODAL_FRAME} testId="page-modal" ariaLabel={viewId}>
+    <Sheet onClose={onClose} onEscape={def.onModalEscape} {...PAGE_MODAL_FRAME} testId="page-modal" ariaLabel={viewId}>
       <div className="flex min-h-0 flex-1 flex-col" data-page-modal={viewId}>
         <PageModalClose.Provider value={onClose}>
           <Wrap {...paramsOf(viewId)}>

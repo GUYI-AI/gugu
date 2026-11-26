@@ -282,7 +282,7 @@ export default {
     "removeFromList": "Remove from list",
     "hideFailed": "Could not remove this conversation from the list",
     "deleteHistoryDescription": "Clear your chat history. Other members are not affected.",
-    "hide": "Hide",
+    "hide": "Hide from list",
     "createAgent": "Create agent",
     "addContact": "Add contact",
     "clearSearch": "Clear search",
@@ -338,6 +338,9 @@ export default {
       "setListenModeFailed": "Could not change the listen mode. The setting is unchanged."
     },
     "groupAction": {
+      "channelOwner": "Channel owner",
+      "supervisorRoleMigrated": "Migrated the previous supervisor role",
+      "topicJoined": "Joined the topic",
       "joined": "Joined the group chat",
       "roleUpdated": "Group role updated"
     },
@@ -396,6 +399,7 @@ export default {
 
     "fileUnavailable": "File unavailable right now",
     "fileIntegrity": "This file failed verification: its bytes don't match its checksum, so it wasn't opened",
+    "fileServerOutdated": "The Gugu on this machine is too old. Update it to open files.",
     "fileNoAccess": "You no longer have access to this file",
     "fileUpdated": "This file was updated; open it again",
     "holderOffline": "{{machine}} is offline. This file opens when it is back online.",
@@ -478,6 +482,8 @@ export default {
     "replyUnavailable": "The original message is unavailable. Cancel the reply to send a new message.",
     "file": "File",
     "photos": "Photos",
+    "recentPhotos": "Recent photos",
+    "recentPhotoReadFailed": "Could not read this photo",
     "camera": "Camera",
     "memberType": {
       "agent": "Agent",
@@ -487,6 +493,7 @@ export default {
     "mentionAll": "Everyone",
     "mentionMembers": "Mention a member",
     "mentionNoMatch": "No matching members",
+    "mentionRoleHuman": "Person",
     "placeholder": "Write a message…",
     "mobilePlaceholder": "Write a message…",
     "projectGroupPlaceholder": "Message {{name}}… @ to mention an agent",
@@ -848,9 +855,8 @@ export default {
       "openTopic": "Open a topic",
       "react": "React",
       "reply": "Reply",
-      "quoteSelection": "Quote selection",
-      "quoteToComposer": "Comment",
-      "quoteSelectionToComposer": "Comment",
+      "comment": "Comment",
+      "quoteToComposer": "Quote",
       "openFile": "Open",
       "editMessage": "Edit and resend",
       "forkTask": "Fork this task",
@@ -968,9 +974,7 @@ export default {
     "leave": "Leave topic",
     "leaveHint": "You can still read it, but will not get notifications from this topic",
     "removeHint": "They can still read it, but will not get notifications from this topic",
-    "pins": {
-      "pin": "Pin {{name}}",
-      "unpin": "Unpin {{name}}",
+    "menu": {
       "emptyHint": "Choose “Open topic” on any message."
     },
     "anchor": {

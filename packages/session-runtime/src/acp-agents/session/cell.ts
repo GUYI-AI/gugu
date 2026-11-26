@@ -55,6 +55,7 @@ import type { Result } from '@gugu/session-shared';
 import { errorDetail, ok, toSerializedError } from '@gugu/session-shared';
 import { invokesCommand } from '@gugu/session-core/acp/commands';
 import { nativePromptMeta } from '@gugu/session-core/acp/native-prompt';
+import { inlinePromptParts } from './inline-images';
 import { annotationPromptText } from '@gugu/session-core/acp/client';
 import { classifyTurnFailure, refusedTurnOutcome } from './turn-failure';
 import {
@@ -2203,19 +2204,23 @@ export class SessionCell {
       const contextBlocks = sessionContext
         ? [{ type: 'text' as const, text: sessionContext }]
         : [];
-      const attachmentBlocks = resolvedAttachments.filter((_, index) =>
-        prompt.attachments?.[index]?.type !== 'local-file' || this.acceptsImagePrompts
-      ).map((attachment) => ({
-        type: 'image' as const,
-        data: attachment.data,
-        mimeType: attachment.mimeType,
-      }));
+      const sendsImage = (index: number) => prompt.attachments?.[index]?.type !== 'local-file' || this.acceptsImagePrompts;
+      const imageBlock = (index: number) => ({ type: 'image' as const, data: resolvedAttachments[index].data, mimeType: resolvedAttachments[index].mimeType });
+      // Pictures the person placed in their words go there (inline-images.ts); the rest lead, as before.
+      const inline = prompt.text ? inlinePromptParts(prompt.text, (itemId) => {
+        const index = prompt.attachments?.findIndex((attachment) => attachment.type === 'local-file' && attachment.fileItemId === itemId) ?? -1;
+        return index >= 0 && sendsImage(index) ? index : null;
+      }) : null;
+      const placed = new Set(inline?.flatMap((part) => 'image' in part ? [part.image] : []));
+      const attachmentBlocks = resolvedAttachments.flatMap((_, index) => sendsImage(index) && !placed.has(index) ? [imageBlock(index)] : []);
       const turnContextBlocks = [prepared?.text, prepared?.beforeText, turnContext]
         .filter((text): text is string => !!text).map(text => ({ type: 'text' as const, text }));
       // The person's comments on what they were looking at go just ahead of their own words, as one block.
       const annotationText = annotationPromptText(prompt.annotations);
       const annotationBlocks = annotationText ? [{ type: 'text' as const, text: annotationText }] : [];
-      const textBlocks = prompt.text ? [{ type: 'text' as const, text: prompt.text }] : [];
+      const textBlocks = inline
+        ? inline.map((part) => 'image' in part ? imageBlock(part.image) : { type: 'text' as const, text: part.text })
+        : prompt.text ? [{ type: 'text' as const, text: prompt.text }] : [];
       // hiddenContext is host context for this message, such as a mentioned or scheduled issue.
       // Typed turns carry someone's words verbatim, without host context beside them.
       const trailingBlocks = [

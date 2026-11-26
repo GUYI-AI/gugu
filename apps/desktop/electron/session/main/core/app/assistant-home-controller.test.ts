@@ -7,7 +7,7 @@ const operation = '44444444-4444-4444-8444-444444444444'
 const mocks = vi.hoisted(() => ({
   owner: '', rows: [] as Array<Record<string, unknown>>, queryError: null as { message: string } | null,
   close: vi.fn(), assertProvision: vi.fn(), start: vi.fn(), wipe: vi.fn(),
-  client: { from: vi.fn() },
+  client: { from: vi.fn(), rpc: vi.fn() },
 }))
 vi.mock('@gugu/core/cloud/runtimeAuthProvider', () => ({ userIdFromSupabaseAccessToken: () => mocks.owner }))
 vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: () => mocks.client }))
@@ -16,6 +16,7 @@ vi.mock('../../../../lib/logger', () => ({ createLogger: () => ({ error: vi.fn()
 vi.mock('../../../../assistant-home-prepare', () => ({ prepareLocalAssistantHome: vi.fn(), wipeLocalAssistantHome: mocks.wipe }))
 vi.mock('../../../../assistant-rules-root', () => ({ ensureAssistantApp: vi.fn(async () => 'present') }))
 vi.mock('../../../../assistant-server-preparation', () => ({ createAssistantServerPreparation: () => ({ start: mocks.start, assertProvision: mocks.assertProvision, closeHome: mocks.close }) }))
+import { boundRows } from '../extensions/test-support/binding-rpc'
 import { assistantHomeController as controller, setAssistantHomeDeviceResolver } from './assistant-home-controller'
 import { installAssistantRulesResolver } from '../../../../assistant-rules-resolver'
 import { fixedAssistantRules } from '../../../../../../../tests/unit/desktop/assistantRules/fixtureApp'
@@ -38,6 +39,8 @@ beforeEach(() => {
       then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: mocks.rows, error: mocks.queryError }).then(resolve) }
     return query
   })
+  mocks.client.rpc.mockImplementation(async () => mocks.queryError ? { data: null, error: mocks.queryError }
+    : { data: boundRows(mocks.rows), error: null })
   mocks.assertProvision.mockResolvedValue(undefined)
   mocks.close.mockResolvedValue({ workdir: '/account/assistant', existed: true })
 })
@@ -50,6 +53,7 @@ it('checks the account and exact account device before any setup or database wor
   expect(await controller.preflight({ ownerUserId: assistant, deviceId: device })).toMatchObject({ ok: false, error: { code: 'account_changed' } })
   expect(await controller.preflight({ ownerUserId: owner, deviceId: assistant })).toMatchObject({ ok: false, error: { code: 'target_not_owned' } })
   expect(mocks.client.from).not.toHaveBeenCalled()
+  expect(mocks.client.rpc).not.toHaveBeenCalled()
 })
 it('rejects a desktop, a managed cloud host and an unsupported Linux architecture', async () => {
   vi.stubEnv('GUGU_SERVER_MODE', '0')

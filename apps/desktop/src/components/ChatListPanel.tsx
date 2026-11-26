@@ -36,13 +36,14 @@ import { chatLineCalls, chatLineNews } from '@/lib/chatLineUnread'
 import { AvatarUnread } from './AvatarUnread'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestBridge'
+import { showChatOnPhone } from '@/session/renderer/app/screen-layout-actions'
 import { isOwnedAgentPeer, openOwnedAgentEntry, useOwnedAgentEntries } from '../lib/ownedAgentConversation'
 import { useHeldOrder, usePointerHold } from '../lib/heldOrder'
 import { isOneListProjectLine, ONE_LIST_AVATAR_PX, oneListAgentRows, oneListShows, placeProjectLines, sidebarPinnedRows, useAgentHomes, useOneListProjectLines, type OneListProjectLine } from '../lib/sidebarOneList'
 import { usePublishOneListAgentRows } from '../lib/innerSidebarBridge'
 import { mobileListDiagnostics } from '@/mobile/mobileListDiagnostics'
 import { readShellSlots } from '../lib/shellSlots'
-import { installOneListNeighbour, oneListProjectSlotKey, subscribeShellChatActions, takeShellChatAction, useSidebarChatView, useSidebarNotificationsOpen, useSidebarPinnedAgents, type ShellChatDialog } from '../lib/sidebarChatsBridge'
+import { installOneListNeighbour, oneListProjectSlotKey, subscribeShellChatActions, takeShellChatAction, readSidebarNotificationsOpen, useSidebarChatView, useSidebarNotificationsOpen, useSidebarPinnedAgents, type ShellChatDialog } from '../lib/sidebarChatsBridge'
 import { NotificationSlot } from './needsYou/NotificationSlot'
 import { RETAINED_SURFACE_HIDDEN_STYLE } from '../lib/retainedSurface'
 import { blockKey, joinRows, type JoinedGroup, type SidebarJoin } from '../lib/sidebarJoinedGroups'
@@ -122,7 +123,7 @@ const SIDEBAR_LIST_STYLE: React.CSSProperties = { padding: '0 0 8px' }
 const SIDEBAR_ENTRY_ESTIMATE = 58
 
 /** A mounted sidebar line, placed by the line window. */
-const lineStyle = (top: number): React.CSSProperties => ({ position: 'absolute', top, left: 0, width: '100%' })
+const lineStyle = (top: number): React.CSSProperties => ({ position: 'absolute', top, left: 0, width: '100%', transitionProperty: 'none' })
 /** The chat a sidebar line stands for: a conversation's own, a project line's group chat (#2548). */
 const chatIdOf = (chat: ChatItem) => chat.id
 const lineChatId = (row: ChatItem | OneListProjectLine) => (isOneListProjectLine(row) ? row.projectChatId : row.id)
@@ -561,7 +562,6 @@ export function ChatListPanel({
   onNewProject,
 }: ChatListPanelProps) {
   const inSidebar = placement === 'sidebar'
-  const notificationsOpen = useSidebarNotificationsOpen()
   // The IM page's list (web / phone) is on screen when the shell shows 消息; the task page's sidebar copy never is.
   const chatsShown = useShellTabIs('chats')
   const tasksShown = useShellTabIs('tasks')
@@ -825,7 +825,9 @@ export function ChatListPanel({
     scrollMargin: windowMargin,
     enabled: inSidebar,
   })
-  const windowStyle: React.CSSProperties = { height: lineWindow.getTotalSize(), position: 'relative' }
+  // Reduced-motion CSS supplies a duration even to elements with no declared transition. Keep the spacer height
+  // and row offsets in the same paint so a newly inserted row cannot overlap an old row or the sidebar tail.
+  const windowStyle: React.CSSProperties = { height: lineWindow.getTotalSize(), position: 'relative', transitionProperty: 'none' }
   // A project line (OneListProjectSlot) is measured once the task page has drawn its row, before that frame is painted.
   const measureDrawnLine = useStableHandler((slot: HTMLElement) => {
     flushSync(() => lineWindow.measureElement(slot.parentElement))
@@ -857,9 +859,10 @@ export function ChatListPanel({
       })
       return
     }
-    // A phone's list covers the chat it reopens, so a tap there is an opening (#6530), not a jump inside a chat on screen.
+    // A phone's list covers the chat it reopens, so a tap there is an opening (#6530), not a jump inside a chat on screen;
+    // a group's row reopens the topic standing under it, as on the desktop screen (showChatOnPhone).
     if (chat.unread_locator || mobile) {
-      void (mobile ? openUnreadChat(chat.id, false) : openUnreadChat(chat.id)).catch((error) => {
+      void (mobile ? openUnreadChat(showChatOnPhone(chat.id, true), false) : openUnreadChat(chat.id)).catch((error) => {
         chatListLog.error({ error: String(error) }, 'unread locator open failed')
       })
     } else {
@@ -903,9 +906,10 @@ export function ChatListPanel({
   // page's copy, whose rows are the sidebar's conversations (the task page's own key chain then holds none of them).
   const walksListKeys = inSidebar ? agentHomes !== null && tasksShown : chatsShown
   useEffect(() => {
-    if (!walksListKeys || notificationsOpen) return
+    if (!walksListKeys) return
     const handleGlobalShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return
+      // Read when the key comes: the list does not re-render each time the bell opens or closes.
+      if (event.defaultPrevented || readSidebarNotificationsOpen()) return
       if (
         event.composedPath().some(
           (node) =>
@@ -948,7 +952,7 @@ export function ChatListPanel({
 
     window.addEventListener('keydown', handleGlobalShortcut)
     return () => window.removeEventListener('keydown', handleGlobalShortcut)
-  }, [selectedChatId, walksListKeys, inSidebar, chats, selectChat, visibleChatIds, notificationsOpen, focusChatRow])
+  }, [selectedChatId, walksListKeys, inSidebar, chats, selectChat, visibleChatIds, focusChatRow])
 
   // #2548 ⌃X⌃X on the task page archives the open task, then opens the row after the lit one as ⌘↓ does (the one before it
   // at the end); false = no other row, and the task page goes to New task (sidebarChatsBridge.installOneListNeighbour).
@@ -1130,7 +1134,7 @@ export function ChatListPanel({
       />
 
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <div data-notification-original-list="" className="flex min-h-0 flex-1 flex-col" style={notificationsOpen ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
+        <NotificationListSwap active={chatsShown && !hidden}>
           {!mobile && (
             <SearchField
               ref={searchInputRef}
@@ -1144,11 +1148,24 @@ export function ChatListPanel({
             />
           )}
           {list}
-        </div>
-        <NotificationSlot part="list" active={notificationsOpen && chatsShown && !hidden} />
+        </NotificationListSwap>
       </div>
       {dialogs}
 
     </Pane>
   )
+}
+
+/**
+ * The bell's list takes the conversation list's place while it is open. Only this part reads the bell: opening or closing
+ * it re-renders these two slots, never the whole list (its children are the list's elements, passed through unchanged).
+ */
+function NotificationListSwap({ active, children }: { active: boolean; children: ReactNode }) {
+  const open = useSidebarNotificationsOpen()
+  return <>
+    <div data-notification-original-list="" className="flex min-h-0 flex-1 flex-col" style={open ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
+      {children}
+    </div>
+    <NotificationSlot part="list" active={open && active} />
+  </>
 }

@@ -1,6 +1,7 @@
 import { agentHomeDiffSchema, agentHomeGroupIdSchema, agentHomeImportResultSchema, agentHomeIssueSchema, agentHomeScanSchema } from './homes';
 import { defineContract, fallible, liveJob, liveLog, liveModel, liveState } from '@gugu/session-wire';
 import { z } from 'zod';
+import { customModelEffortResultSchema, customModelEntrySchema } from '../../models/custom-model';
 import { customModelConnectionSchema, customModelProtocolProbeSchema, detectCustomModelProtocolsSchema, saveCustomModelSchema, testCustomModelSchema } from './custom-models';
 import {
   connectionModelListSchema,
@@ -44,6 +45,11 @@ const provider = z.object({ providerId: z.string() });
 
 const commonAgentConfigContract = defineContract({
   listCustomModels: fallible({ input: z.void(), data: z.array(customModelConnectionSchema), error: agentConfigAuthErrorSchema }),
+  lookupCustomModelEfforts: fallible({
+    input: z.object({ ids: z.array(customModelEntrySchema.shape.id).min(1).max(400) }),
+    data: z.array(z.object({ id: z.string(), result: customModelEffortResultSchema })),
+    error: agentConfigAuthErrorSchema,
+  }),
   saveCustomModel: fallible({ input: saveCustomModelSchema, data: customModelConnectionSchema, error: agentConfigAuthErrorSchema }),
   removeCustomModel: fallible({ input: z.object({ connectionId: z.string().min(1) }), data: z.void(), error: agentConfigAuthErrorSchema }),
   testCustomModel: fallible({ input: testCustomModelSchema, data: connectionModelListSchema, error: agentConfigAuthErrorSchema }),

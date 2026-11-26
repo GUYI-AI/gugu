@@ -1,10 +1,11 @@
+import { CONTEXT_THRESHOLD_ENV, contextCompactionSettings } from '@gugu/session-core/models/context-threshold';
 import { harnessPlatform } from './platform';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { mcpToggleDirective } from '@gugu/session-core/mcp';
 import { assertSessionMcpStdioEnv, sessionMcpAuthorization } from '../../helpers/session-mcp';
 import { codexNotifyConfigValue, isLegacyCodexTrustFile, stripLegacyCodexNotify } from './hooks';
-import { codexPlatformProviderConfigArgs } from './platform-provider-args';
+import { CODEX_PLATFORM_PROVIDER_ID, codexPlatformProviderConfigArgs } from './platform-provider-args';
 import { codexPlatformModelFacts, GUGU_PLATFORM_MODELS_ENV } from './platform-models';
 import { CODEX_AUTONOMY_BY_MODE, CODEX_PERMISSION_MODES, type CodexPermissionMode } from './permission-modes';
 
@@ -604,9 +605,8 @@ function modelArgs(
     args.push('-c', `model_context_window=${model.contextWindow}`);
   }
   if (model.platformProvider) {
-    const provider = 'gugu_platform';
     args.push(...codexPlatformProviderConfigArgs({
-      providerId: provider,
+      providerId: CODEX_PLATFORM_PROVIDER_ID,
       providerName: 'Gugu 平台额度',
       baseUrl: model.platformProvider.baseUrl,
       // #6921 令牌能调 codex 写死的出图模型 ⇒ 打开它自己的出图工具(ACP 腿同一个函数,见 index.ts)。
@@ -910,9 +910,12 @@ export function materializeCodexSessionBundle(
   //
   // app-server uses this map; acp uses ACP session/new.
   const usesAcpChannel = ctx.surface === 'acp';
+  const threshold = contextCompactionSettings(bundle.env, bundle.model?.contextWindow);
+  if (usesAcpChannel && threshold) env[CONTEXT_THRESHOLD_ENV] = String(threshold.tokens);
   const threadConfig = ctx.surface === 'app-server'
     ? (() => {
         const entries: Array<readonly [string, unknown]> = [['tools.update_plan.enabled', true]];
+        if (threshold) entries.push(['model_auto_compact_token_limit', threshold.tokens]);
         for (const server of bundle.mcpServers) {
           const key = mcpConfigKey(server.name);
           // 问题 9:咕咕发的 server 不逐次问(Codex 缺省按注解判,没注解就问)。

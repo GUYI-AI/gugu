@@ -7,8 +7,16 @@ test('a failed phone claim produces one verified owner message through ordinary 
   const query=(data)=>({select(){return this},eq(){return this},is(){return this},not(){return this},abortSignal(){return this},
     then(resolve){resolve({data,error:null})},maybeSingle(){checks++;return Promise.resolve({data:{id:[...posts.keys()][0]},error:null})}})
   const cloud={
-    identity:{rpc:async(name)=>name==='assistant_work_outbox_claim'?{data:null,error:{code:'PGRST202',message:'private schema detail'}}:{data:{items:[]},error:null},
-      from:()=>query([{agent_user_id:'assistant',agent:{removed_at:null},device_id:'home',member_key:'assistant',phase:'ready',created_at:'2026-10-26T00:00:00Z'}])},
+    identity:{rpc:(name,args)=>{
+      if(name==='my_app_agent') {
+        assert.deepEqual(args,{p_app_id:'gugu-assistant'})
+        return {abortSignal:async(signal)=>{
+          assert.ok(signal instanceof AbortSignal)
+          return {data:[{agent_user_id:'assistant',device_id:'home'}],error:null}
+        }}
+      }
+      return Promise.resolve(name==='assistant_work_outbox_claim'?{data:null,error:{code:'PGRST202',message:'private schema detail'}}:{data:{items:[]},error:null})
+    },from:()=>{throw new Error('The notice must read the App binding, not the former provision role')}},
     chat:{rpc:(name,args)=>({abortSignal:async()=>{
       if(name==='open_dm')return {data:'dm',error:null}
       posts.set(args.p_message_id,args);return {data:[{id:args.p_message_id}],error:null}

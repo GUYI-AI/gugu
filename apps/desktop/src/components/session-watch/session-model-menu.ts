@@ -1,5 +1,5 @@
-import { customComposerOptions } from '@renderer/features/sessions/session-config/custom-model-options'
-import { buildComposerModelGroups, type ComposerModelItem, type ComposerModelOption } from '@gugu/session-ui/react/components'
+import { customComposerOptions, ownModelTag } from '@renderer/features/sessions/session-config/custom-model-options'
+import { type ComposerModelItem, type ComposerModelOption } from '@gugu/session-ui/react/components'
 import type { SessionOptionGroup, SessionpageSessionCreateModels } from '@gugu/session-core/session-record/contract'
 import type { SessionModelMenu } from '@main/core/session-timeline/session-model-menu'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
@@ -39,7 +39,7 @@ export function createModelOptions(
       requiresMembership: model.requires_membership === true,
       hidden: model.hidden === true,
     }))
-  return { ...assembleComposerModelOptions(own, gugu, agentName), ...customComposerOptions(models.customModels ?? [], { id: models.harness, name: agentName, capabilities: { modelProtocols: models.modelProtocols, customModel: models.customModel } }, translateSessionMessage('customModels.device'), translateSessionMessage) }
+  return { ...assembleComposerModelOptions(own, gugu, agentName, undefined, undefined, ownModelTag(models.harness)), ...customComposerOptions(models.customModels ?? [], { id: models.harness, name: agentName, capabilities: { modelProtocols: models.modelProtocols, customModel: models.customModel } }, translateSessionMessage) }
 }
 
 /** 选完收起时写什么(桌面触发器同一格:咕咕的写「咕咕 X」)。 */
@@ -76,10 +76,11 @@ export function sessionModelView(menu: SessionModelMenu, live: SessionOptionGrou
     menu.platformModels.map((model) => model.id)
   )
   // 正在用的那条要会员了、或被他在设置里关掉了也照列(与桌面会话菜单同一条,见 `composerModelOptions`)。
+  const credentialKind = menu.ownAuth?.status.kind === 'authenticated' ? menu.ownAuth.status.credentialKind : undefined
   const base = assembleComposerModelOptions(
-    own, menu.platformModels, menu.agentName, undefined, runningPlatformModel
+    own, menu.platformModels, menu.agentName, undefined, runningPlatformModel, ownModelTag(menu.providerId, { credentialKind })
   ) ?? {}
-  const options = { ...base, ...customComposerOptions(menu.customModels ?? [], { id: menu.providerId ?? '', name: menu.agentName, capabilities: { modelProtocols: menu.modelProtocols, customModel: menu.customModelCapability } }, translateSessionMessage('customModels.device'), translateSessionMessage) }
+  const options = { ...base, ...customComposerOptions(menu.customModels ?? [], { id: menu.providerId ?? '', name: menu.agentName, capabilities: { modelProtocols: menu.modelProtocols, customModel: menu.customModelCapability } }, translateSessionMessage) }
   const advertised = live.available.map((choice) => choice.id)
   const plan = (optionId: string) =>
     planModelSwitch({
@@ -103,7 +104,7 @@ export function sessionModelView(menu: SessionModelMenu, live: SessionOptionGrou
     }
   })
   return {
-    groups: buildComposerModelGroups(items),
+    groups: items.length ? [{ label: '', items }] : [],
     selectedId: composerSelectedOptionId({ platformModel: runningPlatformModel, model: live.selected, customModel: menu.customModel }),
     plan,
     lockedModels: menu.platformModels.filter((model) => model.requiresMembership).map((model) => model.displayName),

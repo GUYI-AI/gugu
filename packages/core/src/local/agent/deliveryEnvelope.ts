@@ -161,6 +161,8 @@ type CommonEnvelopeFacts = {
   groupRules?: { version: string; text: string | null } | null
   /** #6562 系统通知是「不是请求」（见 `arrivalHint`）。 */
   mode?: DeliveryMode | null
+  /** A system notice intended only for the receiving agent. */
+  agentOnly?: true
   /** session-direct:发信方自己声明的发完以后去向(owner 10-17「相当于一种协议」),不是程序推出的状态。 */
   then?: SessionMessageThen | null
   /** session-direct:发信方说这条回的是哪条(`msg:<uuid>`,它收到的那条信封的 `msg`)。 */
@@ -228,6 +230,7 @@ export function renderDeliveryEnvelope(facts: DeliveryEnvelopeFacts): string {
     attr('listen_mode', facts.listenMode),
     attr('rules', facts.groupRules?.version),
     attr('mode', facts.mode),
+    attr('agent_only', facts.agentOnly ? 'true' : null),
     attr('then', facts.then),
     attr('in_reply_to', facts.inReplyTo),
   ].filter((entry): entry is string => entry !== null)
@@ -304,6 +307,7 @@ export type DeliveryReadFacts = {
   at: string | null
   listenMode: string | null
   mode: string | null
+  agentOnly?: true
   then: string | null
   inReplyTo: string | null
   replyTo: { messageId: string; fromId: string; from: string | null; preview: string } | null
@@ -371,6 +375,16 @@ function parseDeliveryEnvelope(text: string): DeliveryReading | null {
     : source.startsWith('[') ? readRetiredSessionDirect(source) ?? readRetiredBatch(source) : null
   if (!segments) return null
   return { body: segments.map((segment) => segment.body).join('\n\n'), segments }
+}
+
+/** The viewer's copy of a delivery. Keep the original envelope in provider input and records. */
+export function visibleDeliveryText(text: string): string | null {
+  const segments = readDeliveryEnvelope(text)?.segments
+  if (!segments?.some(segment => segment.facts?.agentOnly)) return text
+  if (segments.every(segment => segment.facts?.agentOnly)) return null
+  // Only the XML reader produces agentOnly, in the same order as the individual envelopes.
+  const envelopes = envelopesOf(parseXml(text.trim()))!
+  return mergeDeliveryEnvelopes(envelopes.flatMap((envelope, index) => segments[index]?.facts?.agentOnly ? [] : [envelope.source]))
 }
 
 /**
@@ -529,6 +543,7 @@ function readSegment(envelope: XmlElement): DeliverySegment | null {
       at: attr('at'),
       listenMode: attr('listen_mode'),
       mode: attr('mode'),
+      ...(attr('route') === 'system' && attr('from_id') === 'system:gugu' && attr('agent_only') === 'true' ? { agentOnly: true } : {}),
       then: attr('then'),
       inReplyTo: attr('in_reply_to'),
       replyTo: reply && replyMsg && replyFromId
@@ -915,13 +930,14 @@ export function buildExtensionEnvelope(input: {
  * 咕咕系统 adapter（#6593）：咕咕自己要告诉这条会话的一件事。发信方就是咕咕，与聊天里的系统消息同一个
  * 名字与锚（`Gugu` / `system:gugu`）；它不来自任何聊天，所以没有 chat 那几格。
  */
-export function buildSystemNoticeEnvelope(input: { messageId: string; content: string; at: string }): string {
+export function buildSystemNoticeEnvelope(input: { messageId: string; content: string; at: string; agentOnly?: true }): string {
   return renderDeliveryEnvelope({
     route: 'system',
     from: 'Gugu',
     fromId: 'system:gugu',
     messageId: encodeTypedId('msg', input.messageId),
     at: input.at,
+    agentOnly: input.agentOnly,
     content: input.content,
   })
 }

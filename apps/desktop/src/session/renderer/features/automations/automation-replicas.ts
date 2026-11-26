@@ -1,7 +1,7 @@
-import { replica } from '@/lib/replica';
+import { replica, valueOf } from '@/lib/replica';
 import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
 import type { Automation } from '@shared/core/automations/automation';
-import type { AutomationRun } from '@shared/core/automations/automation-run';
+import type { AutomationRun, AutomationRunHeads } from '@shared/core/automations/automation-run';
 import {
   automationChangedChannel,
   automationRunChangedChannel,
@@ -46,23 +46,19 @@ export const automations = replica({
   watch: machineFeed(['changed'], (machine) => { void automations.refresh(machine); }),
 });
 
-export const automationNextRun = replica({
-  name: 'automationNextRun',
+/** Every automation's latest and next run on a machine, one read for the whole page (❌ two reads per row). */
+export const automationRunHeads = replica({
+  name: 'automationRunHeads',
   ...ofMachine,
-  read: (_owner, machine: AutomationMachine, automationId: string): Promise<AutomationRun | null> =>
-    apiOf(machine).getNextScheduledRun(automationId),
+  read: (_owner, machine: AutomationMachine): Promise<AutomationRunHeads> => apiOf(machine).listRunHeads(),
   tags: [RUNS],
-  watch: machineFeed(['changed', 'run'], (machine, { automationId }) => { void automationNextRun.refresh(machine, automationId); }),
-});
-
-export const automationLatestRun = replica({
-  name: 'automationLatestRun',
-  ...ofMachine,
-  read: (_owner, machine: AutomationMachine, automationId: string): Promise<AutomationRun | null> =>
-    apiOf(machine).getLatestRun(automationId),
-  tags: [RUNS],
-  // The event carries the run: it is the latest one, ❌ read again.
-  watch: machineFeed(['run'], (machine, { automationId, run }) => { if (run) automationLatestRun.set([machine, automationId], run); }),
+  // The event carries the run: a started or finished one is that automation's latest, ❌ read again. Only a change to
+  // what is scheduled next (or to the automation itself) reads them again.
+  watch: machineFeed(['changed', 'run'], (machine, { automationId, run }) => {
+    const shown = valueOf(automationRunHeads.peek(machine))?.[automationId];
+    if (!run || run.status === 'scheduled' || shown?.next?.id === run.id) return void automationRunHeads.refresh(machine);
+    automationRunHeads.set([machine], (heads) => heads && { ...heads, [automationId]: { latest: run, next: heads[automationId]?.next ?? null } });
+  }),
 });
 
 /** One row more than a page says whether there is a next one. */

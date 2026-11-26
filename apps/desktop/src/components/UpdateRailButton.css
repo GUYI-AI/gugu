@@ -1,11 +1,7 @@
 /* Sits in the sidebar's foot row beside 已安排 / 会话历史 / the bell: their 28px ghost button, the glyph in the accent. */
 .gg-icon-btn.gg-update-rail {
-  width: auto;
-  min-width: 28px;
+  width: 28px;
   height: 28px;
-  padding-inline: 4px;
-  grid-auto-flow: column;
-  gap: 2px;
 }
 
 .gg-update-rail > svg {
@@ -16,11 +12,28 @@
   color: var(--danger-fg);
 }
 
-.gg-update-rail-progress {
-  color: var(--muted-fg);
-  font-size: var(--font-caption);
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
+/* The ring shares the glyph's cell; the glyph shrinks inside it. */
+.gg-update-rail > svg,
+.gg-icon-btn.gg-update-rail > .gg-update-rail-progress {
+  grid-area: 1 / 1;
+}
+
+.gg-icon-btn.gg-update-rail > .gg-update-rail-progress {
+  width: 28px;
+  height: 28px;
+}
+
+.gg-icon-btn.gg-update-rail[data-progress] > svg:first-child {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.gg-update-rail-progress circle:last-child {
+  transition: stroke-dashoffset var(--dur-fast) linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gg-update-rail-progress circle:last-child { transition: none; }
 }
 
 .gg-update-rail[aria-busy] {

@@ -204,6 +204,8 @@ export interface SessionRecordSourceEvents {
   onEntries(entries: RecordEntry[]): void;
   /** 记录整份换掉了（分叉、被删重建、库被重置）。收到后 timeline 必须换 epoch 并整份重读。 */
   onReset(reason: Extract<RecordResetReason, 'source_replaced' | 'source_unreadable'>): void;
+  /** A live source can no longer follow its record. Keep existing history and expose the failure. */
+  onError?(error: unknown): void;
 }
 
 /**
@@ -244,6 +246,8 @@ export interface SessionRecordSource {
   resumePoint?(budget?: RecordArchiveBudget): Promise<SessionRecordResume | null>;
   /** 立刻把尾读追到文件尾,读完(行已交给 onEntries)才返回。不支持的源没有这个口。 */
   catchUp?(): Promise<void>;
+  /** The record is not written yet: the source gave no entries and reads it once `catchUp` finds it. */
+  awaiting?(): boolean;
   getLineage?(): readonly RecordLineageNode[] | null;
   stop(): void;
   /**
@@ -1040,6 +1044,10 @@ export type GuguCatalogReason =
   | 'signed-out'
   /** 咕咕这边出错了(服务端 5xx / bad_request / 表外的原因,本机内部故障):原文只进日志(#7103)。 */
   | 'service-unavailable'
+  | 'conversion-add-provider-timeout'
+  | 'conversion-switch-provider-timeout'
+  | 'conversion-listen-timeout'
+  | 'conversion-start-failed'
   | 'unreachable'
   /** 这个咕咕模型要开会员才能用(网关签票回 `membership_required`,#7092):说的是模型,❌「任务没能启动」。 */
   | 'membership-required'
@@ -1069,6 +1077,7 @@ const LEGACY_GUGU_CATALOG_REASONS: ReadonlyArray<[string, GuguCatalogReason]> = 
 const GUGU_CATALOG_REASONS = new Set<GuguCatalogReason>([
   'not-routable', 'no-identity-chat', 'no-identity-terminal', 'runtime-not-connected', 'host-not-ready',
   'none-for-agent', 'signed-out', 'service-unavailable', 'unreachable', 'membership-required', 'model-unavailable',
+  'conversion-add-provider-timeout', 'conversion-switch-provider-timeout', 'conversion-listen-timeout', 'conversion-start-failed',
   'team-monthly-cap-reached', 'team-credits-exhausted',
 ]);
 
@@ -1255,6 +1264,8 @@ export type SessionpageOpenedFileChunk = { size: number; etag: string; data: str
 export const OPENED_FILE_MAX_BYTES = 20 * 1024 * 1024;
 
 export type SessionpageSessionSubscribeRequest = {
+  /** The first push is the whole snapshot: the reader subscribes without reading one first. */
+  recordEvents?: true;
   conversationId: string;
   subscriptionId: string;
   cursor: RecordCursor | null;
@@ -1338,6 +1349,12 @@ export type SessionpageSessionRespondResult = {
 export type SessionpageSessionEvent = {
   subscriptionId: string;
   result: TimelineAfterResult;
+};
+
+/** A subscription's record can no longer be followed: the subscription is over, with why. */
+export type SessionpageRecordStatusEvent = {
+  subscriptionId: string;
+  error: { code: string; message: string };
 };
 
 /**

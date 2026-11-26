@@ -1,5 +1,7 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { platform } from '@/platform'
+import { SessionSettingsSection } from '../sessionpage/SessionSettingsSection'
+import { Crown } from '@/lib/icons'
 import { useTheme } from '@/store/theme'
 import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
 import { useState } from 'react'
@@ -13,13 +15,14 @@ import { platformModels } from '../../lib/agentModelReplicas'
 import { rendererLogger } from '../../lib/log'
 import { Button } from '../ui/Button'
 import { SearchField } from '../ui/SearchField'
-import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow, Toggle } from './SettingsPrimitives'
+import { SettingsNote, SettingsPage, SettingsRow, Toggle } from './SettingsPrimitives'
 import { RefreshFailed } from '../ui/RefreshFailed'
-import { ChevronDown, ChevronRight } from '@/lib/icons'
-import { CustomModelsGroup } from './CustomModelsGroup'
+import { publicAssetPath } from '@gugu/core/shared/ui/publicAssets'
+import { Dialog, DialogContent, DialogContentArea, DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog'
+import { useSessionMessages } from '@renderer/localization/use-session-messages'
+import { CustomModelsGroup, ModelProviderRow } from './CustomModelsGroup'
 import { DeviceScopePicker, DeviceScopeStatus } from '@renderer/features/remote-hosts/device-scope-picker'
 import { settingsDeviceStore } from '@renderer/features/remote-hosts/device-scope-store'
-import { SessionSettingsSection } from '../sessionpage/SessionSettingsSection'
 import './ModelSettings.css'
 
 /**
@@ -38,15 +41,52 @@ import './ModelSettings.css'
 const paneLog = rendererLogger('settings/model-pane')
 
 export function ModelSection({ addRequested, onAddClose }: { addRequested?: boolean; onAddClose?: () => void } = {}) {
-  const { t } = useTranslation('settings')
   const { theme } = useTheme()
+  return (
+    <SettingsPage className="gg-model-page" data-testid={AUTOMATION_TEST_IDS.settingsModelPane}>
+      {platform.capabilities.modelSettings && <SessionUiTheme theme={theme} skin>
+      <div className="flex min-w-0 items-center gap-2" data-testid="settings-model-machine">
+        <DeviceScopePicker store={settingsDeviceStore} />
+        <DeviceScopeStatus store={settingsDeviceStore} />
+      </div>
+      </SessionUiTheme>}
+      <CustomModelsGroup addRequested={addRequested} onAddClose={onAddClose} providedModels={<ProvidedModels />} />
+      {platform.capabilities.modelSettings && <SessionSettingsSection section="auxiliary-models" />}
+    </SettingsPage>
+  )
+}
+
+function ProvidedModels() {
+  const { t } = useTranslation('settings')
+  const { translate } = useSessionMessages()
+  const [open, setOpen] = useState(false)
+  const catalog = useReplica(platformModels, [])
+  const canUpgrade = catalog.state === 'value' && catalog.value.some(model => model.enabled && model.requiresMembership) && billingLinksAvailable()
+  return <>
+    <ModelProviderRow icon={<img src={publicAssetPath('/assets/app/gugu-icon-small.png')} alt="" />}
+      name={t('model.providerName')} manageLabel={translate('customModels.manageConnectionModels')}
+      onManage={() => setOpen(true)} manageTestId="settings-model-provided-manage"
+      endAction={canUpgrade ? <Button className="gg-model-icon-button" size="icon" variant="ghost"
+        aria-label={translate('composer.platformModelUpgrade')} data-testid="settings-model-provided-upgrade" onClick={openBillingPage}>
+        <Crown aria-hidden="true" className="size-4" />
+      </Button> : undefined} />
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="gg-model-dialog gg-provided-model-dialog sm:max-w-[480px]" data-testid="settings-model-provided-dialog">
+        <DialogHeader><DialogTitle>{t('model.provided')}</DialogTitle></DialogHeader>
+        <DialogContentArea><ProvidedModelCatalog /></DialogContentArea>
+      </DialogContent>
+    </Dialog>
+  </>
+}
+
+function ProvidedModelCatalog() {
+  const { t } = useTranslation('settings')
   const catalog = useReplica(platformModels, [])
   const models = catalog.state === 'value' ? catalog.value.filter((model) => model.enabled) : null
   const loadFailed = catalog.state === 'error' ? messageForUser(catalog.error) : ''
   const [saveFailed, setSaveFailed] = useState('')
   // 列表顶上一格搜索(Cursor 那页同款):按名字或 id 筛,两组一起筛。
   const [query, setQuery] = useState('')
-  const [showProvided, setShowProvided] = useState(false)
 
   const toggle = (model: PlatformCatalogModel, shown: boolean) => {
     setSaveFailed('')
@@ -65,44 +105,29 @@ export function ModelSection({ addRequested, onAddClose }: { addRequested?: bool
   const groups = models === null ? null : (() => {
     const matched = models.filter((model) =>
       !needle || model.displayName.toLowerCase().includes(needle) || model.id.toLowerCase().includes(needle))
-    return { usable: matched.filter((model) => !model.requiresMembership), locked: matched.filter((model) => model.requiresMembership) }
+    return { usable: matched.filter((model) => !model.requiresMembership).sort((a, b) => Number(a.hidden) - Number(b.hidden)), locked: matched.filter((model) => model.requiresMembership) }
   })()
 
   return (
-    <SettingsPage className="gg-model-page" data-testid={AUTOMATION_TEST_IDS.settingsModelPane}>
-      {platform.capabilities.modelSettings && <SessionUiTheme theme={theme} skin>
-      <div className="flex min-w-0 items-center gap-2" data-testid="settings-model-machine">
-        <DeviceScopePicker store={settingsDeviceStore} />
-        <DeviceScopeStatus store={settingsDeviceStore} />
-      </div>
-      </SessionUiTheme>}
-      <CustomModelsGroup addRequested={addRequested} onAddClose={onAddClose} />
-      {platform.capabilities.modelSettings && <SessionSettingsSection section="auxiliary-models" />}
-      <SettingsGroup data-platform-models="" data-expanded={String(showProvided)} title={<Button variant="ghost" size="option" className="gg-provided-model-toggle"
-        aria-expanded={showProvided} data-testid="settings-model-provided-toggle" onClick={() => setShowProvided(open => !open)}>
-        <span><span className="gg-model-card-title">{t('model.provided')}</span><span className="gg-model-card-description">{t('model.description')}</span></span>
-        {showProvided ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-      </Button>} footer={saveFailed ? <SettingsNote tone="danger">{saveFailed}</SettingsNote> : undefined}>
-        {showProvided && <>
-        <SearchField value={query} onChange={event => setQuery(event.target.value)} placeholder={t('model.search')}
-          clearLabel={t('model.searchClear')} onClear={() => setQuery('')} data-testid="settings-model-search" />
-        {loadFailed ? <SettingsRow description={loadFailed} control={<Button variant="secondary" size="sm" onClick={retryOf(catalog)}>{t('model.retry')}</Button>} />
-          : groups === null ? <Unknown className="h-64 w-full" /> : <>
-            {catalog.state === 'value' ? <RefreshFailed reading={catalog} /> : null}
-            {needle && groups.usable.length === 0 && groups.locked.length === 0 && <SettingsNote>{t('model.noMatch')}</SettingsNote>}
-            <div className="gg-model-rows" data-testid="settings-model-usable">
+    <>
+      <SearchField value={query} onChange={event => setQuery(event.target.value)} placeholder={t('model.search')}
+        clearLabel={t('model.searchClear')} onClear={() => setQuery('')} data-testid="settings-model-search" />
+      {loadFailed ? <SettingsRow description={loadFailed} control={<Button variant="secondary" size="sm" onClick={retryOf(catalog)}>{t('model.retry')}</Button>} />
+        : groups === null ? <Unknown className="h-24 w-full" /> : <>
+          {catalog.state === 'value' ? <RefreshFailed reading={catalog} /> : null}
+          {needle && groups.usable.length === 0 && groups.locked.length === 0 && <SettingsNote>{t('model.noMatch')}</SettingsNote>}
+          <div className="gg-settings-surface gg-provided-model-list" role="region" aria-label={t('model.provided')} tabIndex={0}>
+            <div data-testid="settings-model-usable">
               {groups.usable.map(model => <SettingsRow key={model.id} data-model-id={model.id} title={model.displayName}
                 control={<Toggle checked={!model.hidden} onChange={shown => toggle(model, shown)} ariaLabel={t('model.toggleAria', { model: model.displayName })} />} />)}
             </div>
-            {groups.locked.length > 0 && <div className="gg-model-rows" data-testid="settings-model-locked">
+            {groups.locked.length > 0 && <div data-testid="settings-model-locked">
               <SettingsNote>{t('model.membersOnly')}</SettingsNote>
-              {billingLinksAvailable() && <SettingsRow description={t('model.upgradeHint')}
-                control={<Button variant="secondary" size="sm" onClick={openBillingPage}>{t('model.upgrade')}</Button>} />}
               {groups.locked.map(model => <SettingsRow key={model.id} data-model-id={model.id} title={model.displayName} />)}
             </div>}
-          </>}
+          </div>
         </>}
-      </SettingsGroup>
-    </SettingsPage>
+      {saveFailed && <SettingsNote tone="danger">{saveFailed}</SettingsNote>}
+    </>
   )
 }

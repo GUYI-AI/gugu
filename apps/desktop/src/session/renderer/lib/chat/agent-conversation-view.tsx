@@ -148,7 +148,7 @@ export function AgentConversationView({ layout, composerContent, shown = true, o
     return () => { observing = false; clearTimeout(settle); cancelAnimationFrame(frame); host.removeEventListener('scroll', schedule, true); document.removeEventListener('visibilitychange', visibleAgain); mutations.disconnect(); resize?.disconnect(); observer.disconnect(); };
   }, [shown, onVisibleItems, slot, !!composerContent, props.composer]);
   return <div ref={root} data-agent-conversation="" className={`${className ?? 'relative min-h-0 flex-1'} ${nativeChatAppearance}`} style={style}>
-    <ChatTranscript stickToBottom pinUserMessages {...props}
+    <ChatTranscript stickToBottom {...props}
       composer={composerContent ? 'slot' : props.composer}
       commands={commands}
       onReady={ready => { view.current = ready; setSlot(ready.composerSlot); onReady?.(ready); }}

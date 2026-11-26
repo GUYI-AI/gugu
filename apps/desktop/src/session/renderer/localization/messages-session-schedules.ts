@@ -34,7 +34,7 @@ export const enUSSessionScheduleMessages = {
   'sessionSchedule.retry': 'Retry',
   'sessionSchedule.catchUp': 'Run now',
   'sessionSchedule.dismiss': 'Dismiss',
-  'sessionSchedule.viewAll': 'See all in Scheduled',
+  'sessionSchedule.viewAll': 'See all in Automations',
   'sessionSchedule.cancelled': 'Cancelled “{title}”',
   'sessionSchedule.actionFailed': 'The action failed. Try again later.',
   // 投递卡上那一段(transcript 的键,与 transcript.deliveryScheduled 并列):到点的是哪一条。
@@ -76,7 +76,7 @@ export const zhCNSessionScheduleMessages: Record<SessionScheduleMessageKey, stri
   'sessionSchedule.retry': '重试',
   'sessionSchedule.catchUp': '立即执行',
   'sessionSchedule.dismiss': '忽略',
-  'sessionSchedule.viewAll': '在「已安排」中查看全部',
+  'sessionSchedule.viewAll': '在「自动化」中查看全部',
   'sessionSchedule.cancelled': '已取消「{title}」',
   'sessionSchedule.actionFailed': '操作失败，请稍后重试。',
   'transcript.deliveryScheduledTitled': '「{title}」已到安排时间',

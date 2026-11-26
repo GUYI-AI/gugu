@@ -264,8 +264,15 @@ const dataImportSettingsSchema = z.object({
   })),
 });
 
+const tokenCount = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+const contextThresholdsSchema = z.record(z.string().max(500), z.object({
+  tokens: tokenCount,
+  maximum: tokenCount,
+}).refine(({ tokens, maximum }) => tokens < maximum));
+
 export const APP_SETTINGS_SCHEMA_MAP = {
   autoReviewModel: autoReviewModelSchema,
+  contextThresholds: contextThresholdsSchema,
   localProject: localProjectSettingsSchema,
   project: projectSettingsSchema,
   sessions: sessionSettingsSchema,
@@ -286,6 +293,7 @@ export const APP_SETTINGS_SCHEMA_MAP = {
 
 export const appSettingsSchema = z.object({
   autoReviewModel: autoReviewModelSchema,
+  contextThresholds: contextThresholdsSchema,
   localProject: localProjectSettingsSchema,
   project: projectSettingsSchema,
   sessions: sessionSettingsSchema,

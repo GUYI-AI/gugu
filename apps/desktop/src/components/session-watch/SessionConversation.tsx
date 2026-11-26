@@ -47,7 +47,7 @@ import { useOpenedOutputOpener } from './opened-output-opener'
 import { sessionWorkingCopyReader } from '@/components/appSlot/phone-working-copy-file'
 import { dismissSubagent } from '@renderer/features/sessions/view/subagent-dismissals'
 import { usePhoneBackgroundTasks } from './background-tasks'
-import { followConversationLink } from '@/lib/followConversationLink'
+import { followConversationLink, noteDrawnPictureLink } from '@/lib/followConversationLink'
 import { openMessageSender } from '@/lib/openMessageSender'
 import { classifyFileLink } from '@gugu/core/shared/ui/guguLink'
 import { ComposerAttachButton } from '@/components/chat/ComposerAttachButton'
@@ -80,7 +80,7 @@ import { rendererLogger } from '@/lib/log'
 export function SessionConversation({ timeline, deviceId, sessionId, agentName, agentUserId, harness, draft, onDraftApplied, startupPrompt, phoneHost = false, local = false, nativeRecord = false, hostReachable = true, appPanel = false,
   machineLabel, sessionRuntime, respondingItemId, onRespond, onSend, pendingSends, sending, agentWorking,
   onStop, stopping, footerNotice, composerControls, permissionsInWork = false, onLoadOlder, onHeldShown, onAtBottom, emptyNote, onBeforeSend,
-  queueReady = false, unseen = false,
+  queueReady = false, unseen = false, timelineUnavailable = false,
 }: {
   timeline: AgentWatchTimeline; deviceId: string; sessionId: string; agentName: string; agentUserId?: string | null
   /** 这条会话的 harness(claude-code / codex …):输入框里模型左边那颗锁着的标,同桌面会话页。 */
@@ -98,6 +98,8 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   onBeforeSend?: () => void
   pendingSends: readonly PendingSend[]; sending: boolean; agentWorking: boolean
   headerRunning?: boolean
+  /** A failed timeline read leaves history visible with no confirmed live turn. */
+  timelineUnavailable?: boolean
   onStop: () => void; stopping: boolean; footerNotice?: ReactNode; composerControls?: (modelControl: ReactNode, model: ExistingSessionModel, skills: ReturnType<typeof creationSkillInput>) => ReactNode; onLoadOlder: () => Promise<void>; onHeldShown?: (itemId: string) => void
   /** Only the existing Work controls may take ownership of the phone permission selector. */
   permissionsInWork?: boolean
@@ -193,7 +195,11 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       if (!agentUserId) throw Object.assign(new Error('attachments: no agent chat to place them in'), { code: 'task_identity_missing' })
       return { chatId: await chatService.getOrCreateDM(owner, agentUserId), owner, deviceId: local ? null : deviceId, sessionId }
     } })
-  const draftPreview = useDraftAttachmentPreview(localQueueKey, mobile && visibility.shown, uploads.draftFile)
+  const draftPreview = useDraftAttachmentPreview(localQueueKey, visibility.shown, uploads.draftFile, (id, file, caption, original) => {
+    if (inFlight.current) throw new Error(translateSessionMessage('composer.attachmentWaiting'))
+    uploads.replaceImage(id, original, file, mobile)
+    if (caption) editor.current?.insertText(caption, 'end')
+  })
   const addFiles = (files: File[]) => {
     for (const { id, file } of fileSelection.choose(files)) {
       void uploads.add({ id, name: file.name, kind: file.type.startsWith('image/') ? 'image' : 'file', mimeType: file.type, hasLocalPreview: mobile }, file)
@@ -366,7 +372,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       void runNativeInputAction(sessionId, id, local ? null : deviceId, () => machineRpc(deviceId, local).sessions.lifeDiscard(sessionId, id))
     },
     ...(nativeRecord && !phoneHost ? userAttachments : { onViewAttachment: userAttachments.onViewAttachment }),
-    classifyLink: classifyFileLink, onOpenLink: followConversationLink, onOpenSender: openMessageSender,
+    classifyLink: classifyFileLink, onOpenLink: followConversationLink, onDrawnPictureLink: noteDrawnPictureLink, onOpenSender: openMessageSender,
     onOpenFile: ({ path, source }) => openFile(path, source),
     conversationAgentSession: () => sessionId, conversationAgentUserId: () => agentUserId ?? null, readConversationFile: input => readConversationFile(local, deviceId, input),
     ...quotes.commands,
@@ -403,13 +409,13 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       attachmentStatus={attachmentWaiting ? translateSessionMessage('composer.attachmentWaiting') : undefined}
       attachmentExtra={annotationItems.length ? <AnnotationTray conversation={{ kind: 'session', sessionId }} onSend={() => { void submit(editor.current?.getText() ?? composerDraft.text) }} enabled={!sending && !stopping && !attachmentWaiting && !quotes.composer.queuedPromptEdit}
         onRemove={id => { if (!inFlight.current) { const imageId = annotationImageId(id); uploads.forget(imageId); setAttachments(current => current.filter(file => file.id !== imageId)) } }} /> : null}
-      attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')} onAttachmentsChange={changeAttachments} onViewAttachment={mobile ? draftPreview.open : undefined}
+      attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')} onAttachmentsChange={changeAttachments} onViewAttachment={draftPreview.open}
       onRetryAttachment={uploads.retry} onFilesDropped={addFiles} onImageFilesDropped={addFiles}
       onAttach={mobile && (composerControls || !appPanel) ? () => input.current?.click() : undefined}
       toolbarExtra={mobile ? undefined : <ComposerAttachButton disabled={sending} mobile={false} glyph={appPanel ? <Plus /> : undefined} onPickFile={() => input.current?.click()} />} />
   </>
   return <SessionUiTheme theme={theme}><MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
-    <div ref={visibility.ref} className="relative flex min-h-0 flex-1 flex-col"><SessionTranscriptView uri={sessionId} turns={turns} pendingPrompt={pendingPrompt ?? startupPrompt ?? pendingSends[0] ?? null} pendingMessages={pendingMessages} mobile commands={commands} backgroundTasks={background}
+    <div ref={visibility.ref} className="relative flex min-h-0 flex-1 flex-col"><SessionTranscriptView uri={sessionId} turns={turns} activeTurnId={timelineUnavailable ? null : undefined} pendingPrompt={pendingPrompt ?? startupPrompt ?? pendingSends[0] ?? null} pendingMessages={pendingMessages} mobile commands={commands} backgroundTasks={background}
       onReachStart={quotes.loadOlder} composerContent={composer} shown={visibility.shown} onAtBottomChange={atBottom => { reading.onAtBottomChange(atBottom); if (atBottom) onAtBottom?.() }} onVisibleItems={reading.onVisibleItems} contentOverlay onReady={ready => { view.current = ready; setOverlay(ready.contentOverlay ?? null); reading.onReady(ready) }} className="relative min-h-0 flex-1" />
     {overlay ? createPortal(turns.length === 0 ? emptyNote : null, overlay) : null}</div>{outputs.panel}{options.confirmation}{draftPreview.panel}
   </MessageProvider></SessionUiTheme>

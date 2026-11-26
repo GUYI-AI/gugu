@@ -80,6 +80,11 @@ export interface LiveSettingCapability {
    * ⇒ 没有这一格,「能热切」这件事在咕咕里表达不出来。
    */
   configId?: string;
+  /**
+   * Fast only: how many times the tokens a Fast turn uses, as the provider publishes it. Absent = the provider bills Fast
+   * at a higher price without a published token multiple, and the hint says only that.
+   */
+  tokenMultiplier?: number;
 }
 
 /**
@@ -126,6 +131,7 @@ const liveSettingSchema = z.object({
   recovery: z.enum(['none', 'runtime-restart', 'unsupported']),
   allowStartupDowngrade: z.boolean().optional(),
   configId: z.string().min(1).optional(),
+  tokenMultiplier: z.number().positive().optional(),
 });
 const startupSchema = z.object({ noticeKey: z.string().min(1) });
 

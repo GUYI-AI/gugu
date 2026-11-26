@@ -72,7 +72,7 @@ export async function assistantStartupIndex(deps: AssistantStartupIndexDeps): Pr
     if (!deps.localSources) return []
     const result: string[] = []
     const local = await read({ action: 'assistant_local_index' }, value => z.array(z.object({
-      source: z.enum(['assistant_memory', 'assistant_personality', 'assistant_files', 'integrations']),
+      source: z.enum(['assistant_memory', 'assistant_personality', 'assistant_files', 'integrations', 'chat_channels']),
       status: z.enum(['read', 'unavailable']), read: z.string(),
       items: z.array(z.object({ id: z.string(), name: z.string(), path: z.string().optional(), modifiedAt: z.string(),
         size: z.number().optional(), isDefault: z.boolean().optional(),

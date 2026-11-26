@@ -273,7 +273,7 @@ import { assistantWorkCoordinator } from '@gugu/core/cloud/assistantWorkRouting'
 import { createDesktopAssistantWorkReconciler } from './assistant-work-reconciliation'
 import { enqueueAssistantWorkReport } from '@gugu/core/cloud/assistantWorkReports'
 import {withAssistantWorkReply} from '@gugu/core/shared/assistantWorkReply'
-import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision'
+import { ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC, pickAssistant } from '@gugu/core/shared/assistantProvision'
 import { assistantHomeKind } from '@gugu/core/shared/assistantPolicy'
 import { landTaskCardFirstTurn } from './sessionpage/task-card-first-turn'
 import { withQuestionCard } from './sessionpage/question-card'
@@ -362,7 +362,7 @@ import {
   readLocalSessionInjectionAuditForTest,
   readLocalSessionDeliveryFailuresForTest,
 } from './sessionpage/local-session-delivery'
-import { assertAgentModelSelectionOpen, listPlatformModels, settleResidualPlatformModelAccess } from './model-access'
+import { assertAgentModelSelectionOpen, listCustomModelEffortFacts, listPlatformModels, settleResidualPlatformModelAccess } from './model-access'
 import {
   findInjectionContract,
   hasCredentialSink,
@@ -434,6 +434,7 @@ import {
   setSessionWebSearchBridge,
   setSessionExtensionBridge,
   setSessionLibraryMcpBridge,
+  setSessionContextThresholdReader,
 } from './capability-bundle'
 import { mcpService } from './session/main/core/mcp/services/McpService'
 import { toolsRuntimePath } from './session/main/core/extensions/app-runtime-dir'
@@ -995,6 +996,19 @@ let sessionpageAgentRehydration: Promise<void> = new Promise<void>((resolve, rej
 })
 void sessionpageAgentRehydration.catch(() => undefined)
 let isQuitting = false
+/**
+ * #3884 退出意图一立(按下安装更新、退出),会话就不再起新引擎:停机随后就关咕咕 MCP 端口和运行时,这时起的引擎握手撞上
+ * 关掉的端口,重启后那条会话显示「无法启动」(11-26 升级时两条定时任务的会话就是这样)。正在起的转成等下一个宿主登录再起,
+ * 排着的输入原样留给它。
+ */
+function noteQuitIntent(): void {
+  isQuitting = true
+  try {
+    emdashBridge?.beginSessionLifeHostQuit()
+  } catch (error) {
+    createLogger('shutdown').warn({ err: error }, 'session starts could not be held for the quit')
+  }
+}
 
 function getSessionpageLocalDelivery(): SessionpageLocalDeliveryRouter {
   // spec session-injection「认领者是注册表」:targets 来自注册表(内核角色由 owner-registry 登记,
@@ -1797,10 +1811,9 @@ function assistantWorkDeliveryHost(): AssistantWorkOutboxHost {
       if (assistantCache?.ownerId === current.ownerId && assistantCache.until > Date.now()) return assistantCache.value
       const auth = await desktopAuthProvider().getAuth()
       if (!auth?.accessToken || auth.userId !== current.ownerId) return null
-      const {data,error} = await makeIdentityClient(auth.accessToken).from('agent_provisions').select(ASSISTANT_PROVISION_SELECT)
-        .eq('owner_user_id',current.ownerId).eq('member_key','assistant')
+      const {data,error} = await makeIdentityClient(auth.accessToken).rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS)
       if (error) throw error
-      const value = pickAssistant((data ?? []) as AssistantProvisionRow[])
+      const value = pickAssistant(data)
       assistantCache = {ownerId:current.ownerId,until:Date.now()+60000,value}
       return value
   }
@@ -3389,9 +3402,7 @@ const squirrelHandoff = createSquirrelHandoff({
 
 // 顺序、看门狗、重复按下这三件事在 ./update-quit 里,连同 #5793 的根因一起写在那个文件的头注释。
 const updateQuit = createUpdateQuit({
-  markQuitIntent: () => {
-    isQuitting = true
-  },
+  markQuitIntent: noteQuitIntent,
   // NSIS shows installation progress and relaunches the app when installation finishes.
   handOff: () => {
     emitUpdateStatus({ success: true, status: 'installing', updateInfo: updaterState.current.updateInfo })
@@ -3564,6 +3575,7 @@ app.on('before-quit', createRuntimeBeforeQuitHandler({
   getHost: () => deviceRuntimeHost,
   setQuitting: (value) => {
     isQuitting = value
+    if (value) noteQuitIntent()
     if (value) projectionDeviceRuntime.invalidate()
     // @@@5793 停机已经开始,看门狗的使命结束 —— 别在停机中途再捅一次 app.quit()。
     if (value) updateQuit.noteShutdownStarted()
@@ -5085,10 +5097,9 @@ app.whenReady().then(async () => {
           const current = await assistantWorkDeliveryHost().context()
           if (!current || current.ownerId !== auth.userId) throw new Error('Work account changed')
           const identity = makeIdentityClient(auth.accessToken!)
-          const { data, error } = await identity.from('agent_provisions').select(ASSISTANT_PROVISION_SELECT)
-            .eq('owner_user_id', auth.userId).eq('member_key', 'assistant')
+          const { data, error } = await identity.rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS)
           if (error) throw error
-          const assistant = pickAssistant((data ?? []) as AssistantProvisionRow[])
+          const assistant = pickAssistant(data)
           if (!assistant) throw new Error('Personal assistant is not available')
           const receipt = await enqueueAssistantWorkReport({
             rpc: (name, args) => current.client.rpc(name, args),
@@ -6036,11 +6047,30 @@ app.whenReady().then(async () => {
           timed('assistant-role', isPersonalAssistant({ authProvider, env: process.env }, provisioned.guguAgentUserId)),
         ])
         injectMark('platform-model+mcp-list+identity-block')
+        const assistantChannelDiscovery = assistantRole && assistantResourceOwner
+          ? await import('./sessionpage/assistant-chat-channel-index') : undefined
+        const assistantChannelItems = assistantChannelDiscovery && assistantResourceOwner
+          ? assistantChannelDiscovery.createAssistantChatChannelReader({
+            accountId: async () => (await getSessionpageAuth())?.userId ?? null,
+            expectedOwner: assistantResourceOwner, assistantAgentId: provisioned.guguAgentUserId,
+            list: async signal => {
+              const baseUrl = cloudComputerBaseUrl({ enabled: cloudComputerEnabled(),
+                override: process.env.GUGU_CLOUD_COMPUTER_URL ?? null, supabaseUrl: getSupabaseUrl() })
+              if (!baseUrl) throw new Error('Chat channel metadata source is unavailable')
+              const client = createChatChannelsClient({ baseUrl, anonKey: getSupabaseAnonKey(), requestTimeoutMs: assistantChannelDiscovery.ASSISTANT_CHAT_CHANNEL_TIMEOUT_MS,
+                accessToken: async () => {
+                  const current = await getSessionpageAuth()
+                  if (!current || current.userId !== assistantResourceOwner) throw new Error('Assistant resource owner changed')
+                  return current.accessToken
+                } })
+              return client.list(signal)
+            },
+          }) : undefined
         const readAssistantResources = assistantRole ? async () => {
           if (!assistantResourceOwner || (await getSessionpageAuth())?.userId !== assistantResourceOwner) throw new Error('Assistant resource owner changed')
           const { assistantLocalIndex } = await import('./sessionpage/assistant-local-index')
           const resources = await assistantLocalIndex(info.cwd, assistantHomeKind(process.env), undefined,
-            () => emdash.assistantPanelLocal.integrationIndex())
+            () => emdash.assistantPanelLocal.integrationIndex(), assistantChannelItems)
           if ((await getSessionpageAuth())?.userId !== assistantResourceOwner) throw new Error('Assistant resource owner changed')
           return resources
         } : undefined
@@ -6173,6 +6203,7 @@ app.whenReady().then(async () => {
     // 于是「agent 用 session_list_models 查到的」与「用户在下拉里看到的」不可能分岔。
     // ❌ 别在这里另加过滤或另算一份可用性:那就是第二份判据,它一定会漂。
     emdash.setPlatformModelCatalogResolver((query) => sessionpagePlatformHooks.listModels(query))
+    emdash.setCustomModelEffortResolver((ids) => listCustomModelEffortFacts(desktopAuthProvider(), ids))
     // 同一道门的答案随 `agents.modelCatalog` 回给 composer;账号口与上面那条 IPC 同一个(现取,❌ 早到的一问落成 null)。
     emdash.setPlatformModelGate((query) => sessionpagePlatformGate({ ...query, authProvider: desktopAuthProvider() }))
 
@@ -6712,6 +6743,10 @@ app.whenReady().then(async () => {
               })
           extensionCatalog.listedNatively(session.grantKey, gateway.origins.map((origin) => origin.extensionId))
           return { ...gateway, skills, apps }
+        })
+        setSessionContextThresholdReader(async (id) => {
+          const { sessionContextThreshold } = await import('./session/main/core/agents/context-threshold')
+          return sessionContextThreshold(id)
         })
         // 资源库 → MCP:这条任务带上的那几台,经能力包送进去。包建好以后连同留在外面的(让给这一家自己的、
         // 这条腿收不到的、和咕咕自己的撞了的、资源库里已删的)记成这一次的事实,任务的 `/mcp` 面板读它。

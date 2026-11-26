@@ -324,7 +324,6 @@ function TabSwitchHarness(args: HarnessArgs) {
           state: states[idx],
           parent: container,
           stickToBottom: true,
-          pinUserMessages: true,
           composer: 'none',
         });
       } catch (err: unknown) {
@@ -376,7 +375,6 @@ function TabSwitchHarness(args: HarnessArgs) {
           state: states[0],
           parent: container,
           stickToBottom: true,
-          pinUserMessages: true,
           composer: 'none',
         });
       } catch (err: unknown) {
@@ -645,7 +643,6 @@ function SendAndPinHarness() {
       state,
       parent: container,
       stickToBottom: true,
-      pinUserMessages: true,
       composer: 'none',
     });
   });

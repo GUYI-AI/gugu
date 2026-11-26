@@ -1,4 +1,4 @@
-import { isUserFacingModelId } from '@gugu/session-core/acp/client';
+import { concreteModelName, isPlaceholderModel, isUserFacingModelId } from '@gugu/session-core/acp/client';
 import type { ComposerModelOption } from '@gugu/session-ui/react/components';
 import { log } from '@renderer/utils/logger';
 import { offeredInModelPicker, type PlatformModelOption } from '@shared/core/agents/platform-model';
@@ -78,6 +78,7 @@ export function platformOptionRowDescription(model: PlatformModelRow): string | 
 
 function platformComposerOption(model: PlatformModelRow): ComposerModelOption {
   const description = platformOptionRowDescription(model);
+  const creditRate = description && model.creditMultiplier !== null ? `${model.creditMultiplier.toFixed(2)}x` : undefined;
   const efforts = model.reasoningEfforts ? effortNamesLine(model.reasoningEfforts, translateSessionMessage) : null;
   return {
     name: platformOptionRowLabel(model),
@@ -94,8 +95,8 @@ function platformComposerOption(model: PlatformModelRow): ComposerModelOption {
     shortName: translateSessionMessage('composer.platformModelShortName', {
       model: model.displayName,
     }),
-    // 倍率只在悬浮详情卡里说一次(#7056)。行尾曾经也写过,owner 2026-10-10:「卡片里已经展示过了,右侧就不要再展示了」。
     ...(description ? { description } : {}),
+    ...(creditRate ? { creditRate } : {}),
     ...(efforts ? { facts: [{ label: translateSessionMessage('composer.effort'), value: efforts }] } : {}),
   };
 }
@@ -120,7 +121,9 @@ export function sanitizeHarnessModelOptions(
   options?: { fromStaticTable?: boolean }
 ): Record<string, ComposerModelOption> | null {
   if (!harnessOptions) return null;
-  harnessOptions = Object.fromEntries(Object.entries(harnessOptions).filter(([id]) => isUserFacingModelId(id)));
+  harnessOptions = concreteHarnessModels(
+    Object.fromEntries(Object.entries(harnessOptions).filter(([id]) => isUserFacingModelId(id)))
+  );
   if (Object.keys(harnessOptions).length === 0) return null;
   // 判定住在 `@/session/shared/platform-model-id`,两条用户面共用同一处 —— 这里只决定**怎么报**。
   const offending = platformNamespaceCollisions(Object.keys(harnessOptions));
@@ -138,18 +141,46 @@ export function sanitizeHarnessModelOptions(
   );
 }
 
+/**
+ * 占位模型(`default` /「Default (recommended)」/「默认」)不进清单 —— owner 11-24「openai cli 模型默认的模型」
+ * 离谱、11-25「不能有 default 这种模糊的东西」:清单里只放具体的模型名。
+ *
+ * - 它说得出自己是谁(描述开头是一个具体模型名),而那条具体模型就在清单里 ⇒ 只留一个看不见的同名影子
+ *   (`hiddenFromPicker` + `aliasOf`):会话正停在这个别名上时,触发器写具体名字、勾打在那条具体模型上,清单里不重复出现;
+ * - 说得出、但清单里没有那一条(harness 只报了 default)⇒ 这一行改叫那个具体名字;
+ * - 说不出 ⇒ 整条不要。❌ 退回显示 default。
+ */
+function concreteHarnessModels(options: Record<string, ComposerModelOption>): Record<string, ComposerModelOption> {
+  const entries = Object.entries(options);
+  const concrete = entries.filter(([id, option]) => !isPlaceholderModel(id, option.name));
+  if (concrete.length === entries.length) return options;
+  const names = concrete.map(([, option]) => option.name);
+  return Object.fromEntries(
+    entries.flatMap(([id, option]): [string, ComposerModelOption][] => {
+      if (!isPlaceholderModel(id, option.name)) return [[id, option]];
+      const { description, ...rest } = option;
+      const name = concreteModelName(description, names);
+      if (!name) return [];
+      const same = concrete.find(([, other]) => other.name === name);
+      return [[id, same ? { ...same[1], hiddenFromPicker: true, aliasOf: same[0] } : { ...rest, name }]];
+    })
+  );
+}
+
 /** 一条模型的一级分类 + 二级厂商 + 图标,贴到 `ComposerModelOption` 上。 */
 function decorate(
   option: ComposerModelOption,
   modelId: string,
   tierLabel: string | null | undefined,
   icon: ComposerModelDecor['icon'],
-  providerName: ComposerModelDecor['providerName']
+  providerName: ComposerModelDecor['providerName'],
+  tag?: string | null
 ): ComposerModelOption {
   const provider = resolveModelProvider(modelId, option.name);
   const node = icon?.(provider);
   return {
     ...option,
+    ...(tag && !option.tag ? { tag } : {}),
     // 已经自带组头的条目不动 —— 平台条目由 `platformComposerOption` 贴过了(走词表),
     // 插件静态表将来若自己分组,那也是它更清楚的分法。
     ...(option.groupLabel || !tierLabel ? {} : { groupLabel: tierLabel }),
@@ -170,6 +201,12 @@ export interface ComposerModelDecor {
   icon?: (provider: ModelProvider | null) => ComposerModelOption['icon'];
   /** 厂商名 → 当前界面语言下的显示名(英文界面里「智谱」显示 Zhipu)。不给 = 原样。 */
   providerName?: (name: string) => string;
+  /**
+   * 用户自己那档每一行的标签:这份登录是谁家的 Coding Plan(ChatGPT / Claude),按量 key 写域名
+   * (owner 11-19「自己配置的模型需要标签」、11-25 定)。组头不画了,它是这一档与咕咕模型的唯一分界。
+   * 不给 = 不贴(咕咕的模型永远不贴)。
+   */
+  ownTag?: string | null;
 }
 
 /**
@@ -185,13 +222,13 @@ export interface ComposerModelDecor {
  *
  * **一级 = 这条是谁的**:「你的 Codex 模型」/「咕咕提供的模型 · 按积分计费」—— 它是组头,
  * 也决定顺序。用户先要定的是**这次调用记在谁账上**(花不花积分、凭据归谁管)。
- * **二级 = 厂商**(OpenAI / Anthropic / 智谱 …):它**不分组**,只做筛选药丸与行内 logo。
+ * **二级 = 厂商**(OpenAI / Anthropic / 智谱 …):它**不分组**,只做行内 logo 与搜索词(顶上那排筛选块 owner 11-25 撤了)。
  *
  * ⚠️ 我第一版把这两级做反了(厂商当组头、来源当副标题),owner 原话「你这个分类层次反了」。
  * ❌ 别再把厂商升成组头:厂商横切在两档之上(同一家可以既有你自己的、又有咕咕代付的),
  * 拿它分组会把「谁的」这条更要紧的界线切碎。
  *
- * 顺序:用户自己那档在**前**,咕咕提供的在后(owner 2026-09-05)。插入序即渲染序
+ * 顺序:咕咕模型在前,然后是用户自己的模型。插入序即渲染序
  * (`buildComposerModelGroups` 按相邻同组头切段,不重排)。❌ 不按厂商重排:厂商既然不分组,
  * 重排只会把宿主给的顺序无故打乱。
  */
@@ -214,15 +251,15 @@ export function composerModelOptions(
 
   return {
     ...Object.fromEntries(
-      Object.entries(harness ?? {}).map(([id, option]) => [
-        id,
-        decorate(option, id, decor?.ownTierLabel, decor?.icon, decor?.providerName),
-      ])
-    ),
-    ...Object.fromEntries(
       platformModels.map((model) => [
         platformOptionId(model.id),
         decorate(platformComposerOption(model), model.id, null, decor?.icon, decor?.providerName),
+      ])
+    ),
+    ...Object.fromEntries(
+      Object.entries(harness ?? {}).map(([id, option]) => [
+        id,
+        decorate(option, id, decor?.ownTierLabel, decor?.icon, decor?.providerName, decor?.ownTag),
       ])
     ),
   };

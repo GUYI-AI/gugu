@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type BetterSqlite3 from 'better-sqlite3';
 import journal from '@root/drizzle/meta/_journal.json';
+import { databaseSpace, recordDatabaseSpaceChange, type DatabaseSpace } from './space';
 
 // Vite bundles all migration SQL files at build time — no runtime path resolution needed.
 // Each value is the raw SQL string content of the file.
@@ -61,6 +62,7 @@ export function applyMigrations(
     }
     return counts;
   };
+  const spaceBefore = databaseSpace(connection);
   const enforced = connection.pragma('foreign_keys', { simple: true }) === 1;
   connection.pragma('foreign_keys = OFF');
   try {
@@ -87,6 +89,7 @@ export function applyMigrations(
   } finally {
     if (enforced) connection.pragma('foreign_keys = ON');
   }
+  recordDatabaseSpaceChange(connection, pending.map(m => m.tag).join(', '), spaceBefore);
 }
 
 const SEARCH_INDEX_VERSION = '10';
@@ -97,6 +100,7 @@ const SEARCH_INDEX_VERSION = '10';
  * table so it can be safely dropped and recreated when the schema changes.
  */
 function ensureSearchIndex(connection: BetterSqlite3.Database): void {
+  let before: DatabaseSpace | undefined;
   connection.transaction(() => {
     // Bump this version string whenever the FTS schema changes — the table is
     // dropped and recreated, and backfill() + seedCommands() repopulate it.
@@ -110,6 +114,7 @@ function ensureSearchIndex(connection: BetterSqlite3.Database): void {
       | undefined;
 
     if (row?.value !== SEARCH_INDEX_VERSION) {
+      before = databaseSpace(connection);
       connection.exec(`DROP TABLE IF EXISTS search_index`);
       ensureSessionIndex(connection);
       connection.exec(`
@@ -130,6 +135,7 @@ function ensureSearchIndex(connection: BetterSqlite3.Database): void {
         .run(SEARCH_INDEX_VERSION);
     }
   })();
+  if (before) recordDatabaseSpaceChange(connection, 'search-index rebuild', before);
 }
 
 /**
@@ -167,6 +173,7 @@ function ensureSessionIndex(connection: BetterSqlite3.Database): void {
  * changes without a full Drizzle migration.
  */
 function ensureFileIndex(connection: BetterSqlite3.Database): void {
+  let before: DatabaseSpace | undefined;
   connection.transaction(() => {
     const FILE_INDEX_VERSION = '5';
 
@@ -176,6 +183,7 @@ function ensureFileIndex(connection: BetterSqlite3.Database): void {
 
     if (row?.value === FILE_INDEX_VERSION) return;
 
+    before = databaseSpace(connection);
     connection.exec(`DROP TABLE IF EXISTS workspace_file_index`);
     connection.exec(`DROP TABLE IF EXISTS workspace_file_index_rows`);
     connection.exec(`DROP TABLE IF EXISTS workspace_file_index_meta`);
@@ -215,6 +223,7 @@ function ensureFileIndex(connection: BetterSqlite3.Database): void {
       )
       .run(FILE_INDEX_VERSION);
   })();
+  if (before) recordDatabaseSpaceChange(connection, 'file-index rebuild', before);
 }
 
 /**
@@ -233,7 +242,7 @@ export async function initializeDatabase(
 ): Promise<BetterSqlite3.Database> {
   // Lazily import the app singleton only when no explicit connection is given.
   // This keeps the module importable in non-Electron environments (Vitest).
-  const conn = connection ?? (await import('./client')).sqlite;
+  const conn = connection ?? (await import('./client')).sessionDatabaseConnection();
   conn.pragma('foreign_keys = ON');
   // Search text was once kept by triggers on session_turns, calling functions no connection registers any more.
   conn.exec(`DROP TRIGGER IF EXISTS session_turns_text_insert; DROP TRIGGER IF EXISTS session_turns_text_update;

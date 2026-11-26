@@ -57,13 +57,9 @@ import { continuedActivityHeader, foldActivityUnits, hasUnconfirmedSend, incomin
  *                               — the day context a tier hands to the next one.
  * UnitsView                     — virtual two-tier concat: .length / .at(i).
  * makeUnitsView(c, a)           — combine committedUnits + activeUnits.
- * collectUserTurnUnits(committed, units)
- *                               — absolute unit indices of the first unit of
- *                                 each committed user-message group; used by
- *                                 ChatRoot for the pinned-header overlay.
  */
 
-import { isDeliveryEnvelope, readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
+import { isDeliveryEnvelope, visibleDeliveryText } from '@gugu/core/local/agent/deliveryEnvelope';
 import { agentSendOf, replyItems } from '@gugu/session-core/session-record/reply-process';
 import { CONVERSATION_BLOCK_GAP, CONVERSATION_UTTERANCE_GAP, resolveSeamGap } from '@session-chat/core/spacing';
 import type { FoldGate, ItemSegmenter, Margin, RenderUnit, SegmentCtx } from '@session-chat/core/units';
@@ -78,7 +74,6 @@ import { tallyToolRun, toolRunCategory, toolRunLabel, toolRunNow } from '@sessio
 import { completedTurnResult, itemIsUser, pendingTurnHeader, placeholderTurnHeader, planTurnFoldRuns, turnFoldView, turnProcessExpanded } from '@session-chat/state/turn-fold';
 import { isEmptyAgentTurn } from './turn-visibility';
 import { processHookNotice } from '@session-chat/lib/hook-notice';
-import { messagePresentation } from './message-presentation';
 
 export { lastConversationMessage } from './conversation-density';
 export { planTurnFold, turnProcessId } from '@session-chat/state/turn-fold';
@@ -91,26 +86,14 @@ export type { TurnFoldPlan, TurnFoldSegment } from '@session-chat/state/turn-fol
  *
  * owner 2026-09-06:「别的 agent 给这个 agent 发的信息其实也是通知，也不应该计入消息，
  * 更不应该有 stick 效果」。⇒ 它照旧显示（投递卡），但**不占「人刚发言」那个身份**：
- * 不被钉到顶端、不触发底部预留把视图拽过去、「取回指令」也不会把别人的话塞进你的输入框。
+ * 不触发底部预留把视图拽过去、「取回指令」也不会把别人的话塞进你的输入框。
  * 判据是 core 的 `isDeliveryEnvelope`：以信封开头的都算，读方一时读不出的那条也不冒充人说的话。
  */
 export function isDeliveredFromAgent(item: ChatItem): boolean {
   if (item.kind !== 'message' || (item as ChatMessage).role !== 'user') return false;
   const message = item as ChatMessage;
-  // The message presenter replaces the envelope with its body. Pinning also
-  // reads those normalized units, where the authenticated source remains here.
+  // The message presenter replaces the envelope with its body; the authenticated source remains here.
   return !!message.guguDelivery || message._meta?.guguOwnerInput === false || isDeliveryEnvelope(message.text);
-}
-
-/** The viewer's authenticated human delivery is their own input, including on another client. */
-export function isViewerInput(item: ChatItem, viewerId?: string): boolean {
-  if (!itemIsUser(item)) return false;
-  if (!isDeliveredFromAgent(item)) return true;
-  const self = viewerId?.replace(/^user:/, '');
-  const message = item as ChatMessage;
-  const segments = (message.guguDelivery ?? readDeliveryEnvelope(message.text))?.segments;
-  return !!self && !!segments?.length && segments.every(segment =>
-    segment.facts?.fromType === 'human' && segment.facts.fromId === `user:${self}`);
 }
 
 /**
@@ -193,6 +176,11 @@ function withoutSentRepliesOfAgentSends(turn: TranscriptTurn): TranscriptTurn {
   return turn.items.some(drawnAsSend) ? { ...turn, items: turn.items.filter((item) => !drawnAsSend(item)) } : turn;
 }
 
+// The live line defaults open and reads its toggle in reverse.
+function processToggleId(id: string, live: boolean): string {
+  return live ? `${id}:live` : id;
+}
+
 export function flattenTier(
   turns: readonly TranscriptTurn[],
   ctx: SegmentCtx,
@@ -205,7 +193,19 @@ export function flattenTier(
   previousRow?: RenderUnit,
 ): RenderUnit[] {
   const sentReplies = ctx.settled ? withSettledSentReplies : withSentReplies;
-  turns = turns.map(turn => sentReplies(turn, { allDestinations: ctx.agentConversation }));
+  turns = turns.flatMap(turn => {
+    let changed = false;
+    const items = turn.items.flatMap((item): TranscriptTurn['items'] => {
+      if (item.kind !== 'message' || item.role !== 'user') return [item];
+      const text = visibleDeliveryText(item.text);
+      if (text === item.text) return [item];
+      changed = true;
+      return text === null ? [] : [{ ...item, text }];
+    });
+    // A notice with no visible response has no conversation row of its own.
+    if (changed && items.length === 0 && (!turn.outcome || turn.outcome.kind === 'done')) return [];
+    return [sentReplies(changed ? { ...turn, items } : turn, { allDestinations: ctx.agentConversation })];
+  });
   // A turn the agent opened because one of its own tasks finished continues the turn before it (#2587).
   if (ctx.agentConversation) turns = joinContinuedTurns(conversationMessages(turns));
   // One send, drawn once. On the session page the call itself is drawn as the agent's words (agent-send, below), so the
@@ -337,13 +337,6 @@ export function flattenTier(
     };
     for (const row of rows) {
       if (isSubagentChild(row)) continue;
-      // A conversation MCP row names the server/tool even before disclosure. Wrapping it in a count-only run
-      // would hide that identity and add another fold before its request/result panel.
-      if (ctx.agentConversation && row.kind === 'mcp-tool-call') {
-        flush();
-        ops.push({ kind: 'row', item: row });
-        continue;
-      }
       if (toolRunCategory(row, ctx.agentConversation)) {
         run.push(row);
         continue;
@@ -532,10 +525,10 @@ export function flattenTier(
         };
         if (!output.reply && activityEvent && ops.length === 0) { emitArtifacts(); activityEvent = undefined; inlineCompletion = true; continue; }
         const idleMs = (block.live ? 0 : block.idleMs) + block.resumedIdleMs;
-        const process = { id: block.id, ...(block.live ? { live: true } : {}), ...(block.toggleId ? { toggleId: block.toggleId } : {}),
+        const toggle = block.toggleId ?? processToggleId(block.id, block.live);
+        const process = { id: block.id, toggleId: toggle, ...(block.live ? { live: true } : {}),
           startedAt: block.startedAt, endedAt: block.endedAt, ...(idleMs ? { idleMs } : {}), ...(block.live && ctx.pendingStarting?.() ? { starting: ctx.pendingStarting?.() } : {}), steps: output.steps.length,
           ...(ops.length ? {} : { empty: true }) };
-        const toggle = block.toggleId ?? block.id;
         const expanded = ctx.revealAllFolds || turnProcessExpanded(block.live, ctx.isTurnProcessExpanded?.(toggle) ?? false);
         const steps = () => {
           if (!expanded) return;
@@ -602,10 +595,12 @@ export function flattenTier(
           }
           emitOps(ops, turn.id);
         } else {
-          const expanded = ctx.revealAllFolds || turnProcessExpanded(header.live, ctx.isTurnProcessExpanded?.(header.id) ?? false);
+          const toggle = processToggleId(header.id, header.live);
+          const expanded = ctx.revealAllFolds || turnProcessExpanded(header.live, ctx.isTurnProcessExpanded?.(toggle) ?? false);
           processItem({
             kind: 'turn-process',
             id: header.id,
+            toggleId: toggle,
             turnId: turn.id,
             ...(header.live ? { live: true as const } : {}),
             // 收起来时下面什么都看不见,头又是这一轮唯一的动静(#124 review)
@@ -616,7 +611,7 @@ export function flattenTier(
           // 头里面照样按语义折成「跑了 N 条命令」,跑着时自己摊开的、跑完后人点开的都一样(owner 2026-10-16,
           // 推翻 10-02「点开就逐条摆」:跑着时「执行、执行、执行、执行」一直平铺)。只在头里摊平的话,同一轮里还会
           // 自相矛盾:最后一句话之前的平铺、之后的(尾巴,头外面)折着,agent 一开口,折好的那几行就摊开。
-          if (expanded) emitOps(ops, turn.id, [{ id: header.id, stored: !header.live }]);
+          if (expanded) emitOps(ops, turn.id, [{ id: toggle, stored: !header.live }]);
         }
         emitOps(planRows(outsideProcess(segment.tail)), turn.id);
       }
@@ -819,44 +814,4 @@ export function makeUnitsView(committed: RenderUnit[], active: RenderUnit[]): Un
       return i === continued?.index ? continued.unit : i < cl ? committed[i] : active[i - cl];
     },
   };
-}
-
-// ── collectUserTurnUnits ──────────────────────────────────────────────────────
-
-/**
- * Returns the unit indices (in `units`) of the *first unit* of each user
- * message in `turns`, in ascending order.
- *
- * ChatRoot's pin anchors (@@@sticky-user-lanes): called once per tier — the
- * committed turns, and the active tier's one turn. Either tier can hold several
- * user messages per turn (an inserted message joins the running turn).
- */
-export function collectUserTurnUnits(
-  turns: readonly TranscriptTurn[],
-  units: UnitsView,
-  options: { delivered?: boolean; viewerId?: string } = {}
-): number[] {
-  const userItemIds = new Set<string>();
-  for (const turn of turns) {
-    for (const item of turn.items) {
-      // 投递进来的通知不进这个集合 —— 这个集合就是「钉到顶端」的名单。
-      // `delivered`:要的是「钉顶在哪儿让位」,投递进来的那条也算(对话布局里它是右侧的一个气泡)。
-      if (itemIsUser(item) && (options.delivered || isViewerInput(item, options.viewerId))) userItemIds.add(item.id);
-    }
-  }
-
-  if (userItemIds.size === 0) return [];
-
-  // Walk the flat unit view once, recording the first unit index per group.
-  const result: number[] = [];
-  const seen = new Set<string>();
-  for (let i = 0; i < units.length; i++) {
-    const u = units.at(i);
-    if (u && userItemIds.has(u.itemId) && !seen.has(u.itemId)
-      && (u.kind !== 'message' || messagePresentation(u.data as ChatMessage).pinSummary)) {
-      seen.add(u.itemId);
-      result.push(i);
-    }
-  }
-  return result;
 }

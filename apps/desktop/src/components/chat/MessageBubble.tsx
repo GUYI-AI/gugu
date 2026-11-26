@@ -23,7 +23,7 @@ import { COLOR_MUTED, readReceiptLabel } from './chatPresentation'
 import { MessageSendStatus } from './MessageSendStatus'; import { useMessageAlbum } from './MessageAlbumContext'; import { downloadSendFiles } from './messageAlbumDownload'; import { sendCaption } from './messageAlbum'; import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'; import { keepAction } from './messageKeep'
 import { buildBubbleStyle } from './messageBubbleStyle'
 import { MessageBody } from './MessageBody'
-import { parseQuotedContent, type QuoteSelection } from './messageQuoteContent'
+import { parseQuotedContent } from './messageQuoteContent'; import { openCommentLine } from '@renderer/features/sessions/annotations/selection-line'
 import { DirectMessageQuote, MessageQuote } from './MessageQuote'
 import { parseComposerCard } from '@gugu/core/shared/ui/taskCardModels'
 import { parseWidgetMessage } from '@gugu/core/shared/ui/widgetModels'
@@ -49,7 +49,7 @@ interface BubbleProps {
   readReceiptTotal?: number
   // @@@1313 点开已读名单（谁读谁没读）：环是父层（持 roster+profiles）那张名单浮层的 Trigger，稳定 handle，避免把 reader 列表作对象 prop 传进破 memo。
   readReceiptHandle?: ReadReceiptHandle
-  onQuote: (msg: MessageItem, selection?: QuoteSelection) => void; onShowMessage?: (id: string) => void
+  onQuote: (msg: MessageItem) => void; onShowMessage?: (id: string) => void
   onForward: (msg: MessageItem) => void
   onDelete: (messageId: string) => void
   isAgent?: boolean; hideAvatar?: boolean; streaming?: boolean // Live IM text shares the settled bubble's layout.
@@ -119,7 +119,7 @@ export const MessageBubble = memo(function MessageBubble({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const bubbleRef = useRef<HTMLDivElement>(null)
   const [menuLink, setMenuLink] = useState<HTMLAnchorElement | null>(null)
-  const [menuSelection, setMenuSelection] = useState('')
+  const [menuSelection, setMenuSelection] = useState(''); const menuSelectionAt = useRef<DOMRect | null>(null); const commentOn = (at: DOMRect, text: string) => { const bubble = bubbleRef.current!; openCommentLine({ kind: 'chat', chatId: msg.chat_id }, at, bubble.closest<HTMLElement>('[data-unread-stream-surface]') ?? bubble, { kind: 'message', messageId: msg.id, authorId: msg.sender_user_id ?? null, authorName: avatarName, text }) }
   const { user } = useAuth()
   const voiceAttachment = msg.content_type === 'attachment'
     ? parseVoiceAttachmentContent(msg.content)
@@ -144,7 +144,7 @@ export const MessageBubble = memo(function MessageBubble({
     isRetracted: !!msg.retracted_at, content: copyText, hasHoverBar: !compactMobile, hasSelection: !compactMobile && !!menuSelection, onClose: close,
     onReply: () => { onQuote(msg); close() },
     onReact: (emoji: string) => { onReaction(msg.id, emoji); close() },
-    onQuoteSelection: menuSelection && msg.content_type === 'text' ? () => { onQuote({ ...msg, content: menuSelection }, { originalContent: msg.content }); close() } : undefined,
+    onCommentSelection: menuSelection && msg.content_type === 'text' && menuSelectionAt.current ? () => { commentOn(menuSelectionAt.current!, menuSelection); close() } : undefined,
     onCopy: (content = menuSelection || undefined) => { void handleCopyText(content); close() },
     onSelectText: compactMobile && (msg.content_type === 'text' || !!sendCaption(album ?? [msg])) && phone.source ? () => { phone.setSelecting(true); close() } : undefined,
     onCopyLink: menuLink ? () => { void handleCopyText(menuLink.href); close() } : undefined, onOpenLink: menuLink ? () => { menuLink.click(); close() } : undefined,
@@ -156,8 +156,8 @@ export const MessageBubble = memo(function MessageBubble({
   })
 
   const captureMenuSelection = () => {
-    const selection = window.getSelection()
-    setMenuSelection(selection && bubbleRef.current?.contains(selection.anchorNode) && bubbleRef.current.contains(selection.focusNode) ? selection.toString() : '')
+    const selection = window.getSelection(), inside = !!selection?.rangeCount && !!bubbleRef.current?.contains(selection.anchorNode) && bubbleRef.current.contains(selection.focusNode)
+    setMenuSelection(inside ? selection!.toString() : ''); menuSelectionAt.current = inside ? selection!.getRangeAt(0).getBoundingClientRect() : null
   }
 
   const openMenuAt = (x: number, y: number) => {
@@ -372,7 +372,7 @@ export const MessageBubble = memo(function MessageBubble({
       {compactMobile
         ? phone.mounted && !phone.selecting && <MsgMoreMenu lift={{ open: showMenu, bubble: bubbleRef, touchY: menuPos.y, mine: msg.is_mine }} {...messageActions(() => setShowMenu(false))} />
         : showMenu && <MsgMoreMenu x={menuPos.x} y={menuPos.y} {...messageActions(() => setShowMenu(false))} />}
-      {phone.selecting && phone.source && <PhoneTextSelection source={phone.source} onDone={() => phone.setSelecting(false)} />}
+      {phone.selecting && phone.source && <PhoneTextSelection source={phone.source} onDone={() => phone.setSelecting(false)} onComment={msg.content_type === 'text' ? (words) => commentOn(bubbleRef.current!.getBoundingClientRect(), words) : undefined} />}
 
     </MessageHoverRegion>
   )

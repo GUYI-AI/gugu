@@ -7,6 +7,8 @@ export type AssistantPanelItem = {
   device_id: string | null; revision: string; data: Record<string, unknown>
   body_item_id: string | null; body_sha256: string | null; deleted_at: string | null
   observed_at: string | null; updated_at: string; stale_at?: string | null
+  /** Missing provenance is deliberately not permission to recreate a legacy tombstone. */
+  deletion_source?: 'panel' | 'runtime' | null; deletion_runtime_instance_id?: string | null
 }
 export type AssistantPanelChange = {
   operation_id: string; revision: string; assistant_user_id: string; owner_user_id: string
@@ -34,6 +36,11 @@ export type AssistantPanelTransport = (name: string, args: Record<string, unknow
 export class AssistantPanelError extends Error {
   constructor(readonly code: string, message: string, readonly resourceKey?: string, readonly domain?: string, readonly status?: number) { super(message); this.name = 'AssistantPanelError' }
 }
+/** This guard identifies a lost assistant App binding, not a generic permission failure. */
+export function isAssistantPanelBindingRevoked(error: unknown): boolean {
+  const value = error as { code?: unknown; message?: unknown } | null
+  return value?.code === '42501' && value.message === 'Personal assistant is not available to this account'
+}
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
 const revision = (value: unknown): value is string => typeof value === 'string' && /^\d+$/.test(value)
 const nullableString = (value: unknown) => value === null || typeof value === 'string'
@@ -48,6 +55,11 @@ export function parseAssistantPanelSnapshot(value: unknown, ownerId: string, ass
       || !nullableString(item.device_id) || !nullableString(item.body_item_id) || !nullableString(item.body_sha256)
       || item.stale_at !== undefined && !nullableString(item.stale_at)
       || !nullableString(item.deleted_at) || !nullableString(item.observed_at) || typeof item.updated_at !== 'string'
+      || item.deletion_source !== undefined && item.deletion_source !== null && !['panel','runtime'].includes(String(item.deletion_source))
+      || item.deletion_runtime_instance_id !== undefined && !nullableString(item.deletion_runtime_instance_id)
+      || item.deletion_source === 'runtime' && (typeof item.deletion_runtime_instance_id !== 'string' || !item.deletion_runtime_instance_id)
+      || item.deletion_source !== 'runtime' && item.deletion_runtime_instance_id != null
+      || item.deleted_at === null && item.deletion_source != null
       || (item.body_item_id !== null && item.body_sha256 === null)
       || (typeof item.body_sha256 === 'string' && !/^[0-9a-f]{64}$/.test(item.body_sha256))) return invalid()
   }

@@ -1,46 +1,31 @@
 import { buildSessionPermissionOptions } from '@shared/session-permission-options';
-import { ptyTurnEnds, recordPtyEngineEnd } from '../sessions/pty-turn-ends';
-import { sessionEngine, sessionProcess } from '../sessions/session-process';
 import { nativeConversationHistoryFloor } from '../sessions/native-publication-host';
-import { nativePromptReceipt } from '../sessions/native-prompt-receipts';
 import { clearedHistoryResult, historyClearEpoch } from '@gugu/session-core/session-record/conversation-history-clear';
 import { runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { turnAnnotationSchema, promptAttachmentSchema, turnFileRefSchema } from '@gugu/session-core/acp/client';
-import { SessionInputAdmissionError, sessionInputAdmission, type SessionInputAdmission } from '@gugu/core/shared/sessionInputAdmission';
+import { SessionInputAdmissionError, sessionInputAdmission } from '@gugu/core/shared/sessionInputAdmission';
 import { priorInputAdmission, sameInput, type InputAdmissionPayload } from './input-admission';
-import { ask, withdrawAll } from '../asks';
-import { hostAsks, resetAsks, respond as respondAsk, respondQuestion as respondAskQuestion } from '../asks/ask';
+import { withdrawAll } from '../asks';
+import { resetAsks, respond as respondAsk, respondQuestion as respondAskQuestion } from '../asks/ask';
 import { answeredAskOf, readAnsweredAsks, recordAnsweredAsk } from '../asks/answered-asks';
 import { askSourceSpec } from '../asks/sources';
-import { readAgentQuestionRecords, rememberAgentQuestion } from '../sessions/agent-question-store';
 import { nativeConversationAliases, nativeConversationUnread, nativeOwnerNotificationUnread } from '../sessions/session-conversation-read';
 import { ownerNotificationFile } from '../sessions/owner-notifications';
-import { followSessionIndex, indexedTurnCount, indexSessionRecord, prepareSessionIndex } from '../session-index/session-index';
-import type { IndexSource } from '../session-index/worker';
+import { indexedTurnCount, indexSessionRecord, prepareSessionIndex } from '../session-index/session-index';
 import { nativeConversationListActivity } from '../sessions/session-conversation-live';
-import { deliverAgentQuestionAnswer, restoredAgentQuestion } from '../sessions/agent-question-delivery';
-import { and, desc, eq, inArray, isNull, notInArray, type SQL } from 'drizzle-orm';
-import { readProjects } from '@main/core/projects/operations/getProjects';
+import { and, eq, inArray, isNull, notInArray } from 'drizzle-orm';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
-import { resolveAgentHome } from '@gugu/session-core/agents/plugins/helpers';
-import { isVisibleQueuedPrompt } from '@shared/core/sessions/visible-queued-prompt';
-import { conversationQueueText } from '@shared/core/sessions/conversation-queue-text';
 import type { OpenedOutput } from '@gugu/session-core/acp/client';
 import {
   type RecordCursor,
-  type RecordLineageNode,
-  type SessionRecordLocator,
   type SessionTimeline,
-  type PendingRequest,
   type Settlement,
   type SessionpageProjectSummary,
-  type SessionpageSessionEvent,
   type SessionpageSessionRespondRequest,
   type SessionpageSessionRespondResult,
   type SessionpageSessionCancelResult,
   type SessionpageSessionUpdateRequest,
   type SessionpageSessionUpdateResult,
-  type SessionpageSessionSubscribeRequest,
   type SessionpageSessionSummary,
   type AnsweredAsk,
   type SessionpageSessionsListResult,
@@ -57,16 +42,15 @@ import {
 } from '@gugu/session-core/session-record';
 import { sessionListDelta } from '@gugu/session-core/session-record/session-list-delta';
 import { SessionOptionsError, readSessionOptions, setSessionOption } from './live-options';
-import { getPlugin, isValidProviderId } from '@main/core/agents/plugin-registry';
+import { getPlugin } from '@main/core/agents/plugin-registry';
 import { sessionParentId, sessionSpawnerId, mapSessionRowToSession } from '@main/core/sessions/utils';
 import { sessionBornInChatId } from '@shared/core/sessions/sessions';
 import { taskName } from '@main/core/sessions/task-name';
 import { agentIdsBySession, sessionAgents } from '@main/core/sessionpage/sessionpage-session-agent';
 import { db } from '@main/db/client';
-import { sessions, projects, type SessionRow } from '@main/db/schema';
+import { sessions, type SessionRow } from '@main/db/schema';
 import { persistedWorkspacePath } from '@main/core/projects/utils';
 import { events, tapMainEvents } from '@main/lib/events';
-import { onNativeMessagePreviewChanged } from './native-preview-events';
 import { listSessionSchedules } from '@main/core/automations/repo';
 import {
   automationChangedChannel,
@@ -88,22 +72,11 @@ import {
   sessionCreatedChannel,
   type AgentStatusChange,
 } from '@shared/core/sessions/sessionEvents';
-import {
-  dropTimelineArchive,
-  pruneTimelineArchives,
-  timelineArchiveFile,
-} from './archive-store';
-import { createFoldClient, type FoldClient } from './fold-client';
-import { watchSessionState, type SessionStateWatch } from './live-permissions';
-import { locateSessionRecord, sessionRecordHarnessForProvider, type SessionRecordLocation } from './locate';
-import { ensureJournal, journalHasTurns, journalLocator } from '../sessions/session-journal';
+import { locateSessionRecord } from './locate';
 import { OpenedFileError, readOpenedFileChunk } from './opened-file';
 import { sessionOpenedFile, sessionOutputs } from '../sessions/session-outputs';
-import { createStandInTimeline } from './stand-in-timeline';
 import { readStartFailure } from './start-failures';
-import { knownHarnessConfigRoots } from '@main/core/agent-hooks/harness-config-roots';
 import { sessionLife } from '@main/core/sessions/session-life';
-import { creationMessageId } from '@main/core/sessions/session-life-creation';
 import { runtimeFork } from '@main/core/sessions/session-life-forks';
 import { notStartedSessionOptions } from './not-started-options';
 import { readSessionModelMenu, readSessionPermissionAgentName, type SessionpageSessionOptionsWithMenu } from './session-model-menu';
@@ -120,350 +93,33 @@ import {
   type PreparedQuestionAnswer,
   type SessionWriteTarget,
 } from './write-bridge';
+import { syncPending } from './live-feed';
+import { timelineFactory } from './record-timeline';
+import { indexSource, locateRow, readLocalProjects, readSessionRow, readSessionRows, summaryRuntime } from './session-rows';
+import { unsubscribeAll } from './subscriptions';
+import { acquire, beginEntriesReset, disposeAllEntries, entries, fail, release, resetGeneration, withTimeline, type SessionTimelineResult } from './timeline-entries';
 
 /**
- * 宿主侧会话时间线服务。
- *
- * 一条会话一个 timeline 实例，**按 conversationId 缓存并引用计数**：桌面渲染层和手机看的是
- * 同一份（同一个 epoch、同一份结算），❌ 不是各开一份各读一遍文件 —— 两份实例意味着两个游标世代，
- * 而「谁先答谁生效」的 CAS 只在同一个实例里成立。没人订阅之后不立刻拆：一次刷新、一次切页
- * 都会把引用降到 0 再升回来，立刻拆 = 每次都整份重读。
+ * 宿主侧会话时间线服务:会话列表与摘要、选项、历史分页、文件与后台任务、整机列表订阅、写侧。
+ * 缓存与引用计数在 `timeline-entries.ts`,记录源在 `record-timeline.ts`,实时流在 `live-feed.ts`,
+ * 会话行在 `session-rows.ts`,正文订阅在 `subscriptions.ts`;从这里搬走的导出照旧从这里导出。
  */
 
-const IDLE_DISPOSE_MS = 60_000;
+export { setSessionTimelineFactory } from './record-timeline';
+export type { SessionTimelineFactory } from './record-timeline';
+export { locateRow, readSessionRow, setConnectionConfigRootResolver } from './session-rows';
+export type { ConnectionConfigRootResolver } from './session-rows';
+export { subscribe, subscribePreview, unsubscribe, unsubscribeAll } from './subscriptions';
+export type { SessionTimelineFailure, SessionTimelineResult } from './timeline-entries';
 
-export type SessionTimelineFailure = { code: string; message: string; admission?: SessionInputAdmission };
-export type SessionTimelineResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: SessionTimelineFailure };
 
-function fail<T>(code: string, message: string): SessionTimelineResult<T> {
-  return { ok: false, error: { code, message } };
-}
 
-/**
- * 造 timeline 的口。实现归 `packages/session-core/src/session-record`（记录源 + timeline），
- * 这一层只负责「谁在看、看的是哪一条、谁答过了」。
- * 显式置 null = fail loud（`timeline_unavailable`），❌ 不返回空时间线冒充「这条会话没内容」。
- */
-export type SessionTimelineFactory = (input: {
-  /** The agent's record; null = it has none gugu reads, and the journal is all there is. */
-  locator: SessionRecordLocator | null;
-  /** Gugu's journal of the session (`session-journal.ts`), read beside the record. */
-  journal?: SessionRecordLocator | null;
-  conversationId: string;
-  /** 记录里认出来的提问宿主能不能代答(#6798);能 ⇒ 提问结算带上整份题目。 */
-  answerableQuestions?: boolean;
-  readMode?: 'snapshot';
-  parentLineage?: readonly RecordLineageNode[];
-}) => Promise<SessionTimeline>;
 
-/**
- * 默认实现走**动态 import**：那个 barrel 往下拖 node:fs 与 better-sqlite3，静态引进来
- * 会让每一个只想测服务层记账的用例都替记录源交税（也会把原生模块拖进不需要它的进程）。
- * 真开一份时间线的那一刻才加载。
- */
-const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, journal, conversationId: sessionId, answerableQuestions, readMode, parentLineage }) => {
-  const { createSessionRecordSource, createSessionTimeline, emptyRecordSource } = await import(
-    '@gugu/session-core/session-record'
-  );
-  const own = locator ?? journal;
-  if (!own) throw new Error(`session ${sessionId}: neither a record nor a journal to read`);
-  // 存档只是捷径:读不出来 / 对不上,`createSessionTimeline` 自己会退回整份重读。
-  const archive = !locator || readMode === 'snapshot' ? null : await foldedArchive({ locator, sessionId, parentLineage, answerableQuestions });
-  const row = readSessionRow(sessionId, { includeArchived: true });
-  const pty = row && row.runtime !== 'acp';
-  const source = locator ? createSessionRecordSource(locator, { readMode, parentLineage }) : emptyRecordSource(own);
-  const timeline = await createSessionTimeline(source, {
-    sessionId,
-    ...(pty && locator ? { hostTurnEnds: ptyTurnEnds(sessionId, locator.providerSessionId) } : {}),
-    archive,
-    ...(journal ? { journal: createSessionRecordSource(journal) } : {}),
-    ...(answerableQuestions ? { answerableQuestions } : {}),
-    hostPrompts: (digest) => nativePromptReceipt(sessionId, digest),
-  });
-  try {
-    // Observe only an uncovered native turn. Reopening an ended record must not create new end facts.
-    const last = timeline.getSnapshot().turns.at(-1);
-    if (pty && locator && last && !last.outcome && last.startedAt !== undefined
-      && row.agentStatus !== 'working' && row.agentStatus !== 'needs_user' && await sessionEngine(sessionId) === 'gone') {
-      const latest = readSessionRow(sessionId, { includeArchived: true });
-      if (latest?.providerSessionId === locator.providerSessionId && latest.runtime !== 'acp'
-        && latest.agentStatus !== 'working' && latest.agentStatus !== 'needs_user' && !sessionProcess(sessionId)) {
-        recordPtyEngineEnd(sessionId, Date.now(), true, last.startedAt);
-      }
-    }
-    return timeline;
-  } catch (error) {
-    timeline.dispose();
-    throw error;
-  }
-};
 
-let foldClient: FoldClient | null = null;
 
-/** The record folded on the fold thread (`fold.ts`); if that thread fails, the timeline folds the record here. */
-async function foldedArchive(input: { locator: SessionRecordLocator; sessionId: string; parentLineage?: readonly RecordLineageNode[]; answerableQuestions?: boolean }) {
-  const checkpoint = timelineArchiveFile(input.sessionId);
-  if (!checkpoint) return null;
-  try {
-    const archive = await (foldClient ??= createFoldClient((message, detail) => log.warn(message, detail))).fold({
-      locator: input.locator,
-      sessionId: input.sessionId,
-      checkpoint,
-      ...(input.parentLineage ? { parentLineage: input.parentLineage } : {}),
-      ...(input.answerableQuestions ? { answerableQuestions: true } : {}),
-    });
-    void pruneTimelineArchives();
-    return archive;
-  } catch (error) {
-    log.warn('sessionTimeline: fold thread failed; folding on the main thread', { sessionId: input.sessionId, error: String(error) });
-    return null;
-  }
-}
 
-let timelineFactory: SessionTimelineFactory | null = defaultTimelineFactory;
 
-export function setSessionTimelineFactory(next: SessionTimelineFactory | null): void {
-  timelineFactory = next;
-}
 
-type TimelineEntry = {
-  conversationId: string;
-  timeline: SessionTimeline;
-  refs: number;
-  idleTimer: ReturnType<typeof setTimeout> | null;
-  /**
-   * 活运行时里那条「谁在等人回答、谁在排队」的订阅（只有 ACP 腿有）。
-   * `disposed` 是给那场赛跑用的：接上来之前这份 entry 可能已经被拆了。
-   */
-  pendingWatch: SessionStateWatch | null;
-  /** What the live runtime last reported waiting (an ACP session's own approvals); the host's asks are added to it (D-31). */
-  runtimeRequests: readonly PendingRequest[];
-  disposed: boolean;
-  /**
-   * 没有记录可读时的替身(见 stand-in-timeline.ts)。它**不进缓存**:真记录一出现,下一次 acquire
-   * 就该开真时间线,而缓存里的替身会把它挡住。用完即拆。
-   */
-  standIn?: boolean;
-  /** Stops keeping the session index current from this timeline (`followSessionIndex`). */
-  stopIndex?: () => void;
-  /** The agent session whose record this timeline reads; null = journal only. */
-  providerSessionId: string | null;
-  /** Out of the cache because the row moved to another record; disposed when its last holder lets go. */
-  evicted?: boolean;
-};
-
-const entries = new Map<string, TimelineEntry>();
-const opening = new Map<string, Promise<TimelineEntry>>();
-/** 每次整体重置 +1 —— 用来认出「开到一半、代已经翻篇」的那些 timeline。 */
-let resetGeneration = 0;
-
-type ActiveSubscription = {
-  conversationId: string;
-  stop: () => void;
-};
-
-const subscriptions = new Map<string, ActiveSubscription>();
-
-// ─── 会话行 ────────────────────────────────────────────────────────────────
-
-/**
- * 取**整行**（不是手搓投影）：写侧要的是一个真的 `Conversation`。
- * 早先这里只选了列表要显示的那几列，再把它 `as Conversation` 递给注入路径 —— 那是一句
- * 类型上的谎：注入路径哪天多读一个字段，拿到的是 undefined 而类型说它在，静默走错。
- */
-function readSessionRows(includeArchived = false, where?: SQL, limit?: number): Array<{
-  session: SessionRow;
-  project: SessionpageProjectSummary;
-}> {
-  return db
-    .select({
-      session: sessions,
-      project: { id: projects.id, name: projects.name, path: projects.path, kind: projects.kind },
-    })
-    .from(sessions)
-    .innerJoin(projects, eq(sessions.projectId, projects.id))
-    // 归档的会话不上这张面 —— 与 `getSessions()` 同一条口径:归属键是**会话自己**那一列(spec session-graph)。
-    .where(and(includeArchived ? undefined : isNull(sessions.archivedAt), where))
-    .orderBy(desc(sessions.lastInteractedAt))
-    .limit(limit ?? Number.MAX_SAFE_INTEGER)
-    .all()
-    .map(({ session, project }) => ({ session, project: projectSummary(project) }));
-}
-
-function readLocalProjects(): SessionpageProjectSummary[] {
-  return readProjects().map(({ id, name, path, kind }) => projectSummary({ id, name, path, kind }));
-}
-
-/** #609 workspace 带上 kind,手机据此把它的会话列进「任务」;项目照旧只有 id / name / path。 */
-function projectSummary({ kind, ...project }: { id: string; name: string; path: string; kind?: 'project' | 'workspace' }): SessionpageProjectSummary {
-  return kind === 'workspace' ? { ...project, kind } : project;
-}
-
-export function readSessionRow(conversationId: string, options: { includeArchived?: boolean } = {}): SessionRow | null {
-  return (
-    readSessionRows(options.includeArchived, eq(sessions.id, conversationId)).find((row) => row.session.id === conversationId)?.session ?? null
-  );
-}
-
-/**
- * 这条会话的终端提问能不能从提问卡回答:终端腿,且这家声明了关掉选择器的取消键(#6798、#7035)。
- * **只在这里判**:能 ⇒ 提问结算带上 `questions`,之后手机画不画表单、写侧收不收都只看有没有 `questions`。
- */
-function remoteAnswerFor(row: SessionRow): boolean {
-  if (summaryRuntime(row.runtime) !== 'pty' || !row.provider || !isValidProviderId(row.provider)) return false;
-  const plugin = getPlugin(row.provider);
-  return Boolean(plugin.capabilities.sessionBundle.sessionTuiQuestionAnswer);
-}
-
-/**
- * `runtime` 列为空时按 'pty' 读 —— 与 `mapSessionRowToSession` 同一条既有约定
- * （这一列是后加的，存量行为空且它们全是终端腿）。'acp'/'pty' 之外（今天是 'node'）如实报 unknown。
- */
-function summaryRuntime(runtime: string | null): SessionpageSessionSummary['runtime'] {
-  if (runtime === 'acp') return 'acp';
-  if (runtime === 'pty' || runtime === null) return 'pty';
-  return 'unknown';
-}
-
-/**
- * 这一家有没有咕咕托管的配置根。今天三家都是 `injectionMode: 'runtime'` ⇒ 恒为 null；
- * 声明自相矛盾时 `resolveAgentHome` 会抛 —— 那是**这一家的** descriptor 有问题，
- * 只让这一条会话变成 unsupported，❌ 不许把整张列表带走。
- */
-function managedConfigRootFor(providerId: string | null): {
-  root: string | null;
-  problem: string | null;
-} {
-  const id = providerId?.trim();
-  if (!id) return { root: null, problem: null };
-  try {
-    const bundle = getPlugin(id).capabilities.sessionBundle;
-    const home = resolveAgentHome({
-      providerId: id,
-      injectionMode: bundle.injectionMode,
-      configRoot: bundle.configRoot,
-      guguHome: process.env.GUGU_HOME ?? '',
-      osHomeDir: process.env.HOME ?? '',
-      sourceEnv: process.env,
-    });
-    return { root: home?.configRoot ?? null, problem: null };
-  } catch (error) {
-    return { root: null, problem: (error as Error)?.message ?? String(error) };
-  }
-}
-
-/**
- * 会话所绑订阅连接的配置根解析器(宿主注入,与 `setSessionTimelineFactory` 同一个理由:
- * 真实现拖 electron `app` 与 db,服务层要保持能在任何 node 环境下测)。没注入 ⇒ 只在默认根里找。
- */
-export type ConnectionConfigRootResolver = (providerId: string, connectionId: string) => string | null;
-
-let connectionConfigRootOf: ConnectionConfigRootResolver | null = null;
-
-export function setConnectionConfigRootResolver(next: ConnectionConfigRootResolver | null): void {
-  connectionConfigRootOf = next;
-}
-
-/**
- * 单一目录之前(#26),非原生连接上的会话跑在连接自己的配置根上,记录写在那里;开机时已搬进用户根,
- * 之后的新内容只长在用户根里。所以连接根只排在默认根后面兜底(搬失败的那几条),❌ 排前面 —— 那样读到的是搬家时的旧副本。
- */
-function connectionRootFor(row: SessionRow): string | null {
-  const connectionId = pinnedConnectionId(row);
-  if (!row.provider || !connectionId) return null;
-  try {
-    return connectionConfigRootOf?.(row.provider, connectionId) ?? null;
-  } catch (error) {
-    // 解析不出来只让这一条退回默认根,❌ 不许把整张会话列表带走(与 `managedConfigRootFor` 同一条理由)。
-    log.warn('sessionTimeline: 连接配置根解析失败,改在默认根里找', { sessionId: row.id, error: String(error) });
-    return null;
-  }
-}
-
-/**
- * 会话绑的连接。绑定是启动时才落的 —— 外部 fork 出来的行(终端里 `/fork`)还没启动过就没有,
- * 而它的记录已经在源会话那条连接的根里了 ⇒ 顺着 `forkedFrom` 找最近一个落了绑定的祖先
- * (与 `resolveHarnessConnection` 继承的是同一条链)。
- */
-function pinnedConnectionId(row: SessionRow): string | undefined {
-  const seen = new Set<string>();
-  let current: SessionRow | null = row;
-  while (current && !seen.has(current.id)) {
-    seen.add(current.id);
-    const pinned = current.config?.subscriptionConnectionId;
-    if (pinned) return pinned;
-    const parentId: string | undefined = current.config?.forkedFrom?.sessionId;
-    current = parentId ? readSessionRow(parentId) : null;
-  }
-  return undefined;
-}
-
-export function locateRow(row: SessionRow, managedOnly = false): SessionRecordLocation {
-  const managed = managedConfigRootFor(row.provider);
-  if (managed.problem) return { supported: false, reason: managed.problem };
-  const legacy = managedOnly && managed.root ? null : connectionRootFor(row);
-  return locateSessionRecord({
-    provider: row.provider,
-    providerSessionId: row.providerSessionId,
-    managedConfigRoot: managed.root,
-    managedOnly: managedOnly && !!managed.root,
-    // 这一家在本机 hook 里报过的配置目录(包装器在进程里改过的那种)排在默认根之后一起找。
-    fallbackConfigRoots: [...(legacy ? [legacy] : []), ...knownHarnessConfigRoots(row.provider)],
-  });
-}
-
-// ─── timeline 缓存 ──────────────────────────────────────────────────────────
-
-function disposeEntry(entry: TimelineEntry): void {
-  entry.disposed = true;
-  try {
-    entry.pendingWatch?.dispose();
-  } catch (error) {
-    log.warn('sessionTimeline: pending-permission watch dispose failed', {
-      conversationId: entry.conversationId,
-      error: String(error),
-    });
-  }
-  entry.pendingWatch = null;
-  entry.stopIndex?.();
-  entry.timeline.dispose();
-}
-
-/**
- * 把活运行时里待答的审批接进这条时间线。
- *
- * ⚠️ **不挡住 acquire**：`replica.ready` 等的是 ACP 运行时进程那一头。读侧读的是磁盘上的记录，
- * 与那个进程活得好不好无关 —— 让它去 await，等于一个卡住的运行时进程能把「看会话内容」
- * 一起拖死。接不上就 warn 一句，时间线照常可读，只是没有审批卡（与接这条之前的行为一致）。
- */
-function attachPendingRequests(entry: TimelineEntry): void {
-  void watchSessionState(entry.conversationId, (requests, queuedPrompts, liveReply, terminals, activeTurn) => {
-    if (entry.disposed) return;
-    entry.runtimeRequests = requests;
-    syncPending(entry);
-    entry.timeline.syncQueuedPrompts(queuedPrompts.filter(isVisibleQueuedPrompt).map(prompt => ({ ...prompt, text: conversationQueueText(prompt.text) })));
-    entry.timeline.syncLiveReply(liveReply ?? null);
-    entry.timeline.syncTerminals(terminals);
-    entry.timeline.syncActiveTurn(activeTurn ?? null);
-  })
-    .then((watch) => {
-      if (!watch) return;
-      // 接上来之前这份 entry 可能已经被拆了 —— 那就当场把订阅也拆掉，❌ 别留一条没人拆的。
-      if (entry.disposed) {
-        watch.dispose();
-        return;
-      }
-      entry.pendingWatch = watch;
-    })
-    .catch((error) => {
-      log.warn('sessionTimeline: failed to watch pending permissions', {
-        conversationId: entry.conversationId,
-        error: String(error),
-      });
-    });
-}
 
 /** Publish the already-owned host requests alongside the runtime queue. */
 export function syncAsked(conversationId: string): void {
@@ -471,263 +127,11 @@ export function syncAsked(conversationId: string): void {
   if (entry) syncPending(entry);
 }
 
-function syncPending(entry: TimelineEntry): void {
-  if (entry.disposed || entry.standIn) return;
-  const asked = [...(hostAsks.get(entry.conversationId)?.values() ?? [])].map((ask) => ask.request);
-  entry.timeline.syncPendingRequests([...entry.runtimeRequests, ...asked]);
-}
 
-/**
- * Process-bound approvals live as long as the host that asked them. One the archive brings back still pending,
- * with no such ask here, was asked by a process that is gone: nobody waits on its answer, so it is over (10-06 A/B: after B
- * restarted, the private chat's band kept 「允许 Claude 1 要装 插件探针 r1」, which nothing would ever take). The archive keeps
- * no `liveItemIds`, so the runtime's next sync cannot withdraw it either. Agent questions instead restore their
- * answer handler from the archived card and use the existing idempotent session outbox.
- */
-function restoreAgentQuestions(entry: TimelineEntry, projectId: string): void {
-  void import('../asks/human-tool-wait').then(({ restoreHumanToolResults }) => restoreHumanToolResults(entry.conversationId, projectId))
-    .catch(error => log.error('Human tool results could not be restored', { conversationId: entry.conversationId, error: String(error) }));
-  const saved = new Map(readAgentQuestionRecords(entry.conversationId).map(item => [item.itemId, item]));
-  for (const item of entry.timeline.getSnapshot({ limit: 1 }).settlements) {
-    if (!saved.has(item.itemId) && restoredAgentQuestion(item)) { rememberAgentQuestion(entry.conversationId, item); saved.set(item.itemId, item); }
-  }
-  for (const settlement of saved.values()) {
-    if (settlement.state === 'cancelled') { entry.timeline.cancelSettlement(settlement.itemId); continue; }
-    if (hostAsks.get(entry.conversationId)?.has(settlement.itemId)) continue;
-    const restored = restoredAgentQuestion(settlement);
-    if (!restored) continue;
-    if (restored.answer) {
-      entry.timeline.syncPendingRequests([...entry.runtimeRequests, ...[...(hostAsks.get(entry.conversationId)?.values() ?? [])].map(ask => ask.request), restored.request]);
-      entry.timeline.settle({ itemId: restored.request.itemId, optionId: settlement.optionId, by: settlement.resolvedBy ?? 'owner' });
-    }
-    const answer = restored.answer ? Promise.resolve(restored.answer) : ask(entry.conversationId, restored.request,
-      { signal: new AbortController().signal });
-    deliverAgentQuestionAnswer(entry.conversationId, projectId, restored.request, restored.answerMessageId, answer);
-  }
-}
 
-function withdrawOrphanHostAsks(entry: TimelineEntry): void {
-  const asked = hostAsks.get(entry.conversationId);
-  for (const settlement of entry.timeline.getSnapshot({ limit: 1 }).settlements) {
-    if (settlement.state !== 'pending' || !settlement.origin) continue;
-    const source = askSourceSpec(settlement.origin.source);
-    // An archived request can outlive the feature that created its source.
-    if (!source || (source.raisedBy === 'host' && !asked?.has(settlement.itemId))) {
-      entry.timeline.cancelSettlement(settlement.itemId);
-    }
-  }
-}
 
-function scheduleIdleDispose(entry: TimelineEntry): void {
-  if (entry.idleTimer) clearTimeout(entry.idleTimer);
-  entry.idleTimer = setTimeout(() => {
-    if (entry.refs > 0) return;
-    if (entries.get(entry.conversationId) === entry) entries.delete(entry.conversationId);
-    try {
-      disposeEntry(entry);
-    } catch (error) {
-      log.warn('sessionTimeline: dispose failed', {
-        conversationId: entry.conversationId,
-        error: String(error),
-      });
-    }
-  }, IDLE_DISPOSE_MS);
-  // 空闲拆除不该拖住进程退出。
-  entry.idleTimer.unref?.();
-}
 
-async function acquire(conversationId: string): Promise<SessionTimelineResult<TimelineEntry>> {
-  const row = readSessionRow(conversationId);
-  if (!row) return fail('session_not_found', `这台机器上没有会话 ${conversationId}`);
-  let cached = entries.get(conversationId);
-  // @@@record-moved - a model switch across billing routes forks the agent session onto a new record
-  // (reloadEmdashSession); the cached timeline still reads the old one and would never show the next turn.
-  const providerSessionId = row.providerSessionId?.trim();
-  if (cached?.providerSessionId && providerSessionId && cached.providerSessionId !== providerSessionId) {
-    evict(cached);
-    cached = undefined;
-  }
-  if (cached) {
-    cached.refs += 1;
-    if (cached.idleTimer) {
-      clearTimeout(cached.idleTimer);
-      cached.idleTimer = null;
-    }
-    return { ok: true, value: cached };
-  }
 
-  const location = locateRow(row);
-  // An ACP session's journal holds the turns gugu adds to it, and all its turns when its agent keeps no record gugu reads.
-  const journal = summaryRuntime(row.runtime) === 'acp' ? journalLocator(conversationId) : null;
-  if (!location.supported && !(journal && journalOnly(row))) {
-    // 没有记录可读也要打得开(spec session-always-openable):给一个只含第一句话的替身,
-    // 为什么、怎么再试由各端按会话摘要画在转录末尾。❌ 回 record_unsupported 让它变成一行点不开的灰字。
-    return { ok: true, value: standInEntry(row) };
-  }
-  if (journal) await ensureJournal(conversationId);
-  if (!timelineFactory) {
-    return fail(
-      'timeline_unavailable',
-      '会话记录源还没有装进宿主（setSessionTimelineFactory 未调用）'
-    );
-  }
-
-  // 并发的两次 acquire 只开一份实例：两份实例 = 两个 epoch，游标当场作废。
-  // ⚠️ 等待那一支同样要把拒绝收敛成 Result —— 让它抛穿过去，第二个调用方拿到的就是一个
-  //    异常而不是带 code 的失败，而第一个调用方拿到的是规规矩矩的 `{ok:false}`。
-  const inFlight = opening.get(conversationId);
-  if (inFlight) {
-    try {
-      const entry = await inFlight;
-      entry.refs += 1;
-      return { ok: true, value: entry };
-    } catch (error) {
-      return openFailure(error);
-    }
-  }
-
-  const factory = timelineFactory;
-  // 开到一半被 reset 掉的那一份不许再登记（否则拆完之后又冒出来一个没人拆的实例）。
-  const generation = resetGeneration;
-  // 审批只有 ACP 腿有可结算的请求 id；TUI 腿的审批画在终端里，没有通道
-  // （`write-bridge` 对它 fail loud）。所以这条订阅只对 ACP 腿开。
-  const promise = factory({ locator: location.supported ? location.locator : null, journal, conversationId, answerableQuestions: remoteAnswerFor(row) }).then((timeline) => {
-    if (generation !== resetGeneration) {
-      timeline.dispose();
-      throw new Error('会话时间线服务在这份记录打开的过程中被重置了');
-    }
-    const entry: TimelineEntry = {
-      conversationId,
-      timeline,
-      refs: 1,
-      idleTimer: null,
-      pendingWatch: null,
-      runtimeRequests: [],
-      disposed: false,
-      providerSessionId: location.supported ? location.locator.providerSessionId : null,
-    };
-    entries.set(conversationId, entry);
-    try {
-      attachInteractive(entry, row);
-      if (!row.archivedAt) entry.stopIndex = followSessionIndex(conversationId, timeline, () => indexSource(row, location));
-    }
-    catch (error) { entries.delete(conversationId); timeline.dispose(); throw error; }
-    return entry;
-  });
-  opening.set(conversationId, promise);
-  try {
-    return { ok: true, value: await promise };
-  } catch (error) {
-    return openFailure(error);
-  } finally {
-    if (opening.get(conversationId) === promise) opening.delete(conversationId);
-  }
-}
-
-function attachInteractive(entry: TimelineEntry, row: SessionRow): void {
-  restoreAgentQuestions(entry, row.projectId);
-  if (summaryRuntime(row.runtime) === 'acp') attachPendingRequests(entry);
-  withdrawOrphanHostAsks(entry);
-  if (hostAsks.has(row.id)) syncPending(entry);
-}
-
-/** 会话行上的建立时间(SQLite `CURRENT_TIMESTAMP`,UTC)→ epoch ms;读不出来 = 不知道。 */
-function rowCreatedAt(row: SessionRow): number | null {
-  const raw = row.createdAt?.trim();
-  if (!raw) return null;
-  const at = Date.parse(raw.includes('T') ? raw : `${raw.replace(' ', 'T')}Z`);
-  return Number.isFinite(at) ? at : null;
-}
-
-/**
- * 这个人发出去的第一句话:还没投出去的首轮(聊天腿),或者建会话时记下的那句(终端腿)。
- * 聊天腿的首轮一入队就是会话的 pending 行,各端从那一行画它(连同发送、启动、失败的状态);那一行还在时,
- * 替身 ❌ 再带一份 —— 同一句话会画成两个气泡。
- */
-function firstMessageOf(row: SessionRow): string | null {
-  const session = mapSessionRowToSession(row);
-  const first = session.initialQueue?.[0];
-  if (!first) return session.firstUtterance ?? null;
-  const messageId = creationMessageId(session, 0);
-  return sessionLife().read(row.id).pending.items.some((item) => item.messageId === messageId) ? null : first.text;
-}
-
-/** Its agent keeps no record gugu reads, and gugu's journal has its turns. */
-function journalOnly(row: SessionRow): boolean {
-  return summaryRuntime(row.runtime) === 'acp' && sessionRecordHarnessForProvider(row.provider) === null && journalHasTurns(row.id);
-}
-
-function standInEntry(row: SessionRow): TimelineEntry {
-  return {
-    conversationId: row.id,
-    timeline: createStandInTimeline({
-      sessionId: row.id,
-      firstMessage: firstMessageOf(row),
-      createdAt: rowCreatedAt(row),
-      recordAvailable: () => {
-        const current = readSessionRow(row.id);
-        return current !== null && (locateRow(current).supported || journalOnly(current));
-      },
-    }),
-    refs: 1,
-    idleTimer: null,
-    pendingWatch: null,
-    runtimeRequests: [],
-    disposed: false,
-    standIn: true,
-    providerSessionId: null,
-  };
-}
-
-function openFailure<T>(error: unknown): SessionTimelineResult<T> {
-  // 「记录不在这台机器上」与「记录在但读不动」是两件事：前者用户能自己判断（会话是在别处跑的），
-  // 后者是本机故障。合成一个 code 就把这条判断从用户手里拿走了。
-  const code =
-    (error as Error)?.name === 'SessionRecordNotFoundError' ? 'record_not_found' : 'record_unreadable';
-  return fail(code, (error as Error)?.message ?? String(error));
-}
-
-function evict(entry: TimelineEntry): void {
-  entries.delete(entry.conversationId);
-  entry.evicted = true;
-  if (entry.idleTimer) clearTimeout(entry.idleTimer);
-  entry.idleTimer = null;
-  if (entry.refs <= 0) disposeEntry(entry);
-}
-
-function release(entry: TimelineEntry): void {
-  entry.refs -= 1;
-  if (entry.evicted) {
-    if (entry.refs <= 0 && !entry.disposed) disposeEntry(entry);
-    return;
-  }
-  if (entry.standIn) {
-    if (entry.refs <= 0 && !entry.disposed) {
-      entry.disposed = true;
-      entry.timeline.dispose();
-    }
-    return;
-  }
-  if (entry.refs > 0) return;
-  entry.refs = 0;
-  scheduleIdleDispose(entry);
-}
-
-async function withTimeline<T>(
-  conversationId: string,
-  use: (timeline: SessionTimeline, floor: string | null) => T | Promise<T>
-): Promise<SessionTimelineResult<T>> {
-  const acquired = await acquire(conversationId);
-  if (!acquired.ok) return acquired;
-  try {
-    const floor = await nativeConversationHistoryFloor(conversationId);
-    return { ok: true, value: clearedHistoryResult(await use(acquired.value.timeline, floor), floor) };
-  } catch (error) {
-    return fail('timeline_failed', (error as Error)?.message ?? String(error));
-  } finally {
-    release(acquired.value);
-  }
-}
 
 /**
  * 会话行上的读数过网:新字段 `status` 带基础态 + 附属态,老字段 `agentStatus` 写老版本手机认得的词
@@ -1129,15 +533,6 @@ export async function historyTurns(conversationId: string): Promise<TimelineSnap
   }
 }
 
-function indexSource(row: SessionRow, location: SessionRecordLocation): IndexSource {
-  const locator = location.supported ? location.locator : null;
-  const acp = summaryRuntime(row.runtime) === 'acp';
-  return {
-    locator,
-    journal: acp && journalHasTurns(row.id) ? journalLocator(row.id) : null,
-    ...(!acp && locator ? { hostEnds: ptyTurnEnds(row.id, locator.providerSessionId).read() } : {}),
-  };
-}
 
 export async function backfillSessionIndex(conversationId: string, respectRetry = true) {
   const row = readSessionRow(conversationId);
@@ -1260,110 +655,6 @@ export async function stopBackgroundTask(input: {
   }
 }
 
-/** Native card subscriptions observe identity-only invalidations, never a full timeline/live model. */
-export async function subscribePreview(
-  input: SessionpageSessionSubscribeRequest,
-  changed: () => void,
-): Promise<SessionTimelineResult<{ subscriptionId: string }>> {
-  const row = readSessionRow(input.conversationId);
-  if (!row || row.runtime !== 'acp') return subscribe(input, changed);
-  const subscriptionId = input.subscriptionId?.trim();
-  if (!subscriptionId) return fail('invalid_subscription', 'subscriptionId 是必填的');
-  unsubscribe(subscriptionId);
-  let stopped = false;
-  const notify = () => { if (!stopped) changed(); };
-  const stops = [
-    onNativeMessagePreviewChanged(id => { if (id === undefined || id === input.conversationId) notify(); }),
-    tapMainEvents((channel, data) => {
-      if (channel === sessionChangedChannel.name && (data as { sessionId?: string }).sessionId === input.conversationId) notify();
-    }),
-  ];
-  subscriptions.set(subscriptionId, { conversationId: input.conversationId, stop: () => {
-    stopped = true;
-    for (const stop of stops) stop();
-  } });
-  return { ok: true, value: { subscriptionId } };
-}
-
-/** 订阅正文；同一个 subscriptionId 重连会替换前一条。预览使用上面的独立入口。 */
-export async function subscribe(
-  input: SessionpageSessionSubscribeRequest,
-  emit: (event: SessionpageSessionEvent) => void
-): Promise<SessionTimelineResult<{ subscriptionId: string }>> {
-  const subscriptionId = input.subscriptionId?.trim();
-  if (!subscriptionId) return fail('invalid_subscription', 'subscriptionId 是必填的');
-
-  // 先登记再等时间线:等的那一会儿里线断了 / 退订了,拆的就是这一条,回来时不再接上(❌ 给死掉的线留一条孤儿)。
-  unsubscribe(subscriptionId);
-  let stopped = false;
-  let teardown: (() => void) | null = null;
-  let attached: TimelineEntry | null = null;
-  let stopFollow = () => {};
-  const mine = {
-    conversationId: input.conversationId,
-    stop: () => {
-      if (stopped) return;
-      stopped = true;
-      stopFollow();
-      teardown?.();
-    },
-  };
-  subscriptions.set(subscriptionId, mine);
-  const forget = () => { if (subscriptions.get(subscriptionId) === mine) subscriptions.delete(subscriptionId); };
-
-  const attach = async (cursor: RecordCursor | null): Promise<SessionTimelineResult<null>> => {
-    const acquired = await acquire(input.conversationId);
-    if (!acquired.ok) return acquired;
-    const entry = acquired.value;
-    if (stopped || entry === attached) {
-      release(entry);
-      return stopped ? fail('unsubscribed', '订阅在建好之前就被退掉了') : { ok: true, value: null };
-    }
-    let unsubscribeTimeline: () => void;
-    try {
-      unsubscribeTimeline = entry.timeline.subscribe(cursor, (result) => {
-        if (stopped) return;
-        emit({ subscriptionId, result });
-      }, { terminalPatch: input.terminalPatch === true });
-    } catch (error) {
-      release(entry);
-      return fail('subscribe_failed', (error as Error)?.message ?? String(error));
-    }
-    const previous = teardown;
-    attached = entry;
-    teardown = () => {
-      try {
-        unsubscribeTimeline();
-      } finally {
-        release(entry);
-      }
-    };
-    previous?.();
-    return { ok: true, value: null };
-  };
-
-  // The row moved to another agent record (see @@@record-moved): follow it. A cursor from no epoch of the new
-  // timeline makes it answer with a reset and a whole snapshot, which the viewer swaps in for what it holds.
-  stopFollow = tapMainEvents((channel, data) => {
-    if (channel !== sessionChangedChannel.name) return;
-    const { sessionId, changes } = data as { sessionId?: string; changes?: { providerSessionId?: unknown } };
-    const next = changes?.providerSessionId;
-    if (sessionId !== input.conversationId || typeof next !== 'string' || !attached?.providerSessionId || next === attached.providerSessionId) return;
-    void attach({ epoch: 'record-moved', seq: 0 }).then((result) => {
-      if (!result.ok && result.error.code !== 'unsubscribed') {
-        log.warn('sessionTimeline: following the moved record failed', { conversationId: input.conversationId, error: result.error });
-      }
-    });
-  });
-
-  const first = await attach(input.cursor);
-  if (!first.ok) {
-    stopFollow();
-    forget();
-    return first;
-  }
-  return { ok: true, value: { subscriptionId } };
-}
 
 // ─── 整台机器的会话列表订阅 ──────────────────────────────────────────────────
 
@@ -1494,17 +785,6 @@ export function unsubscribeAllSessions(): void {
   for (const id of [...sessionsSubscriptions.keys()]) unsubscribeSessions(id);
 }
 
-export function unsubscribe(subscriptionId: string): void {
-  const active = subscriptions.get(subscriptionId);
-  if (!active) return;
-  subscriptions.delete(subscriptionId);
-  active.stop();
-}
-
-/** 频道断了：那一头的订阅一个都不再可达 —— 全清，❌ 不留着「以为还有人在看」的引用。 */
-export function unsubscribeAll(): void {
-  for (const subscriptionId of [...subscriptions.keys()]) unsubscribe(subscriptionId);
-}
 
 function writeTargetFrom(row: SessionRow): SessionWriteTarget {
   return mapSessionRowToSession(row);
@@ -1543,7 +823,7 @@ async function sendOnce(input: InputAdmissionPayload, admissionFence?: () => voi
   if (steerIfBusy !== undefined && steerIfBusy !== true) return rejected('invalid_request', '插话意图无效');
   if (files !== undefined && !turnFileRefSchema.array().safeParse(files).success) return rejected('invalid_request', '附件引用无效');
   if (attachments !== undefined && !promptAttachmentSchema.array().safeParse(attachments).success) return rejected('invalid_request', '附件引用无效');
-  if (annotations !== undefined && !turnAnnotationSchema.array().safeParse(annotations).success) return rejected('invalid_request', '批注无效');
+  if (annotations !== undefined && !turnAnnotationSchema.array().safeParse(annotations).success) return rejected('invalid_request', '评论无效');
   if (clientMessageId !== undefined && (!clientMessageId.trim() || clientMessageId.length > 256)) return rejected('invalid_request', '消息标识无效');
   if (!text.trim() && !files?.length && !attachments?.length && !annotations?.length) return rejected('empty_text', '消息是空的');
   // Confirm custody before re-reading a provider or resolving files whose permissions may have changed.
@@ -1775,21 +1055,9 @@ function settlementOf(timeline: SessionTimeline, itemId: string): Settlement | n
 /** 测试与收尾用：拆掉所有订阅与缓存实例。 */
 export function resetSessionTimelineService(): void {
   resetAsks();
-  // 存档跟着一起作废:重置意味着「这一层记的东西可能都不作数了」,
-  // 留着一份自称还对得上的存档,下次开会话就会拿它去续一段不存在的历史。
-  for (const id of entries.keys()) void dropTimelineArchive(id);
-  resetGeneration += 1;
-  opening.clear();
+  beginEntriesReset();
   unsubscribeAll();
-  for (const entry of [...entries.values()]) {
-    if (entry.idleTimer) clearTimeout(entry.idleTimer);
-    entries.delete(entry.conversationId);
-    try {
-      disposeEntry(entry);
-    } catch {
-      // 收尾路径：拆一个实例失败不该拦住拆别的。
-    }
-  }
+  disposeAllEntries();
 }
 
 export async function changeQueue(input: { conversationId: string; action: import('@gugu/session-core/session-record/contract').SessionpageQueueAction }): Promise<SessionTimelineResult<null>> {

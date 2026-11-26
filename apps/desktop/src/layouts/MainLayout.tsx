@@ -7,6 +7,7 @@ import { SessionAppFrame } from '../components/appSlot/SessionAppFrame'
 import { peekInstalledApps } from '../session/renderer/features/extensions/installed-extensions'
 import { LISTED_HOST } from '../components/appSlot/hereHost'
 import { ResourceMonitorHost } from '@/session/renderer/features/settings/components/resource-monitor-host'
+import { CustomModelRouteRepairHost } from '@/components/settings/CustomModelRouteRepairHost'
 import { reopenGlobalSearch } from '@/session/renderer/features/global-search/search-session'
 import { reaction } from 'mobx'
 import { useCallback, useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore, type ComponentProps } from 'react'
@@ -18,7 +19,7 @@ import { PhoneViewportShell } from '@/mobile/PhoneViewportShell'
 import { useMobileShellDiagnostics } from '@/mobile/useMobileListDiagnostics'
 import { PhoneTabBar as MobileTabBar } from '@/mobile/PhoneTabBar'
 import { MeHost } from '../components/me/MeMenu'
-import { returnToScreen } from '@/session/renderer/app/screen-layout-actions'
+import { installPhoneScreen, phoneChatUnder, returnToScreen, showChatOnPhone } from '@/session/renderer/app/screen-layout-actions'
 import { UpdateBanner } from '../components/UpdateBanner'
 import { WindowControls } from '../components/WindowControls'
 import { MOBILE_TABS, SIDEBAR_TABS, type SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
@@ -227,14 +228,17 @@ function InnerLayout({
   }, [mobile])
   const activeChatIdRef = useRef(activeChatId)
   activeChatIdRef.current = activeChatId
+  // The phone's chat page is the desktop's one-block screen (showChatOnPhone): it follows the chat drawn, so a topic stands under its group.
+  useEffect(() => mobile ? installPhoneScreen() : undefined, [mobile])
+  useEffect(() => { if (mobile && activeChatId) showChatOnPhone(activeChatId) }, [mobile, activeChatId])
   // 进一条会话:桌面切到对话 tab;手机退掉推上来的层(咕咕 / 项目 / 我的),从底下的根 tab 推会话页,返回回到那个 tab。
-  // 会话页开着时进另一条(资料卡「发消息」、消息里的群卡片、通知):压在屏上那条上面,返回先回到它;从搜索结果进的,返回回到搜索(@@@phone-chat-trail)。
+  // 会话页开着时进另一条(资料卡「发消息」、消息里的群卡片、通知):压在屏上那条上面,返回先回到它;同一个群里切话题换掉这一屏(phoneChatUnder);从搜索结果进的,返回回到搜索(@@@phone-chat-trail)。
   const enterChat = useCallback((chatId: string) => {
     if (!mobile) return setActiveTab('chats')
     const onPage = activeChatIdRef.current
     const from = shellTab.root()
     setActiveTab(from)
-    shellTab.openChat(from, onPage !== chatId ? onPage : null)
+    shellTab.openChat(from, phoneChatUnder(onPage, chatId))
   }, [mobile, setActiveTab, shellTab])
   const chatOpenNonce = useMobileChatOpenNonce(mobile, phoneChatShown ? 'chat' : 'list')
   const [sessionCreateOpen, setSessionCreateOpen] = useState(false)
@@ -1226,6 +1230,7 @@ function InnerLayout({
       </div>
 
       <ResourceMonitorHost />
+      <CustomModelRouteRepairHost />
       {contactsModal && (
         <Sheet onClose={() => selectTab(pageUnderContacts.current)} {...PAGE_MODAL_FRAME} testId="contacts-modal" ariaLabel={t('shell.contacts')}>
           {/* The ✕ takes the modal's top-right corner (--pane-corner-reserve): headers at the edge and the drawer's close leave

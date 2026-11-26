@@ -53,10 +53,10 @@ import '@renderer/index.css'
 const buildModels = () =>
   composerModelOptions(
     {
-      // ⚠️ 这一条**认不出厂商**,而且是产品里真实存在的第一条:claude 的模型目录首项就叫
-      // 「Default (recommended)」(实机取证)。它一进 fixture,「认不出厂商的行怎么排」
-      // 就从一个假想问题变成必须回答的问题 —— 上一版实机上它的名字比其余 18 行左移 22px。
-      default: { name: 'Default (recommended)' },
+      // ⚠️ 这一条**认不出厂商**、名字带括号规格(自己接的中转模型常是这样)。原先这里是 claude 目录首项
+      // 「Default (recommended)」,owner 11-25 起占位模型不进清单(见 placeholder 那条用例),样本换成它:
+      // 「认不出厂商的行怎么排」「括号只在触发器上剥」两个问题仍要它来回答。
+      'relay-model': { name: 'Relay Model (preview)' },
       'gpt-5.6-codex': { name: 'gpt-5.6-codex', description: '400K 上下文' },
       'gpt-5.6-sol': { name: 'GPT-5.6 Sol', description: '400K 上下文' }
     },
@@ -134,6 +134,7 @@ describe('#3249 composer 模型下拉', () => {
           modelOptions={MODELS}
           selectedModel={selectedModel}
           onModelChange={onModelChange}
+          phoneActions
           effortOptions={effortOptions}
           selectedEffort={effort.selected}
           onEffortChange={onEffortChange}
@@ -261,11 +262,10 @@ describe('#3249 composer 模型下拉', () => {
     //
     // ⚠️ 这条必须**两头都判**。只判触发器变短的话,把清单也一起剥掉照样绿 ——
     // 而那正是危险的那一种坏法:claude 目录里 `Opus` 与 `Opus (1M context)` 同时存在,
-    // 清单一剥就是两条一模一样的、选不出来。fixture 里 `Default (recommended)` 就是
-    // claude 目录的真实首项(实机取证),不是为这条判据捏的。
+    // 清单一剥就是两条一模一样的、选不出来。fixture 里 `Relay Model (preview)` 是那条带括号的样本。
     await openPanel()
     expect(visibleOptions(), '清单里不该剥括号 —— 那是用户要分辨规格的地方').toContain(
-      'Default (recommended)'
+      'Relay Model (preview)'
     )
 
     // ⚠️ 不能"点一下那条然后看触发器变没变":这颗 composer 是**受控**的,`selectedModel`
@@ -275,7 +275,7 @@ describe('#3249 composer 模型下拉', () => {
     // `composerModelOptions` 的返回类型带 `| null`(没有可用模型时),所以先取窄。
     const catalog = MODELS ?? {}
     const parenthesized = Object.keys(catalog).find((id) =>
-      catalog[id]?.name.includes('(recommended)')
+      catalog[id]?.name.includes('(preview)')
     )
     expect(parenthesized, 'fixture 里那条带括号的模型不见了 —— 这条判据失去了它的样本').toBeTruthy()
 
@@ -289,7 +289,43 @@ describe('#3249 composer 模型下拉', () => {
           .querySelector<HTMLElement>(
             '[data-slot="composer-model"] [data-slot="composer-model-trigger-label"]'
           )
-          ?.innerText?.trim() === 'Default'
+          ?.innerText?.trim() === 'Relay Model'
+    )
+  })
+
+  it('placeholder models never reach the list: default resolves to the model it names, or is dropped (owner 11-25)', async () => {
+    // owner 11-25「我说过不能有 default 这种模糊的东西」:清单里只放具体的模型名。
+    const claude = composerModelOptions(
+      {
+        default: { name: 'Default (recommended)', description: 'Opus 5 with 1M context' },
+        opus: { name: 'Opus 5' },
+        sonnet: { name: 'Sonnet 5' }
+      },
+      []
+    )!
+    const listed = (options: NonNullable<typeof claude>) =>
+      Object.values(options).filter((option) => !option.hiddenFromPicker).map((option) => option.name)
+    expect(listed(claude)).toEqual(['Opus 5', 'Sonnet 5'])
+    // 会话正停在别名上:触发器写它背后那条具体模型的名字。
+    expect(claude.default).toMatchObject({ name: 'Opus 5', hiddenFromPicker: true, aliasOf: 'opus' })
+    // harness 只报了 default:这一行改叫它会用的那条具体模型。
+    expect(listed(composerModelOptions({ default: { name: 'Default (recommended)', description: 'Sonnet 5.5' } }, [])!)).toEqual(['Sonnet 5.5'])
+    // 说不出是谁 ⇒ 不显示,❌ 退回 default。
+    expect(composerModelOptions({ default: { name: 'Default (recommended)' }, sonnet: { name: 'Sonnet 5' } }, [])).not.toHaveProperty('default')
+    expect(composerModelOptions({ auto: { name: '默认模型' } }, [])).toBeNull()
+
+    MODELS = { ...claude }
+    renderComposer('default')
+    await openPanel()
+    expect(visibleOptions().some((name) => /default|默认/i.test(name)), visibleOptions().join(' | ')).toBe(false)
+    // The check sits on the concrete row the alias stands for.
+    const checked = [...document.querySelectorAll('[data-slot="combobox-content"] [role="option"]')]
+      .filter((row) => row.querySelector('[data-slot="composer-model-check"] svg'))
+      .map((row) => row.querySelector('[data-slot="composer-model-name"]')?.textContent?.trim())
+    expect(checked).toEqual(['Opus 5'])
+    await until(
+      'trigger names the concrete model behind default',
+      () => document.querySelector<HTMLElement>('[data-slot="composer-model"] [data-slot="composer-model-trigger-label"]')?.innerText?.trim() === 'Opus 5'
     )
   })
 
@@ -379,7 +415,7 @@ describe('#3249 composer 模型下拉', () => {
       input.getAttribute('aria-valuetext'),
       'aria-valuetext 是空的 —— 读屏器会退回去念 0,听成"最低档"'
       // ⚠️ 这个文件把语言**钉死**成 en-US(见 beforeEach 那段),所以断言照英文那份走。
-    ).toBe('Default')
+    ).toBe('No level selected')
 
     // 说明行要能被读屏器取到:它挂在外层 div 的 title 上,读屏器取不到;
     // 锁住时 input 还是 disabled,更取不到。所以显式 aria-describedby 指过去。
@@ -388,7 +424,7 @@ describe('#3249 composer 模型下拉', () => {
     expect(
       document.getElementById(describedBy!)?.textContent,
       'aria-describedby 指向了一个不存在的节点'
-    ).toBe('Default')
+    ).toBe('No level selected')
   })
 
   it('「减少动态效果」真的关得掉 —— ❌ 不许被高权重选择器架空', async () => {
@@ -465,7 +501,7 @@ describe('#3249 composer 模型下拉', () => {
     expect(thumbInput.max).toBe('5')
   })
 
-  it('刻点与圆钮圆心逐档对齐,且七档也只占一行', async () => {
+  it('刻点与圆钮圆心逐档对齐,更换档位后仍占一行', async () => {
     await openPanel()
 
     // ── ① 刻点等距,且首尾各让出半个圆钮 ────────────────────────────────────────
@@ -516,7 +552,8 @@ describe('#3249 composer 模型下拉', () => {
     // 重渲染是同一个组件实例:面板**仍然开着**,直接等它换上七档。❌ 再 openPanel() —— 那一下点的是
     // 开关,会把它关掉(#6301:旧写法正是在关闭动画那几帧里量到的)。
     renderComposer('platform:glm-5.2', { selected: 'ultracode' }, LONG_EFFORTS)
-    await until('slider re-renders with seven ticks', () => effortTicks().length === 7)
+    await until('slider re-renders with explicit levels', () => effortReadout() === 'UltraCode')
+    expect(effortTicks().length).toBe(6)
     expect(openMenuParts(), '重渲染后面板应仍开着').toBe(1)
     expect(effortReadout()).toBe('UltraCode')
     expect(effortRow().scrollWidth).toBeLessThanOrEqual(effortRow().clientWidth)
@@ -580,16 +617,12 @@ describe('#3249 composer 模型下拉', () => {
     await until('model panel closed', () => openMenuParts() === 0)
   })
 
-  it('复位钮使用目录提供的 default 项,回到该项后隐藏', async () => {
+  it('omits the synthetic Default effort from the phone Work controls', async () => {
     renderComposer('platform:glm-5.2', { selected: 'low' }, LONG_EFFORTS)
     await openPanel()
-    await page.getByTestId('composer-effort-reset').click()
-    expect(onEffortChange.mock.calls).toEqual([['default']])
-    await until('model panel closed', () => openMenuParts() === 0)
-
-    renderComposer('platform:glm-5.2', { selected: 'default' }, LONG_EFFORTS)
-    await openPanel()
     expect(document.querySelector('[data-testid="composer-effort-reset"]')).toBeNull()
+    expect(effortTicks().some(tick => tick.getAttribute('data-effort-id') === 'default')).toBe(false)
+    expect(onEffortChange).not.toHaveBeenCalled()
   })
 
   it.each([undefined, 'missing'])('没有合法默认项时不显示复位钮(default=%s)', async (defaultId) => {
@@ -626,31 +659,23 @@ describe('#3249 composer 模型下拉', () => {
     expect(visibleOptions()).toEqual(['GLM 5.2', 'GPT-5.6 Sol'])
   })
 
-  it('一级是「谁的」,厂商不分组 —— 厂商只在药丸和行内 logo 上', async () => {
+  it('咕咕模型优先，列表没有来源分组，也没有顶上那排厂商筛选块', async () => {
     await openPanel()
 
-    // owner 2026-09-06:「你的和咕咕的这个分类是一级分类,二标签是筛选」「你这个分类层次反了」。
-    // ⇒ 组头只有两段(两档),即使里面混着 OpenAI 与智谱两家。
-    // ⚠️ 这条同时是**回归守卫**:我第一版把厂商当组头,那时这里会读出三段。
-    expect(visibleGroups()).toEqual([
-      '你的 Codex 模型',
-      'Gugu models are billed in credits'
-    ])
+    expect(visibleGroups()).toEqual([])
+    expect(visibleOptions().slice(0, 2)).toEqual(['GLM 5.2', 'GPT-5.6 Sol'])
     // 组头里既然没有厂商,行内那枚 logo 就是认厂商的唯一线索。
-    // 图标**位**每行都有(5 行),真图标只有认得出厂商的那 4 行 —— 认不出的那条留白,不占位地收掉。
-    const slots = document.querySelectorAll(
+    // owner 11-25:每一行都有图标。认得出厂商的 4 行画 logo,认不出的那条画通用兜底(data-fallback),❌ 留空。
+    const slots = [...document.querySelectorAll<HTMLElement>(
       '[data-slot="combobox-content"] [data-slot="composer-model-icon"]'
-    )
+    )]
     expect(slots.length).toBe(5)
-    expect([...slots].filter((el) => el.childElementCount > 0).length).toBe(4)
-    // 药丸才是厂商那根轴(二级 = 筛选)。
-    // ⚠️ 按 testid 前缀取,不按 `[role="button"]`:Base UI 的 Toggle 渲染的是原生 `<button>`,
-    // role 是**隐式**的,属性选择器一个都抓不到(实测读出空数组)。
-    expect(
-      [...document.querySelectorAll('[data-testid^="composer-model-provider-"]')].map((el) =>
-        el.textContent?.trim()
-      )
-    ).toEqual(['OpenAI', '智谱'])
+    expect(slots.every((el) => el.querySelector('svg, [role="img"]') && el.getBoundingClientRect().width > 0)).toBe(true)
+    expect(slots.filter((el) => el.hasAttribute('data-fallback')).map((el) =>
+      el.closest('[role="option"]')?.querySelector('[data-slot="composer-model-name"]')?.textContent?.trim()
+    )).toEqual(['Relay Model (preview)'])
+    // owner 11-25:「删掉模型选择列表头上的分组」—— 那排厂商块整个撤掉,找某一家用搜索框(下一条)。
+    expect(document.querySelector('[data-slot="combobox-content"] [data-testid^="composer-model-provider-"]')).toBeNull()
   })
 
   it('认不出厂商的那一行,名字仍与其它行左对齐', async () => {
@@ -668,15 +693,13 @@ describe('#3249 composer 模型下拉', () => {
     expect(new Set(lefts).size, `各行名字左边缘: ${lefts.join(', ')}`).toBe(1)
   })
 
-  it('厂商药丸:不选=不过滤,选一家只剩那一家(两档一起留下)', async () => {
+  it('按厂商找:搜索框打厂商名,两档里那一家都留下;清空回到全部', async () => {
     await openPanel()
 
     // 阳性对照:静息态五条都在 —— 否则下面「筛掉了」平凡为真。
     expect(visibleOptions().length).toBe(5)
 
-    // 取证图:这是**唯一**带完整产品形状 fixture 的用例(两级分类 + 厂商 logo + 六档 Thinking),
-    // 所以组头、药丸、图标只有在这里才拍得到。
-    // composer-surface 那四张拍不出它们(那边的 fixture 没有分组,一家时药丸按设计不渲染)。
+    // 取证图:这是**唯一**带完整产品形状 fixture 的用例(厂商 logo + 六档 Thinking)。
     // ⚠️ 先等弹层的入场动画走完再拍:点开就拍会拍到半透明的中间帧,那张图会让人以为
     //    面板本身是灰的(第一版正是这么拍出一张"看着像坏了"的图)。
     // 等的是「入场动画已播完」这件事:弹层带 data-open 时挂一段 `both` 填充的入场动画
@@ -686,22 +709,18 @@ describe('#3249 composer 模型下拉', () => {
       const popup = document.querySelector<HTMLElement>('[data-slot="combobox-content"][data-open]')
       return popup != null && popup.getAnimations().every((a) => a.playState === 'finished')
     })
-    await page.screenshot({ path: 'composer-model-panel-providers.png' })
+    await page.screenshot({ path: 'composer-model-panel.png' })
 
-    await page.getByTestId('composer-model-provider-OpenAI').click()
-    // 筛的是**厂商**,而厂商横切在两档之上 ⇒ 两档里的 OpenAI 条目都留下,两个组头也都还在。
+    await page.getByTestId('composer-model-search').fill('OpenAI')
+    // 厂商横切在两档之上 ⇒ 两档里的 OpenAI 条目都留下。
     // 三条:你自己的 codex 与 Sol,加上咕咕代付的那条 Sol —— 同名不同档,两条都得在。
-    await until('provider pill filters to OpenAI', () =>
-      sameList(visibleOptions(), ['gpt-5.6-codex', 'GPT-5.6 Sol', 'GPT-5.6 Sol'])
+    await until('search narrows to OpenAI', () =>
+      sameList(visibleOptions(), ['GPT-5.6 Sol', 'gpt-5.6-codex', 'GPT-5.6 Sol'])
     )
-    expect(visibleOptions()).toEqual(['gpt-5.6-codex', 'GPT-5.6 Sol', 'GPT-5.6 Sol'])
-    expect(visibleGroups()).toEqual([
-      '你的 Codex 模型',
-      'Gugu models are billed in credits'
-    ])
+    expect(visibleOptions()).toEqual(['GPT-5.6 Sol', 'gpt-5.6-codex', 'GPT-5.6 Sol'])
+    expect(visibleGroups()).toEqual([])
 
-    // 再点一次取消 ⇒ 回到「一个都没选」= 不过滤(上游原话:An empty filter means no filtering)。
-    await page.getByTestId('composer-model-provider-OpenAI').click()
-    await until('clearing the pill restores all five', () => visibleOptions().length === 5)
+    await page.getByTestId('composer-model-search').fill('')
+    await until('clearing the search restores all five', () => visibleOptions().length === 5)
   })
 })

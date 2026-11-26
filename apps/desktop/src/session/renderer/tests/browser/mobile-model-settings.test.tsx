@@ -61,7 +61,7 @@ it.each(['android', 'ios'])('%s keeps one desktop guidance line, never starts de
   expect(document.querySelector('[data-testid="settings-coding-plans"], [data-testid="settings-api-models"], [data-testid="settings-custom-models"], [data-testid="custom-model-dialog"], [data-testid="settings-auxiliary-models"], [data-testid="settings-model-machine"]')).toBeNull();
   expect(page.getByRole('button', { name: '重试', exact: true }).query()).toBeNull();
   expect(document.body.textContent).not.toContain('host bridge');
-  await act(async () => { await userEvent.click(page.getByTestId('settings-model-provided-toggle')); });
+  await act(async () => { await userEvent.click(page.getByTestId('settings-model-provided-manage')); });
   await expect.element(page.getByTestId('settings-model-usable')).toHaveTextContent('可用平台模型');
   await act(async () => { await userEvent.click(page.getByRole('switch')); });
   expect(state.hidden).toHaveBeenCalledExactlyOnceWith('available', true);
@@ -81,8 +81,9 @@ it('retains the desktop model groups and their add action when the host supports
   await renderWithAppProviders(harness, <ModelSection />, { auth: { id: 'desktop-models', nickname: '测试账号', avatarUrl: '' }, contacts: {} });
   await until('desktop model configuration is read', () => state.config.mock.calls.length > 0);
   await expect.element(page.getByTestId('settings-coding-plans')).toBeVisible();
-  await expect.element(page.getByTestId('settings-api-models')).toBeVisible();
+  expect(page.getByTestId('settings-api-models').query()).toBeNull();
   await expect.element(page.getByTestId('settings-custom-models')).toBeVisible();
+  await expect.element(page.getByTestId('settings-custom-models').getByTestId('settings-model-provided-manage')).toBeVisible();
   expect(page.getByTestId('settings-models-desktop-only').query()).toBeNull();
   await act(async () => { await userEvent.click(page.getByTestId('custom-model-add')); });
   await expect.element(page.getByTestId('custom-model-dialog')).toBeVisible();

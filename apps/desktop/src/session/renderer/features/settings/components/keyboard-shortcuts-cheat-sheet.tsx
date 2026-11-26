@@ -3,6 +3,7 @@ import {
   COMMANDS,
   getEffectiveHotkey,
   type CommandId, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
+import { commandDescription, commandLabel } from '@renderer/lib/commands/command-copy';
 import { type BaseModalProps } from '@renderer/lib/modal/modal-provider';
 import { Shortcut } from '@renderer/lib/ui/shortcut';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -84,11 +85,11 @@ const CONFIGURABLE_SHORTCUTS: ShortcutEntry[] = (
 ).filter(([, def]) => !def.hideFromSettings);
 
 function getCategoryEntries(cat: string, query: string): ShortcutEntry[] {
-  return CONFIGURABLE_SHORTCUTS.filter(([, def]) => {
+  return CONFIGURABLE_SHORTCUTS.filter(([id, def]) => {
     if (def.category !== cat) return false;
     if (!query) return true;
     const q = query.toLowerCase();
-    return def.label.toLowerCase().includes(q) || def.description.toLowerCase().includes(q);
+    return commandLabel(id).toLowerCase().includes(q) || commandDescription(id).toLowerCase().includes(q);
   });
 }
 
@@ -376,14 +377,14 @@ const CategorySection: React.FC<CategorySectionProps> = ({
         <span className="text-micro text-foreground-muted/60">{entries.length}</span>
       </div>
       <div className="flex flex-col gap-0.5">
-        {entries.map(([key, def]) => {
+        {entries.map(([key]) => {
           const hotkey = getEffectiveHotkey(key, keyboard);
           if (!hotkey) return null;
           return (
             <ShortcutRow
               key={key}
               shortcutKey={key}
-              label={def.label}
+              label={commandLabel(key)}
               hotkey={hotkey}
               isActive={activeShortcut === key}
               onActivate={onActivate}
@@ -423,14 +424,14 @@ const TabNavSection: React.FC<TabNavSectionProps> = ({
         <span className="text-micro text-foreground-muted/60">{entries.length}</span>
       </div>
       <div className="grid grid-cols-2 gap-x-2">
-        {entries.map(([key, def]) => {
+        {entries.map(([key]) => {
           const hotkey = getEffectiveHotkey(key, keyboard);
           if (!hotkey) return null;
           return (
             <ShortcutRow
               key={key}
               shortcutKey={key}
-              label={def.label}
+              label={commandLabel(key)}
               hotkey={hotkey}
               isActive={activeShortcut === key}
               onActivate={onActivate}

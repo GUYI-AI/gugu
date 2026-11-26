@@ -1,4 +1,5 @@
-import { readCachedDeviceId } from '@gugu/core/cloud/deviceRuntime';
+import { LocalDeviceIdUnreadableError, readCachedDeviceId, type LocalDeviceIdResolver } from '@gugu/core/cloud/deviceRuntime';
+import { SessionInputAdmissionError } from '@gugu/core/shared/sessionInputAdmission';
 import { localAgentForSession } from './sessionpage-session-agent';
 import { makeChatClient } from '../supabase';
 import type { SessionpageIdentityAuthSnapshot } from './sessionpage-identity-host';
@@ -6,7 +7,7 @@ import type { NativePublication, NativePublicationContext } from '../session/mai
 
 export function createNativePublicationTransport(deps: {
   getAuth(): Promise<SessionpageIdentityAuthSnapshot | null>;
-  resolveDeviceId(): Promise<string | null>;
+  resolveDeviceId: LocalDeviceIdResolver;
   ensureAgentAddress(input: { sessionId: string; projectId: string }): Promise<{ chatId: string; agentUserId: string }>;
   env: NodeJS.ProcessEnv;
 }) {
@@ -17,7 +18,14 @@ export function createNativePublicationTransport(deps: {
     // preserves its actual identity; publication still revalidates that identity on the server.
     const deviceId = await readCachedDeviceId(deps.env, auth.userId).catch(async error => {
       if (!String(error).includes('device.json missing')) throw error;
-      return deps.resolveDeviceId();
+      try {
+        return await deps.resolveDeviceId({ reportUnreadable: true });
+      } catch (error) {
+        if (error instanceof LocalDeviceIdUnreadableError) {
+          throw new SessionInputAdmissionError(error.message, 'rejected', error.code);
+        }
+        throw error;
+      }
     });
     if (!deviceId) throw new Error('Native personal-message device is unavailable');
     const agent = await localAgentForSession(sessionId, deps.env, auth.userId);

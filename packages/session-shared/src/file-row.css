@@ -100,7 +100,7 @@
   color: var(--gg-file-row-muted);
 }
 
-/* 批注:一条文件行,指的对象 + 评论;没有可打开的东西。 */
+/* 评论:一条文件行,指的对象 + 评论;没有可打开的东西。 */
 .gg-file-row[data-kind='annotation'] {
   cursor: default;
 }

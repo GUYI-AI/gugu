@@ -13,6 +13,12 @@ const ordered = createPhoneHostAuthGate()
 const available = () => Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('GuguAgent')
 export const phoneHostAuthAvailable = available
 let returnedSession: { sourceRefreshToken: string; session: Session } | null = null
+const closedOwners = new Set<string>()
+/** Local finalization after native V2 deletion; ordinary logout never sets this fence. */
+export function forgetClosedPhoneHostSession(ownerId: string): void {
+  closedOwners.add(ownerId)
+  if (returnedSession?.session.user.id === ownerId) returnedSession = null
+}
 let captureAuthBarrier: () => Promise<unknown> = () => Promise.resolve()
 export function setPhoneHostAuthHandoffBarrier(capture: () => Promise<unknown>): void { captureAuthBarrier = capture }
 
@@ -23,13 +29,14 @@ async function rememberSessionResult(work: () => Promise<SessionResult>): Promis
   const source = getRendererSession()
   const result = await work()
   const next = result.data.session
-  if (!result.error && source && next && next.user.id === source.user.id) {
+  if (!result.error && source && next && next.user.id === source.user.id && !closedOwners.has(source.user.id)) {
     returnedSession = { sourceRefreshToken: source.refresh_token, session: next }
   }
   return result
 }
 
 export function phoneHostSessionForHandoff(current: Session): Session {
+  if (closedOwners.has(current.user.id)) throw Object.assign(new Error('Original account is closed'), { code: 'closure_recovery_required' })
   const returned = returnedSession
   return returned && returned.session.user.id === current.user.id && returned.sourceRefreshToken === current.refresh_token
     ? returned.session : current

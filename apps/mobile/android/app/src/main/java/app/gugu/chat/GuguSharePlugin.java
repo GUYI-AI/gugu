@@ -494,7 +494,7 @@ public class GuguSharePlugin extends Plugin {
     }
 
     /** 名字只留最后一段、去掉控制字符;空了用 fallback。❌ 让来路拼出目录外的路径。 */
-    private static String safeName(String raw, String fallback) {
+    static String safeName(String raw, String fallback) {
         String name = raw == null ? "" : raw;
         int slash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
         if (slash >= 0) name = name.substring(slash + 1);
@@ -538,7 +538,7 @@ public class GuguSharePlugin extends Plugin {
         for (File batch : batches) if (batch.lastModified() < cutoff) deleteTree(batch);
     }
 
-    private static void deleteTree(File file) {
+    static void deleteTree(File file) {
         File[] children = file.listFiles();
         if (children != null) for (File child : children) deleteTree(child);
         file.delete();

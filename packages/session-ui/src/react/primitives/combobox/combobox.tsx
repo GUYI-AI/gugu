@@ -138,8 +138,15 @@ function ComboboxContent({
 function ComboboxList({
   className,
   children,
+  after,
   ...props
-}: FixedDataSlotProps<ComboboxPrimitive.List.Props>) {
+}: FixedDataSlotProps<ComboboxPrimitive.List.Props> & {
+  /**
+   * Content that scrolls with the list and ends it, but is not one of its options (a menu's last actions): outside
+   * the list element, so it is never announced as an option or filtered, inside the same scroll area.
+   */
+  after?: React.ReactNode;
+}) {
   return (
     <ScrollContainer
       maxHeight="min(18rem, calc(var(--available-height) - 2.25rem))"
@@ -154,6 +161,7 @@ function ComboboxList({
       >
         {children}
       </ComboboxPrimitive.List>
+      {after}
     </ScrollContainer>
   );
 }

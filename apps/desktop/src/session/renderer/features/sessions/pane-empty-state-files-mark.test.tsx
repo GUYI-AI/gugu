@@ -14,7 +14,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@renderer/features/extensions/installed-extensions', () => ({
   WORKSPACE_APP_ID: 'workspace', LOCAL_HOST: 'local',
-  useInstalledApps: () => ({ state: 'value', value: { enabledTabContributions: h.tabs }, stale: false, error: null }),
+  useInstalledApps: () => ({ state: 'value', value: { enabledTabContributions: h.tabs, tabTitle: (kind: string) => h.tabs.find((tab) => tab.kind === kind)?.title }, stale: false, error: null }),
   peekInstalledAppsTracked: () => ({ allTabContributions: h.tabs }),
 }));
 vi.mock('@renderer/features/tabs/pane-context', () => ({ usePaneContext: () => ({ paneId: 'pane' }) }));

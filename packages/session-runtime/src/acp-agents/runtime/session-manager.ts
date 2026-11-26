@@ -1490,7 +1490,7 @@ export class SessionManager implements InboundRouter {
    *
    * - `input.model` — a harness-native id (the user's own model), or, with an API key connection
    *   that names its model through the process environment, the connection's model name
-   *   (`runContext.customModel.model`) — asserted by whatever id the live session advertises for it.
+   *   (`runContext.customModel.model`) — asserted using the connection's native option when provided.
    * - `input.platformModel` — the Gugu platform model this start pinned (canonical id). Its wire
    *   form is taken from the list the live session itself advertises (`gugu-platform/<id>` on
    *   pi / opencode, the bare id where nothing is advertised — copilot), never spelled here.
@@ -1668,12 +1668,15 @@ export class SessionManager implements InboundRouter {
       // provider's own id (agy uses placeholder ids), or is already running. No such option = the provider spells ids
       // its own way (qwen `$runtime|openai|<name>(openai)`) and the environment is all there is: setting the bare name
       // would only be refused and raise a false "model unavailable".
-      if (input.runContext?.customModel?.model === input.model) {
+      const customModel = input.runContext?.customModel;
+      if (customModel?.model === input.model) {
         const options = record.cell.config.modelOptions;
-        const named = options?.available.find((option) => option.id === input.model || option.name === input.model);
-        if (!named) return null;
-        if (options?.selected === named.id) return { kind: 'already-running' };
-        return { kind: 'assert', requested: input.model, wireValue: named.id };
+        // A resumed session can report the previous provider with the same display name.
+        const wireValue = customModel.runtimeOption
+          ?? options?.available.find((option) => option.id === input.model || option.name === input.model)?.id;
+        if (!wireValue) return null;
+        if (options?.selected === wireValue) return { kind: 'already-running' };
+        return { kind: 'assert', requested: input.model, wireValue };
       }
       return { kind: 'assert', requested: input.model, wireValue: input.model };
     }

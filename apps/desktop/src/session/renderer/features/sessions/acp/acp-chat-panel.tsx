@@ -1,6 +1,7 @@
+import { useContextThresholds } from '../session-config/use-context-thresholds';
 import { usePermissionMenu } from '@renderer/features/sessions/session-config/use-permission-menu';
 import { withAutoReviewHint } from './auto-review-permission-hint';
-import { customModelAcceptsImages, customModelOptionId, customModelThinks, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
+import { customModelAcceptsImages, customModelEfforts, customModelOptionId, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica, valueOf } from '@/lib/replica';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { AnnotationTray } from '../annotations/annotation-tray';
@@ -29,9 +30,10 @@ import { AgentFailureSlot } from '@/components/AgentFailureSlot';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
 import { useSessionMessageQuotes } from './use-session-message-quotes';
 import { useSessionPromptEditor } from './use-session-prompt-editor';
+import { inlineImageOrder, inlineImageTurnText } from './inline-image-turn';
 import { continueSessionTurn } from './continue-session-turn';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
-import { followConversationLink } from '@/lib/followConversationLink';
+import { followConversationLink, noteDrawnPictureLink } from '@/lib/followConversationLink';
 import { openMessageSender } from '@/lib/openMessageSender';
 import { classifyFileLink } from '@gugu/core/shared/ui/guguLink';
 import {
@@ -192,8 +194,8 @@ import {
 import { GUGU_CLIENT_COMMAND_MCP, isGuguClientCommand } from '@gugu/session-core/acp/commands';
 import { classifyProviderPermissionMode, type TurnAnnotation } from '@gugu/session-core/acp/client';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { sessionFastMode } from '../session-config/fast-mode';
-import { renderFastModeHint } from '../session-config/fast-mode-hint';
+import { customModelFastSupported, fastTokenMultiplier, sessionFastMode } from '../session-config/fast-mode';
+import { fastModeHint } from '../session-config/fast-mode-hint';
 import { useBoundChatView } from './use-bound-chat-view';
 import { useSessionHeroCopy } from './use-session-hero-copy';
 import { useLastTurnSignIn } from './use-last-turn-sign-in';
@@ -278,7 +280,7 @@ const ComposerForStore = observer(function ComposerForStore({
   /** 这条会话正在用的咕咕模型要开会员了(#7056):报给面板,由它挂那一行条件。null = 没有。 */
   onMembershipLockChange: (lock: { modelName: string } | null) => void;
   /** 点开一枚附件 chip 看里面是什么(#5269)。图片看图,文本看内容。 */
-  onViewAttachment: (att: ComposerAttachment) => void;
+  onViewAttachment: (att: ComposerAttachment, cell: HTMLElement) => void;
   /** Keep a newly sent prompt or stop result visible in the transcript. */
   onScrollToBottom?: () => void;
 }) {
@@ -360,9 +362,9 @@ const ComposerForStore = observer(function ComposerForStore({
           started: onScrollToBottom, unsettled: () => fileUploads.unsettled(),
           waitForUploads: async () => { await fileUploads.waitForUploads(); },
           hasFailedAttachments: () => attachmentsRef.current.some(att => att.state === 'error'),
-          files: () => fileUploads.files(attachmentsRef.current.map(att => att.id)),
+          files: () => fileUploads.files(inlineImageOrder(value, attachmentsRef.current.map(att => att.id))),
           status: setSendHold,
-          deliver,
+          deliver: (text, files, annotations) => deliver(inlineImageTurnText(text, id => fileUploads.files([id])[0], translate('composer.inlineImage')), files, annotations),
           committed: () => flushSync(() => {
             annotationDraft.submitted(annotated);
             setAttachments([]);
@@ -375,7 +377,7 @@ const ComposerForStore = observer(function ComposerForStore({
         sendingRef.current = false;
       }
     },
-    [fileUploads, store, onScrollToBottom, editorApiRef, setAttachments, annotationDraft, locale]
+    [fileUploads, store, onScrollToBottom, editorApiRef, setAttachments, annotationDraft, locale, translate]
   );
 
   const handleSubmit = useCallback(
@@ -400,7 +402,6 @@ const ComposerForStore = observer(function ComposerForStore({
     ? customReading.value.find((record) => record.id === runningCustomModel.connectionId)?.models.find(({ id }) => id === runningCustomModel.modelId)
     : undefined;
   const acceptsImages = !runningCustomModel || customModelAcceptsImages(customFeatures);
-  const acceptsThinking = !runningCustomModel || customModelThinks(customFeatures);
   const hostBand = useHostAskBand(store.runtimeSessionId, hostSession, store.hostSettlements);
   const resolveHostAsk = hostBand?.resolve;
   const permissionRequest =
@@ -761,8 +762,13 @@ const ComposerForStore = observer(function ComposerForStore({
   const providerId =
     sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId)?.data
       .providerId ?? null;
+  const contextThresholds = useContextThresholds(providerId, machineRegistry.machineOf(store.projectId));
+
 
   const providerCapabilities = agents?.find((agent) => agent.id === providerId)?.capabilities;
+  const customFast = runningCustomModel && customReading.state === 'value'
+    ? customModelFastSupported(customReading.value.find(({ id }) => id === runningCustomModel.connectionId), runningCustomModel.modelId, agents?.find((agent) => agent.id === providerId))
+    : false;
 
   // 排队提示的「立即发送」:这家能插话就插进在跑的那一轮,插不了才取消再发(#6574)。
   const sendNowSteers = agentSteersActiveAcpTurn(providerCapabilities);
@@ -1005,6 +1011,7 @@ const ComposerForStore = observer(function ComposerForStore({
       options[recorded] ??= {
         name: runningCustomModel.modelId ?? translate('customModels.noModel'),
         disabled: true,
+        hiddenFromPicker: true,
         disabledReason: translate('composer.modelNotInCatalog'),
       };
     }
@@ -1314,7 +1321,8 @@ const ComposerForStore = observer(function ComposerForStore({
    * disabled until a reload supplies it.
    */
   const sessionEffortOptions = useMemo(() => {
-    if (!acceptsThinking) return null;
+    const customEfforts = runningCustomModel ? customModelEfforts(customFeatures, providerCapabilities?.effort) : null;
+    if (runningCustomModel && !customEfforts) return null;
     const declaredOptions = declaredEffortOptions;
     const declared = declaredOptions
       ? { options: declaredOptions, defaultId: null }
@@ -1327,8 +1335,8 @@ const ComposerForStore = observer(function ComposerForStore({
     const resolved = resolveEffortCatalog(
       declared,
       live,
-      effortSourceFor(Boolean(runningPlatformModel), providerCapabilities?.effort, 'acp'),
-      platformEffortFacts(runningPlatformModel, platformCatalog.models)?.reasoningEfforts ?? null,
+      customEfforts ? 'platform' : effortSourceFor(Boolean(runningPlatformModel), providerCapabilities?.effort, 'acp'),
+      customEfforts ?? platformEffortFacts(runningPlatformModel, platformCatalog.models)?.reasoningEfforts ?? null,
     );
     if (!resolved) return null;
     const options = live || !declared ? resolved.options : Object.fromEntries(
@@ -1338,7 +1346,7 @@ const ComposerForStore = observer(function ComposerForStore({
       ])
     );
     return liveSettingOptions(options, providerCapabilities?.acp.liveSettings?.effort);
-  }, [acceptsThinking, store.effort, store.effortOptions, store.starting, declaredEffortOptions, providerCapabilities, runningPlatformModel, platformCatalog.models, translate]);
+  }, [runningCustomModel, customFeatures, store.effort, store.effortOptions, store.starting, declaredEffortOptions, providerCapabilities, runningPlatformModel, platformCatalog.models, translate]);
   // #7342 停下了、记录里也没记档位(= harness 自己那一档默认):用探针目录报的那一档当默认档画(触发器压一档不透明度),
   // 与新建页同一个来源(`harnessCatalogToModelsCapability` 的 defaultEffortId)。活会话报的就是已生效那一档,用不着它。
   const detachedDefaultEffort = detached && !runningPlatformModel && harnessCatalog.state.kind === 'ready'
@@ -1362,6 +1370,9 @@ const ComposerForStore = observer(function ComposerForStore({
       const commands = filterSlashCommands(store.commands, normalized)
         .map((command) => ({
           ...command,
+          // Codex's `/compact` is implemented by gugu's own bridge (codex-app-server-acp.mjs), so its line follows the UI
+          // language like `/mcp`; commands the agent itself reports keep the agent's own wording.
+          ...(providerId === 'codex' && command.name === 'compact' ? { description: translate('chat.commandCompactDescription') } : {}),
           section: translate('chat.commands'),
         }));
       // 提示词:我的一组,各 App 各一组(prompt-slash-items.ts,聊天输入框用的是同一份)。
@@ -1385,7 +1396,7 @@ const ComposerForStore = observer(function ComposerForStore({
         : [];
       return [...clientCommands, ...commands, ...prompts];
     },
-    [store, promptLibrary, promptOverrides, translate]
+    [store, promptLibrary, promptOverrides, translate, providerId]
   );
 
   const a = store.affordances;
@@ -1512,9 +1523,10 @@ const ComposerForStore = observer(function ComposerForStore({
         selectedEffort={store.effort ?? undefined}
         defaultEffort={detachedDefaultEffort}
         onEffortChange={handleEffortChange}
-        fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup })}
-        onFastModeChange={(enabled) => { void store.setFastMode(enabled); }}
-        renderFastModeHint={renderFastModeHint}
+        fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup,
+          ...(runningCustomModel ? { customSupported: customFast, recorded: hostSession?.data.fastMode } : {}) })}
+        onFastModeChange={(enabled) => { void (runningCustomModel ? store.setCustomFastMode(enabled) : store.setFastMode(enabled)); }}
+        renderFastModeHint={fastModeHint(fastTokenMultiplier(providerCapabilities, !!runningCustomModel))}
         permissionModeOptions={withAutoReviewHint(localizePermissionModeOptions(
           sessionPermissionOptions,
           translate,
@@ -1532,6 +1544,7 @@ const ComposerForStore = observer(function ComposerForStore({
         selectedAgent={providerId ?? undefined}
         agentLocked
         onAgentChange={() => {}}
+        contextThresholds={contextThresholds}
         contextUsage={
           store.usage
             ? {
@@ -1554,6 +1567,7 @@ const ComposerForStore = observer(function ComposerForStore({
         attachmentExtra={annotationDraft.items.length ? <AnnotationTray conversation={{ kind: 'session', sessionId: store.sessionId }} onRemove={id => { if (!sendingRef.current) { const imageId = annotationImageId(id); fileUploads.forget(imageId); setAttachments(current => current.filter(item => item.id !== imageId)); } }} onSend={() => { void handleSubmit(store.draftText); }} enabled={sendHold !== 'waiting' && membershipLockedModel === null && !store.messageEdit && !store.reverting} /> : null}
         attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')}
         onAttachmentsChange={handleAttachmentsChange}
+        inlineImages
         onAttach={handleAttach}
         onImageFilesDropped={(files, source) => {
           attachFiles(files, source).catch((error: unknown) => log.error('Failed to attach dropped files', { error }));
@@ -1567,7 +1581,15 @@ const ComposerForStore = observer(function ComposerForStore({
         attachmentQualityLocked={sendHold === 'waiting'}
         dataDropTypes={dataDropTypes}
         onDataDropped={onDataDropped}
-        onViewAttachment={onViewAttachment}
+        onViewAttachment={(att, cell) => {
+          const source = fileUploads.draftFile(att.id);
+          if (openComposerImage(att, cell, source && ((file, caption) => {
+            if (sendingRef.current) throw new Error(translate('composer.attachmentWaiting'));
+            fileUploads.replaceImage(att.id, source, file);
+            if (caption) editorApiRef.current?.insertText(caption, 'end');
+          }))) return;
+          onViewAttachment(att, cell);
+        }}
       />
     </>,
     composerSlot
@@ -2040,9 +2062,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     setViewer({ src, alt });
   }, []);
 
-  /** 输入框里点开一枚 chip:图片进看图查看器,文本给 `text` —— 由 chip 手上有什么决定(#5269)。 */
+  /** Text attachments open in the panel preview. */
   const handleAttachmentView = useCallback((att: ComposerAttachment) => {
-    if (openComposerImage(att)) return;
     setViewer({
       alt: att.name,
       text: att.previewText,
@@ -2098,6 +2119,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       onOpenSender: openMessageSender,
       classifyLink: classifyFileLink,
       onOpenLink: followConversationLink,
+      onDrawnPictureLink: noteDrawnPictureLink,
       // transcript 自己那颗停止按钮（用户消息卡右下角）一直**没有**接过宿主 ——
       // `commands().onStop?.()` 在 `?.` 上整条短路，按下去一个字节都不发（#3498 查出来的，
       // 与 #3500 同形）。composer 上那颗是另一条路，它一直是通的，于是这颗死按钮
@@ -2296,7 +2318,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
             composer="slot"
             composerPlacement={store.isEmpty ? 'center' : 'bottom'}
             stickToBottom
-            pinUserMessages={tabKind !== 'side-chat'}
             onReady={handleReady}
             onDisposed={handleTranscriptGone}
             commands={transcriptCommands}

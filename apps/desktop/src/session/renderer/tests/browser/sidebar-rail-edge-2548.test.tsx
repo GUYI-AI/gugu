@@ -25,7 +25,11 @@ vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => 
 vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { history: { canGoBack: false }, projects: { projects: new Map(), ensureMounted: vi.fn() }, navigation: { currentViewId: 'session-history', viewParamsStore: {}, revalidate: () => {} } }, sidebarStore: { sidebarProjects: [], joinedGroups: [], setAssistantAgentId: () => {}, setAssistantHomeProjectId: () => {}, setAgentNameOnHoverEnabled: () => {} } }));
 vi.mock('@renderer/features/sidebar/session-keyboard-nav', () => ({ sessionKeyboardNav: { cursor: null, syncCursorFromPointer: () => {} } }));
 vi.mock('@renderer/features/sidebar/use-sidebar-drop', () => ({ useSidebarDrop: () => ({ isDragOver: false }) }));
-vi.mock('@renderer/features/sidebar/sidebar-one-list', () => ({ SidebarOneList: () => null }));
+// One stand-in row with a 40px avatar where the list's first row draws it, for the avatar case only (rowsDouble.avatar).
+const rowsDouble = vi.hoisted(() => ({ avatar: false }));
+vi.mock('@renderer/features/sidebar/sidebar-one-list', () => ({ SidebarOneList: () => (rowsDouble.avatar
+  ? <div className="gg-list-row"><span data-testid="row-avatar" style={{ display: 'block', width: 40, height: 40, borderRadius: 20, background: '#a66' }} /></div>
+  : null) }));
 vi.mock('@renderer/features/sidebar/sidebar-one-list-empty', () => ({ SidebarOneListEmpty: () => null }));
 vi.mock('@renderer/features/sidebar/inner-sidebar', async () => {
   const { observable } = await import('mobx');
@@ -193,6 +197,94 @@ it('a fold writes no custom property and swaps no class: the names fade as one m
   await expect.poll(() => scroll.style.maskImage, { timeout: 3000 }).toBe('');
 });
 
+// The rows move left through the fold (the gutter 14 → 8). The names' mask edge moves with them: had it stayed at the open
+// layout's 70, the first pixels of every name sat left of it, at full opacity, beside the avatars until the rail landed.
+it('through a fold the names\' mask edge moves with the rows, so no name shows left of it', async () => {
+  await page.viewport(1000, 700);
+  harness = createReactHarness();
+  await harness.render(
+    <SessionLocalizationProvider>
+      <WorkspaceLayoutContextProvider>
+        <WorkspaceLayout leftSidebar={<LeftSidebar />} mainContent={<div className="h-full">history</div>} />
+      </WorkspaceLayoutContextProvider>
+    </SessionLocalizationProvider>
+  );
+  const aside = document.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
+  const scroll = document.querySelector<HTMLElement>('[data-region="sidebar-scroll"]')!;
+  const rows = scroll.firstElementChild as HTMLElement;
+  const sidebar = document.querySelector<HTMLElement>('[data-region="left-sidebar"]')!;
+  // Each frame as painted: where the mask turns to the names' opacity, and how far the rows are moved left. The elements
+  // are this render's; the next frame is cancelled before the test returns, so no sample runs after the sidebar unmounts.
+  const frames: { edge: number; shift: number; rail: boolean }[] = [];
+  let pending = 0;
+  const sample = () => {
+    const edge = /^linear-gradient\(to right, black ([\d.]+)px/.exec(scroll.style.maskImage)?.[1];
+    const shift = /translateX\((-?[\d.]+)px/.exec(rows.style.transform)?.[1];
+    if (edge !== undefined) frames.push({ edge: Number(edge), shift: -Number(shift ?? 0), rail: sidebar.hasAttribute('data-sidebar-rail') });
+    pending = requestAnimationFrame(sample);
+  };
+  pending = requestAnimationFrame(sample);
+  try {
+    document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!.click();
+    await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBe(68);
+    await expect.poll(() => frames.some((sampled) => sampled.rail), { timeout: 1000 }).toBe(true);
+  } finally {
+    cancelAnimationFrame(pending);
+  }
+  const moving = frames.filter((frame) => !frame.rail && frame.shift > 0.5);
+  expect(moving.length, 'frames with the rows moved left').toBeGreaterThan(2);
+  // The names start 70px in (gutter 14 + padding 6 + avatar 40 + gap 10), moved left by the rows' shift.
+  for (const frame of moving) expect(frame.edge).toBeCloseTo(70 - frame.shift, 1);
+  for (const frame of frames.filter((frame) => frame.rail)) expect(frame.edge).toBe(64);
+});
+
+it('through a fold the first row\'s avatar is never clipped: in every frame its visible box is its own box', async () => {
+  rowsDouble.avatar = true;
+  try {
+    await page.viewport(1000, 700);
+    harness = createReactHarness();
+    // The window's height, as the app gives it: the list's scroll box fills what is under the top rows.
+    harness.container.style.height = '700px';
+    await harness.render(
+      <SessionLocalizationProvider>
+        <WorkspaceLayoutContextProvider>
+          <WorkspaceLayout leftSidebar={<LeftSidebar />} mainContent={<div className="h-full">history</div>} />
+        </WorkspaceLayoutContextProvider>
+      </SessionLocalizationProvider>
+    );
+    const aside = document.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
+    const scroll = document.querySelector<HTMLElement>('[data-region="sidebar-scroll"]')!;
+    const avatar = document.querySelector<HTMLElement>('[data-testid="row-avatar"]')!;
+    const sidebar = document.querySelector<HTMLElement>('[data-region="left-sidebar"]')!;
+    // Each frame as painted: the avatar's box cut by the scroll box (it clips: overflow) and by the names' mask edge.
+    const frames: { width: number; height: number; own: { width: number; height: number }; moving: boolean }[] = [];
+    let pending = 0;
+    const sample = () => {
+      const a = avatar.getBoundingClientRect(), box = scroll.getBoundingClientRect();
+      const edge = /^linear-gradient\(to right, black ([\d.]+)px/.exec(scroll.style.maskImage)?.[1];
+      const right = Math.min(a.right, box.right, edge === undefined ? Infinity : box.left + Number(edge));
+      frames.push({ width: right - Math.max(a.left, box.left), height: Math.min(a.bottom, box.bottom) - Math.max(a.top, box.top),
+        own: { width: a.width, height: a.height }, moving: edge !== undefined && !sidebar.hasAttribute('data-sidebar-rail') });
+      pending = requestAnimationFrame(sample);
+    };
+    pending = requestAnimationFrame(sample);
+    try {
+      document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!.click();
+      await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBe(68);
+    } finally {
+      cancelAnimationFrame(pending);
+    }
+    expect(scroll.getBoundingClientRect().height, 'the scroll box has a height').toBeGreaterThan(200);
+    expect(frames.filter((frame) => frame.moving).length, 'frames through the fold').toBeGreaterThan(2);
+    for (const [i, frame] of frames.entries()) {
+      expect(frame.width, `frame ${i}: visible width`).toBeCloseTo(frame.own.width, 1);
+      expect(frame.height, `frame ${i}: visible height`).toBeCloseTo(frame.own.height, 1);
+    }
+  } finally {
+    rowsDouble.avatar = false;
+  }
+});
+
 it('the rail flips in the frame the list\'s layer takes the rail\'s width, both ways: one paint, ❌ a re-render after it', async () => {
   await page.viewport(1000, 700);
   harness = createReactHarness();
@@ -227,10 +319,9 @@ it('the rail flips in the frame the list\'s layer takes the rail\'s width, both 
   observer.disconnect();
 });
 
-// The bell is in the foot in both states (界面减法 #46): one bell, on the avatars' axis on the rail, above my avatar. The rail
-// has no room for its list: collapsing closes the list, and opening it from the rail expands the sidebar into it.
-it('collapsed, the bell is in the rail\'s foot above my avatar, and opening it expands the sidebar', async () => {
-  const { setSidebarNotificationsOpen } = await import('@/lib/sidebarChatsBridge');
+// The bell is in the foot in both states (界面减法 #46): one bell, on the avatars' axis on the rail, above my avatar. Its list
+// pops beside it (NeedsYouHost), so the rail needs no room for it.
+it('collapsed, the bell is in the rail\'s foot above my avatar', async () => {
   await page.viewport(1000, 700);
   document.documentElement.dataset.theme = 'light';
   harness = createReactHarness();
@@ -252,18 +343,12 @@ it('collapsed, the bell is in the rail\'s foot above my avatar, and opening it e
   expect(bells()).toHaveLength(1);
   expect(foot.contains(bells()[0])).toBe(true);
 
-  setSidebarNotificationsOpen(true);
   fold.click();
   await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBe(68);
   expect(bells()).toHaveLength(1);
-  expect(document.querySelector('[data-notification-slot="list"]:not([hidden])')).toBeNull();
   const panel = aside.getBoundingClientRect();
   await expect.poll(() => foot.querySelector<HTMLElement>('[data-me-slot]')!.dataset.meSlot).toBe('rail');
   expect(bells()[0].getBoundingClientRect().bottom).toBeLessThanOrEqual(foot.querySelector<HTMLElement>('[data-me-slot]')!.getBoundingClientRect().top);
   await expect.poll(() => Math.round(bells()[0].getBoundingClientRect().left + bells()[0].getBoundingClientRect().width / 2 - panel.left)).toBe(34);
 
-  setSidebarNotificationsOpen(true);
-  await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBeGreaterThan(200);
-  await expect.poll(() => document.querySelector('[data-notification-slot="list"]:not([hidden])')).not.toBeNull();
-  setSidebarNotificationsOpen(false);
 });

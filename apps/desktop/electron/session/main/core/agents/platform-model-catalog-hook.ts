@@ -1,4 +1,5 @@
 import type { HarnessCatalogLookup } from './harness-model-catalog';
+import type { CustomModelEffortResult } from '@gugu/session-core/models/custom-model';
 // @@@4972 「咕咕提供的模型」在会话页这一侧的读取口 —— 与 emdash-platform-injector / emdash-pty-sessionpage-hook
 // 同一个模式:这棵树拥有**钩子点**,咕咕宿主拥有**钩子返回什么**。
 //
@@ -59,6 +60,17 @@ export function setPlatformModelCatalogResolver(fn: PlatformModelCatalogResolver
 
 export function getPlatformModelCatalogResolver(): PlatformModelCatalogResolver | null {
   return resolver;
+}
+
+type CustomModelEffortResolver = (ids: readonly string[]) => Promise<Map<string, CustomModelEffortResult>>;
+let customEffortResolver: CustomModelEffortResolver | null = null;
+
+export function setCustomModelEffortResolver(fn: CustomModelEffortResolver | null): void {
+  customEffortResolver = fn;
+}
+
+export function getCustomModelEffortResolver(): CustomModelEffortResolver | null {
+  return customEffortResolver;
 }
 
 /**

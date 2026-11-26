@@ -8,11 +8,13 @@ import { readCodexRecord, type CodexRecord, type CodexRecordItem } from '@gugu/c
 
 import type { RecordEntry, SessionRecordLocator, SessionRecordSource } from '../contract';
 import { createJsonlTailSource } from './jsonl-tail-source';
+import { CodexRecordEvents } from './codex-record-events';
 import { RECORD_START } from './record-tree';
 import { openWindowByteSource } from '../window-cache/file-source';
 import { childState, withSubagentSources } from './subagent-sources';
 import {
   SessionRecordNotFoundError,
+  SessionRecordNotWrittenError,
   asRecord,
   boundaryEntry,
   parseTimestamp,
@@ -47,12 +49,15 @@ const initialOrdinals = (): Ordinals => ({ turn: 0, item: -1, userSeen: false, c
 export function createCodexJsonlSource(locator: SessionRecordLocator, options?: SessionRecordSourceOptions, nativeChild = false, ancestors: ReadonlySet<string> = new Set()): SessionRecordSource {
   const lineage = new Set(ancestors);
   lineage.add(locator.providerSessionId);
-  const root = createJsonlTailSource<Ordinals>(locator, options, {
+  const root = createJsonlTailSource<Ordinals>(locator, { ...options, tailDriver: 'external' }, {
     name: 'codex',
     // 11: a fork reads its parent's prefix (history_base in a plainly named rollout); state saved before that never did.
     resumeVersion: 11,
-    resolve: () => resolveRolloutFile(locator, options?.readMode === 'snapshot'),
+    resolve: () => options?.readMode === 'snapshot' || nativeChild ? resolveRolloutFile(locator, options?.readMode === 'snapshot') : resolveLiveRollout(locator),
+    watch: (failed) => new CodexRecordEvents(locator, failed),
     continuesElsewhere: true,
+    // A child's record is named by a line already written in its parent's: one that is missing is a failure.
+    ...(nativeChild ? {} : { awaitsRecord: true as const }),
     prefixes: (path) => rolloutPrefixes(locator, path),
     initial: () => initialOrdinals(),
     // `calls`, `children` and `turns` are replaced, never changed in place: a snapshot need not copy them.
@@ -134,8 +139,8 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
         const steering = ordinals.turn > 0 && ordinals.userSeen;
         ordinals.userSeen = true;
         if (steering) return [{ key: entry.key, at: entry.at, event: { ...event, steering: true } }];
-        // The leading input carries the point a revert steps back to, as its live receipt did: the Codex bridge
-        // reverts to before a turn by its id.
+        // The leading input carries the point a revert steps back to: the turn's own id, which the Codex bridge puts
+        // on the prompt's receipt once `turn/start` answers and reverts to before by.
         if (ordinals.turnId) return [{ key: entry.key, at: entry.at, event: { ...event, revertAnchor: ordinals.turnId } }];
       }
       return entry ? [entry] : [];
@@ -248,6 +253,20 @@ export async function resolveRolloutFile(locator: SessionRecordLocator, snapshot
   );
 }
 
+/**
+ * The rollout a live read follows. One that is nowhere is not written yet (a new thread before its first input); one
+ * that is only an archive was written and is not followed, which stays the failure it was.
+ */
+async function resolveLiveRollout(locator: SessionRecordLocator): Promise<string> {
+  try {
+    return await resolveRolloutFile(locator, false);
+  } catch (error) {
+    if (!(error instanceof SessionRecordNotFoundError)) throw error;
+    if (await resolveRolloutFile(locator, true).then(() => true, () => false)) throw error;
+    throw new SessionRecordNotWrittenError(error.message, error.searched);
+  }
+}
+
 type RolloutPrefix = { path: string; endByteOffset: number };
 
 /** Each history_base names one physical file; its ordinal is chain-global, its byte cutoff is file-local. */
@@ -293,7 +312,9 @@ async function historyBase(path: string): Promise<{ threadId: string; endByteOff
     }
     const end = bytes.subarray(0, used).indexOf(10);
     if (end < 0) {
-      throw new Error('Incomplete or oversized Codex segment session_meta');
+      // Creation comes before the first write: a first line still being written is a record not written yet.
+      if (used < 1024 * 1024) throw new SessionRecordNotWrittenError(`Codex rollout has no complete first line yet: ${path}`, [path]);
+      throw new Error('Oversized Codex segment session_meta');
     }
     let record: Record<string, unknown> | null;
     try { record = asRecord(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, end)))); }

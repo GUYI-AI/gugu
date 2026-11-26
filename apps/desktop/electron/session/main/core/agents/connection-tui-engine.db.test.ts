@@ -187,7 +187,9 @@ it('a Gugu platform model in the terminal stays on the platform while a Codex AP
   const engine = await terminalEngine('gpt-5.6-luna', PLATFORM);
   // 只有平台那一个 provider:连接那组跟在后面,codex 就按后一个把平台模型名发去连接的地址。
   expect(providerPins(engine.extraArgs)).toEqual(['model_provider=gugu_platform']);
-  expect(JSON.stringify(engine.extraArgs)).not.toContain('gugu_connection');
+  const platformUrl = engine.extraArgs.find((arg) => arg.startsWith('model_providers.gugu_platform.base_url='));
+  expect(platformUrl).toBeDefined();
+  expect(engine.extraArgs).toContain(platformUrl!.replace('gugu_platform', 'gugu_connection'));
   expect(engine.env.OPENAI_API_KEY).toBe('platform-token');
 });
 

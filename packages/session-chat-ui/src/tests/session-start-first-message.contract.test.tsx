@@ -21,14 +21,14 @@ afterEach(() => {
   while (teardown.length) teardown.pop()?.()
 })
 
-function mount(preset: ChatLayoutPreset, { agentConversation, ...opts }: { pinUserMessages?: boolean; agentConversation?: boolean } = {}) {
+function mount(preset: ChatLayoutPreset, { agentConversation }: { agentConversation?: boolean } = {}) {
   const context = createChatContext({ locale: () => 'en-US', theme: DEFAULT_THEME })
   context.setLayout({ preset, userGutter: 96, ...(agentConversation ? { agentConversation } : {}) })
   const state = createChatState(context)
   const host = document.createElement('div')
   host.style.cssText = 'position:fixed;inset:0;width:640px;height:600px'
   document.body.append(host)
-  const view = createChatView({ context, state, parent: host, ...opts })
+  const view = createChatView({ context, state, parent: host })
   teardown.push(() => {
     view.dispose()
     state.dispose()
@@ -77,6 +77,36 @@ describe('ordinary sending stays in the transcript', () => {
     expect(samples).toEqual(samples.map(sample => ({ phase: sample.phase, count: 1, sameNode: true, key })))
   })
 
+  it('draws the input once in every frame when its turn reaches history before the live turn attaches', async () => {
+    const { state, host } = mount('double', { agentConversation: true })
+    const clientId = 'session:creation:0'
+    const sentAt = Date.now()
+    // A new session's first input is a host queue row: only its own live turn takes it over.
+    state.session.setPendingPrompt({ id: clientId, text: FIRST, sentAt, held: true })
+    await until('the submitted bubble and its running header are visible', () => host.querySelectorAll('[data-user-card]').length === 1 && header(host)?.getAttribute('data-live') === 'true')
+    const frames: { bubbles: number; live: boolean }[] = []
+    let sampling = true
+    const sample = () => {
+      frames.push({ bubbles: host.querySelectorAll('[data-user-card]').length, live: header(host)?.getAttribute('data-live') === 'true' })
+      if (sampling) requestAnimationFrame(sample)
+    }
+    requestAnimationFrame(sample)
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    const turn: TranscriptTurn = { id: 'session:turn:0', seq: 0, initiator: 'user', startedAt: sentAt,
+      items: [{ kind: 'message', role: 'user', id: clientId, seq: 0, text: FIRST, _meta: { guguClientMessageId: clientId } }] }
+    // A history read can carry the running turn before its live snapshot is attached.
+    state.transcript.history.seed([turn])
+    await frame()
+    state.transcript.history.seed([])
+    state.transcript.activeTurn.set(turn)
+    await frame()
+    await frame()
+    sampling = false
+    expect(frames.length).toBeGreaterThanOrEqual(4)
+    expect(frames).toEqual(frames.map(() => ({ bubbles: 1, live: true })))
+    expect(state.session.state.pendingPrompt).toBeNull()
+  })
+
   it('keeps the last bubble stationary when a long conversation enters host startup', async () => {
     const { state, host, view } = mount('double', { agentConversation: true })
     state.transcript.history.seed(Array.from({ length: 12 }, (_, seq) => ({
@@ -98,7 +128,7 @@ describe('ordinary sending stays in the transcript', () => {
   })
 
   it.each(['single', 'double'] as ChatLayoutPreset[])('keeps one bubble through acknowledgement, history and native echo (%s)', async preset => {
-    const { state, host } = mount(preset, { agentConversation: true, pinUserMessages: true })
+    const { state, host } = mount(preset, { agentConversation: true })
     const sentAt = Date.now()
     const pending = { id: 'send', text: FIRST, sentAt, held: true, delivery: { state: 'sending' as const } }
     state.session.setPendingPrompt(pending)
@@ -214,7 +244,7 @@ describe('session start with a first message', () => {
   it.each(['single', 'double'] as ChatLayoutPreset[])(
     'the first message does not move when the real turn takes over ($0 layout)',
     async (preset) => {
-      const { state, host } = mount(preset, { pinUserMessages: true })
+      const { state, host } = mount(preset)
       const sentAt = Date.now()
       state.session.setPendingPrompt({ id: 'first-prompt:s1', text: FIRST, sentAt })
       await until('the optimistic first message settles', () =>
@@ -362,7 +392,7 @@ const incomingText = (id: string, text: string) => renderDeliveryEnvelope({ rout
 
 describe('incoming deliveries share the transcript layout', () => {
   it.each([false, true])('keeps the envelope and position through acceptance and native echo (busy=%s)', async busy => {
-    const { state, host } = mount('double', { agentConversation: true, pinUserMessages: true })
+    const { state, host } = mount('double', { agentConversation: true })
     const before: TranscriptTurn = { id: 'current', seq: 0, initiator: 'user', startedAt: Date.now(), items: [{ kind: 'message', id: 'current-user', seq: 0, role: 'user', text: 'Current task' }] }
     if (busy) state.transcript.activeTurn.set(before)
     const input: PendingPrompt = { id: 'delivery', text: incomingText('source-a', 'Incoming instruction'), received: true, held: true, sentAt: Date.now(), delivery: { state: 'sending' } }
@@ -380,7 +410,7 @@ describe('incoming deliveries share the transcript layout', () => {
   })
 
   it('clears delivered unknown receipts with compression and a cancelled turn, without duplicating native messages', async () => {
-    const { state, host, view } = mount('double', { agentConversation: true, pinUserMessages: true })
+    const { state, host, view } = mount('double', { agentConversation: true })
     const inputs: PendingPrompt[] = ['a', 'b', 'c'].map(id => ({ id, text: incomingText(`source-${id}`, `Incoming ${id}`), received: true, delivery: { state: 'unknown', retryable: false } }))
     const history: TranscriptTurn[] = inputs.map((input, seq) => ({ id: `turn-${seq}`, seq, initiator: 'agent', items: [
       { kind: 'message', id: `echo-${seq}`, seq: 0, role: 'user', text: input.text },

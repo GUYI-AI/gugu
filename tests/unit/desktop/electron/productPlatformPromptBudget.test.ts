@@ -105,7 +105,7 @@ describe('tool usage belongs to schemas and assistant duplicates keep one owner'
   })
 
   it('keeps the shared list contract once in the platform instead of repeating it in fields', () => {
-    expect(GUGU_PLATFORM_BLOCK).toContain('`rows` is 1-based ("20" / "41-60" / "all"), default 20 (catalogs: all)')
+    expect(GUGU_PLATFORM_BLOCK).toContain('tool-specific limits override these defaults; "all" only where supported')
     expect(GUGU_PLATFORM_BLOCK).toContain('pass `next` as `rows`')
     expect(GUGU_PLATFORM_BLOCK).toContain('`name` matches a substring, `pinned` a boolean, `status` a status/detail')
     expect(GUGU_PLATFORM_BLOCK).toContain('`total` is after filtering')
@@ -120,7 +120,9 @@ describe('tool usage belongs to schemas and assistant duplicates keep one owner'
     expect(install.description).toContain('Switching an App on belongs to the person')
     expect(GUGU_APPS_SEARCH_LINE).not.toContain('Never edit')
     expect(GUGU_APPS_SEARCH_LINE).toContain('To install an App or change its version, use app_install.')
-    expect(GUGU_APPS_SEARCH_LINE).toContain("let's play a round of werewolf")
+    expect(GUGU_APPS_SEARCH_LINE).toContain('when someone asks to play a game, call catalog_call app_search')
+    // An example shaped like a quoted chat line is read as a real request (an agent started hosting werewolf).
+    expect(GUGU_APPS_SEARCH_LINE).not.toMatch(/^>|\(from /m)
   })
 
   it('keeps all group guidance and general style when suppressing only the assistant acknowledgement duplicate', () => {

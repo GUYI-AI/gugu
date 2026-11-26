@@ -23,7 +23,7 @@ export function installAcpChatStoreHost(
   testInvoke: Invoke = () => Promise.resolve([]),
   testEventOn: EventOn = () => () => {},
 ): void {
-  const invoke = ((channel: string, ...args: never[]) => host.invoke(channel) ?? testInvoke(channel, ...args)) as Invoke;
+  const invoke = ((channel: string, ...args: never[]) => host.invoke(channel, ...args) ?? testInvoke(channel, ...args)) as Invoke;
   const eventOn: EventOn = (channel, callback) => host.eventOn(channel, callback) ?? testEventOn(channel, callback);
   Object.defineProperty(document, 'fonts', {
     configurable: true,
@@ -85,7 +85,7 @@ export function hostTimeline(initial: TranscriptTurn[] = []) {
     reads: [] as string[],
     /** When set, a snapshot read takes its turns from here (a test that holds, fails or pages the read). */
     read: null as null | (() => Promise<TranscriptTurn[]>),
-    invoke(channel: string): Promise<unknown> | undefined {
+    invoke(channel: string, ...args: unknown[]): Promise<unknown> | undefined {
       if (!channel.startsWith('sessionTimeline.')) return undefined;
       this.reads.push(channel);
       if (channel === 'sessionTimeline.sessionSnapshot') {
@@ -93,11 +93,20 @@ export function hostTimeline(initial: TranscriptTurn[] = []) {
         return this.read().then((next) => { turns = next; seq += 1; return { ok: true, value: snapshot() }; });
       }
       if (channel === 'sessionTimeline.sessionAfter') return answer({ ok: false, reset: 'epoch_changed', snapshot: snapshot() });
+      const input = args[0] as { recordEvents?: boolean; subscriptionId: string } | undefined;
+      if (channel === 'sessionTimeline.sessionSubscribe' && input?.recordEvents) {
+        void (this.read ? this.read() : Promise.resolve(turns)).then(next => {
+          turns = next; seq++;
+          subscribers.get(`session-timeline:push.${input.subscriptionId}`)?.({ subscriptionId: input.subscriptionId,
+            result: { ok: false, reset: 'epoch_changed', snapshot: snapshot() } });
+        }).catch(error => subscribers.get(`session-record:status.${input.subscriptionId}`)?.({ subscriptionId: input.subscriptionId,
+          error: { code: 'record_unreadable', message: String(error) } }));
+      }
       if (channel === 'sessionTimeline.sessionUnsubscribe') return Promise.resolve(null);
       return answer(null);
     },
     eventOn(channel: string, callback: (data: unknown) => void): (() => void) | undefined {
-      if (!channel.startsWith('session-timeline:push.')) return undefined;
+      if (!channel.startsWith('session-timeline:push.') && !channel.startsWith('session-record:status.')) return undefined;
       subscribers.set(channel, callback);
       return () => subscribers.delete(channel);
     },
@@ -105,6 +114,7 @@ export function hostTimeline(initial: TranscriptTurn[] = []) {
       turns = next;
       seq += 1;
       for (const [channel, callback] of [...subscribers]) {
+        if (!channel.startsWith('session-timeline:push.')) continue;
         callback({ subscriptionId: channel.slice('session-timeline:push.'.length), result: { ok: false, reset: 'epoch_changed', snapshot: snapshot() } });
       }
     },

@@ -6,6 +6,7 @@ import { cn } from '@/lib/cn'
 import { popupMotion } from './variants'
 import { noteOverlayRequest } from '@/lib/localRendererDiagnostics'
 import { OpenLayer, useUiPopupZIndex, useUiPortalContainer } from '@gugu/session-ui/react/primitives'
+import { useProbedRef } from '@/lib/overlayOcclusion'
 
 type ClassNameProp = { className?: string }
 
@@ -45,6 +46,7 @@ function Positioner({
 function Popup({
   className,
   style,
+  ref,
   ...props
 }: Omit<PopoverPrimitive.Popup.Props, 'className' | 'style'> &
   ClassNameProp & {
@@ -52,6 +54,7 @@ function Popup({
   }) {
   return (
     <PopoverPrimitive.Popup
+      ref={useProbedRef('app-popover', ref)}
       data-slot="popover-popup"
       className={cn(popoverPopup, className)}
       style={style}

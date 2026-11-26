@@ -1,9 +1,10 @@
 /** @jsxImportSource solid-js */
 import { attachmentKind } from '@gugu/core/shared/ui/attachmentType';
+import { fileImageLinks } from '@gugu/session-core/acp/inline-file-images';
 import { safeDeliveredBody, type DeliveryMessagePresentation } from '@session-chat/state/delivery-presentation';
 import { rowTranslator } from '../readable-label';
 import { ConversationMessage, conversationMessageHeight, isConversationMessage } from './ConversationMessage';
-import { StreamContext, type StreamAnimation } from '@session-chat/components/contexts/StreamContext';
+import { StreamContext, createStreamAnimation } from '@session-chat/components/contexts/StreamContext';
 import { BlockStackView } from '@session-chat/components/primitives/BlockStackView';
 import { CopyButton } from '@session-chat/components/primitives/CopyButton';
 import { proseLinesHeight } from '@session-chat/components/rows/markdown/html/layout';
@@ -104,8 +105,12 @@ export function normalizeMessage(item: ChatMessage, deliveredMessage?: (id: stri
   // 用户消息上的附件条只画结构化附件(上传的、发出的文件)。正文里的 `@[name](path)` 是引用,
   // 不论路径是不是绝对的,都留在正文里画成胶囊 —— 引用不是「我附了它」。
   if (normalized.role !== 'user') return normalized;
+  // A picture placed in the words (`![Image 1](gugu-file://<id>…)`) is drawn there as a chip; the strip leaves it out.
+  const placedIds = new Set(fileImageLinks(normalized.text).map(link => link.itemId));
+  const placed = (item.files ?? []).filter(file => placedIds.has(file.itemId));
+  if (placed.length) normalized.attachments = normalized.attachments?.filter(file => (file.kind ?? 'image') !== 'image' || !placed.some(each => each.name === file.name));
   const imageNames = new Set(normalized.attachments?.map(file => file.name) ?? []);
-  const files = (item.files ?? []).filter(file => !imageNames.has(file.name)).map(file => {
+  const files = (item.files ?? []).filter(file => !imageNames.has(file.name) && !placed.includes(file)).map(file => {
     const href = `gugu-file://${file.itemId}?v=${file.version}`;
     return { id: href, href, name: file.name, kind: attachmentKind({ fileName: file.name, mimeType: file.mimeType }) };
   });
@@ -193,11 +198,7 @@ function AssistantRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Messa
     return { blocks, settledCount };
   });
 
-  const streamAnimation: StreamAnimation = {
-    frontier: new Map(),
-    streaming: () => props.data.streaming === true,
-    settledCount: () => parsed().settledCount,
-  };
+  const streamAnimation = createStreamAnimation(() => props.data.text, () => props.data.streaming === true, () => parsed().settledCount);
 
   const stack = createMemo<Measured<StackLayout> | null>(() => {
     const ctx = mCtx();

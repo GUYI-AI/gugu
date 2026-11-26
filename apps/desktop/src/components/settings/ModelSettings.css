@@ -10,7 +10,12 @@
   overflow: hidden;
 }
 .gg-settings-detail .gg-model-page .gg-settings-group > .gg-section-label {
-  padding: var(--spacing-md) var(--spacing-lg) 0;
+  position: relative;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  font-size: var(--font-body);
+  line-height: var(--lh-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--fg);
 }
 .gg-settings-detail .gg-model-page .gg-settings-group > .gg-settings-note {
   padding: var(--spacing-xs) var(--spacing-lg) var(--spacing-md);
@@ -25,17 +30,24 @@
   background: none;
   box-shadow: none;
   overflow: visible;
-  position: relative;
 }
-.gg-model-page .gg-settings-card::before {
+.gg-model-page .gg-settings-group > .gg-section-label::after {
   content: '';
   position: absolute;
   left: var(--spacing-lg);
   right: var(--spacing-lg);
-  top: 0;
+  bottom: 0;
   border-top: 1px solid var(--border-color);
 }
-.gg-model-page .gg-model-rows { display: flex; flex-direction: column; gap: 24px; }
+.gg-provided-model-dialog [data-slot='dialog-header'] { padding-block: 16px; }
+.gg-provided-model-list {
+  max-height: min(16rem, 45dvh);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+.gg-provided-model-list div.gg-settings-row { min-height: 36px; padding: 4px 12px; }
+.gg-provided-model-list .gg-settings-note { padding: 8px 12px 4px; }
+.gg-provided-model-list [data-testid='settings-model-locked'] { border-top: 1px solid var(--border); }
 .gg-settings-detail .gg-model-page section div.gg-settings-row,
 .gg-settings-detail .gg-model-page section div.gg-settings-row + div.gg-settings-row {
   min-height: 28px;
@@ -50,34 +62,68 @@
 .gg-model-page .gg-settings-row-leading > svg,
 .gg-model-page .gg-settings-row-leading > img { width: 20px; height: 20px; }
 .gg-model-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; }
-.gg-model-card-heading [data-testid='settings-model-search'] { width: 200px; height: 32px; }
+.gg-model-card-heading .gg-model-icon-button { width: 28px; height: 28px; }
 .gg-model-page .gg-settings-row-control > div { gap: 12px; }
 .gg-model-page .gg-settings-row-control .gg-model-icon-button { width: 28px; height: 28px; }
+/* Every provider uses settings | connection test | removal, including empty action slots. */
+.gg-model-page .gg-model-connection-actions { display: grid; grid-template-columns: repeat(3, 28px); align-items: center; gap: 4px; }
 .gg-model-expired { display: inline-flex; align-items: center; height: 20px; border-radius: 4px; padding: 0 6px; background: var(--model-sign-in-expired-bg); color: var(--model-sign-in-expired-fg); font-size: 12px; white-space: nowrap; }
 .gg-auxiliary-models .gg-settings-row-control { max-width: 100%; }
 .gg-model-page .gg-auxiliary-models .gg-settings-row-title { font-weight: 400; }
 .gg-auxiliary-model-select { width: 355px; max-width: 100%; height: 32px; }
-.gg-model-dialog { border-radius: 12px; }
+.gg-model-dialog { max-height: calc(100dvh - 160px); border-radius: var(--radius-dialog); }
+.gg-model-dialog [data-slot='dialog-header'] { padding: 26px 24px 8px 25px; align-items: flex-start; }
+.gg-model-dialog [data-slot='dialog-title'] { font-size: 16px; line-height: 22px; font-weight: 600; }
 .gg-model-dialog .gg-model-provider-link { color: var(--text-secondary); }
-.gg-model-dialog [data-slot='dialog-title'] { font-size: 16px; font-weight: 500; }
-.gg-model-dialog .subscription-connection-form { gap: 20px; }
-.gg-model-dialog label { font-size: 14px; line-height: 24px; color: var(--text-secondary); gap: 12px; }
+.gg-model-dialog .gg-model-dialog-body { display: block; padding: 7px 25px 16px; scrollbar-gutter: stable; }
+.gg-model-form { display: flex; flex-direction: column; }
+.gg-model-field { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.gg-model-dialog-body > .gg-model-field + .gg-model-form,
+.gg-model-form > .gg-model-field + .gg-model-field,
+.gg-model-dialog-body > .gg-model-field + [data-slot] { margin-top: 18px; }
+.gg-model-form > .gg-model-field-spaced { margin-top: 26px; }
+.gg-model-field-label { font-size: 14px; line-height: 20px; color: var(--text-secondary); }
 .gg-model-dialog input,
-.gg-model-dialog [data-testid='custom-model-provider'],
+.gg-model-dialog .gg-model-select-trigger,
 .gg-model-dialog [data-slot='select-trigger'] { min-height: 32px; height: 32px; }
-.gg-model-dialog .subscription-connection-form-actions,
-.gg-model-dialog .subscription-connection-form > .flex:last-child > .flex { gap: 12px; }
+.gg-model-select-trigger { gap: 6px; padding: 0 10px; }
+/* An unchecked box reads as something to check: a control edge one step above the hairline the shared checkbox uses. */
+.gg-model-dialog [data-slot='checkbox']:not([data-checked]) { border-color: color-mix(in oklab, var(--fg) 22%, transparent); }
+.gg-model-provider-option { display: flex; min-width: 0; align-items: center; gap: 6px; }
+.gg-model-provider-option > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gg-model-provider-icon { display: inline-flex; width: 16px; height: 16px; flex: none; }
+.gg-model-provider-icon svg, .gg-model-provider-icon img { width: 100%; height: 100%; }
+.gg-model-key-row { display: flex; gap: 13px; }
+.gg-model-key-row > button { flex: none; min-width: 81px; height: 32px; font-weight: 600; }
+.gg-model-test-ok { display: flex; align-items: center; gap: 4px; margin-top: -4px; font-size: var(--font-caption); line-height: 18px; color: var(--ok-fg); }
+.gg-model-field .subscription-error { margin-top: -4px; }
+.gg-model-advanced { margin-top: 26px; }
+.gg-model-checks { display: flex; flex-wrap: wrap; column-gap: 12px; row-gap: 6px; margin-top: 7px; }
+.gg-model-check { display: inline-flex; height: 20px; align-items: center; gap: 8px; font-size: 14px; line-height: 20px; color: var(--text-primary); cursor: pointer; user-select: none; }
+.gg-model-check[data-disabled] { color: var(--text-tertiary); cursor: default; }
+.gg-model-hint { margin-top: 8px; font-size: var(--font-caption); line-height: 18px; color: var(--text-secondary); }
+.gg-model-hint[data-tone='warning'] { color: var(--warn-fg); }
+/* A box with a note under it takes its own row, so the note sits under that box with its text in the labels' column. */
+.gg-model-check-row { display: flex; flex-basis: 100%; flex-direction: column; align-items: flex-start; }
+.gg-model-check-row > .gg-model-hint { margin-top: 2px; padding-left: 24px; }
+.gg-model-thinking > .gg-model-field:first-of-type { margin-top: 11px; }
+.gg-model-thinking > .gg-model-field + .gg-model-field { margin-top: 12px; gap: 8px; }
+.gg-model-levels { display: grid; grid-template-columns: repeat(3, minmax(0, 200px)); row-gap: 6px; }
+.gg-model-routes { display: flex; min-width: 0; flex-direction: column; gap: 8px; margin: 12px 0 0; padding: 0; border: 0; }
+.gg-model-routes > legend { margin-bottom: 8px; padding: 0; }
+.gg-model-route-cell { display: flex; min-width: 0; flex-direction: column; gap: 4px; font-size: var(--font-caption); line-height: 16px; color: var(--text-secondary); }
+.gg-model-limits { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 13px; margin-top: 12px; }
+.gg-model-limits .gg-model-field { gap: 10px; }
+.gg-model-limit-presets { display: flex; gap: 4px; margin-top: -4px; }
+.gg-model-limit-presets > button { height: 28px; padding: 0 8px; font-weight: 400; color: var(--text-primary); }
+.gg-model-limit-presets > button[aria-pressed='true'] { background: var(--selected); }
+.gg-model-dialog-footer { display: flex; flex: none; justify-content: flex-end; gap: 12px; padding: 20px 24px 24px; }
+.gg-model-dialog-footer > button { min-width: 68px; height: 32px; font-weight: 600; }
 @container gg-settings (max-width: 440px) {
   .gg-auxiliary-model-select { width: min(355px, 100%); }
-  .gg-model-card-heading { flex-wrap: wrap; }
 }
 
-.gg-settings-detail .gg-model-page [data-platform-models] > .gg-section-label { padding: 0; }
-.gg-provided-model-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 16px; padding: var(--spacing-md) var(--spacing-lg); border: 0; border-radius: 0; text-align: left; cursor: pointer; }
-.gg-model-card-title { display: block; color: var(--text-primary); font-size: 14px; font-weight: 500; line-height: 22px; }
-.gg-model-card-description { display: block; font-size: var(--font-caption); font-weight: 400; line-height: var(--lh-caption); color: var(--muted-fg); }
-.gg-settings-detail .gg-model-page section.gg-settings-group > div.gg-settings-card:empty,
-.gg-settings-detail .gg-model-page section[data-platform-models][data-expanded='false'] > div.gg-settings-card { display: none; }
+.gg-settings-detail .gg-model-page section.gg-settings-group > div.gg-settings-card:empty { display: block; padding: 0 0 var(--spacing-sm); }
 
 .gg-model-page .gg-model-icon-button svg { width: 18px; height: 18px; }
 

@@ -603,6 +603,27 @@ export async function quiescePhoneForAccountClosure(ownerId: string): Promise<vo
   sameOwner()
 }
 
+/** Only after native reports original-owner local-complete. Auth may already be
+ * absent. Native has proved its own stop; settle renderer work without issuing
+ * another ordinary stop/retirement or borrowing a later account's publication.
+ */
+export async function quiesceClosedPhoneOwner(ownerId: string): Promise<void> {
+  const sameOwner = () => {
+    const current = getRendererSession()?.user.id
+    if (current && current !== ownerId) throw Object.assign(new Error('Local phone owner changed'), { code: 'wrong_local_owner' })
+  }
+  sameOwner()
+  const current = session?.ownerId === ownerId ? session : null
+  current?.delegateNativeStopToAccountClosure()
+  pausePhoneDeviceForAccountClosure(ownerId)
+  current?.stop()
+  // A rejected boot/heartbeat is settled work. Its error cannot authorize any
+  // native release; that proof was already checked before this local-only port.
+  if (current) await current.drain().catch(() => undefined)
+  await previousSessionDrain.catch(() => undefined)
+  sameOwner()
+}
+
 export async function withdrawPhoneForAccountClosure(ownerId: string, deviceId: string): Promise<void> {
   const sameOwner = () => {
     if (getRendererSession()?.user.id !== ownerId) throw Object.assign(new Error('Local phone owner changed'), { code: 'wrong_local_owner' })

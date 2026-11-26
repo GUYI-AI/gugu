@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { createPortal } from 'react-dom'
 import { observer } from 'mobx-react-lite'
@@ -17,15 +17,22 @@ import { IconButton } from '../ui/IconButton'
 import { PaneEmptyState } from '../ui/PaneEmptyState'
 import { Illustration } from '../ui/Illustration'
 import { Hint } from '../ui/Tooltip'
+import { Popover } from '../ui/Popover'
+import { menuSurfaceClassName } from '../ui/Menu'
 import { rowKeyActivate } from '../contacts/contactsPanelStyles'
 import { NOTIFICATION_LIST_SLOT_PREFIX, NOTIFICATION_TOGGLE_SLOT_PREFIX } from './NotificationSlot'
 import { NeedsYouTaskRow } from './NeedsYouTaskRow'
+import { GrowingList } from '@gugu/session-ui/react/growing-list'
 import { isAssistantAgent } from '@/session/renderer/features/assistant/assistant-lineage'
 import { markNeedsYouTaskSeen, useNeedsYouTasks, type NeedsYouTask } from './useNeedsYouTasks'
 import { passwordNotifications, usePasswordVault, openPasswordRequest, openPasswordDevicePrompt } from '@/lib/passwordBetaNotifications'
 import { promptedRequests } from '../password/passwordModel'
 import { persistentNotices } from '@/lib/notices'
 import { NoticeCard } from '../NoticeHost'
+
+const taskKey = (task: NeedsYouTask) => `${task.deviceId}/${task.session.conversationId}`
+const taskRowEstimate = () => 56
+const mobileTaskRowEstimate = () => 72
 
 installShellSlots()
 const EMPTY_SLOTS: ReadonlyMap<string, HTMLElement> = new Map()
@@ -47,6 +54,8 @@ export const NeedsYouHost = observer(function NeedsYouHost() {
   const open = useSidebarNotificationsOpen()
   const slots = readShellSlots()
   const entries = useSyncExternalStore(listener => slots?.subscribeSlots(listener) ?? (() => undefined), () => slots?.getSlots() ?? EMPTY_SLOTS)
+  // @@@growing-list: the task rows mount around the visible part of the list's scroller (one list on screen at a time).
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
   const [marking, setMarking] = useState(0)
   const [readError, setReadError] = useState<string | null>(null)
   useEffect(() => { setReadError(null) }, [open])
@@ -60,61 +69,73 @@ export const NeedsYouHost = observer(function NeedsYouHost() {
   // Opening the list reads nothing: a failure is read when its task is opened (the task view's read bit) or by Mark all read.
   const unreadFailures = tasks.filter(task => unread(task) && sessionPresentation(task.session, true)?.tone === 'error')
   const title = t('settings.general.notifications', { ns: 'main' })
-  return <>{[...entries].map(([key, element]) => {
-    // md: on the desktop sidebar's head (#2548) the bell sits in one row with the 32px collapse and 会话历史 buttons, and in
-    // the chat list's header beside its 32px 「+」; the phone grows md to the touch size (IconButton).
-    // One bell at a time: a place may hold an inactive slot (the desktop head's while the sidebar is the rail, whose own row
-    // has it), as the list's slots do.
-    const active = slots?.getSlotLabel?.(key) === 'active'
-    if (key.startsWith(NOTIFICATION_TOGGLE_SLOT_PREFIX)) return active ? createPortal(
-      <span className="relative inline-flex">
-        <Hint label={title} side="bottom">
-          <IconButton size="md" tone={element.dataset.tone === 'strong' ? 'strong' : undefined} aria-label={title} aria-pressed={open} on={open} data-testid="notification-toggle" onClick={() => setSidebarNotificationsOpen(!open)}>
-            <Bell />
-          </IconButton>
-        </Hint>
-        {notificationCount > 0 && <Chip tone="danger" shape="count" className="pointer-events-none absolute -right-1 -top-1" data-testid="notification-count">{notificationCount > 99 ? '99+' : notificationCount}</Chip>}
-      </span>, element, key) : null
-    if (!key.startsWith(NOTIFICATION_LIST_SLOT_PREFIX) || !open || !active) return null
-    const showEmpty = !loading && !error && !readError && tasks.length === 0 && passwords.length === 0 && devices.length === 0 && deferred.length === 0
-    return createPortal(<>
-      <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-2">
-        {/* The list takes the chats' place: its header is the way back to them, the usual "‹ parent" back. */}
-        <Button size="sm" variant="ghost" className="-ml-2 gap-1 font-medium text-[var(--fg)]" data-testid="notification-back"
-          aria-label={t('chatArea.backToList', { ns: 'messaging' })} title={t('chatArea.backToList', { ns: 'messaging' })} onClick={() => setSidebarNotificationsOpen(false)}>
-          <ChevronLeft className="size-4" />{t('shell.chats', { ns: 'main' })}
-        </Button>
-        {unreadFailures.length > 0 && <Button size="sm" variant="ghost" data-testid="notification-mark-all-read" disabled={marking > 0} onClick={() => { void markRead(unreadFailures) }}>{t('chatList.markAllRead', { ns: 'messaging' })}</Button>}
-      </div>
-      {showEmpty ? <div className="grid min-h-0 flex-1 place-items-center px-4 pb-4" data-testid="notification-list">
-        <PaneEmptyState art={<Illustration name="no-notifications" className={mobile ? 'w-[104px]' : 'w-[88px]'} />} caption={t('settings.general.notificationsEmpty.title', { ns: 'main' })} hint={t('settings.general.notificationsEmpty.hint', { ns: 'main' })} />
-      </div> : <div data-testid="notification-list" data-notification-scroll="" role="listbox" aria-label={title} className="min-h-0 flex-1 overflow-auto px-2 pb-4">
-        {error && <p role="alert">{error}</p>}
-        {readError && <p role="alert">{readError}</p>}
-        <RefreshFailed error={vault.failure} onRetry={vault.retry} />
-        {passwords.map(request => <Button key={request.requestId} variant="ghost" className="w-full justify-start" data-password-notification={request.requestId}
-          onClick={() => { openPasswordRequest(request); setSidebarNotificationsOpen(false) }}>{t(request.kind === 'save' ? 'passwords.notifySave' : 'passwords.notifyUse', { ns: 'settings' })} : {request.origin}</Button>)}
-        {devices.map(request => <Button key={request.deviceId} variant="ghost" className="w-full justify-start" data-password-device={request.deviceId}
-          onClick={() => { openPasswordDevicePrompt(request.deviceId); setSidebarNotificationsOpen(false) }}>{t('passwords.notifyDevice', { ns: 'settings', name: request.label || t('passwords.newDevice', { ns: 'settings' }) })}</Button>)}
-        {deferred.length > 0 && <div className="flex flex-col gap-2 px-2 pb-2" data-testid="notification-notices">
-          {deferred.map(notice => <NoticeCard key={notice.key} notice={notice} onClear={() => persistentNotices.clear(notice.key)} />)}
-        </div>}
-        {tasks.map(task => {
-          // The assistant's own session is the assistant, not a task of its: its row opens the assistant's chat, which the one
-          // decision (lib/assistantEntry.ts) sends to its App, or, when the App is not usable here, opens as any chat — never the
-          // task view, which has no place for it. The task view's read bit is not set by a chat, so this click sets it.
-          // Read at the click: the list does not follow the assistant's snapshot.
-          const openTask = () => {
-            const failure = sessionPresentation(task.session, true)?.tone === 'error'
-            if (failure) void markRead([task])
-            const assistant = readAssistantShellBridge()?.getSnapshot()
-            if (!assistant?.chatId || !isAssistantAgent(task.session.agent?.userId, assistant.assistant?.id)) return followLink({ kind: 'session', sessionId: task.session.conversationId, deviceId: task.deviceId })
-            if (!failure) void markRead([task])
-            return followLink({ kind: 'chat', chatId: assistant.chatId })
-          }
-          return <NeedsYouTaskRow key={`${task.deviceId}/${task.session.conversationId}`} task={task} mobile={mobile} emphasis={unread(task)} onClick={openTask} onKeyDown={rowKeyActivate(openTask)} />
-        })}
+  const showEmpty = !loading && !error && !readError && tasks.length === 0 && passwords.length === 0 && devices.length === 0 && deferred.length === 0
+  // The list's head: the phone's says the way back to its chats (the list takes their place); the desktop's popover names
+  // itself, and Esc, a click outside or the bell again close it.
+  const list = (head: ReactNode) => <>
+    <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-2">
+      {head}
+      {unreadFailures.length > 0 && <Button size="sm" variant="ghost" data-testid="notification-mark-all-read" disabled={marking > 0} onClick={() => { void markRead(unreadFailures) }}>{t('chatList.markAllRead', { ns: 'messaging' })}</Button>}
+    </div>
+    {showEmpty ? <div className="grid min-h-0 flex-1 place-items-center px-4 pb-4" data-testid="notification-list">
+      <PaneEmptyState art={<Illustration name="no-notifications" className={mobile ? 'w-[104px]' : 'w-[88px]'} />} caption={t('settings.general.notificationsEmpty.title', { ns: 'main' })} hint={t('settings.general.notificationsEmpty.hint', { ns: 'main' })} />
+    </div> : <div ref={setScroller} data-testid="notification-list" data-notification-scroll="" data-growing-list="" role="listbox" aria-label={title} className="min-h-0 flex-1 overflow-auto px-2 pb-4">
+      {error && <p role="alert">{error}</p>}
+      {readError && <p role="alert">{readError}</p>}
+      <RefreshFailed error={vault.failure} onRetry={vault.retry} />
+      {passwords.map(request => <Button key={request.requestId} variant="ghost" className="w-full justify-start" data-password-notification={request.requestId}
+        onClick={() => { openPasswordRequest(request); setSidebarNotificationsOpen(false) }}>{t(request.kind === 'save' ? 'passwords.notifySave' : 'passwords.notifyUse', { ns: 'settings' })} : {request.origin}</Button>)}
+      {devices.map(request => <Button key={request.deviceId} variant="ghost" className="w-full justify-start" data-password-device={request.deviceId}
+        onClick={() => { openPasswordDevicePrompt(request.deviceId); setSidebarNotificationsOpen(false) }}>{t('passwords.notifyDevice', { ns: 'settings', name: request.label || t('passwords.newDevice', { ns: 'settings' }) })}</Button>)}
+      {deferred.length > 0 && <div className="flex flex-col gap-2 px-2 pb-2" data-testid="notification-notices">
+        {deferred.map(notice => <NoticeCard key={notice.key} notice={notice} onClear={() => persistentNotices.clear(notice.key)} />)}
       </div>}
-    </>, element, key)
+      <GrowingList scroller={scroller} count={tasks.length} getKey={index => taskKey(tasks[index]!)} estimateSize={mobile ? mobileTaskRowEstimate : taskRowEstimate} renderLine={index => {
+        const task = tasks[index]!
+        // The assistant's own session is the assistant, not a task of its: its row opens the assistant's chat, which the one
+        // decision (lib/assistantEntry.ts) sends to its App, or, when the App is not usable here, opens as any chat — never the
+        // task view, which has no place for it. The task view's read bit is not set by a chat, so this click sets it.
+        // Read at the click: the list does not follow the assistant's snapshot. On the desktop the popover closes, as a menu does.
+        const openTask = () => {
+          if (!mobile) setSidebarNotificationsOpen(false)
+          const failure = sessionPresentation(task.session, true)?.tone === 'error'
+          if (failure) void markRead([task])
+          const assistant = readAssistantShellBridge()?.getSnapshot()
+          if (!assistant?.chatId || !isAssistantAgent(task.session.agent?.userId, assistant.assistant?.id)) return followLink({ kind: 'session', sessionId: task.session.conversationId, deviceId: task.deviceId })
+          if (!failure) void markRead([task])
+          return followLink({ kind: 'chat', chatId: assistant.chatId })
+        }
+        return <NeedsYouTaskRow task={task} mobile={mobile} emphasis={unread(task)} onClick={openTask} onKeyDown={rowKeyActivate(openTask)} />
+      }} />
+    </div>}
+  </>
+  return <>{[...entries].map(([key, element]) => {
+    // md: on the desktop sidebar's foot (#2548) the bell sits in one row with the 32px 已安排 and 会话历史 buttons, and in
+    // the phone's chat list header beside its 32px 「+」; the phone grows md to the touch size (IconButton).
+    // One bell at a time: a place may hold an inactive slot, as the phone list's slots do.
+    const active = slots?.getSlotLabel?.(key) === 'active'
+    if (key.startsWith(NOTIFICATION_TOGGLE_SLOT_PREFIX)) {
+      if (!active) return null
+      const bell = <IconButton size="md" tone={element.dataset.tone === 'strong' ? 'strong' : undefined} aria-label={title} aria-pressed={mobile ? open : undefined} on={open} data-testid="notification-toggle"
+        onClick={mobile ? () => setSidebarNotificationsOpen(!open) : undefined}><Bell /></IconButton>
+      // The desktop's list pops beside the bell, the app's popover like any other; the phone's takes the chat list's place.
+      return createPortal(<span className="relative inline-flex">
+        {mobile ? <Hint label={title} side="bottom">{bell}</Hint> : <Popover.Root open={open} onOpenChange={setSidebarNotificationsOpen}>
+          <Hint label={title} side="bottom"><Popover.Trigger render={bell} /></Hint>
+          <Popover.Portal><Popover.Positioner side="right" align="end" sideOffset={8} collisionPadding={8}>
+            <Popover.Popup aria-label={title} data-testid="notification-popover" className={`${menuSurfaceClassName} flex max-h-[min(560px,80vh)] w-[360px] flex-col`}>
+              {list(<Popover.Title className="m-0 text-[length:var(--font-body)] font-medium">{title}</Popover.Title>)}
+            </Popover.Popup>
+          </Popover.Positioner></Popover.Portal>
+        </Popover.Root>}
+        {notificationCount > 0 && <Chip tone="danger" shape="count" className="pointer-events-none absolute -right-1 -top-1" data-testid="notification-count">{notificationCount > 99 ? '99+' : notificationCount}</Chip>}
+      </span>, element, key)
+    }
+    if (!key.startsWith(NOTIFICATION_LIST_SLOT_PREFIX) || !open || !active) return null
+    return createPortal(list(
+      <Button size="sm" variant="ghost" className="-ml-2 gap-1 font-medium text-[var(--fg)]" data-testid="notification-back"
+        aria-label={t('chatArea.backToList', { ns: 'messaging' })} title={t('chatArea.backToList', { ns: 'messaging' })} onClick={() => setSidebarNotificationsOpen(false)}>
+        <ChevronLeft className="size-4" />{t('shell.chats', { ns: 'main' })}
+      </Button>), element, key)
   })}</>
 })
