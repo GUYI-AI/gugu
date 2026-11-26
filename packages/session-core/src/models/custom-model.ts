@@ -23,13 +23,16 @@ export function customModelApiUrl(connection: Pick<CustomModelMeta, 'apiUrl' | '
 
 /**
  * The protocol an address names by its own path, before any network request: the vendor's documented route tail or
- * prefix. `undefined` when the path doesn't say (a bare `/v1` is served by several protocols), so the person chooses.
+ * prefix, or a vendor's own API host that speaks one protocol (Anthropic's, like Gemini's below). `undefined` when the
+ * address doesn't say (a bare `/v1` is served by several protocols). The probe tries this one first; an address that
+ * refuses every path (Anthropic and Zhipu check the key before routing) is then added as it.
  */
 export function detectModelProtocol(value: string): ModelProtocol | undefined {
   let url: URL;
   try { url = new URL(value.trim()); } catch { return undefined; }
   const path = url.pathname.replace(/\/+$/, '').toLowerCase();
-  if (/\/(?:v1\/)?messages$/.test(path) || /(?:^|\/)anthropic$/.test(path)) return 'anthropic-messages';
+  if (/\/(?:v1\/)?messages$/.test(path) || /(?:^|\/)anthropic(?:\/v1)?$/.test(path)) return 'anthropic-messages';
+  if (url.hostname === 'api.anthropic.com' && /^(?:\/v1)?$/.test(path)) return 'anthropic-messages';
   if (/\/responses$/.test(path)) return 'openai-responses';
   if (/\/chat\/completions$/.test(path) || /\/openai$/.test(path)) return 'openai-chat-completions';
   if (url.hostname === 'generativelanguage.googleapis.com' && /^\/v1(?:beta)?(?:\/models)?$/.test(path)) return 'gemini-generate-content';
@@ -109,6 +112,11 @@ export const customModelMetaSchema = z.object({
     .refine((routes) => new Set(routes.map(({ id }) => id)).size === routes.length, 'Route IDs must be unique').optional(),
   /** The protocol the person picked for a harness (harness id → protocol); a harness not named here takes `matchCustomModel`'s order. */
   harnessProtocols: z.record(z.string(), modelProtocolSchema).optional(),
+  /**
+   * The address refused the key (401/403) when this was saved; the save went ahead with the key as typed and the protocol
+   * inferred from the refusal. The first real request tells whether the key works; a later save that the address answers clears it.
+   */
+  unverified: z.boolean().optional(),
   removed: z.boolean().optional(),
 });
 export type CustomModelMeta = z.infer<typeof customModelMetaSchema>;

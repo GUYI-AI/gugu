@@ -74,9 +74,14 @@ it('comments on part of a message at the selection, into the chat\'s draft', asy
   const line = document.querySelector<HTMLElement>('[data-selection-line]')!
   expect(line.textContent).toContain('1')
   expect(Math.abs(line.getBoundingClientRect().left - box.left)).toBeLessThan(40)
+  // The box's input takes the page's selection away; the words being commented on stay marked while it is open.
+  const marked = () => [...(CSS.highlights.get('gugu-selection-line') ?? [])].map((range) => range.toString())
+  expect(window.getSelection()?.toString()).toBe('')
+  expect(marked()).toEqual(['Run the gates'])
   await userEvent.keyboard('Which gates?')
   await userEvent.keyboard('{Enter}')
   await until('the comment joined the draft', () => draft().items.length === 1)
+  expect(CSS.highlights.has('gugu-selection-line'), 'saved: the mark goes with the box').toBe(false)
   expect(draft().items[0]).toMatchObject({ kind: 'message', messageId: 'm1', authorId: 'ada', text: 'Run the gates', annotation: 'Which gates?' })
   expect(document.querySelector('[data-selection-line]')).toBeNull()
   await until('the tray counts it', () => harness.container.querySelector('[data-composer-annotations]')?.textContent?.includes('1 条评论') ?? false)

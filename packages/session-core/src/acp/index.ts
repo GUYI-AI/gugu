@@ -20,7 +20,7 @@ export {
   type RecentActionSummary,
 } from './recent-actions';
 export { runningBackgroundCommands, type RunningBackgroundCommand } from './background-commands';
-export { ACP_AUTH_REQUIRED_CODE, isAcpAuthRequired, isSignInFailure, isCodexRefreshTokenRevoked } from './sign-in-failure';
+export { ACP_AUTH_REQUIRED_CODE, isAcpAuthRequired, isKeyRefusal, isSignInFailure, isCodexRefreshTokenRevoked } from './sign-in-failure';
 export { upstreamSaid } from './upstream-said';
 export { isSessionContextText } from './session-context';
 export { createRequestActivity, type RequestActivityAgent } from './transport/request-activity';

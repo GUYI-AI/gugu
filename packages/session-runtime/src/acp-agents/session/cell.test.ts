@@ -860,6 +860,53 @@ describe('SessionCell prompts', () => {
     expect(outcome).not.toHaveProperty('guguReason');
   });
 
+  // #3939 A custom model whose address refuses the key the person typed. The message and data are the ones Codex sent on d22
+  // (2026-11-26), with the status the bridge lifts to `data.httpStatusCode`.
+  const KEY_REFUSED = 'unexpected status 401 Unauthorized: Incorrect API key provided: sk-stub***. You can find your API key at https://platform.example.com/account/api-keys., url: http://127.0.0.1:39973/v1/responses';
+  const refusal = (data: Record<string, unknown>) => Object.assign(new Error(KEY_REFUSED), { code: -32603, data: { message: KEY_REFUSED, ...data } });
+
+  it('#3939 a custom model key the address refuses (401/403): Gugu says so, the provider sentence stays in the detail', async () => {
+    for (const status of [401, 403]) {
+      const agent = new FakeAcpAgent();
+      const { cell } = makeCell(agent, { hostCredentials: true, customModelKey: true });
+      agent.prompt = vi.fn(async () => { throw refusal({ httpStatusCode: status }); });
+      await cell.prompt({ text: 'hi' });
+      const outcome = cell.history().committed.at(-1)!.outcome;
+      expect(outcome).toMatchObject({ kind: 'error', reason: 'prompt_failed', guguReason: 'key-rejected' });
+      expect(outcome).toHaveProperty('detail', expect.stringContaining('Incorrect API key provided'));
+      expect(outcome).not.toHaveProperty('said');
+      expect(outcome).not.toHaveProperty('signInRequired');
+    }
+  });
+
+  it('#3939 Claude reports the same refusal by its SDK error kind', async () => {
+    const agent = new FakeAcpAgent();
+    const { cell } = makeCell(agent, { hostCredentials: true, customModelKey: true });
+    agent.prompt = vi.fn(async () => { throw Object.assign(new Error('Internal error: Failed to authenticate. API Error: 401 invalid x-api-key'), { code: -32603, data: { errorKind: 'authentication_failed' } }); });
+    await cell.prompt({ text: 'hi' });
+    expect(cell.history().committed.at(-1)!.outcome).toMatchObject({ kind: 'error', guguReason: 'key-rejected' });
+  });
+
+  it('#3939 [阴性对照] a platform ticket refused with 401 is not a key the person typed: the provider sentence stays the row', async () => {
+    const agent = new FakeAcpAgent();
+    const { cell } = makeCell(agent, { hostCredentials: true });
+    agent.prompt = vi.fn(async () => { throw refusal({ httpStatusCode: 401 }); });
+    await cell.prompt({ text: 'hi' });
+    const outcome = cell.history().committed.at(-1)!.outcome;
+    expect(outcome).not.toHaveProperty('guguReason');
+    expect(outcome).toHaveProperty('said', expect.stringContaining('Incorrect API key provided'));
+  });
+
+  it('#3939 [阴性对照] a custom model failing for another reason keeps the provider sentence', async () => {
+    for (const status of [429, 500]) {
+      const agent = new FakeAcpAgent();
+      const { cell } = makeCell(agent, { hostCredentials: true, customModelKey: true });
+      agent.prompt = vi.fn(async () => { throw refusal({ httpStatusCode: status }); });
+      await cell.prompt({ text: 'hi' });
+      expect(cell.history().committed.at(-1)!.outcome).not.toHaveProperty('guguReason');
+    }
+  });
+
   it('不在回合里递进来的原因不收(还在起的会话没有这一轮)', async () => {
     const agent = new FakeAcpAgent();
     const { cell } = makeCell(agent, { hostCredentials: true });

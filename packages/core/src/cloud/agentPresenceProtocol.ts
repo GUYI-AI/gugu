@@ -36,6 +36,11 @@ export type AgentPresencePayload = {
   // 的契约形状(removed 无 live 引擎);'active' 时 null = no agent_profiles row(数据异常) or unknown value →
   // 消费方对 active 载荷 fail loud(不静默省略),对 removed 不误报。
   agentType: AgentType | null
+  /**
+   * 这个 agent 此刻用的模型,写成它的宿主模型清单里那个名字(「Opus 5.5」,❌ Default 这类占位);宿主随读数一起写。
+   * null = 说不出(宿主还不报、占位换不出具体模型、这家没有模型清单):名片 / 成员行那一格就不画。
+   */
+  modelName: string | null
   // @@@recent-actions (#518) - the agent's recent tool-action sequence (names only) for the presence
   recentActions: string[]
   // @@@last-action-at (#437) - the agent's real newest tool-action time (ISO), from the shared runtime
@@ -70,6 +75,7 @@ type RawPresence = {
   runtime_kind?: unknown
   runtime_label?: unknown
   agent_type?: unknown
+  model_name?: unknown
   recent_actions?: unknown
   last_action_at?: unknown
   last_interacted_at?: unknown
@@ -163,6 +169,7 @@ export function parseAgentPresencePayload(raw: unknown): AgentPresencePayload | 
     runtimeKind: asString(presence.runtime_kind),
     runtimeLabel: asString(presence.runtime_label),
     agentType: asAgentType(presence.agent_type),
+    modelName: asString(presence.model_name),
     recentActions: asStringArray(presence.recent_actions),
     lastActionAt: asString(presence.last_action_at),
     lastInteractedAt: asString(presence.last_interacted_at),

@@ -58,8 +58,8 @@ export function useSessionMessageQuotes(store: (Pick<AcpChatStore, 'sessionId' |
       });
     };
     // A right press selects the word under it (macOS) before the menu event: only what was selected before it counts.
-    let pressed: { selection: string | null | undefined; at: DOMRect | null } | null = null;
-    const selectionAt = () => { const current = target.root.ownerDocument.getSelection(); return current?.rangeCount ? current.getRangeAt(0).getBoundingClientRect() : null; };
+    let pressed: { selection: string | null | undefined; at: Range | null } | null = null;
+    const selectionAt = () => { const current = target.root.ownerDocument.getSelection(); return current?.rangeCount ? current.getRangeAt(0).cloneRange() : null; };
     const press = (event: PointerEvent) => {
       if (event.button === 2) pressed = { selection: selectedMessageText(target.root, target.root.ownerDocument.getSelection()), at: selectionAt() };
     };

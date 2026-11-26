@@ -232,6 +232,7 @@ function ModelConnectionGroup({ connection, showAddress, busy, onEdit, onTest, o
     showAddress ? customModelApiUrl(connection) : null,
     count === 0 ? translate('customModels.noModel') : null,
     !connection.keySaved ? translate('customModels.keyMissing') : null,
+    connection.unverified ? translate('customModels.unverified') : null,
   ].filter(Boolean).join(' · ');
   return <div data-custom-connection={connection.id}>
     <ModelProviderRow icon={icon ?? <Globe aria-hidden="true" />} name={name} description={details || undefined}

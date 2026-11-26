@@ -137,7 +137,7 @@ export function FileTextContent({ content, kind, style, selectable }: {
       }}
       onSend={() => {
         const { quote: { startLine, endLine, text } } = selection
-        if (conversation && file && root.current) openCommentLine(conversation, selection.range.getBoundingClientRect(), root.current, { kind: 'file', file, places: [linesPlace(startLine, endLine)], ...(text ? { text } : {}) }, container ?? null)
+        if (conversation && file && root.current) openCommentLine(conversation, selection.range, root.current, { kind: 'file', file, places: [linesPlace(startLine, endLine)], ...(text ? { text } : {}) }, container ?? null)
         root.current?.ownerDocument.getSelection()?.removeAllRanges()
       }} /> : null}
   </>

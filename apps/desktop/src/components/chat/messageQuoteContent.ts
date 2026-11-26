@@ -37,7 +37,7 @@ export function contentWithQuote(typed: string, quote?: { messageId?: string; se
  * A message's selected words, as its menu offers them: 引用, a reply that carries only them, and 评论, the comment box at
  * the selection (when its place is known). Each closes the menu once done.
  */
-export function selectionActions(selection: string, at: DOMRect | null, quote: () => void, comment: (at: DOMRect, text: string) => void, close: () => void): { onQuoteSelection?: () => void; onCommentSelection?: () => void } {
+export function selectionActions(selection: string, at: Range | null, quote: () => void, comment: (at: Range, text: string) => void, close: () => void): { onQuoteSelection?: () => void; onCommentSelection?: () => void } {
   if (!selection) return {}
   return {
     onQuoteSelection: () => { quote(); close() },

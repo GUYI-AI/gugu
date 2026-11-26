@@ -83,6 +83,7 @@ for arch in x64 arm64; do
     mkdir -p /opt && tar -xzf "/pkg/$PKG" -C /opt
     d=$(ls -d /opt/gugu-server-*)
     useradd -m smoke
+    su smoke -c "$d/app/cc-switch-bundle/cc-switch --version"
     native_files=$(su smoke -c "\"$d/node/bin/node\" /pkg/loaded-native-paths.cjs \"$d/app\"")
     while IFS= read -r f; do
       got=$(grep -ao "GLIBC_2\.[0-9]*" "$f" | sort -Vu | tail -1)

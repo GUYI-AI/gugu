@@ -1509,6 +1509,10 @@ body.barcode-scanner-active #root {
 ::highlight(gugu-search-hit) {
   background-color: var(--msg-src-flash-words);
 }
+/* 评论框开着时,它说的那段一直标着:框里的输入框拿走了页面自己的选区;框一关就撤(selection-line.tsx)。底色同选中文字。 */
+::highlight(gugu-selection-line) {
+  background-color: var(--text-selection);
+}
 .msg-src-flash {
   border-radius: var(--radius-control);
   animation: msg-src-flash 1.4s ease-out;

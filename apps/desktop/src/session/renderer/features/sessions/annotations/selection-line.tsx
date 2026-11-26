@@ -7,19 +7,36 @@ import { sessionAnnotations, type FileAnnotationSelection, type MessageAnnotatio
 /**
  * The small box at a selection: the host's one input beside selected words — a message's, a file's — where the person
  * writes a comment, numbered as the conversation's draft's next; saved, it joins that draft and goes with the next send.
- * Drawn by the shell's layer (`SelectionLineLayer`), mounted once; a press or a wheel anywhere else dismisses it.
+ * Drawn by the shell's layer (`SelectionLineLayer`), mounted once; a press or a wheel anywhere else dismisses it. While it
+ * is open the words it is about stay marked (`marked`): its input takes the page's own selection away, and the person would
+ * no longer see what they are writing about.
  */
-type Line = { id: string; at: DOMRect; within: HTMLElement; container: HTMLElement | null; number: number; save: (text: string) => void };
+type Line = { id: string; at: DOMRect; within: HTMLElement; container: HTMLElement | null; marked?: Range; number: number; save: (text: string) => void };
 let lines: readonly Line[] = [];
 const listeners = new Set<() => void>();
 const changed = (next: readonly Line[]) => { lines = next; for (const listener of listeners) listener(); };
 
-/** A comment on part of a message or a file, at `at` (this window's px), kept inside `within`; one per element. */
-export function openCommentLine(conversation: AnnotationConversation, at: DOMRect, within: HTMLElement,
+/**
+ * A comment on part of a message or a file, kept inside `within`; one per element. `at` is the selected range (marked while
+ * the box is open), or only a place (this window's px) when the selection is the system's or another frame's.
+ */
+export function openCommentLine(conversation: AnnotationConversation, at: Range | DOMRect, within: HTMLElement,
   selection: Omit<MessageAnnotationSelection, 'annotation'> | Omit<FileAnnotationSelection, 'annotation'>, container: HTMLElement | null = null): void {
   const draft = sessionAnnotations.forConversation(conversation);
-  changed([...lines.filter((current) => current.within !== within), { id: crypto.randomUUID(), at, within, container, number: draft.nextAnnotationNumber,
+  const marked = 'startContainer' in at ? at : undefined;
+  changed([...lines.filter((current) => current.within !== within), { id: crypto.randomUUID(),
+    at: marked ? marked.getBoundingClientRect() : at as DOMRect, marked, within, container, number: draft.nextAnnotationNumber,
     save: (text) => { if (text) draft.add({ ...selection, annotation: text }); } }]);
+}
+
+/** The one highlight every open line's words join (`::highlight(gugu-selection-line)` in tokens.css). */
+const MARK = 'gugu-selection-line';
+function mark(range: Range): () => void {
+  const view = range.startContainer.ownerDocument!.defaultView!;
+  const marks = view.CSS.highlights.get(MARK) ?? new view.Highlight();
+  marks.add(range);
+  view.CSS.highlights.set(MARK, marks);
+  return () => { marks.delete(range); if (!marks.size) view.CSS.highlights.delete(MARK); };
 }
 
 function close(line: Line): void {
@@ -34,6 +51,7 @@ export function SelectionLineLayer() {
 }
 
 function SelectionLine({ line }: { line: Line }) {
+  useEffect(() => line.marked && mark(line.marked), [line]);
   useEffect(() => {
     const doc = line.within.ownerDocument;
     const outside = (event: Event) => { if (!(event.target as Element | null)?.closest?.('[data-selection-line]')) close(line); };

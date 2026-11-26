@@ -79,7 +79,7 @@ afterAll(() => vi.unstubAllGlobals())
 describe('a session\'s tab: one folder, two roots', () => {
   test('the two buttons stay above the chat files, with no roots page to enter', () => {
     expect(names()).toEqual(['plan.md'])
-    expect(listed()).toEqual([{ chat: 'dm-1', folder: '' }, { chat: 'dm-1', folder: '附件' }])
+    expect(listed()).toEqual([{ chat: 'dm-1', folder: '' }])
     expect([...$('place-switch').querySelectorAll('button')].map((button) => button.title)).toEqual(['聊天文件', '电脑文件'])
     expect($('place-switch').querySelector('[aria-pressed="true"]')?.getAttribute('data-root')).toBe('chat')
     expect(crumbs()).toBeNull()
@@ -118,26 +118,20 @@ describe('a session\'s tab: one folder, two roots', () => {
     const calls = listed().length
     switchRoot('chat')
     await until('the chat listed', () => names().includes('plan.md'))
-    expect(listed().slice(calls)).toEqual([{ chat: 'dm-1', folder: '' }, { chat: 'dm-1', folder: '附件' }])
+    expect(listed().slice(calls)).toEqual([{ chat: 'dm-1', folder: '' }])
     expect(crumbs()).toBeNull()
   })
 
-  test('the chat\'s top is drawn once 「附件」 is in too: the top alone is another list, never shown first', async () => {
+  test('the chat\'s top shows 「附件」 as a folder: only the top is read, nothing inside it is drawn there', async () => {
     switchRoot('workspace')
     await until('the computer shown', () => names().includes('README.md'))
     const attachments = { ...chatNote, id: 'att', name: '附件', displayName: '附件', type: 'folder', contentType: 'inode/directory', path: '附件', systemRole: 'attachments' } as unknown as Entry
-    const sent = { ...chatNote, id: 'item-2', name: 'shot.md', displayName: 'shot.md', path: '附件/shot.md', parentId: 'att' }
-    let release: (() => void) | null = null
-    gugu.files.list
-      .mockImplementationOnce(async () => [{ ...chatNote }, attachments])
-      .mockImplementationOnce(() => new Promise((done) => { release = () => done([sent]) }))
+    gugu.files.list.mockImplementationOnce(async () => [{ ...chatNote }, attachments])
+    const calls = listed().length
     switchRoot('chat')
-    await until('「附件」 asked', () => release !== null)
-    await new Promise((done) => setTimeout(done, 0))
-    expect(names(), 'the top answered, 「附件」 not yet: nothing drawn').toEqual([])
-    release!()
-    await until('drawn', () => names().length > 0)
-    expect(names()).toEqual(['plan.md', 'shot.md'])
+    await until('drawn', () => names().includes('附件'))
+    expect(names()).toEqual(['附件', 'plan.md'])
+    expect(listed().slice(calls)).toEqual([{ chat: 'dm-1', folder: '' }])
   })
 
   test('its conversation arriving later keeps the person where they are in the working copy (no jump to the top)', async () => {

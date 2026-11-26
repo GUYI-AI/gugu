@@ -223,7 +223,11 @@ export function GroupMembersSection({
               onClick={viewerIsManager && !avatarUploading ? () => setAvatarEditing(true) : undefined}
               onDragOver={viewerIsManager ? (event) => { event.preventDefault(); setAvatarDragOver(true) } : undefined}
               onDragLeave={viewerIsManager ? () => setAvatarDragOver(false) : undefined}
-              onDrop={viewerIsManager ? (event) => { event.preventDefault(); setAvatarDragOver(false); void handleAvatarFile(event.dataTransfer.files?.[0]) } : undefined}
+              onDrop={viewerIsManager ? (event) => {
+                event.preventDefault()
+                setAvatarDragOver(false)
+                void handleAvatarFile(event.dataTransfer.files?.[0])
+              } : undefined}
               style={avatarDragOver ? avatarFrameDragStyle : viewerIsManager && !avatarUploading ? avatarFrameEditableStyle : avatarFrameStyle}
             >
               <Avatar variant="group" name={groupName ?? t('group.settings.groupFallback')} avatarUrl={settings?.avatar_url ?? null} seed={chatId} size={52} />

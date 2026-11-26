@@ -824,7 +824,17 @@ export const ContactsPanel = memo(function ContactsPanel({
   }
 
   const groupModal = <Sheet open={showGroupModal} onClose={() => setShowGroupModal(false)} {...MEMBER_PICKER_SHEET} testId="create-group-modal" ariaLabel={ct('createGroup.title')}>
-    {showGroupModal ? <CreateGroupChatForm initialSelectedIds={[...selectedContactIds]} onClose={() => setShowGroupModal(false)} onCreated={() => { setShowGroupModal(false); finishContactSelectionMode(); void refreshChats() }} /> : null}
+    {showGroupModal ? (
+      <CreateGroupChatForm
+        initialSelectedIds={[...selectedContactIds]}
+        onClose={() => setShowGroupModal(false)}
+        onCreated={() => {
+          setShowGroupModal(false)
+          finishContactSelectionMode()
+          void refreshChats()
+        }}
+      />
+    ) : null}
   </Sheet>
   const groupInviteJoinModal = groupInviteJoin ? (
     <GroupInviteJoinModal key={groupInviteJoin.token} publicId={groupInviteJoin.publicId}
