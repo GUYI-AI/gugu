@@ -568,6 +568,8 @@ describe('会话历史(按目录分节)核心合同', () => {
     render();
     await vi.waitFor(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
     const calls = () => mocks.listDirectories.mock.calls.length;
+    // Opening reads twice by itself: the cache first, then one scan of the disk (gugu-dev#1487).
+    await vi.waitFor(() => expect(mocks.listDirectories.mock.calls.map(([params]) => params.mode)).toEqual(['cached', 'fresh']));
     const before = calls();
     // 只改了标题;离线的那台(没有订它):都不重拉。
     emitFrom(null, 'session:changed', { sessionId: 'alpha', projectId: 'p1', changes: { title: '改了个名' } });
@@ -705,6 +707,22 @@ describe('会话历史(按目录分节)核心合同', () => {
     await vi.waitFor(() => expect(container?.querySelector('[data-testid="session-history-list"]')).not.toBeNull());
     expect(rowKeys()).toEqual(ROWS.map((row) => row.key));
     expect(screen.getByTestId('session-history-machine-reading').all()).toHaveLength(0);
+  });
+
+  // gugu-dev#1487: the gugu rows are a ~3ms read of the local database; the disk-scanning index round over ~10k native
+  // transcripts took ~520ms. The first round reads only the cache, so the list is drawn without waiting for the scan.
+  it('冷进页:第 0 轮只读缓存先画,❌ 等本机索引扫盘那一轮', async () => {
+    mocks.listDirectories.mockImplementation((params: SessionHistoryDirectoryParams) =>
+      params.mode === 'cached'
+        ? Promise.resolve(directoryPageOf(DIRS, { local: { discovered: 0, indexed: 0, pending: 0, stale: false } }))
+        : new Promise(() => undefined)
+    );
+    render();
+    await vi.waitFor(() => expect(rowKeys()).toEqual(ROWS.map((row) => row.key)), { timeout: 10_000 });
+    expect(mocks.listDirectories.mock.calls[0]?.[0]).toMatchObject({ mode: 'cached' });
+    // The scan follows; until it answers there is no progress to count.
+    await vi.waitFor(() => expect(mocks.listDirectories.mock.calls.some(([params]) => params.mode === 'fresh')).toBe(true));
+    expect(screen.getByTestId('session-history-progress').element().textContent).not.toMatch(/\d+\/\d+/);
   });
 
   it('晚到的机器:已画的节不动,它带来的新节接在最后,先写一句在读哪台', async () => {

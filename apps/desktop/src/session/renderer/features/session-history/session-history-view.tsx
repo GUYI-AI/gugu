@@ -575,7 +575,9 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
     .filter(Boolean)
     .join(metadataSeparator());
   // 索引进度:还在补的那几台加起来。
-  const indexing = states.flatMap((state) => (state?.isIndexing && state.page?.local ? [state.page.local] : []));
+  const indexing = states.filter((state) => state?.isIndexing);
+  // 只读了缓存的那台还没扫盘,手里的数不是进度:那就先不报数。
+  const progress = indexing.every((state) => state?.progress) ? indexing.map((state) => state!.progress!) : null;
   const localPage = byMachine[LOCAL_IMPORT_DEVICE]?.page;
 
   return (
@@ -860,10 +862,12 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
             {indexing.length > 0 ? (
               <span className="flex items-center gap-2" data-testid="session-history-progress" role="status" aria-live="polite">
                 <Spinner size="sm" />
-                {translate('sessionImport.indexing', {
-                  indexed: indexing.reduce((sum, local) => sum + local.indexed, 0),
-                  discovered: indexing.reduce((sum, local) => sum + local.discovered, 0),
-                })}
+                {progress
+                  ? translate('sessionImport.indexing', {
+                      indexed: progress.reduce((sum, local) => sum + local.indexed, 0),
+                      discovered: progress.reduce((sum, local) => sum + local.discovered, 0),
+                    })
+                  : translate('sessionImport.emptyHintIndexing')}
               </span>
             ) : null}
             {localPage && localPage.local === null ? <span>{translate('sessionHistory.localUnavailable')}</span> : null}

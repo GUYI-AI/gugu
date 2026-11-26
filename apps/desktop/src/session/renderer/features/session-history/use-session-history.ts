@@ -13,7 +13,9 @@ import type {
 // 读到的页住在 replica 里(@@@replica,owner 2026-11-14 open-flicker),❌ 组件 state:每次进页都从空开始、各台到一台
 // 画一台,第二台一到整页重排、行上多出机器名(owner 2026-11-24「每次点进去都跳」)。再进页首帧就是上次那份完整的,
 // 后台读回来原地替换。
-// 本机索引按轮补:一轮 = 一次读(第 0 轮 400ms 预算,之后每轮 1200ms),本机 pending 没归零就隔 300ms 再读一轮。
+// 本机索引按轮补:一轮 = 一次读。第 0 轮只读缓存(`cached`:库里的咕咕行 + 上次落盘的本机索引,不扫盘,毫秒级),咕咕行
+// ❌ 等本机索引扫完一万来个原件再出(gugu-dev#1487:冷开实测咕咕行 2-3ms、扫盘那一轮 ~520ms);第 1 轮起扫盘(第 1 轮
+// 400ms 预算,之后每轮 1200ms),本机 pending 没归零就隔 300ms 再读一轮。晚到的本机行按「已画的节不动」并进来(keepDrawnOrder)。
 
 const PAGE_LIMIT = 200;
 const FIRST_ROUND_BUDGET_MS = 400;
@@ -28,6 +30,8 @@ export type SessionHistoryState<TPage> = {
   isLoading: boolean;
   /** 本机索引还在补:未导入那一档的结果还会变多。 */
   isIndexing: boolean;
+  /** 对过盘的索引进度;第 0 轮只读了缓存、还没扫盘,没有进度可报(null)。 */
+  progress: { indexed: number; discovered: number } | null;
   /** 换了筛选、这一套的页还没到:`page` 是上一套筛选的。 */
   isPrevious: boolean;
   error: string | null;
@@ -39,7 +43,9 @@ export type SessionHistoryDirectoryQuery = Omit<SessionHistoryDirectoryParams, '
 
 type Round = { page: SessionHistoryDirectoryPage; round: number };
 
-const indexing = (value: Round | undefined) => !!value && (value.page.local?.pending ?? 0) > 0 && value.round < MAX_ROUNDS;
+/** 还要再读一轮:第 0 轮(只读了缓存)之后总要扫一次盘;之后本机 pending 没归零就接着补。 */
+const indexing = (value: Round | undefined) =>
+  !!value && value.round < MAX_ROUNDS && (value.round === 0 || (value.page.local?.pending ?? 0) > 0);
 
 /** 一台机器在一套筛选下的目录页。`query` 是 serialize 过的筛选(按值成键)。 */
 const directoryPages = replica({
@@ -53,8 +59,9 @@ const directoryPages = replica({
     const round = indexing(previous) ? previous!.round + 1 : 0;
     const page = await rpcOn(machine === LOCAL_IMPORT_DEVICE ? null : machine).sessionHistory.listDirectories({
       ...(JSON.parse(query) as SessionHistoryDirectoryQuery),
-      mode: 'fresh',
-      hydrateBudgetMs: round === 0 ? FIRST_ROUND_BUDGET_MS : BACKGROUND_ROUND_BUDGET_MS,
+      ...(round === 0
+        ? { mode: 'cached' as const }
+        : { mode: 'fresh' as const, hydrateBudgetMs: round === 1 ? FIRST_ROUND_BUDGET_MS : BACKGROUND_ROUND_BUDGET_MS }),
     });
     return { page, round };
   },
@@ -80,12 +87,13 @@ function serialize(query: object): string {
 }
 
 function stateOf(reading: Reading<Round>): SessionHistoryState<SessionHistoryDirectoryPage> {
-  if (reading.state === 'unknown') return { page: null, isLoading: true, isIndexing: false, isPrevious: false, error: null, cause: null };
-  if (reading.state === 'error') return { page: null, isLoading: false, isIndexing: false, isPrevious: false, error: reading.error.message, cause: reading.error };
+  if (reading.state === 'unknown') return { page: null, isLoading: true, isIndexing: false, progress: null, isPrevious: false, error: null, cause: null };
+  if (reading.state === 'error') return { page: null, isLoading: false, isIndexing: false, progress: null, isPrevious: false, error: reading.error.message, cause: reading.error };
   return {
     page: reading.value.page,
     isLoading: false,
     isIndexing: indexing(reading.value),
+    progress: reading.value.round > 0 ? reading.value.page.local : null,
     isPrevious: reading.previous === true,
     error: reading.error?.message ?? null,
     cause: reading.error,
