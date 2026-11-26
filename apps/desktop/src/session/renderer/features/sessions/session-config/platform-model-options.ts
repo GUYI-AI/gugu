@@ -77,8 +77,8 @@ export function platformOptionRowDescription(model: PlatformModelRow): string | 
 }
 
 function platformComposerOption(model: PlatformModelRow): ComposerModelOption {
-  const creditRate = formatCreditMultiplier(model.creditMultiplier) && model.creditMultiplier !== null
-    ? `${model.creditMultiplier.toFixed(2)}x` : undefined;
+  const description = platformOptionRowDescription(model);
+  const creditRate = description && model.creditMultiplier !== null ? `${model.creditMultiplier.toFixed(2)}x` : undefined;
   const efforts = model.reasoningEfforts ? effortNamesLine(model.reasoningEfforts, translateSessionMessage) : null;
   return {
     name: platformOptionRowLabel(model),
@@ -96,6 +96,7 @@ function platformComposerOption(model: PlatformModelRow): ComposerModelOption {
     shortName: translateSessionMessage('composer.platformModelShortName', {
       model: model.displayName,
     }),
+    ...(description ? { description } : {}),
     ...(creditRate ? { creditRate } : {}),
     ...(efforts ? { facts: [{ label: translateSessionMessage('composer.effort'), value: efforts }] } : {}),
   };

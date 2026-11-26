@@ -764,7 +764,7 @@ globalStyle(`${usageHarness} svg, ${usageHarness} img`, { width: 14, height: 14,
 export const usageClose = style({
   display: 'grid', placeItems: 'center', width: '1.5rem', height: '1.5rem',
   borderRadius: tokenVars.radiusMd, color: vars.foregroundMuted,
-  selectors: { '&:hover, &:focus-visible': { backgroundColor: vars.surfaceHover } },
+  selectors: { '&:hover, &:focus-visible:not([data-pointer-focus])': { backgroundColor: vars.surfaceHover } },
 });
 
 export const contextUsageFooter = style({
@@ -1713,7 +1713,7 @@ export const modelPanelItemCompact = style({
   selectors: {
     '&[data-disabled][role="option"]': { pointerEvents: 'auto' },
     '&[data-selected]': { fontWeight: 600 },
-    '&:focus-visible': { backgroundColor: vars.surfaceHover },
+    '&:focus-visible:not([data-pointer-focus])': { backgroundColor: vars.surfaceHover },
     '&[data-route-repair-target]': { backgroundColor: vars.surfaceHover },
   },
 });

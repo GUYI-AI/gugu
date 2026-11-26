@@ -231,14 +231,14 @@ describe('#3249 composer 模型下拉', () => {
 
     await page.getByText('gpt-5.6-codex', { exact: true }).click()
 
-    expect(onModelChange).toHaveBeenCalledExactlyOnceWith('gpt-5.6-codex', undefined)
+    expect(onModelChange).toHaveBeenCalledExactlyOnceWith('gpt-5.6-codex')
     await until('model panel closed', () => openMenuParts() === 0)
   })
 
   it('点已经选中的那条也收起(owner 截图里点的就是这条)', async () => {
     await openPanel()
 
-    await page.getByText('GLM 5.2', { exact: true }).click()
+    await page.elementLocator(document.querySelector('[data-model-option-id="platform:glm-5.2"]')!).click()
 
     // 值没变(本来就是它),但框必须回收 —— 坏版本在这条上表现得最刺眼:
     // 用户点了一下"确认",界面纹丝不动。
@@ -308,6 +308,7 @@ describe('#3249 composer 模型下拉', () => {
 
     MODELS = { ...claude }
     renderComposer('default')
+    await expect.element(page.getByTestId('composer-model-trigger')).toHaveTextContent('Opus 5')
     await openPanel()
     expect(visibleOptions().some((name) => /default|默认/i.test(name)), visibleOptions().join(' | ')).toBe(false)
     // The check sits on the concrete row the alias stands for.

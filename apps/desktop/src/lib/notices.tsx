@@ -112,7 +112,7 @@ function showToast({ key, title, description, tier, variant, waiting, action, ic
     },
     className: passthrough ? 'gugu-notice-passthrough' : undefined,
     duration,
-    position,
+    ...(position || live ? { position } : {}),
     // 不自己消失的(提醒)一定能当场关掉。
     closeButton: duration === Infinity ? true : undefined as boolean | undefined,
     // A new toast shows in the window it was asked from (aux-layers; NoticeHost draws a strip in each pop-out). One

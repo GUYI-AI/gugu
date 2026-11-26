@@ -276,7 +276,7 @@ export interface HoverCardProps {
   side?: 'top' | 'bottom' | 'left' | 'right';
   align?: 'start' | 'center' | 'end';
   collisionAvoidance?: React.ComponentProps<typeof Popover.Content>['collisionAvoidance'];
-  sideOffset?: number;
+  sideOffset?: React.ComponentProps<typeof Popover.Content>['sideOffset'];
   className?: string;
   id?: string;
   initialFocus?: React.ComponentProps<typeof Popover.Content>['initialFocus'];

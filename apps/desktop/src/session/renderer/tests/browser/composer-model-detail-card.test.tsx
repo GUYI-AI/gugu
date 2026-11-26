@@ -155,9 +155,12 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
     await page.elementLocator(thinking).hover()
     const low = page.getByRole('button', { name: '低', exact: true })
     await expect.element(low).toBeVisible()
-    const card = detail()!.closest('[data-hover-card]')!.getBoundingClientRect()
-    const submenu = low.element().closest('[data-hover-card]')!.getBoundingClientRect()
-    expect(submenu.right).toBeLessThanOrEqual(card.left + 1)
+    const card = detail()!.closest('[data-hover-card]')!
+    const submenu = low.element().closest('[data-hover-card]')!
+    await until('both detail surfaces settle', () => [card, submenu].every(element =>
+      !element.hasAttribute('data-starting-style') && element.getAnimations().every(animation => animation.playState === 'finished')
+    ))
+    expect(submenu.getBoundingClientRect().right).toBeCloseTo(card.getBoundingClientRect().left, 0)
     await low.click()
     expect(onModelChange).toHaveBeenCalledExactlyOnceWith('opus', 'low')
     await until('model picker closes', () => panel() === null)

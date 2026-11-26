@@ -226,7 +226,7 @@ function ModelDetail({ item, contextThresholds, efforts, effort, onEffortChange,
       }}>
       <div className={styles.modelDetailHead}>
         <span className={styles.modelDetailName}>{item.name}</span>
-        {item.description && <div className={styles.modelDetailTier}>{item.description}</div>}
+        {item.description && !item.creditRate && <div className={styles.modelDetailTier}>{item.description}</div>}
       </div>
       {item.creditRate && <div className={styles.modelDetailRow}>
         <span>{translate('composer.modelDetailRate')}</span>
@@ -250,7 +250,12 @@ function ModelDetail({ item, contextThresholds, efforts, effort, onEffortChange,
         </span>
       </button>}
       <HoverCard id={submenuId} anchor={submenuAnchor} ownPopup={submenuAnchor?.closest<HTMLElement>('[data-hover-card]')}
-        controller={submenu} side="left" sideOffset={12} align="start"
+        controller={submenu} side="left" align="start" sideOffset={({ side }) => {
+          const row = submenuAnchor?.getBoundingClientRect();
+          const card = submenuAnchor?.closest('[data-hover-card]')?.getBoundingClientRect();
+          if (!row || !card) return 0;
+          return side === 'left' ? row.left - card.left : card.right - row.right;
+        }}
         collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}
         className={styles.modelDetailSubmenu}
         initialFocus={() => {
@@ -435,20 +440,20 @@ export function ComposerModelMenu({
     const fallback = item.modelFeatures?.defaultEffortId;
     return fallback && options[fallback] && !options[fallback].disabled ? fallback : undefined;
   };
+  const selectModel = (item: ComposerModelItem) => {
+    const effort = effortForModelSwitch(item);
+    if (effort === undefined) onModelChange?.(item.id);
+    else onModelChange?.(item.id, effort);
+  };
 
-  // 选中项要**从清单里取同一个对象**递给 Combobox:它按 isItemEqualToValue 比,
-  // 但触发器上的回显走的是这个值 —— 现拼一个新对象会让「当前选中」在重渲染间抖。
-  const selectedModelEntry = selectedModelItem
-    ? { ...selectedModelItem, id: selectedModelItem.id }
-    : null;
+  const visibleModels = modelItems.filter(item => !item.hiddenFromPicker);
+  const selectedRowId = selectedModelItem?.aliasOf ?? selectedModel;
+  const selectedModelEntry = visibleModels.find(item => item.id === selectedRowId) ?? null;
 
   /**
    * 每一行都有图标(owner 11-25):认得出厂商画厂商 logo,认不出的画一枚通用的 ✦ 兜底(淡色,`data-fallback`)。
    * 以前认不出就留空位 —— 名字不错位,但那一行左边是个洞,看着像没做完。
    */
-
-  const visibleModels = modelItems.filter(item => !item.hiddenFromPicker);
-  const selectedRowId = selectedModelItem?.aliasOf ?? selectedModel;
 
   useEffect(() => {
     if (!modelPanelOpen || !panelEl || !focusListOnOpen.current) return;
@@ -534,9 +539,11 @@ export function ComposerModelMenu({
       <Combobox.Root
         items={visibleModels}
         value={selectedModelEntry}
+        filter={null}
+        itemToStringLabel={item => item.name}
         onValueChange={(item: ComposerModelItem | null) => {
           if (!item) return;
-          onModelChange?.(item.id, effortForModelSwitch(item));
+          selectModel(item);
           closeAfterSelection();
         }}
         open={modelPanelOpen}
@@ -603,7 +610,7 @@ export function ComposerModelMenu({
           )}
           {panel.modelRow === 'list' && (
             <>
-              <Combobox.List className={styles.modelPanelList}>
+              <Combobox.List className={styles.modelPanelList} after={modelPanelEnd}>
                 {(m: ComposerModelItem) => (
                   <Combobox.Item
                     key={m.id}
@@ -647,7 +654,6 @@ export function ComposerModelMenu({
                   </Combobox.Item>
                 )}
               </Combobox.List>
-              {modelPanelEnd}
             </>
           )}
           {/* 上游那段叫 **Thinking**,在 Content 最底下、清单之外,滚动列表时不跟着走。
@@ -678,7 +684,7 @@ export function ComposerModelMenu({
                 }}
                 onContextCommit={() => {
                   closeAfterSelection();
-                  if (!detailIsSelected) onModelChange?.(detailItem.id, effortForModelSwitch(detailItem));
+                  if (!detailIsSelected) selectModel(detailItem);
                 }}
                 fastControl={detailIsSelected && panel.modelRow === 'list' && !phoneActions && fastMode !== undefined
                   ? <ComposerFastMode detailRow picker={panelEl} enabled={fastMode} disabled={disabled} onChange={onFastModeChange} renderHint={renderFastModeHint} />
