@@ -26,3 +26,9 @@ it('shows autolink text without Markdown angle brackets', () => {
   expect(markdownPlainText('<https://example.test/a> <a@example.test>')).toBe('https://example.test/a a@example.test')
   expect(markdownPlainText('\\<literal\\>')).toBe('<literal>')
 })
+
+it('keeps following words when a link title contains parentheses', () => {
+  expect(markdownPlainText('[label](https://example.test "title (") tail')).toBe('label tail')
+  expect(markdownPlainText('[label](https://example.test "title )") tail')).toBe('label tail')
+  expect(markdownPlainText('[label](https://example.test/a(b)) tail')).toBe('label tail')
+})

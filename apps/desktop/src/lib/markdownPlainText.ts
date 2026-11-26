@@ -31,7 +31,13 @@ function replaceInlineLinks(text: string): string {
     if (match.index < copied) continue;
     let depth = 1;
     let end = match.index + match[0].length;
+    let quote: string | null = null;
     for (; end < text.length && depth > 0; end += 1) {
+      if (quote) {
+        if (text[end] === quote) quote = null;
+        continue;
+      }
+      if ((text[end] === '"' || text[end] === "'") && /\s/.test(text[end - 1]!)) { quote = text[end]!; continue; }
       if (text[end] === '(') depth += 1;
       else if (text[end] === ')') depth -= 1;
     }
