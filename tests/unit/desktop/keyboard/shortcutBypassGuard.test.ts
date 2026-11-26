@@ -66,4 +66,13 @@ describe('one shortcut table', () => {
     const stale = Object.keys(ALLOWED).filter((path) => !found.includes(path))
     expect(stale, 'these no longer listen for keys: drop them from ALLOWED').toEqual([])
   })
+
+  it('no shortcut written as literal text in a label or hint: it goes stale when the binding moves or the user rebinds', () => {
+    const root = process.cwd()
+    const LITERAL = /keyHint="[⌘⌥⌃⇧]|\([⌘⌥⌃⇧][^)]{0,4}\)"/
+    const hits = [...sources(join(root, 'apps/desktop/src'))]
+      .filter((path) => LITERAL.test(readFileSync(path, 'utf8')))
+      .map((path) => relative(root, path))
+    expect(hits, 'read the binding from the registry (getEffectiveHotkey + formatHotkeyText, or <BoundShortcut>)').toEqual([])
+  })
 })
