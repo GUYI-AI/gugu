@@ -177,11 +177,11 @@ private final class NativeTextSelectionController: UIViewController, UIGestureRe
         }
     }
 
-    /** Comment beside the system's actions, on iOS 16's edit menus (the one opened here and the text view's own). */
+    /** Comment first, ahead of the system's actions, on iOS 16's edit menus (the one opened here and the text view's own): the compact menu shows only its first few. */
     @available(iOS 16.0, *)
     fileprivate func withComment(_ suggested: [UIMenuElement]) -> UIMenu {
         guard let label = commentLabel else { return UIMenu(children: suggested) }
-        return UIMenu(children: suggested + [UIAction(title: label) { [weak self] _ in self?.commentOnSelection() }])
+        return UIMenu(children: [UIAction(title: label) { [weak self] _ in self?.commentOnSelection() }] + suggested)
     }
 
     @available(iOS 16.0, *)
