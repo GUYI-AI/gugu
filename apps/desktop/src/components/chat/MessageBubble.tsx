@@ -119,7 +119,7 @@ export const MessageBubble = memo(function MessageBubble({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const bubbleRef = useRef<HTMLDivElement>(null)
   const [menuLink, setMenuLink] = useState<HTMLAnchorElement | null>(null)
-  const [menuSelection, setMenuSelection] = useState(''); const menuSelectionAt = useRef<DOMRect | null>(null)
+  const [menuSelection, setMenuSelection] = useState(''); const menuSelectionAt = useRef<DOMRect | null>(null); const commentOn = (at: DOMRect, text: string) => { const bubble = bubbleRef.current!; openCommentLine({ kind: 'chat', chatId: msg.chat_id }, at, bubble.closest<HTMLElement>('[data-unread-stream-surface]') ?? bubble, { kind: 'message', messageId: msg.id, authorId: msg.sender_user_id ?? null, authorName: avatarName, text }) }
   const { user } = useAuth()
   const voiceAttachment = msg.content_type === 'attachment'
     ? parseVoiceAttachmentContent(msg.content)
@@ -144,7 +144,7 @@ export const MessageBubble = memo(function MessageBubble({
     isRetracted: !!msg.retracted_at, content: copyText, hasHoverBar: !compactMobile, hasSelection: !compactMobile && !!menuSelection, onClose: close,
     onReply: () => { onQuote(msg); close() },
     onReact: (emoji: string) => { onReaction(msg.id, emoji); close() },
-    onCommentSelection: menuSelection && msg.content_type === 'text' && menuSelectionAt.current ? () => { const at = menuSelectionAt.current!, bubble = bubbleRef.current!; openCommentLine({ kind: 'chat', chatId: msg.chat_id }, at, bubble.closest<HTMLElement>('[data-unread-stream-surface]') ?? bubble, { kind: 'message', messageId: msg.id, authorId: msg.sender_user_id ?? null, authorName: avatarName, text: menuSelection }); close() } : undefined,
+    onCommentSelection: menuSelection && msg.content_type === 'text' && menuSelectionAt.current ? () => { commentOn(menuSelectionAt.current!, menuSelection); close() } : undefined,
     onCopy: (content = menuSelection || undefined) => { void handleCopyText(content); close() },
     onSelectText: compactMobile && (msg.content_type === 'text' || !!sendCaption(album ?? [msg])) && phone.source ? () => { phone.setSelecting(true); close() } : undefined,
     onCopyLink: menuLink ? () => { void handleCopyText(menuLink.href); close() } : undefined, onOpenLink: menuLink ? () => { menuLink.click(); close() } : undefined,
@@ -372,7 +372,7 @@ export const MessageBubble = memo(function MessageBubble({
       {compactMobile
         ? phone.mounted && !phone.selecting && <MsgMoreMenu lift={{ open: showMenu, bubble: bubbleRef, touchY: menuPos.y, mine: msg.is_mine }} {...messageActions(() => setShowMenu(false))} />
         : showMenu && <MsgMoreMenu x={menuPos.x} y={menuPos.y} {...messageActions(() => setShowMenu(false))} />}
-      {phone.selecting && phone.source && <PhoneTextSelection source={phone.source} onDone={() => phone.setSelecting(false)} />}
+      {phone.selecting && phone.source && <PhoneTextSelection source={phone.source} onDone={() => phone.setSelecting(false)} onComment={msg.content_type === 'text' ? (words) => commentOn(bubbleRef.current!.getBoundingClientRect(), words) : undefined} />}
 
     </MessageHoverRegion>
   )

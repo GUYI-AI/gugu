@@ -167,8 +167,8 @@ describe('MessageBubble touch menu', () => {
     expect(messageBubble().style.userSelect).toBe('none')
   })
   it('hands the original word to the native selector and restores the bubble when it closes', async () => {
-    let finish!: () => void
-    const open = vi.fn<NativeTextSelection['open']>(() => new Promise<void>(resolve => { finish = resolve }))
+    let finish!: (closed: undefined) => void
+    const open = vi.fn<NativeTextSelection['open']>(() => new Promise<undefined>(resolve => { finish = resolve }))
     const close = vi.fn(async () => {})
     platform.textSelection = { open, close }
     await renderMessage()
@@ -181,13 +181,13 @@ describe('MessageBubble touch menu', () => {
     expect(messageBubble().style.visibility).toBe('')
     expect(messageBubble().querySelector<HTMLElement>('.gg-md')?.style.visibility).toBe('hidden')
     const request = open.mock.calls[0][0]
-    await act(async () => { finish() })
+    await act(async () => { finish(undefined) })
     expect(close).toHaveBeenCalledExactlyOnceWith({ id: request.id })
     expect(messageBubble().style.userSelect).toBe('none')
     expect(messageBubble().querySelector<HTMLElement>('.gg-md')?.style.visibility).toBe('')
   })
   it('keeps the first press when Android delivers contextmenu after the message is lifted', async () => {
-    const open = vi.fn<NativeTextSelection['open']>(() => new Promise<void>(() => {}))
+    const open = vi.fn<NativeTextSelection['open']>(() => new Promise<undefined>(() => {}))
     platform.textSelection = { open, close: vi.fn(async () => {}) }
     await renderMessage()
     pressInsideWord('from')
@@ -199,7 +199,7 @@ describe('MessageBubble touch menu', () => {
     expect(open).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ text: 'hello from mobile', start: 6, end: 10 }))
   })
   it('closes only its native selection request when the selection layer receives Back', async () => {
-    const open = vi.fn<NativeTextSelection['open']>(() => new Promise<void>(() => {}))
+    const open = vi.fn<NativeTextSelection['open']>(() => new Promise<undefined>(() => {}))
     const close = vi.fn(async () => {})
     platform.textSelection = { open, close }
     await renderMessage()
