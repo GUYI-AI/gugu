@@ -2,6 +2,7 @@ import { detectPlatform, matchesKeyboardEvent, parseHotkey, type Hotkey } from '
 import { observer } from 'mobx-react-lite';
 import { useEffect } from 'react';
 import { revealSessionpage } from '@/hooks/useSessionpageReveal';
+import { isImeComposing } from '@/lib/ime';
 import { COMMANDS, getEffectiveHotkey, isHostCommandId, type CommandId, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { isEmbedVisible, subscribeEmbedVisibility } from '@renderer/lib/portal-container';
 import { commandRegistry } from './registry';
@@ -49,8 +50,7 @@ function runWhenVisible(id: CommandId): void {
  * right now (`enabled: false`, or `execute` returning false) does not take it, so whatever is underneath still gets it.
  */
 export function dispatchKey(event: KeyboardEvent, source: KeySource): boolean {
-  // Mid-composition the key belongs to the input method (Safari reports the commit Enter as keyCode 229).
-  if (commandRegistry.shortcutsPaused || event.isComposing || event.keyCode === 229 || overrides === null) return false;
+  if (commandRegistry.shortcutsPaused || isImeComposing(event) || overrides === null) return false;
   const start = origin(event);
   const inEditor = !!start?.closest('.cm-editor');
   const typing = source !== 'terminal' && inTextField(start);
