@@ -25,6 +25,8 @@ import { agentHomeUpgradeResults, showAgentHomeUpgradeNotice } from '@renderer/f
 import { watchFirstInstallImportNotices } from '@renderer/features/settings/subscriptions/first-install-import-notice'
 import { FirstRunHarness } from './FirstRunHarness'
 import { FirstRunTerminal } from './FirstRunTerminal'
+import { FirstRunThemePicker } from './FirstRunThemePicker'
+import { readStoredThemePackSlots } from '@renderer/lib/theme/theme-pack-store'
 import { FirstRunInstallProvider } from './FirstRunInstallProvider'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { startFirstRunHints } from '../../lib/firstRunHints'
@@ -56,6 +58,7 @@ type GateState =
   | { kind: 'harness' }
   | { kind: 'terminal' }
   | { kind: 'tourChoice' }
+  | { kind: 'theme'; tour: boolean }
   | { kind: 'tour'; steps: readonly TourStepId[]; start: TourStepId }
   | { kind: 'films' }
   | { kind: 'done' }
@@ -145,9 +148,10 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
     return () => window.removeEventListener(UI_EVENTS.reopenProductTour, reopen)
   }, [startTour])
 
+  const afterTheme = (tour: boolean) => { if (tour) startTour(null); else setState({ kind: 'done' }) }
   const overlay = state.kind === 'tourChoice'
   // 一旦进入过主界面,回到前置页也保留它:嵌入入口每个文档只求值一次。
-  const productVisible = state.kind === 'done' || state.kind === 'tour' || state.kind === 'films' || (overlay && platform.kind === 'electron')
+  const productVisible = state.kind === 'done' || state.kind === 'theme' || state.kind === 'tour' || state.kind === 'films' || (overlay && platform.kind === 'electron')
   const [productMounted, setProductMounted] = useState(productVisible)
   if (productVisible && !productMounted) setProductMounted(true)
 
@@ -192,7 +196,10 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
       {state.kind === 'done' && <FirstRunHints key={user.id} userId={user.id} />}
       {state.kind === 'tourChoice' && <div className="ta-first-run ta-first-run-overlay" data-ta-scope data-testid="first-run-tour-choice"><div className="ta-onb"><StepCount step="tourChoice" />
         <FirstRunTourChoice userId={user.id} onBack={() => setState({ kind: 'terminal' })}
-          onDone={(tour) => { rememberFirstRunDone(user.id); if (tour) startTour(null); else setState({ kind: 'done' }) }} /></div></div>}
+          onDone={(tour) => { rememberFirstRunDone(user.id); if (readStoredThemePackSlots() === null) setState({ kind: 'theme', tour }); else afterTheme(tour) }} /></div></div>}
+      {/* 新用户进主界面先挑一次主题(owner 11-26):背后就是真界面,点卡片实时换。关掉后才接导览 / 提示。只走这一次:
+          走完已经记在账号和本机上(上一行),中途退出也不会再弹。主题按电脑存:这台电脑上已经选过(别的账号选的)就不问。 */}
+      {state.kind === 'theme' && <FirstRunThemePicker onClose={() => afterTheme(state.tour)} />}
       {state.kind === 'tour' && <ProductTour key={user.id} userId={user.id} steps={state.steps} start={state.start} onDone={done} />}
       {state.kind === 'films' && <FeatureFilms onClose={done} />}
     </PhoneAgentSetupGate>

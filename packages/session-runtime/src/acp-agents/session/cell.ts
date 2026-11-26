@@ -2103,7 +2103,8 @@ export class SessionCell {
           // Steering does not change who opened the turn; retain this input's own origin for conversation readers.
           ...(steered ? { guguOwnerInput: isOwnerOrigin(prompt.origin) } : {}),
         },
-        ...(prompt.files?.length ? { files: prompt.files.map(({ itemId, version, name, mimeType, sizeBytes }) => ({ itemId, version, name, mimeType, sizeBytes })) } : {}),
+        ...(prompt.files?.length ? { files: prompt.files.map(({ itemId, version, name, mimeType, sizeBytes, imageDimensions }) =>
+          ({ itemId, version, name, mimeType, sizeBytes, ...(imageDimensions ? { imageDimensions } : {}) })) } : {}),
         ...(prompt.annotations?.length ? { annotations: prompt.annotations } : {}),
         content: [{ type: 'text', text: prompt.text }],
         contentMode: 'replace',

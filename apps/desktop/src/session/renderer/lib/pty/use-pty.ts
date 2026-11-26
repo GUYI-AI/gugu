@@ -8,7 +8,7 @@ import { isMacHost, isWindowsHost } from '@shared/host-os';
 import { reaction } from 'mobx';
 import { useCallback, useContext, useEffect, useRef } from 'react';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
-import { dispatchMatchingHotkeys } from '@renderer/lib/hotkeys/dispatch-matching-hotkeys';
+import { dispatchKey } from '@renderer/lib/commands/keyboard-dispatcher';
 import { events, rpc } from '@renderer/lib/ipc';
 import { observePtyOutput } from '../session-output-observers';
 import { log } from '@renderer/utils/logger';
@@ -41,7 +41,7 @@ const LAST_SELECTION_COPY_GRACE_MS = 2_000;
 
 function dispatchTerminalAppHotkey(event: KeyboardEvent): boolean {
   if (!shouldDispatchAppHotkeyFromTerminal(event, IS_MAC_PLATFORM)) return false;
-  return dispatchMatchingHotkeys(event, { dispatch: 'first' });
+  return dispatchKey(event, 'terminal');
 }
 
 function getRecentSelection(selection: { text: string; capturedAt: number } | null): string {

@@ -47,6 +47,9 @@ export const VIEW_STATE_MODELS: readonly ViewStateModel[] = [
   { name: 'tab placement', match: /^view:[^/]*\/\/tab-placement$/, maxEntries: 2, maxBytes: 6 * 1024 },
   { name: 'participant panes', match: /^view:[^/]*\/\/participant-panes$/, maxEntries: 2, maxBytes: 6 * 1024 },
   { name: 'recent tasks', match: /^view:[^/]*\/\/recent-tasks$/, maxEntries: 2, maxBytes: 2 * 1024 },
+  // #3973 The level each session last ran at (last-live-effort.ts): 16 sessions of about 50 characters. Before `interface`,
+  // which its key also matches, so it never crowds out the pane widths.
+  { name: 'last live effort', match: /^view:[^/]*\/\/ui:last-live-effort$/, maxEntries: 1, maxBytes: 1024 },
   // Small settings of the interface itself: pane widths, folds, which side panel is open, a preview's zoom.
   { name: 'interface', match: /^view:[^/]*\/[^/]*\/ui:[^/]+$/, maxEntries: 48, maxBytes: 6 * 1024 },
 ];

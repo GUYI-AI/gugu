@@ -133,7 +133,9 @@ import {
 import { useOpenedOutputMenu } from './opened-output-menu';
 import { liveSettingOptions } from '../session-config/live-setting-options';
 import type { AcpChatTabResource } from './acp-chat-tab-resource';
-import { chatViewCommandForShortcut, executeChatViewCommand } from './acp-chat-view-commands';
+import { executeChatViewCommand, isEditableElement } from './acp-chat-view-commands';
+import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
+import { deepActiveElement } from '@renderer/features/sidebar/session-navigation-focus';
 import {
   effortSourceFor,
   localizeEffortOptions,
@@ -163,6 +165,7 @@ import { sessionBillingRoute, runningPlatformModelId, unavailablePlatformModelId
 import { planModelSwitch } from '@renderer/features/sessions/session-config/model-switch-plan';
 import { findSessionHostBridge } from '@renderer/lib/electron-api';
 import { SessionReloadConfirm } from '@renderer/features/sessions/session-reload-confirm';
+import { lastLiveEffort, rememberLiveEffort } from '@renderer/features/sessions/session-config/last-live-effort';
 import { requestSendQueuedPromptNow } from './send-queued-prompt-now-flow';
 import { requestSessionReload } from '@renderer/features/sessions/request-session-reload';
 import {
@@ -1072,9 +1075,18 @@ const ComposerForStore = observer(function ComposerForStore({
   }, [runningCustomModel, customFeatures, store.effort, store.effortOptions, store.starting, declaredEffortOptions, providerCapabilities, runningPlatformModel, platformCatalog.models, translate]);
   // #7342 停下了、记录里也没记档位(= harness 自己那一档默认):用探针目录报的那一档当默认档画(触发器压一档不透明度),
   // 与新建页同一个来源(`harnessCatalogToModelsCapability` 的 defaultEffortId)。活会话报的就是已生效那一档,用不着它。
-  const detachedDefaultEffort = detached && !runningPlatformModel && harnessCatalog.state.kind === 'ready'
+  const probedDefaultEffort = detached && !runningPlatformModel && harnessCatalog.state.kind === 'ready'
     ? (harnessCatalog.state.selectedEffort ?? undefined)
     : undefined;
+  // #3973 Not live (stopped, reopened, restarting after a switch) and no level on the record: the level this session last
+  // ran at, which its thread comes back with (`last-live-effort.ts`); else the harness's probed default.
+  const detachedDefaultEffort = detached
+    ? lastLiveEffort(store.sessionId, sessionEffortOptions) ?? probedDefaultEffort
+    : undefined;
+  const liveUnrecordedEffort = store.session && !store.isTransient && !sessionRecord?.effort ? store.effort : null;
+  useEffect(() => {
+    if (liveUnrecordedEffort) rememberLiveEffort(store.sessionId, liveUnrecordedEffort);
+  }, [liveUnrecordedEffort, store.sessionId]);
   const querySlashItems = useComposerSlashItems({ store, promptLibrary, promptOverrides, translate, providerId });
 
   const a = store.affordances;
@@ -1723,25 +1735,16 @@ export const AcpChatPanel = observer(function AcpChatPanel({
 
   useMarkSeenWhenShown(sessionStore, visibility.shown && !store?.isTransient, store?.sessionId);
 
-  useEffect(() => {
-    if (!store) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const root = rootRef.current;
-      if (!root || !eventComposedPathContains(event, root)) return;
-
-      const commandId = chatViewCommandForShortcut(event);
-      if (!commandId) return;
-      if (!executeChatViewCommand(viewRef.current, commandId)) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-    };
-
-    window.addEventListener('keydown', handleKeyDown, { capture: true });
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown, { capture: true });
-    };
-  }, [store]);
+  // ⌘↑ / ⌘↓ in a focused transcript scroll it to the top / the latest message. From a text field the key is not the
+  // transcript's: the command declines and the same chord walks the conversation list (session.previous / next).
+  useCommandProvider({
+    scopeId: 'session-sub',
+    isActive: (element) => !!store && !!element && !!rootRef.current?.contains(element),
+    getCommands: () => (['chat.scrollToTop', 'chat.scrollToBottom'] as const).map((id) => ({
+      id,
+      execute: () => !isEditableElement(deepActiveElement()) && executeChatViewCommand(viewRef.current, id),
+    })),
+  });
 
   const handleViewerOpen = useCallback((src?: string, alt?: string) => {
     setViewer({ src, alt });
@@ -1966,7 +1969,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   if (!store) {
     return (
       <div
-        className="relative h-full w-full bg-background-secondary-1"
+        className="relative h-full w-full bg-[var(--chat-bg)]"
         data-session-chat-surface={tabKind === 'side-chat' ? 'side-chat' : 'source'}
       />
     );
@@ -1996,7 +1999,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       data-session-chat-composer-slot={composerSlot ? 'present' : 'absent'}
       // Focusable (outside the Tab order) so ⌘F pressed after clicking the transcript lands in this panel.
       tabIndex={-1}
-      className={`relative h-full overflow-hidden bg-background-secondary-1 outline-none ${nativeChatAppearance}`}
+      className={`relative h-full overflow-hidden bg-[var(--chat-bg)] outline-none ${nativeChatAppearance}`}
     >
       <div className="flex h-full min-h-0 flex-col">
         <div className="relative min-h-0 flex-1">
@@ -2067,8 +2070,3 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     </div>
   );
 });
-
-function eventComposedPathContains(event: Event, element: HTMLElement): boolean {
-  if (event.composedPath().includes(element)) return true;
-  return event.target instanceof Node && element.contains(event.target);
-}

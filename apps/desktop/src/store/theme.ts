@@ -11,7 +11,11 @@ import {
   type HostTheme,
   type ThemePreference,
 } from '@renderer/lib/theme/host-theme'
-import { applyThemePackSlots } from '@renderer/lib/theme/theme-pack-store'
+import { applyThemePackSlots, DEFAULT_THEME_PACK_ID, setUnchosenThemePack } from '@renderer/lib/theme/theme-pack-store'
+import { platform } from '../platform'
+
+// 没选过主题的人用 GitHub(owner 11-26)。只在有主题入口的桌面上:手机设置里没有「主题」,给了就改不回来。
+if (platform.kind === 'electron') setUnchosenThemePack(DEFAULT_THEME_PACK_ID)
 
 /** 真值:当下到底是浅还是深。❌ 不含「跟随系统」——那是偏好,不是真值。 */
 export type Theme = HostTheme

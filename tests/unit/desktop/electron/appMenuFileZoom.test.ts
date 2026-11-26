@@ -13,7 +13,7 @@ const NATIVE_LABELS: Record<string, string> = {
   appMenu: 'Gugu', about: 'About Gugu', services: 'Services', hide: 'Hide Gugu', hideOthers: 'Hide Others', unhide: 'Show All', quit: 'Quit Gugu',
   fileMenu: 'File', editMenu: 'Edit', viewMenu: 'View', windowMenu: 'Window', reload: 'Reload', forceReload: 'Force Reload',
   toggleDevTools: 'Toggle Developer Tools', resetZoom: 'Actual Size', zoomIn: 'Zoom In', zoomOut: 'Zoom Out', togglefullscreen: 'Toggle Full Screen',
-  selectAll: 'Select All',
+  selectAll: 'Select All', minimize: 'Minimize', close: 'Close Window',
 }
 const DEFAULT_VIEW = ['reload', 'forceReload', 'toggleDevTools', 'separator', 'resetZoom', 'zoomIn', 'zoomOut', 'separator', 'togglefullscreen']
 const fakeItems = new WeakSet<object>()
@@ -26,7 +26,8 @@ function buildFromTemplate(template: Array<MenuItemConstructorOptions | FakeItem
       const options = entry as MenuItemConstructorOptions
       const children = Array.isArray(options.submenu) ? options.submenu
         : options.role === 'viewMenu' ? DEFAULT_VIEW.map((role) => role === 'separator' ? { type: 'separator' as const } : { role: role as MenuItemConstructorOptions['role'] })
-          : options.role === 'editMenu' ? [{ role: 'selectAll' as const }] : undefined
+          : options.role === 'editMenu' ? [{ role: 'selectAll' as const }]
+            : options.role === 'windowMenu' ? [{ role: 'minimize' as const }, { role: 'close' as const }] : undefined
       const submenu = options.submenu && !Array.isArray(options.submenu) ? options.submenu as unknown as FakeMenu : children ? buildFromTemplate(children) : undefined
       const item = { role: options.role, label: options.label ?? NATIVE_LABELS[options.role ?? ''] ?? options.type ?? '', accelerator: options.accelerator as string | undefined, click: options.click as FakeItem['click'] }
       Object.defineProperty(item, 'submenu', { value: submenu, enumerable: true, writable: false })
@@ -52,9 +53,9 @@ vi.mock('electron', () => ({
 
 const { applyApplicationMenu } = await import('../../../../apps/desktop/electron/app-menu')
 
-const apply = (platform: NodeJS.Platform, locked: boolean) => {
+const apply = (platform: NodeJS.Platform, locked: boolean, closeFromMenu: (window: unknown) => void = () => {}) => {
   vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
-  applyApplicationMenu({ locked, settingsLabel: '设置…', openSettings: () => {} })
+  applyApplicationMenu({ locked, settingsLabel: '设置…', openSettings: () => {}, closeFromMenu })
   return setApplicationMenu.mock.lastCall![0]
 }
 const view = (menu: FakeMenu) => menu.items.find((item) => item.role === 'viewMenu')!.submenu!.items
@@ -101,5 +102,18 @@ describe('application menu file zoom (#1625)', () => {
     select.click!({}, window, {})
     await vi.waitFor(() => expect(window.webContents.selectAll).toHaveBeenCalledOnce())
     expect(window.webContents.executeJavaScript).toHaveBeenCalledWith(expect.stringContaining('gugu:prepare-select-all'))
+  })
+
+  it('⌘W (the native Close item) goes to the host close routing, which hands it to the shortcut registry', () => {
+    for (const locked of [false, true]) {
+      const closeFromMenu = vi.fn()
+      const window = new FakeBrowserWindow()
+      const menu = apply('darwin', locked, closeFromMenu)
+      const close = menu.items.find(item => item.role === 'windowMenu')!.submenu!.items.find(item => item.label === 'Close Window')!
+      expect(close.role).toBeUndefined()
+      expect(close.accelerator).toBe('CmdOrCtrl+W')
+      close.click!({}, window, {})
+      expect(closeFromMenu).toHaveBeenCalledExactlyOnceWith(window)
+    }
   })
 })

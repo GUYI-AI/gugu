@@ -1,7 +1,16 @@
 // 资源库「主题」在真浏览器里:Obsidian 的 theme.css 在沙盒里算出颜色;选中的配色真的压过 tokens.css。
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { evaluateObsidianCss } from '@/session/renderer/lib/theme/theme-pack-import'
-import { chooseThemePack, resetThemePacks } from '@/session/renderer/lib/theme/theme-pack-store'
+import {
+  applyThemePackSlots,
+  chooseThemePack,
+  DEFAULT_THEME_PACK_ID,
+  readStoredThemePackSlots,
+  readThemePackSlots,
+  resetThemePacks,
+  restoreThemePackChoice,
+  setUnchosenThemePack,
+} from '@/session/renderer/lib/theme/theme-pack-store'
 import { writeThemePreference } from '@/session/renderer/lib/theme/host-theme'
 import { groundCss, resolvePalette } from '@/session/renderer/lib/theme/theme-packs'
 import { appThemeColors } from '@/session/renderer/lib/theme/app-theme-colors'
@@ -49,6 +58,31 @@ it('a chosen pack out-ranks tokens.css on the root, in both modes', () => {
   expect(read('--muted-fg')).toBe(resolvePalette(pack.modes.dark!, 'dark').mutedFg)
   resetThemePacks()
   expect(read('--bg')).toBe('#0f0f0f')
+})
+
+it('a machine that never chose a theme gets the host default; choosing Gugu default stays a choice', () => {
+  const github = BUILTIN_THEME_PACKS.find((p) => p.id === DEFAULT_THEME_PACK_ID)!
+  const bg = () => getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()
+  setUnchosenThemePack(DEFAULT_THEME_PACK_ID)
+  try {
+    writeThemePreference('dark')
+    applyThemePackSlots()
+    expect(readStoredThemePackSlots()).toBeNull()
+    expect(bg()).toBe(resolvePalette(github.modes.dark!, 'dark').bg)
+    // A single-mode pick fills its own slot; the other mode stays on the default.
+    const before = chooseThemePack('dracula')
+    expect(readThemePackSlots()).toEqual({ dark: 'dracula', light: DEFAULT_THEME_PACK_ID })
+    // Undo goes back to "never chose", not to a stored copy of the default.
+    restoreThemePackChoice(before)
+    expect(readStoredThemePackSlots()).toBeNull()
+    expect(bg()).toBe(resolvePalette(github.modes.dark!, 'dark').bg)
+    // Picking Gugu default is stored ({}), so a later default never replaces it.
+    resetThemePacks()
+    expect(readStoredThemePackSlots()).toEqual({})
+    expect(bg()).toBe('#0f0f0f')
+  } finally {
+    setUnchosenThemePack(null)
+  }
 })
 
 it('App pages get the palette in the theme\'s values; no theme, nothing, and the build\'s palette stands', () => {

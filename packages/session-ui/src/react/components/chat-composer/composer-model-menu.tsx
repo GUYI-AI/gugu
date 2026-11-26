@@ -431,6 +431,7 @@ export function ComposerModelMenu({
   const selectedEffortItem = effortItems.find(item => item.id === selectedEffort);
   const defaultEffortItem = effortItems.find(item => item.id === defaultEffort);
   const effectiveEffortItem = selectedEffortItem ?? defaultEffortItem;
+  const triggerEffort = selectedModelItem && !settingNotice && effortItems.length > 1 ? effectiveEffortItem : undefined;
 
   const effortForModelSwitch = (item: ComposerModelItem) => {
     if (item.id === (selectedModelItem?.aliasOf ?? selectedModelItem?.id)) return undefined;
@@ -600,6 +601,16 @@ export function ComposerModelMenu({
               ? <span aria-busy="true" data-unknown="" className="gg-unknown" style={UNKNOWN_MODEL_NAME} />
               : translate('composer.model')}
           </span>
+          {/* 模型名后面跟思考档(owner 11-26:「Opus 5.5 中」)。叫法就是「思考强度」那一层菜单里的档名(同一个
+              effortItems),档位取菜单里打勾的那一档:你选的,没选就是模型自己的默认档。模型不支持思考
+              (档不到两档,菜单里也没有那一行)或一档都没有时只写名字。窄的时候名字先省略,档不截(见 modelTriggerEffort)。
+              中间那个空格给读屏与 textContent:flex 容器里只有空白的文本不排版,看得见的间距是触发器的 gap。 */}
+          {triggerEffort && (
+            <>
+              {' '}
+              <span data-slot="composer-effort" className={styles.modelTriggerEffort}>{triggerEffort.name}</span>
+            </>
+          )}
           <ChevronDown size={11} className={styles.modelTriggerChevron} aria-hidden />
         </Combobox.Trigger>
         <Combobox.Content ref={setPanelEl} className={styles.modelPanelContent} side="top" align="end" sideOffset={8}
