@@ -240,7 +240,7 @@ describe('一屏几块的骨架 (#7052)', () => {
     const keep = blockId(closed === 'topic' ? 'group' : 'topic');
     await until('a close action on each side', () => screenLayout.order.every(id => !!button(id)));
     const closing = button(blockId(closed))!;
-    const title = closing.closest('[data-screen-block]')!.querySelector<HTMLElement>('[data-chat-block-title]')!;
+    const title = closing.closest('[data-screen-block]')!.querySelector<HTMLElement>('[data-chat-workspace-title]')!;
     await page.elementLocator(title).hover();
     await until('only the hovered header reveals its close action', () =>
       getComputedStyle(closing).opacity === '1' && getComputedStyle(button(keep)!).opacity === '0'
