@@ -959,6 +959,17 @@ export const modelTriggerLabel = style({
 
 export const modelTriggerChevron = style({ flexShrink: 0, color: vars.foregroundMuted });
 
+/**
+ * 名字后面的思考档(「Opus 5.5 中」的「中」,owner 11-26)。次要文字色,且**不跟着悬停/展开提到正文色** ——
+ * 名字提亮时它留在二档,主次靠这一步拉开。不收缩:窄到要让位时省略号落在名字上,档永远完整。
+ */
+export const modelTriggerEffort = style({
+  flexShrink: 0,
+  color: vars.foregroundMuted,
+  lineHeight: 1.25,
+  whiteSpace: 'nowrap',
+});
+
 // ❌ 这里曾有 modelTriggerChevron —— 底排三枚下拉箭头一并撤,见
 // composer-model-menu.tsx 的 @@@composer-no-chevron。样式跟着它的唯一消费方一起删,
 // 留着就是下一个人以为「还有个箭头没接上」的来源。
@@ -1044,7 +1055,9 @@ globalStyle(`[data-slot="composer-toolbar"] ${agentLockedIndicator}:is(:disabled
 //    加新档时这两条要跟着挪,否则新档是死的。
 globalStyle(`[data-slot="composer-toolbar"][data-disclosure="6"] ${toolbarRight}`, {
   minWidth: 0,
-  flexShrink: 1,
+  // 缺口要全落在右边这组(由模型名吃掉):左边那组的键一律不收缩(见 toolbarLeft),两组按 1:1 分摊的话,
+  // 左组的键会越出自己的盒子、叠到模型键上(2026-11-26 实测:模型键带上思考档后,236px 里叠了 13px)。
+  flexShrink: 1000,
 })
 globalStyle(`[data-slot="composer-toolbar"][data-disclosure="6"] ${agentTrigger}`, {
   minWidth: 0,
@@ -1910,12 +1923,17 @@ export const modelTriggerIcon = style({
   color: vars.foreground,
 });
 
-// 档 6(见 @@@composer-toolbar-disclosure):模型名与强度让位,只剩厂商图形。写在 modelTriggerIcon 定义之后 ——
-// 模块按顺序求值,引用它的规则写在前面会读到未初始化的常量。
+// 档 6(见 @@@composer-toolbar-disclosure):触发器在这一档才可压缩,模型名先缩成省略号、再缩没,思考档不截、
+// 厂商图形留着(owner 11-26:「窄的时候先把模型名缩成省略号,档位那个字不截」);下拉箭头这一档让位。
+// 写在 modelTriggerIcon 定义之后 —— 模块按顺序求值,引用它的规则写在前面会读到未初始化的常量。
 globalStyle(
-  `[data-slot="composer-toolbar"][data-disclosure="6"] [data-testid="composer-model-trigger"]:has(${modelTriggerIcon}) :is(${modelTriggerLabel}, ${modelTriggerChevron})`,
+  `[data-slot="composer-toolbar"][data-disclosure="6"] [data-testid="composer-model-trigger"]:has(${modelTriggerIcon}) ${modelTriggerChevron}`,
   { display: 'none' },
 )
+// 这一档让位的只该是模型名:agent 那颗此时已只剩图形,❌ 跟着被压进权限键底下(实测 236px 新建任务框里两颗叠住)。
+// 名字缩没了还放不下(新建任务框窄到约 230px 以下),模型这颗从右边裁,❌ 压到邻居身上。
+globalStyle(`[data-slot="composer-toolbar"][data-disclosure="6"] [data-testid="composer-agent-trigger"]`, { flexShrink: 0 })
+globalStyle(`[data-slot="composer-toolbar"][data-disclosure="6"] [data-testid="composer-model-trigger"]`, { overflow: 'hidden' })
 
 // 模型左边有锁着的 harness 标时,触发器不再画厂商图形:Codex 挨着 OpenAI、Claude 挨着 Anthropic 是两枚几乎一样的标。
 // 档 5 起 harness 那颗让位,厂商图形回来,档 6 照旧只剩它。

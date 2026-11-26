@@ -165,6 +165,7 @@ import { sessionBillingRoute, runningPlatformModelId, unavailablePlatformModelId
 import { planModelSwitch } from '@renderer/features/sessions/session-config/model-switch-plan';
 import { findSessionHostBridge } from '@renderer/lib/electron-api';
 import { SessionReloadConfirm } from '@renderer/features/sessions/session-reload-confirm';
+import { lastLiveEffort, rememberLiveEffort } from '@renderer/features/sessions/session-config/last-live-effort';
 import { requestSendQueuedPromptNow } from './send-queued-prompt-now-flow';
 import { requestSessionReload } from '@renderer/features/sessions/request-session-reload';
 import {
@@ -1074,9 +1075,18 @@ const ComposerForStore = observer(function ComposerForStore({
   }, [runningCustomModel, customFeatures, store.effort, store.effortOptions, store.starting, declaredEffortOptions, providerCapabilities, runningPlatformModel, platformCatalog.models, translate]);
   // #7342 停下了、记录里也没记档位(= harness 自己那一档默认):用探针目录报的那一档当默认档画(触发器压一档不透明度),
   // 与新建页同一个来源(`harnessCatalogToModelsCapability` 的 defaultEffortId)。活会话报的就是已生效那一档,用不着它。
-  const detachedDefaultEffort = detached && !runningPlatformModel && harnessCatalog.state.kind === 'ready'
+  const probedDefaultEffort = detached && !runningPlatformModel && harnessCatalog.state.kind === 'ready'
     ? (harnessCatalog.state.selectedEffort ?? undefined)
     : undefined;
+  // #3973 Not live (stopped, reopened, restarting after a switch) and no level on the record: the level this session last
+  // ran at, which its thread comes back with (`last-live-effort.ts`); else the harness's probed default.
+  const detachedDefaultEffort = detached
+    ? lastLiveEffort(store.sessionId, sessionEffortOptions) ?? probedDefaultEffort
+    : undefined;
+  const liveUnrecordedEffort = store.session && !store.isTransient && !sessionRecord?.effort ? store.effort : null;
+  useEffect(() => {
+    if (liveUnrecordedEffort) rememberLiveEffort(store.sessionId, liveUnrecordedEffort);
+  }, [liveUnrecordedEffort, store.sessionId]);
   const querySlashItems = useComposerSlashItems({ store, promptLibrary, promptOverrides, translate, providerId });
 
   const a = store.affordances;
