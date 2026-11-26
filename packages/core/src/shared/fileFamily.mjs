@@ -7,7 +7,7 @@ const FAMILIES = [
   ['word', /^(do[ct][xm]?|odt|rtf|pages)$/, /msword|wordprocessing|opendocument\.text/],
   ['sheet', /^(xl[st][xm]?|csv|tsv|ods|numbers)$/, /excel|spreadsheet|csv/],
   ['slides', /^(p[po]t[xm]?|odp|key)$/, /powerpoint|presentation/],
-  ['archive', /^(zip|rar|7z|tar|gz|tgz|bz2|xz)$/, /zip|compressed|x-tar|gzip/],
+  ['archive', /^(zip|rar|7z|tar|gz|tgz|tbz2?|txz|bz2|xz)$/, /zip|compressed|x-tar|gzip/],
   ['image', /^(a?png|jpe?g|jfif|gif|webp|bmp|svg|heic|heif|tiff?|avif|ico)$/, /^image\//],
   ['video', /^(mp4|mov|webm|mkv|avi|m4v)$/, /^video\//],
   ['audio', /^(mp3|wav|m4a|aac|flac|ogg|opus)$/, /^audio\//],

@@ -42,3 +42,9 @@ it("uses the document family for Office templates", () => {
     expect(fileFamily(name, mime)).toBe(family)
   }
 })
+
+it("recognizes bzip2 and xz compressed tar aliases", () => {
+  for (const [name, mime, family] of [["source.tbz", "", "archive"], ["source.tbz2", "", "archive"], ["source.txz", "", "archive"]]) {
+    expect(fileFamily(name, mime)).toBe(family)
+  }
+})
