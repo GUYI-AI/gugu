@@ -65,7 +65,7 @@ describe.each([
     const host = document.createElement('div')
     host.style.cssText = 'position:fixed;inset:0;width:640px;height:600px'
     document.body.append(host)
-    const view = createChatView({ context, state, parent: host, pinUserMessages: true })
+    const view = createChatView({ context, state, parent: host })
     const prior = history(previous)
     if (prior.length) state.transcript.history.seed(prior)
     view.setScrollMode({ kind: 'tail' })

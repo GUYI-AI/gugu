@@ -3,7 +3,7 @@
  * 真 Chromium、真 PhotoSwipe、产品的查看器样式,390 宽;手势用触摸指针事件逐帧喂给 PhotoSwipe。
  */
 import PhotoSwipe from 'photoswipe'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { wirePhoneFlight } from '@/components/preview/image-viewer-phone-flight'
 import type { ImageViewerItem } from '@/lib/imageViewer'
@@ -71,16 +71,23 @@ const flight = () => document.querySelector<HTMLElement>('.gg-image-flight')
 const frame = () => document.querySelector<HTMLElement>('.gg-image-flight__frame')!
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
-async function drag(points: { x: number; y: number }[], stepMs: number) {
+async function flick(points: { x: number; y: number }[]) {
   const wrap = pswp!.scrollWrap!
   const init = (p: { x: number; y: number }): PointerEventInit => ({ pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: p.x, clientY: p.y, bubbles: true, cancelable: true })
-  wrap.dispatchEvent(new PointerEvent('pointerdown', init(points[0]!)))
-  for (const p of points.slice(1)) {
-    window.dispatchEvent(new PointerEvent('pointermove', init(p)))
-    await nextFrame()
-    if (stepMs) await new Promise((resolve) => setTimeout(resolve, stepMs))
+  // Let PhotoSwipe consume each pointer move on a real frame, with gesture speed independent of CI frame rate.
+  let sampleTime = performance.now()
+  const clock = vi.spyOn(performance, 'now').mockImplementation(() => sampleTime)
+  try {
+    wrap.dispatchEvent(new PointerEvent('pointerdown', init(points[0]!)))
+    for (const p of points.slice(1)) {
+      sampleTime += 16
+      window.dispatchEvent(new PointerEvent('pointermove', init(p)))
+      await nextFrame()
+    }
+    window.dispatchEvent(new PointerEvent('pointerup', init(points[points.length - 1]!)))
+  } finally {
+    clock.mockRestore()
   }
-  window.dispatchEvent(new PointerEvent('pointerup', init(points[points.length - 1]!)))
 }
 
 it('opens from the bubble with its rounded corners and hands over to the viewer once it lands', async () => {
@@ -170,7 +177,7 @@ it('a square picture in a padded chat bubble takes off square, rounds while drag
 it('a fast flick down closes back into the bubble', async () => {
   const { thumb } = await openFromBubble()
   await until('the stand-in lands', () => flight() === null)
-  await drag(Array.from({ length: 6 }, (_, i) => ({ x: 195, y: 300 + i * 30 })), 0)
+  await flick(Array.from({ length: 6 }, (_, i) => ({ x: 195, y: 300 + i * 30 })))
   await until('the viewer closes', () => pswp!.isDestroying)
   expect(flight(), 'the stand-in flies back').not.toBeNull()
   expect(getComputedStyle(thumb).visibility).toBe('hidden')

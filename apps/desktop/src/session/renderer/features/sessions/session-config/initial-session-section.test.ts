@@ -764,6 +764,12 @@ describe('initial thinking choice', () => {
     expect(resolveInitialEffort({ options: { high: { name: 'High' } }, defaultId: null }, undefined)).toBeNull();
   });
 
+  it('uses the new model default for an unsupported choice and leaves an unset choice to the harness', () => {
+    const supported = { options: { high: { name: 'High' } }, defaultId: 'high' };
+    expect(resolveInitialEffort(supported, 'max')).toBe('high');
+    expect(resolveInitialEffort(supported, undefined)).toBeNull();
+  });
+
   it('does not arm any level for a model without thinking', () => {
     expect(resolveInitialEffort(null, undefined)).toBeNull();
     expect(resolveInitialEffort(null, 'medium')).toBeNull();

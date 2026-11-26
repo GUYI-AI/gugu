@@ -152,6 +152,11 @@ export interface PromptEditorRef {
   removeMention(id: string): void;
   /** Update the pending state for mention nodes with the given id. */
   setMentionPending(id: string, pending: boolean): void;
+  /**
+   * Hide (or show again) the @ / slash menus while the host hides the composer. The menus are portaled out of the
+   * composer, so the host's own `hidden` does not reach them; the suggestion itself is kept, as the draft is.
+   */
+  setMenusHidden(hidden: boolean): void;
   /** The inline images in the document, in order (their attachment ids). */
   inlineImageIds(): string[];
   /** Place pictures at the caret, or at the point under `at` (a drop's client coordinates). */

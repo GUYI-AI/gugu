@@ -94,6 +94,17 @@ export function codexModelCatalog(facts, bundled) {
   }
 }
 
+/** Codex ModelInfo::auto_compact_token_limit, using the descriptor handed to the app-server. */
+export function codexAutoCompactLimits(model, configuredWindow) {
+  if (!model) return undefined
+  const window = configuredWindow == null
+    ? model.context_window ?? model.max_context_window
+    : Math.min(configuredWindow, model.max_context_window ?? configuredWindow)
+  if (!Number.isSafeInteger(window) || window <= 0) return undefined
+  const ceiling = Math.floor(window * 9 / 10)
+  return { defaultTokens: Math.min(model.auto_compact_token_limit ?? ceiling, ceiling), ceiling }
+}
+
 function unknownModelEntry(model, listing) {
   return {
     // ── declared by the gateway directory ──
@@ -149,10 +160,12 @@ export async function writeCodexModelCatalog(env, readBundledCatalog) {
   }
   const dir = await mkdtemp(join(tmpdir(), 'gugu-codex-catalog-'))
   const file = join(dir, 'model-catalog.json')
-  await writeFile(file, JSON.stringify(codexModelCatalog(facts, bundled)), { mode: 0o600 })
+  const catalog = codexModelCatalog(facts, bundled)
+  await writeFile(file, JSON.stringify(catalog), { mode: 0o600 })
   return {
     // TOML basic string: JSON escaping is valid TOML for a path, backslashes included.
     args: ['-c', `model_catalog_json=${JSON.stringify(file)}`],
+    autoCompactLimits: (modelId, window) => codexAutoCompactLimits(catalog.models.find(model => model.slug === modelId), window),
     windowUnknown: facts
       .filter((fact) => fact.contextWindow === null && !bundledEntryFor(fact.id, bundled))
       .map((fact) => fact.id),

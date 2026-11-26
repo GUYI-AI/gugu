@@ -398,6 +398,7 @@ export default {
 
     "fileUnavailable": "文件暂时无法打开",
     "fileIntegrity": "文件校验没通过：内容和它的校验值对不上，没有打开",
+    "fileServerOutdated": "这台机器上的咕咕版本太旧，更新后才能打开文件",
     "fileNoAccess": "你已无权访问这个文件",
     "fileUpdated": "文件已更新，请重新打开",
     "holderOffline": "{{machine}} 离线，上线后才能打开这个文件。",
@@ -480,6 +481,8 @@ export default {
     "replyUnavailable": "原消息不可用，取消回复后可发送新消息。",
     "file": "文件",
     "photos": "照片",
+    "recentPhotos": "最近照片",
+    "recentPhotoReadFailed": "无法读取这张照片",
     "camera": "拍摄",
     "memberType": {
       "agent": "Agent",
@@ -849,9 +852,8 @@ export default {
       "openTopic": "开话题",
       "react": "表情回应",
       "reply": "回复",
-      "quoteSelection": "引用选中文字",
+      "comment": "评论",
       "quoteToComposer": "引用",
-      "quoteSelectionToComposer": "评论",
       "openFile": "打开",
       "editMessage": "编辑重发",
       "forkTask": "分叉这个任务",

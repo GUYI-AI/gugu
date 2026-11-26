@@ -27,7 +27,7 @@ import type { SessionReloadReason } from './session-reload-confirm';
  * 另两维没有这个轴 —— 这正是它们不该被塞进同一个字段的原因。
  */
 export type RestartTarget =
-  | { dimension: 'model'; value: string; label: string; source: 'platform' | 'own' }
+  | { dimension: 'model'; value: string; label: string; source: 'platform' | 'own'; effort?: string }
   /** 权限一维声明 `reload-session` 的家(dsh):档位只能带着新档重起进程再续接。`value` 是咕咕四档。 */
   | { dimension: 'permission'; value: GuguPermissionMode; label: string };
 
@@ -55,6 +55,7 @@ export function reloadRequestFor(
   reason: SessionReloadReasonCode;
   model?: string;
   modelSource?: 'platform' | 'own';
+  effort?: string;
   permissionMode?: GuguPermissionMode;
 } {
   if (target.dimension === 'permission') {
@@ -65,5 +66,6 @@ export function reloadRequestFor(
     reason: reloadReasonCodeFor(target),
     model: target.value,
     modelSource: target.source,
+    ...(target.effort !== undefined ? { effort: target.effort } : {}),
   };
 }

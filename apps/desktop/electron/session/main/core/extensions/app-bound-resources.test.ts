@@ -38,6 +38,10 @@ const store = vi.hoisted(() => ({
   bodyReads: [] as Record<string, unknown>[], commitFails: null as null | { code: string; status: number }, calls: 0,
 }));
 const denied = (message: string) => Object.assign(new Error(message), { code: 'denied' });
+const { servingOf } = await vi.hoisted(async () => await import('./test-support/binding-rpc'));
+vi.mock('./app-assistant-serving', () => ({
+  assistantServingChat: async (_token: string, ownerId: string, chatId: string) => servingOf(state.provisions as never[], ownerId, chatId, state.provisionsError),
+}));
 vi.mock('@gugu/core', () => ({ userIdFromSupabaseAccessToken: (token: string) => token || null }));
 vi.mock('./account-token', () => ({ currentAccountAccessToken: async () => state.owner || null }));
 vi.mock('./app-files', () => ({ unreadBindingChatChoices: async () => [], boundConversationFiles: {} }));
@@ -317,24 +321,12 @@ describe('reading the agent\'s resources', () => {
       await expect(save('a.md', 'x', '0')).rejects.toMatchObject({ code: 'denied' });
       await expect(appResourceWatch('assistant', 51, { watchId: '1', name: 'main', on: true }, () => undefined)).rejects.toMatchObject({ code: 'denied' });
     }
-    // One still being set up (the store serves ready or completed only) for that very conversation: not a refusal — the binding
-    // is not valid yet. Answered unbound, never an error the App would report and keep (verify-pass1 D4), nothing watched.
-    for (const phase of ['queued', 'preparing', 'awaiting_terminal', 'provisioning']) {
-      state.provisions = [{ ...ASSISTANT, phase }];
-      expect(await list('memory')).toMatchObject({ name: 'main', domain: 'memory', state: 'unbound' });
-      expect(await read('memory', 'owner-profile.md')).toMatchObject({ state: 'unbound' });
-      expect(await save('a.md', 'x', '0')).toMatchObject({ state: 'unbound' });
-      await expect(appResourceWatch('assistant', 51, { watchId: '1', name: 'main', on: true }, () => undefined)).resolves.toEqual({ name: 'main', state: 'unbound' });
-    }
     expect(asked()).toBe(0);
-    // Asked for the account's own assistant provisions, never for an id the App supplied.
-    expect(state.provisionFilters).toContainEqual(['owner_user_id', OWNER]);
-    expect(state.provisionFilters).toContainEqual(['member_key', 'assistant']);
     // The same assistant, completed once and being set up again, is still served.
     state.provisions = [ASSISTANT, { ...ASSISTANT, phase: 'provisioning', created_at: '2026-11-09T00:00:00Z' }];
     expect(await list('memory')).toMatchObject({ state: 'ready' });
-    // An identity that cannot be verified is not a refusal: unavailable, not denied.
-    state.provisions = [{ ...ASSISTANT, agent: [] }];
+    // A binding that cannot be read is not a refusal: unavailable, not denied.
+    state.provisionsError = true;
     expect(await list('memory')).toMatchObject({ state: 'unavailable' });
   });
 

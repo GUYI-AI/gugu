@@ -195,7 +195,11 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       if (!agentUserId) throw Object.assign(new Error('attachments: no agent chat to place them in'), { code: 'task_identity_missing' })
       return { chatId: await chatService.getOrCreateDM(owner, agentUserId), owner, deviceId: local ? null : deviceId, sessionId }
     } })
-  const draftPreview = useDraftAttachmentPreview(localQueueKey, mobile && visibility.shown, uploads.draftFile)
+  const draftPreview = useDraftAttachmentPreview(localQueueKey, visibility.shown, uploads.draftFile, (id, file, caption, original) => {
+    if (inFlight.current) throw new Error(translateSessionMessage('composer.attachmentWaiting'))
+    uploads.replaceImage(id, original, file, mobile)
+    if (caption) editor.current?.insertText(caption, 'end')
+  })
   const addFiles = (files: File[]) => {
     for (const { id, file } of fileSelection.choose(files)) {
       void uploads.add({ id, name: file.name, kind: file.type.startsWith('image/') ? 'image' : 'file', mimeType: file.type, hasLocalPreview: mobile }, file)
@@ -405,7 +409,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       attachmentStatus={attachmentWaiting ? translateSessionMessage('composer.attachmentWaiting') : undefined}
       attachmentExtra={annotationItems.length ? <AnnotationTray conversation={{ kind: 'session', sessionId }} onSend={() => { void submit(editor.current?.getText() ?? composerDraft.text) }} enabled={!sending && !stopping && !attachmentWaiting && !quotes.composer.queuedPromptEdit}
         onRemove={id => { if (!inFlight.current) { const imageId = annotationImageId(id); uploads.forget(imageId); setAttachments(current => current.filter(file => file.id !== imageId)) } }} /> : null}
-      attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')} onAttachmentsChange={changeAttachments} onViewAttachment={mobile ? draftPreview.open : undefined}
+      attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')} onAttachmentsChange={changeAttachments} onViewAttachment={draftPreview.open}
       onRetryAttachment={uploads.retry} onFilesDropped={addFiles} onImageFilesDropped={addFiles}
       onAttach={mobile && (composerControls || !appPanel) ? () => input.current?.click() : undefined}
       toolbarExtra={mobile ? undefined : <ComposerAttachButton disabled={sending} mobile={false} glyph={appPanel ? <Plus /> : undefined} onPickFile={() => input.current?.click()} />} />

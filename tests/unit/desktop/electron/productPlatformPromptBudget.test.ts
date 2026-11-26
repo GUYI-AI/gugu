@@ -105,7 +105,7 @@ describe('tool usage belongs to schemas and assistant duplicates keep one owner'
   })
 
   it('keeps the shared list contract once in the platform instead of repeating it in fields', () => {
-    expect(GUGU_PLATFORM_BLOCK).toContain('`rows` is 1-based ("20" / "41-60" / "all"), default 20 (catalogs: all)')
+    expect(GUGU_PLATFORM_BLOCK).toContain('tool-specific limits override these defaults; "all" only where supported')
     expect(GUGU_PLATFORM_BLOCK).toContain('pass `next` as `rows`')
     expect(GUGU_PLATFORM_BLOCK).toContain('`name` matches a substring, `pinned` a boolean, `status` a status/detail')
     expect(GUGU_PLATFORM_BLOCK).toContain('`total` is after filtering')

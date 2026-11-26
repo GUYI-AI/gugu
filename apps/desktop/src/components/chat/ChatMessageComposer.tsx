@@ -25,6 +25,7 @@ import { useChatDraft, makePendingAttachment, revokeAttachmentPreviewUrls } from
 import { useChatMessageSend } from './useChatMessageSend'
 import { ComposerAttachButton } from './ComposerAttachButton'
 import { PhoneAttachPanel } from './PhoneAttachPanel'
+import { PhoneRecentPhotos } from './PhoneRecentPhotos'
 import { compressPhoto } from './compressPhoto'
 import { IconButton } from '../ui/IconButton'
 import { Camera, Image, Paperclip } from '@/lib/icons'
@@ -92,15 +93,17 @@ export const ChatMessageComposer = observer(function ChatMessageComposer(props: 
   const activeTargets = activeMentionPicks(text, mentionTargets, members)
   const { sending, handleSend } = useChatMessageSend({ ...deliveryProps, disabled, disabledReason }, draft, members, activeTargets, inputRef, mobile)
   const receiveInput = useCallback((element: HTMLElement | null) => { inputRef.current = element }, [])
-  const enqueueFiles = useCallback((files: File[]) => {
+  const enqueueFiles = useCallback((files: File[], recentPhotoId?: string) => {
     const picked = fileSelection.choose(files)
-    if (picked.length) setAttachments((pending) => [...pending, ...picked.map(({ file, id }) => makePendingAttachment(file, id))])
+    if (picked.length) setAttachments((pending) => [...pending, ...picked.map(({ file, id }) => ({
+      ...makePendingAttachment(file, id), recentPhotoId,
+    }))])
     return picked
   }, [fileSelection, setAttachments])
   const { dataDropTypes, onDataDropped, onDirectoriesDropped, invitation } = useChatTaskDrop({ chatId, isGroupChat: isGroupChat && !mobile, groupMembers, provider: mentionProvider, editorApiRef, enabled: !hidden && !disabled, attachFiles: enqueueFiles })
   // 照片 / 拍摄先原样进附件区,压完按 id 换成压缩件:这期间发送、删除、切会话都找不到这个 id,换不到别处去。
-  const enqueuePhotos = useCallback((files: File[]) => {
-    for (const { file, id } of enqueueFiles(files)) {
+  const enqueuePhotos = useCallback((files: File[], recentPhotoId?: string) => {
+    for (const { file, id } of enqueueFiles(files, recentPhotoId)) {
       void compressPhoto(file).then((compressed) => {
         if (compressed !== file) setAttachments((pending) => pending.map((item) => item.id === id ? { ...item, file: compressed, photo: { original: file, compressed } } : item))
       })
@@ -114,12 +117,16 @@ export const ChatMessageComposer = observer(function ChatMessageComposer(props: 
     const previous = currentAttachments.current.find((item) => item.id === id)
     if (!previous) return
     revokeAttachmentPreviewUrls([previous])
-    setAttachments((pending) => pending.map((item) => item.id === id ? makePendingAttachment(file, id) : item))
+    setAttachments((pending) => pending.map((item) => item.id === id
+      ? { ...makePendingAttachment(file, id), recentPhotoId: item.recentPhotoId } : item))
     if (caption) editorApiRef.current?.insertText(caption, 'end')
     if (previous.photo) void compressPhoto(file).then((compressed) => { if (compressed !== file) setAttachments((pending) => pending.map((item) => item.id === id && item.file === file ? { ...item, file: compressed, photo: { original: file, compressed } } : item)) })
   }
 
   useEffect(() => registerComposerFocusTarget(() => inputRef.current), [])
+  // A hidden composer's @ / slash menus are hidden too: they are portaled out of this host, so its `hidden` does not
+  // reach them (a phone chat left for the chat list stays mounted, and its open @ list stayed over the list).
+  useEffect(() => { editorApiRef.current?.setMenusHidden(hidden) }, [hidden])
   useComposerEntryFocus(chatId ? 'chat:' + chatId : null, !hidden && props.entryActive === true, () => {
     if (!disabled) focusComposer('chat-entry', { mobileShell: mobile, target: () => inputRef.current })
   })
@@ -200,7 +207,15 @@ export const ChatMessageComposer = observer(function ChatMessageComposer(props: 
           { id: 'photos', label: t('composer.photos'), icon: <Image />, onSelect: () => photoInputRef.current?.click() },
           { id: 'camera', label: t('composer.camera'), icon: <Camera />, onSelect: () => cameraInputRef.current?.click() },
           { id: 'file', label: t('composer.file'), icon: <Paperclip />, onSelect: () => fileInputRef.current?.click() },
-        ]} />}
+        ]}>
+          {!hidden && !disabled && <PhoneRecentPhotos key={chatId} selected={new Set(attachments.flatMap(item => item.recentPhotoId ? [item.recentPhotoId] : []))}
+            onSelect={(photo, file) => enqueuePhotos([file], photo.id)}
+            onRemove={(photo) => {
+              const removed = currentAttachments.current.filter(item => item.recentPhotoId === photo.id)
+              revokeAttachmentPreviewUrls(removed)
+              setAttachments(pending => pending.filter(item => item.recentPhotoId !== photo.id))
+            }} />}
+        </PhoneAttachPanel>}
       </div>
     </MessageProvider>
   </SessionUiTheme>

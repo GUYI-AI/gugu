@@ -17,7 +17,7 @@ export interface ChatMessageComposerProps {
   beforeSend?: () => Promise<void>
   /** Resolves with the last file's message once they are on screen (a text sent with them waits for it); throws if none were kept. */
   onSendAttachments?: (files: File[], opts?: { toUserIds?: string[] | null; replyToMessageId?: string | null; isWhisper?: boolean; caption?: string; annotations?: import('@gugu/session-core/acp/client').TurnAnnotation[] }) => Promise<string | undefined | void>
-  quoteContent?: { messageId?: string; senderName: string; content: string; originalContent?: string | null; source?: ReplySource; attachment?: ParsedAttachment } | null
+  quoteContent?: { messageId?: string; senderName: string; content: string; source?: ReplySource; attachment?: ParsedAttachment } | null
   onQuoteConsumed?: () => void
   mentionToInsert?: { id: string; name: string } | null
   onMentionInserted?: () => void

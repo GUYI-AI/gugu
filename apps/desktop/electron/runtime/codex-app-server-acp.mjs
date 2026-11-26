@@ -942,11 +942,16 @@ function insertedUserMessage(item) {
     entry.resolve({ messageId: item.id })
   }
 }
-async function receipt(id, entry) {
+/**
+ * `turnId`: the native turn this input opened, known once `turn/start` answers. Its receipt carries that turn's revert
+ * point, so the prompt is marked from the start of the turn, as the record's leading input is (`task_started.turn_id`),
+ * not only when the turn ends (`turnOutcome`, same point).
+ */
+async function receipt(id, entry, turnId = '') {
   const result = await entry.promise
   promptInsertions.delete(entry.clientId)
   if (result.error) throw Object.assign(new Error(result.error), { code: result.code })
-  respond(id, result)
+  respond(id, historyCanRevert && turnId ? { ...result, _meta: { guguRevert: { before: turnId } } } : result)
 }
 function throwIfInsertionCancelled(entry) {
   if (entry.cancelled) throw Object.assign(new Error('Request cancelled before insertion'), { code: -32800 })
@@ -1370,7 +1375,8 @@ function emitUsageUpdate(params) {
   if (!Number.isFinite(size) || size <= 0 || !Number.isFinite(used) || used < 0) {
     return warnUnusableTokenUsage('unusable modelContextWindow or last.totalTokens', params)
   }
-  sessionUpdate({ sessionUpdate: 'usage_update', used, size })
+  const autoCompact = appModelCatalog?.autoCompactLimits?.(selectedModel, declaredContextWindow)
+  sessionUpdate({ sessionUpdate: 'usage_update', used, size, ...(autoCompact && { _meta: { 'gugu/autoCompact': autoCompact } }) })
 }
 
 /**
@@ -2570,7 +2576,7 @@ async function handleAcpRequest(message) {
     if (!turnId) throw new Error('local Codex turn/start returned no turn id')
     if (insertion.cancelled && activeCycle?.turnId === turnId) await cancelTurn(turnId)
     throwIfInsertionCancelled(insertion)
-    await receipt(id, insertion)
+    await receipt(id, insertion, turnId)
     return
   }
   if (method === 'session/set_config_option') {

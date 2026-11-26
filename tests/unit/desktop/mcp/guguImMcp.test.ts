@@ -333,6 +333,31 @@ describe('the gugu MCP server requires an explicit chat target', () => {
       p_as_user_id: 'agent-1',
     })
   })
+  test('a correct UUID reaches the member lookup unchanged', async () => {
+    const chatId = '00000000-0000-4000-8000-000000000001'
+    const restGet = vi.fn(async (_path: string) => [])
+    const restRpc = vi.fn(async (_name: string, _body: Record<string, unknown>) => [])
+    await callTool('message_members', { chat_id: chatId }, { restGet, restRpc })
+    expect(restRpc).toHaveBeenNthCalledWith(1, 'list_member_ids', { p_chat_id: chatId, p_as_user_id: 'agent-1' })
+  })
+  test('a valid UUID copied with surrounding whitespace reaches the member lookup trimmed', async () => {
+    const chatId = '00000000-0000-4000-8000-000000000001'
+    const restGet = vi.fn(async (_path: string) => [])
+    const restRpc = vi.fn(async (_name: string, _body: Record<string, unknown>) => [])
+    await callTool('message_members', { chat_id: ` ${chatId} ` }, { restGet, restRpc })
+    expect(restRpc).toHaveBeenNthCalledWith(1, 'list_member_ids', { p_chat_id: chatId, p_as_user_id: 'agent-1' })
+  })
+  test.each([
+    '00000000-0000-4000-8000-e000000000001', // an extra e in the last segment, as copied wrong
+    '00000000-0000-4000-8000-00000000000',   // a missing one
+  ])('a malformed UUID-like chat_id %s is refused before any read', async (chatId) => {
+    const restGet = vi.fn(async (_path: string) => [])
+    const restRpc = vi.fn(async (_name: string, _body: Record<string, unknown>) => [])
+    await expect(callTool('message_members', { chat_id: chatId }, { restGet, restRpc }))
+      .rejects.toThrow(`chat_id ${chatId} is not a valid ID`)
+    expect(restGet).not.toHaveBeenCalled()
+    expect(restRpc).not.toHaveBeenCalled()
+  })
   test('lookup resolves a Gugu number through search_users and answers with a typed user: id', async () => {
     const bob = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
     const restRpc = vi.fn(async (name: string) => (name === 'search_users'

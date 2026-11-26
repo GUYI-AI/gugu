@@ -136,8 +136,10 @@
    pointer events」):点左侧栏、顶栏的空白处 DOM 收不到 pointerdown,「点外面就关」关不上;盖在拖拽带上的弹出层
    自己也点不动。所以不给弹出层逐个退订,开着时全部退订,关上以后拖拽区原样回来。模态不在内:它们有自己的遮罩,
    标题栏行开着模态也照样拖窗口(@@@window-layer)。❌ 别写成 `:root:has(…) *`:那会让开着时的每次 DOM 变动都重算
-   整页(@@@wide-invalidation)。 */
-:root[data-layer-open] * {
+   整页(@@@wide-invalidation)。也 ❌ 写成 `:root[data-layer-open] *`:<html> 上的属性一变,通配后代让整页每个元素
+   重算样式(名片、菜单一开一关各一次整页重算,owner 11-26「点开到按钮可点之间卡顿」)。只点名拖拽区自己:
+   下面就是产品里声明 `-webkit-app-region: drag` 的全部写法,新加拖拽区用其中之一。 */
+:root[data-layer-open] :is(.window-drag-region, .gg-pane-header, .gg-titlebar, .qc-head, .gugu-auth-page, .gugu-auth-window-drag, .\[-webkit-app-region\:drag\]) {
   -webkit-app-region: no-drag !important;
 }
 
@@ -1197,7 +1199,7 @@ button, [role="button"] {
   /* 二维码两套主题都要深字浅底才扫得出:码和码底下的白框都用这一对,不随主题变。 */
   --qr-ink: #1f2933;
   --qr-paper: #ffffff;
-  /* 看图查看器的底和压在照片上的字:两套主题同值 —— 主题的 fg/bg 会在浅色里出现黑字压黑照片。 */
+  /* 压在照片上的底和字(标注台、App 商店头图):两套主题同值 —— 主题的 fg/bg 会在浅色里出现黑字压黑照片。 */
   --image-bg: #000000;
   --image-fg: #ffffff;
   /* 文档预览画的是白纸:文档内容本身按白页面排版,不随主题变。 */
@@ -1909,7 +1911,7 @@ body.barcode-scanner-active #root {
   --pane-header-h: 52px;
   --pane-header-h-touch: 56px;
   --pane-pad-x: 12px;                 /* 导航列左右内距 */
-  --nav-col-w: 240px;                 /* 会话列表与通讯录同一列宽(JS 镜像 lib/uiRuler.ts,有 parity 测试钉住) */
+  --nav-col-w: 240px;                 /* 会话列表与通讯录同一列宽 */
   /* 控件高三档 + 触控档。Button sm/md/lg、IconButton、SearchField、Field 全部只取这四个值 */
   --control-h-sm: 28px;
   --control-h-md: 32px;

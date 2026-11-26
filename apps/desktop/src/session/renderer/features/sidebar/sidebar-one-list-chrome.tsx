@@ -167,12 +167,20 @@ export function followBelowRailRow(element: HTMLElement, progress: number, railL
   element.style.transform = shift > 0 ? `translateY(${-shift}px)` : '';
 }
 
-/** The list's rows, moved by what the top row's gap and the gutter would have shrunk at this progress (0 at either end). */
-export function followListOffset(element: HTMLElement, progress: number, railLayout: boolean) {
+/**
+ * How far the list's rows are moved left and up at this progress: what the gutter and the top row's gap would have shrunk
+ * (0 at either end). The names' mask moves its edge with them (left-sidebar's followNamesMask).
+ */
+export function listFoldShift(progress: number, railLayout: boolean): { x: number; y: number } {
   const rest = railLayout ? 0 : 1 - progress;
-  element.style.transform = rest > 0
-    ? `translate(${-(LIST_GUTTER_OPEN_PX - LIST_GUTTER_RAIL_PX) * rest}px, ${-(TOP_ROW_GAP_OPEN_PX - TOP_ROW_GAP_RAIL_PX) * rest}px)`
-    : '';
+  return { x: (LIST_GUTTER_OPEN_PX - LIST_GUTTER_RAIL_PX) * rest, y: (TOP_ROW_GAP_OPEN_PX - TOP_ROW_GAP_RAIL_PX) * rest };
+}
+
+/** The list's rows, moved left by listFoldShift (inside the gutter). Their rise is the scroll box's (left-sidebar's
+ *  followNamesMask), so they never cross its top edge, which clips. */
+export function followListOffset(element: HTMLElement, progress: number, railLayout: boolean) {
+  const shift = listFoldShift(progress, railLayout);
+  element.style.transform = shift.x > 0 ? `translateX(${-shift.x}px)` : '';
 }
 
 /**

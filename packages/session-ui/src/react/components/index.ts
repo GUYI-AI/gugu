@@ -4,7 +4,6 @@ export {
   ComposerAgentSelector,
   ComposerAttachmentChip,
   ComposerModelMenu,
-  buildComposerModelGroups,
   resolveComposerModelPanel,
   PASTED_TEXT_AS_FILE_MIN_CHARS,
   attachmentPreviewKind,

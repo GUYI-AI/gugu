@@ -433,7 +433,7 @@ export class GitRepository implements IGitRepository {
     const seen = new Set<string>();
     const remotes: GitRemote[] = [];
 
-    for (const line of stdout.trim().split('\n').filter(Boolean)) {
+    for (const line of stdout.trim().split(/\r?\n/).filter(Boolean)) {
       const match = /^(\S+)\s+(\S+)\s+\((fetch|push)\)$/.exec(line);
       if (!match || match[3] !== 'fetch') continue;
       const name = match[1]!;

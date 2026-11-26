@@ -87,10 +87,14 @@ export function customComposerOptions(
         // A preset draws its own logo; an address of the person's own draws the maker of the model it serves
         // (OpenRouter serving qwen/… → Qwen). Neither → the menu's generic icon (every row has one, owner 11-25).
         icon: modelProviderIcon(preset ? { id: preset.id, name: preset.name, iconKey: preset.icon } : resolveModelProvider(model.id, model.label)),
-        description: connection.name,
         ...(reason ? { disabled: true, disabledReason: reason } : {}),
         ...(disabledAction ? { disabledAction } : {}),
-        ...('contextWindow' in model && model.contextWindow ? { modelFeatures: { contextWindowSize: model.contextWindow } } : {}),
+        ...('contextWindow' in model ? { modelFeatures: {
+          contextWindowSize: model.contextWindow,
+          contextLengths: model.contextLengths,
+          defaultContextLength: model.defaultContextLength,
+          defaultEffortId: model.defaultEffort,
+        } } : {}),
         ...('maxOutput' in model && model.maxOutput ? { facts: [{ label: translate('customModels.output'), value: model.maxOutput.toLocaleString() }] } : {}),
       } satisfies ComposerModelOption];
     });

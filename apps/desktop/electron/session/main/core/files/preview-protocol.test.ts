@@ -692,9 +692,10 @@ describe('a remote page on a machine a device link reaches (@@@machine-file-stre
     const opened: Record<string, unknown>[] = [];
     setMachineFileStreams({
       linked: async (deviceId) => deviceId === 'dev-b',
-      open: async (_deviceId, _type, request, size, from) => {
-        opened.push(request(from, 's'));
-        return { dispose: async () => undefined, read: async (offset: number, length: number) => { asked.push(offset); return new Uint8Array(Buffer.from(big.slice(offset, offset + Math.min(length, size - offset)))); } };
+      open: async (_deviceId, _type, request, pin, from) => {
+        opened.push(request(from, 's', pin.etag));
+        const size = big.length;
+        return { size, etag: 'e1', dispose: async () => undefined, read: async (offset: number, length: number) => { asked.push(offset); return new Uint8Array(Buffer.from(big.slice(offset, offset + Math.min(length, size - offset)))); } };
       },
     });
     const created = createRemotePreview({ projectId: 'proj', workspaceId: 'ws', machine: { deviceId: 'dev-b', projectId: 'proj-there', workspaceId: 'ws' }, root: ROOT, surface: 'browser', failureCopy: COPY })!;

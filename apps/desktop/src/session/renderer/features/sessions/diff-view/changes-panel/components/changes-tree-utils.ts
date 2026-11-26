@@ -63,7 +63,7 @@ export function displayPathForChange(identityPath: string, rootPath?: string | n
   if (!rootPath) return normalizedPath;
   const normalizedRoot = normalizeFileTreePath(rootPath);
   if (normalizedPath === normalizedRoot) return normalizedPath;
-  const prefix = `${normalizedRoot}/`;
+  const prefix = normalizedRoot.endsWith('/') ? normalizedRoot : `${normalizedRoot}/`;
   return normalizedPath.startsWith(prefix) ? normalizedPath.slice(prefix.length) : normalizedPath;
 }
 

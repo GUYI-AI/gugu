@@ -165,7 +165,7 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
   const host = document.createElement('div'); host.className = `gugu-skin emlight ${nativeComposerAppearance} ${nativeChatAppearance}`;
   host.style.cssText = 'position:fixed;inset:0;width:1000px;height:800px'; document.body.append(host);
   const view = createChatView({ parent: host, context: store.chatContext, state: store.chatState,
-    composer: 'slot', stickToBottom: true, pinUserMessages: true });
+    composer: 'slot', stickToBottom: true });
   store.bindView(view);
   cleanup.push(() => store.bindView(null));
   store.chatContext.setLayout({ preset: 'double', userGutter: 0, agentConversation: true });

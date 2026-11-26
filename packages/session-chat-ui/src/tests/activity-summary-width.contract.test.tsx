@@ -29,7 +29,7 @@ describe('narrow activity summary', () => {
    text:`<gugu_delivery route="chat" from="Agent" from_id="user:peer${i%actorCount+1}" from_type="agent" msg="msg:${i}"><![CDATA[Actual activity message]]></gugu_delivery>`}]}));
   state.transcript.history.seed(records);
   const host=document.body.appendChild(document.createElement('div'));host.style.cssText='position:fixed;top:0;left:0;width:390px;height:600px';
-  const view=createChatView({context,state,parent:host,pinUserMessages:true,stickToBottom:false});
+  const view=createChatView({context,state,parent:host,stickToBottom:false});
   cleanup.push(()=>{view.dispose();state.dispose();context.dispose();host.remove();});
   await until('summary mounted',()=>!!host.querySelector('[data-agent-activity]'));
   await untilStable('summary geometry',()=>host.querySelector('[data-agent-activity]')!.getBoundingClientRect().width);

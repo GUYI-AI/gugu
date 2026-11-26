@@ -625,9 +625,9 @@ async function ownerDirectChatId(address, deps) {
 }
 
 async function resolveChatIdInput(chatId, deps) {
-  if (UUID_RE.test(String(chatId))) return String(chatId)
   const publicId = String(chatId ?? '').trim()
   if (!publicId) return null
+  if (UUID_RE.test(publicId)) return publicId
   if (/^(aid|user|gugu):/.test(publicId)) return await ownerDirectChatId(publicId, deps)
   // A typed id names its kind: `chat:` is a chat, any other kind (an agent's own `session:` id) is not one, and
   // passed on as an opaque id it would only fail later as an unreadable member list.
@@ -635,6 +635,11 @@ async function resolveChatIdInput(chatId, deps) {
   if (kind === 'chat') return decodeTypedId('chat', publicId, 'chat_id')
   if (TYPED_ID_KINDS.includes(kind)) {
     throw new Error(`chat_id: got a ${kind}: id ("${publicId}"), and a ${kind} is not a chat; pass the chat= value of your gugu_delivery envelope, an id from message_conversations, or your owner's address for your private chat with them`)
+  }
+  // UUID-shaped but not one: a mistyped id (a copied UUID with a changed or extra character) must fail here with its
+  // own name, not later as an unreadable member list of a chat that cannot exist. Opaque non-UUID ids still pass on.
+  if (/^[0-9a-f-]+$/i.test(publicId) && publicId.includes('-')) {
+    throw new Error(`chat_id ${publicId} is not a valid ID. Copy the exact chat ID from the delivery context or message_conversations; a UUID must have the 8-4-4-4-12 form.`)
   }
   // Production public_id values are numeric. Preserve non-production/internal opaque ids
   // used by injected callers; the schema description still directs agents to UUID ids.

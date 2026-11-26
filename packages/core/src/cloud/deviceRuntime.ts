@@ -267,6 +267,15 @@ export const DEVICE_SUPERVISE_INTERVAL_MS = 30_000
 export const DEVICE_HEARTBEAT_INTERVAL_MS = 30_000
 export const DEVICE_CAPABILITY_TIMEOUT_MS = 10_000
 
+export class LocalDeviceIdUnreadableError extends Error {
+  readonly code = 'DEVICE_ID_UNREADABLE'
+
+  constructor(cause: unknown) {
+    super("This computer's device ID could not be read.", { cause })
+    this.name = 'LocalDeviceIdUnreadableError'
+  }
+}
+
 export class DeviceCapabilityTimeoutError extends Error {
   constructor(readonly timeoutMs: number) {
     super(`device capability detection timed out after ${timeoutMs}ms`)
@@ -333,7 +342,10 @@ export async function resolveLocalDeviceId(options: ResolveLocalDeviceIdOptions)
  *
  * 第一次解析出来先登记一次心跳再交出去:create_owned_agent、会话页身份供给拿它当参数,云端得先有这一行。
  * 同一 owner 并发的第一次合成一发。解析不出(没登录、网络)⇒ null,调用方响亮失败;下一次重来。
+ * A caller admitting a send can ask for the hardware read failure separately from the missing registration.
  */
+export type LocalDeviceIdResolver = (options?: { reportUnreadable?: true }) => Promise<string | null>
+
 export function createLocalDeviceIdResolver(options: {
   getAuth: () => Promise<{ accessToken?: string | null; userId?: string | null } | null>
   heartbeatClient: (accessToken: string) => DeviceHeartbeatTableClient
@@ -343,10 +355,10 @@ export function createLocalDeviceIdResolver(options: {
   label?: () => string
   env?: NodeJS.ProcessEnv
   warn: (message: string) => void
-}): () => Promise<string | null> {
+}): LocalDeviceIdResolver {
   const env = options.env ?? process.env
   const byOwner = new Map<string, Promise<string>>()
-  return async () => {
+  return async ({ reportUnreadable } = {}) => {
     try {
       const auth = await options.getAuth()
       if (!auth?.accessToken || !auth.userId) return null
@@ -370,7 +382,9 @@ export function createLocalDeviceIdResolver(options: {
       }
       return await resolving
     } catch (error) {
-      options.warn(`device id resolve failed: ${(error as Error)?.message ?? String(error)}`)
+      const diagnostic = error instanceof LocalDeviceIdUnreadableError ? error.cause : error
+      options.warn(`device id resolve failed: ${(diagnostic as Error)?.message ?? String(diagnostic)}`)
+      if (reportUnreadable && error instanceof LocalDeviceIdUnreadableError) throw error
       return null
     }
   }
@@ -391,7 +405,10 @@ async function resolveLocalDeviceIdentity(
     'device machine identifier',
     timeouts.machineIdentifierMs,
     (signal) => resolveMachineIdentifier(options.machineIdentifier, signal, env),
-  )
+  ).catch(error => {
+    if (env.GUGU_SERVER_MODE === '1') throw error
+    throw new LocalDeviceIdUnreadableError(error)
+  })
   const tier = resolveTier(env)
   const registered = await runDeviceOperation(
     'device identity registration', timeouts.deviceLookupMs,

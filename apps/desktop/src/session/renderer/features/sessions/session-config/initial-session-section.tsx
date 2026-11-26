@@ -87,7 +87,6 @@ import { useCodexPreparationNotice } from '@renderer/lib/stores/use-codex-prepar
 import { useHarnessModelOptions } from './use-harness-model-options';
 import { agentOffersFastMode, customModelFastSupported, draftFastMode, fastTokenMultiplier } from './fast-mode';
 import { fastModeHint } from './fast-mode-hint';
-import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
 import { useHarnessModelCatalog, forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { useTargetModelCatalog } from '@renderer/lib/stores/use-target-model-catalog';
 import { useLibraryHost } from '@renderer/features/library/library-host';
@@ -194,7 +193,7 @@ export type InitialSessionState = {
    */
   model: string | null;
   acceptsImageAttachments?: boolean;
-  setModel: (model: string | null) => void;
+  setModel: (model: string | null, effort?: string) => void;
   /**
    * 「咕咕提供的模型」目录;取不到就是空数组 —— 分组缺席而 harness 模型照常。
    * Chat UI 开关与这份目录无关:两种会话类型都能选平台模型。
@@ -248,13 +247,14 @@ export type InitialSessionState = {
    * 配了平台模型也一样。
    */
   platformModel: string | null;
-  setPlatformModel: (modelId: string | null) => void;
+  setPlatformModel: (modelId: string | null, effort?: string) => void;
   /**
    * Reasoning-effort levels the *selected model* accepts, or null when it takes none
    * (codex gpt-5.3-codex-spark, Claude Code haiku) — the composer then hides the control
    * rather than offering a level the CLI would reject.
    */
   effortOptions: Record<string, ComposerEffortOption> | null;
+  effortOptionsForModel: (optionId: string) => Record<string, ComposerEffortOption> | null;
   /** Selected effort id, or null when nothing is armed (the CLI then resolves it itself). */
   effort: string | null;
   setEffort: (effort: string | null) => void;
@@ -464,7 +464,7 @@ export function resolvePlatformModel(
   return null;
 }
 
-import { localizeEffortOptions } from './effort-options';
+import { resolveComposerTargetEfforts, localizeEffortOptions } from './effort-options';
 import { useContextThresholds } from './use-context-thresholds';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 export { resolveInitialEffort } from '@shared/core/agents/create-efforts';
@@ -1132,15 +1132,24 @@ export function useInitialSessionState(
   );
   // 活目录 → 插件声明 → 静态表三级合成,与手机新建页共用同一个 resolveCreateEfforts(shared),
   // ❌ 别在这里再展开一遍那三步 —— 两处各写一份就会漂。
-  const customEfforts = selectedCustom ? customModelEfforts(customFeatures, capabilities?.effort) : null;
-  const modelEfforts = selectedCustom && !customEfforts ? null : resolveCreateEfforts({
+  const effortsFor = (targetModel: string | null, targetPlatform: string | null) => resolveComposerTargetEfforts({
     state: harnessCatalogState,
     effortCapability: capabilities?.effort,
-    staticModelsCapability: staticModelsCapability,
-    model: runtimeModel,
-    platformModel: customEfforts ? { reasoningEfforts: customEfforts } : platformEffortFacts(platformModel, platformCatalog.models),
+    staticModelsCapability,
+    model: targetModel,
+    platformModel: targetPlatform,
+    platformModels: platformCatalog.models,
+    customModels: customReading.state === 'value' ? customReading.value : undefined,
     leg: sessionpageSurface,
   });
+  const modelEfforts = effortsFor(model, platformModel);
+  const customEfforts = selectedCustom ? customModelEfforts(customFeatures, capabilities?.effort) : null;
+  const writeEffort = (targetModel: string | null, targetPlatform: string | null, nextEffort: string | null) => {
+    const key = effortKeyOf(providerId, targetModel, targetPlatform);
+    if (!key) return;
+    // null is an explicit reset; absence alone may inherit a remembered choice.
+    setEffortOverrides(current => ({ ...current, [key]: nextEffort || null }));
+  };
   const effortKey = effortKeyOf(providerId, model, platformModel);
   // A custom model whose levels the person set starts on the default they chose; "Automatic" starts on none.
   const customDefaultEffort = selectedCustom && customFeatures?.efforts
@@ -1266,11 +1275,12 @@ export function useInitialSessionState(
     issueContextEditorOpen,
     setIssueContextEditorOpen,
     model,
-    setModel: (nextModel) => {
+    setModel: (nextModel, nextEffort) => {
       setFastModeDraft(false);
       if (!providerId) return;
       // 选 harness 模型同时就是「这条会话不上平台」的表态,agent 级默认值不再回来顶掉它。
       setPlatformModelOverrides((current) => ({ ...current, [providerId]: null }));
+      if (nextEffort !== undefined) writeEffort(nextModel, null, nextEffort);
       setModelOverrides((current) => {
         if (!nextModel) {
           const next = { ...current };
@@ -1293,13 +1303,21 @@ export function useInitialSessionState(
     harnessSignIn,
     connectionPanel: connections.panel,
     harnessModelUnlock,
-    setPlatformModel: (nextModel) => {
+    setPlatformModel: (nextModel, nextEffort) => {
       setFastModeDraft(false);
       if (!providerId) return;
       setPlatformModelOverrides((current) => ({ ...current, [providerId]: nextModel }));
+      if (nextEffort !== undefined) writeEffort(null, nextModel, nextEffort);
     },
     // 档名走词表 —— 插件那份是硬编码中文,原样摆出来英文壳里就漏中文(见 effort-options.ts)。
     effortOptions: localizeEffortOptions(modelEfforts?.options ?? null, translate),
+    effortOptionsForModel: (optionId) => {
+      const selection = composerModelSelection(optionId);
+      const resolved = selection.source === 'platform'
+        ? effortsFor(null, selection.modelId)
+        : effortsFor(selection.modelId, null);
+      return localizeEffortOptions(resolved?.options ?? null, translate);
+    },
     effort,
     permissionOptions,
     permissionModeMap,
@@ -1308,11 +1326,7 @@ export function useInitialSessionState(
     setFastMode: setFastModeDraft,
     fastTokenMultiplier: fastTokenMultiplier(capabilities, customFastSupported !== undefined),
     defaultEffort: modelEfforts?.defaultId ?? null,
-    setEffort: (nextEffort) => {
-      if (!effortKey) return;
-      // null is an explicit reset; absence alone may inherit a remembered choice.
-      setEffortOverrides((current) => ({ ...current, [effortKey]: nextEffort || null }));
-    },
+    setEffort: nextEffort => writeEffort(model, platformModel, nextEffort),
     rememberStartedConfiguration: async () => {
       if (!providerId) return;
       // 真启动过的那一家同样算「用户选的」(除非它是出厂偏好猜出来的),同步进上面那一格,
@@ -1785,11 +1799,12 @@ export function InitialSessionField({
           // **本页自己的**两套 state。❌ 别把 state 也合过去:那两套决定 spawn 走哪条路,
           // 会话页只有一个活会话,合起来只能靠 surface flag 在里面分叉。
           selectedModel={composerSelectedOptionId(state)}
-          onModelChange={(optionId) => {
+          onModelChange={(optionId, effortId) => {
             const selection = composerModelSelection(optionId);
-            if (selection.source === 'platform') state.setPlatformModel(selection.modelId);
-            else state.setModel(selection.modelId || null);
+            if (selection.source === 'platform') state.setPlatformModel(selection.modelId, effortId);
+            else state.setModel(selection.modelId || null, effortId);
           }}
+          effortOptionsForModel={state.effortOptionsForModel}
           // 一个模型都拿不到时,「模型」那一行改放一枚「登录解锁 X」的标签,点了开登录终端。
           // ❌ 不靠左边工具栏那句「需要先登录」代劳:它离模型控件隔了半个底排,
           //    人在模型那里找不到任何交代(owner 2026-08-26 实测)。

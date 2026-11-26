@@ -1,3 +1,5 @@
+import { buildSystemNoticeEnvelope, mergeDeliveryEnvelopes } from '@gugu/core/local/agent/deliveryEnvelope';
+import { tellAgentItWasRenamed } from '../../../../apps/desktop/electron/sessionpage/agent-rename-notice';
 import { unit } from '@session-chat/core/units';
 import type { ItemSegmenter, SegmentCtx, SegmentItem } from '@session-chat/core/units';
 import { defaultChatTranslator } from '@session-chat/localization';
@@ -106,6 +108,33 @@ const tailOf = (plan: { segments: { tail: ChatItem[] }[] }) =>
 
 const DONE: TranscriptTurn['outcome'] = { kind: 'done' };
 const FULL = turn('t1', [user('u1'), thinking('th1'), tool('c1'), reply('a-mid', 'partial'), tool('c2'), reply('a1')], DONE);
+
+describe('agent rename notice', () => {
+  it.each([true, false])('omits the internal delivery from the conversation (live=%s)', async active => {
+    const displayName = '项目助理';
+    const delivered: string[] = [];
+    await expect(tellAgentItWasRenamed({
+      injectForAgent: async (agentId, message) => {
+        expect(agentId).toBe('agent-id');
+        delivered.push(message.text);
+        return 'accepted';
+      },
+    }, { agentUserId: 'agent-id', displayName })).resolves.toBe('accepted');
+    expect(delivered).toHaveLength(1);
+    const [rename] = delivered as [string];
+    expect(rename).toContain(displayName);
+
+    const visible = buildSystemNoticeEnvelope({ messageId: 'visible', at: '2026-11-26T00:00:00Z', content: 'Visible system notice' });
+    const turns = [turn('rename', [user('rename-input', rename)], active ? undefined : DONE),
+      turn('ordinary', [user('owner-input', 'Your owner renamed you.'), user('batch', mergeDeliveryEnvelopes([rename, visible]))], active ? undefined : DONE)];
+    const messages = flattenTier(turns, ctxWith({ active, agentConversation: true }), SEGMENTERS)
+      .filter(unit => unit.kind === 'message').map(unit => unit.data as ChatMessage);
+    expect(messages.map(item => item.id)).toEqual(['owner-input', 'batch']);
+    expect(messages[0]?.text).toBe('Your owner renamed you.');
+    expect(messages[1]?.text).toContain('Visible system notice');
+    expect(messages[1]?.text).not.toContain(displayName);
+  });
+});
 
 describe('planTurnFold (#4874)', () => {
   it('splits a done turn into prompt / process / final reply', () => {

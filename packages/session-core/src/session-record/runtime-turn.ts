@@ -22,8 +22,19 @@ import { HOST_PROMPT_HASH } from '../acp/native-prompt-key';
 export function withoutCopiesOf(turns: readonly TranscriptTurn[], turn: TranscriptTurn, before?: ReadonlySet<string>): TranscriptTurn[] {
   const same = sameTurnAs(turn);
   let end = turns.length;
-  while (end > 0 && !before?.has(turns[end - 1]!.id) && same(turns[end - 1]!)) end -= 1;
+  while (end > 0 && !before?.has(turns[end - 1]!.id) && !startedBefore(turns[end - 1]!, turn) && same(turns[end - 1]!)) end -= 1;
   return turns.slice(0, end);
+}
+
+/**
+ * A record's line is written after its runtime opened the turn, both on this machine's clock; a record's clock may
+ * count whole seconds. So a turn that started more than that before `turn` did is an earlier turn, whatever it shares
+ * with it and whenever it was read: this holds for a record read late, where `before` (taken when `turn` started)
+ * holds nothing. A turn without a time says nothing.
+ */
+const RECORD_CLOCK_MS = 1_000;
+export function startedBefore(other: TranscriptTurn, turn: TranscriptTurn): boolean {
+  return other.startedAt !== undefined && turn.startedAt !== undefined && other.startedAt < turn.startedAt - RECORD_CLOCK_MS;
 }
 
 /** A turn of the runtime drawn in place of the record's copies of it. `before`: see `withoutCopiesOf`. */
@@ -46,7 +57,7 @@ export function withDrawnTurns(turns: readonly TranscriptTurn[], drawn: readonly
  */
 export function recordHolds(turns: readonly TranscriptTurn[], held: DrawnTurn, readToNow: boolean): boolean {
   const same = sameTurnAs(held.turn);
-  const since = turns.filter((turn) => !held.before.has(turn.id));
+  const since = turns.filter((turn) => !held.before.has(turn.id) && !startedBefore(turn, held.turn));
   const copies = since.filter(same);
   if (copies.length > 0) return readToNow || copies.every((turn) => turn.outcome !== undefined || turn.endedAt !== undefined);
   const startedAt = held.turn.startedAt;
@@ -65,7 +76,23 @@ export function endedTurnIds(turns: readonly TranscriptTurn[]): Set<string> {
  */
 export function sameTurnAs(turn: TranscriptTurn): (other: TranscriptTurn) => boolean {
   const keys = new Set(sameTurnKeys(turn));
-  return (other) => sameTurnKeys(other).some((key) => keys.has(key));
+  const anchor = turnAnchor(turn);
+  return (other) => {
+    // Both name their turn (`turnAnchor`): that alone says whether they are one turn, the same words or not.
+    const theirs = anchor === null ? null : turnAnchor(other);
+    if (anchor !== null && theirs !== null) return anchor === theirs;
+    return sameTurnKeys(other).some((key) => keys.has(key));
+  };
+}
+
+/**
+ * The agent's own name for a turn, where its harness gives one to both the runtime and the record: the point a revert
+ * steps back to, on the message that opened the turn (Codex: the turn id; Claude: that message's id). Null when the
+ * turn carries none (a harness without one, or a runtime turn whose receipt has not come yet).
+ */
+export function turnAnchor(turn: Pick<TranscriptTurn, 'items'>): string | null {
+  const first = turn.items.find((item): item is Extract<TranscriptItem, { kind: 'message' }> => item.kind === 'message' && item.role === 'user');
+  return first?.revertAnchor ?? null;
 }
 
 const keysOf = new WeakMap<TranscriptTurn, readonly string[]>();

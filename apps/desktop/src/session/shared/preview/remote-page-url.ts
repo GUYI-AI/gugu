@@ -51,7 +51,7 @@ export function machinePathToFileUrl(path: string): string | null {
 
 /** 会话工作目录当围栏(预览那道围栏的「圈内」一支)。不是绝对路径 ⇒ null。 */
 export function remotePageRoot(root: string): PreviewRoot | null {
-  const parts = splitAbsolutePath(root.replace(/[\\/]+$/, '') || '/');
+  const parts = splitAbsolutePath(root);
   return parts ? { kind: 'workspace', prefix: parts.prefix, segments: parts.segments } : null;
 }
 

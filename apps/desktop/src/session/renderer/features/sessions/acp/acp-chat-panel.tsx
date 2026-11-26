@@ -32,6 +32,7 @@ import { useSessionMessageQuotes } from './use-session-message-quotes';
 import { useSessionPromptEditor } from './use-session-prompt-editor';
 import { inlineImageOrder, inlineImageTurnText } from './inline-image-turn';
 import { continueSessionTurn } from './continue-session-turn';
+import { reloadWorkingModel } from './reload-working-model';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
 import { followConversationLink, noteDrawnPictureLink } from '@/lib/followConversationLink';
 import { openMessageSender } from '@/lib/openMessageSender';
@@ -154,6 +155,7 @@ import {
   effortSourceFor,
   localizeEffortOptions,
   platformEffortFacts,
+  resolveComposerTargetEfforts,
   resolveEffortCatalog,
 } from '@renderer/features/sessions/session-config/effort-options';
 import {
@@ -396,7 +398,7 @@ const ComposerForStore = observer(function ComposerForStore({
   // the settlements this page's feed already holds.
   const hostSession = sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId);
   const runningCustomModel = hostSession?.data.customModel;
-  const customReading = useReplica(customModels, runningCustomModel ? [machineRegistry.machineOf(store.projectId) ?? null] : null);
+  const customReading = useReplica(customModels, [machineRegistry.machineOf(store.projectId) ?? null]);
   const customFeatures = runningCustomModel && customReading.state === 'value'
     ? customReading.value.find((record) => record.id === runningCustomModel.connectionId)?.models.find(({ id }) => id === runningCustomModel.modelId)
     : undefined;
@@ -823,7 +825,7 @@ const ComposerForStore = observer(function ComposerForStore({
       const value = effortId === '' && resetEffortId && settable?.[resetEffortId]
         ? resetEffortId
         : effortId;
-      void store.setEffort(value).then((outcome) => {
+      return store.setEffort(value).then((outcome) => {
         if (outcome?.kind !== 'restart-required') return;
         reportUnwiredRestart('effort', outcome.requestedValue);
       });
@@ -961,27 +963,31 @@ const ComposerForStore = observer(function ComposerForStore({
   );
   const merged = useComposerModelOptions(ownTier, platformCatalog.models, providerId, runningPlatformModel);
 
-  const lockedForTurn = store.modelLockedForTurn(providerCapabilities?.acp.liveSettings?.model);
+  const planForOption = useCallback((id: string) => planModelSwitch({
+    selection: composerModelSelection(id),
+    advertised: advertisedModels,
+    catalog: platformCatalog.models,
+    runningOn,
+    runningCustomModel,
+    currentModel: store.model,
+    liveSetting: providerCapabilities?.acp.liveSettings?.model,
+  }), [advertisedModels, platformCatalog.models, runningOn, runningCustomModel, store.model, providerCapabilities]);
+
+  const canSwitchDuringReply = !store.isTransient
+    && store.session?.sessionState.current().lifecycle === 'working'
+    && !!store.session?.activeTurn.current();
+  const lockedForTurn = !canSwitchDuringReply && store.modelLockedForTurn(providerCapabilities?.acp.liveSettings?.model);
   const sessionModelOptions = useMemo(() => {
     // 能力声明还没到 ⇒ 还答不出「哪些能当场换」:❌ 不拿「未声明」去判(那会把整张菜单暂时置灰)。
     if ((!merged && !retiredModel && !runningCustomModel) || !providerCapabilities) return null;
-    const catalog = platformCatalog.models;
     const selectedOption = composerSelectedOptionId({ platformModel: runningPlatformModel, model: store.model, customModel: runningCustomModel });
     const options = Object.fromEntries(
       Object.entries(merged ?? {}).map(([id, option]) => {
         if (option.disabled) return [id, option];
         // 四态见 @@@session-options-disabled。hot / reload 都是"能选",
         // unavailable / unsupported 才置灰 —— ❌ 别按 `platform:` 前缀判,那会把能重开换成的也灰掉。
-        const plan = planModelSwitch({
-          selection: composerModelSelection(id),
-          advertised: advertisedModels,
-          catalog,
-          runningOn,
-          runningCustomModel,
-          currentModel: store.model,
-          liveSetting: providerCapabilities?.acp.liveSettings?.model,
-        });
-        // A hot switch this provider refuses during a turn: say so on the row, rather than offer one that can only fail.
+        const plan = planForOption(id);
+        // Only a mounted task can be reconfigured in place during its reply.
         if (plan.kind === 'hot' && lockedForTurn && id !== selectedOption) {
           return [id, { ...option, disabled: true, disabledReason: translate('composer.modelBusy') }];
         }
@@ -1015,19 +1021,27 @@ const ComposerForStore = observer(function ComposerForStore({
       };
     }
     return options;
-  }, [
-    merged,
-    retiredModel,
-    advertisedModels,
-    platformCatalog.models,
-    runningOn,
-    runningCustomModel,
-    runningPlatformModel,
-    providerCapabilities,
-    lockedForTurn,
-    store.model,
-    translate,
-  ]);
+  }, [merged, retiredModel, planForOption, runningCustomModel, runningPlatformModel,
+    providerCapabilities, lockedForTurn, store.model, translate]);
+
+  const effortOptionsForModel = (optionId: string) => {
+    const plan = planForOption(optionId);
+    if (plan.kind !== 'hot' && plan.kind !== 'reload') return null;
+    const setting = providerCapabilities?.acp.liveSettings?.effort;
+    if (plan.kind === 'hot' && (setting?.channel === 'unsupported' || setting?.reloadRequired)) return null;
+    const selection = composerModelSelection(optionId);
+    const resolved = resolveComposerTargetEfforts({
+      state: harnessCatalog.state,
+      effortCapability: providerCapabilities?.effort,
+      staticModelsCapability: providerCapabilities?.models,
+      model: selection.source === 'own' ? selection.modelId : null,
+      platformModel: selection.source === 'platform' ? selection.modelId : null,
+      platformModels: platformCatalog.models,
+      customModels: customReading.state === 'value' ? customReading.value : undefined,
+      leg: 'acp',
+    });
+    return localizeEffortOptions(resolved?.options ?? null, translate);
+  };
 
   // ⚠️ 这一整段必须在 `platformCatalog` / `sessionModelOptions` **之后**:下面的 handler 把
   //    `platformCatalog` 列进 deps,而 deps 是渲染时求值的 —— 放到它前面会当场 TDZ 炸掉
@@ -1105,8 +1119,51 @@ const ComposerForStore = observer(function ComposerForStore({
    * 而用户看到的是「点了没反应」。三态分开之后,能换的当场换、要重开的先问一句、
    * 到不了的直接说 —— 每一种都有下一步。
    */
+  const applyReload = useCallback(async (target: RestartTarget, continueTurnId?: string) => {
+    setReloading(true);
+    try {
+      const reload = () => requestSessionReload(reloadRequestFor(target, store.sessionId));
+      const result = continueTurnId
+        ? await reloadWorkingModel({
+            reload,
+            turnOutcome: () => store.chatState.transcript.state.committedTurns.find(turn => turn.id === continueTurnId)?.outcome?.kind,
+            continueTurn: () => continueSessionTurn(store, translate('transcript.continueTurnPrompt')),
+          })
+        : await reload();
+      if (result.ok) {
+        setInputFailure(null);
+        platformCatalog.retry();
+        return true;
+      }
+      reportInputFailure(
+        translate(target.dimension === 'permission' ? 'chat.reloadConfirmTitlePermission' : 'chat.reloadConfirmTitleModel',
+          { target: target.label }),
+        result.startupReason ? { startupReason: result.startupReason, message: result.error } : result.error ?? '',
+      );
+      if (isCodexProviderStartupKind(result.startupReason ?? codexStartupKind(result.error))) {
+        setPendingReload(null);
+        onModelMenuRequest();
+      }
+      return false;
+    } catch (error: unknown) {
+      reportInputFailure(
+        translate(target.dimension === 'permission' ? 'chat.reloadConfirmTitlePermission' : 'chat.reloadConfirmTitleModel',
+          { target: target.label }),
+        error instanceof Error ? error.message : String(error),
+      );
+      return false;
+    } finally {
+      setReloading(false);
+    }
+  }, [store, platformCatalog, reportInputFailure, translate, onModelMenuRequest]);
+
+  const writingModel = useRef(false);
   const handleModelChange = useCallback(
-    (optionId: string) => {
+    (optionId: string, effort?: string) => {
+      if (writingModel.current) {
+        toast({ title: translate('composer.modelBusy') });
+        return;
+      }
       // 与 `sessionModelOptions` 同一个前提:能力声明没到,菜单本来就没摆出来。
       if (!providerCapabilities) return;
       if (
@@ -1122,18 +1179,25 @@ const ComposerForStore = observer(function ComposerForStore({
           value: selection.modelId,
           label: known?.displayName ?? sessionModelOptions?.[optionId]?.name ?? runtimeModelId(selection.modelId) ?? '',
           source: selection.source,
+          effort,
         });
         return;
       }
-      const plan = planModelSwitch({
-        selection: composerModelSelection(optionId),
-        advertised: advertisedModels,
-        catalog: platformCatalog.models,
-        runningOn,
-        runningCustomModel,
-        currentModel: store.model,
-        liveSetting: providerCapabilities?.acp.liveSettings?.model,
-      });
+      const plan = planForOption(optionId);
+      const session = store.session;
+      const reply = !store.isTransient && session?.sessionState.current().lifecycle === 'working'
+        ? session.activeTurn.current() : null;
+      if (reply && (plan.kind === 'hot' || plan.kind === 'reload')) {
+        const source = composerModelSelection(optionId).source === 'platform' ? 'platform' : 'own';
+        const label = sessionModelOptions?.[optionId]?.name ?? runtimeModelId(plan.modelId) ?? plan.modelId;
+        writingModel.current = true;
+        toast({ tier: 'info', title: translate('chat.modelSwitchContinuing', { model: label }), position: 'bottom-right' });
+        void applyReload({ dimension: 'model', value: plan.modelId, label, source, effort }, reply.id)
+          .finally(() => {
+            writingModel.current = false;
+          });
+        return;
+      }
       if (plan.kind === 'hot') {
         // ⚠️ 下发 `wireValue`,❌ 不是 `modelId`:平台模型在 opencode 上寻址成
         // `gugu-platform/<id>`,递裸 id 会被它当未知模型拒掉(owner 2026-09-13 实测:
@@ -1149,6 +1213,7 @@ const ComposerForStore = observer(function ComposerForStore({
         const catalogName = platformCatalog.models
           .find((entry) => entry.id === plan.modelId)?.displayName;
         const source = selection.source === 'platform' ? 'platform' : 'own';
+        writingModel.current = true;
         void store.setModel(plan.wireValue).then(async (outcome) => {
           if (outcome?.kind === 'restart-required') {
             setPendingReload({
@@ -1156,6 +1221,7 @@ const ComposerForStore = observer(function ComposerForStore({
               value: plan.modelId,
               label: catalogName ?? runtimeModelId(plan.modelId) ?? '',
               source,
+              effort,
             });
             return;
           }
@@ -1166,7 +1232,11 @@ const ComposerForStore = observer(function ComposerForStore({
             platformCatalog.refresh();
             return;
           }
-          if (store.isTransient) { setInputFailure(null); return; }
+          if (store.isTransient) {
+            if (effort !== undefined) await handleEffortChange(effort);
+            setInputFailure(null);
+            return;
+          }
           // 记的是活会话**确认在跑的**那个(`effectiveValue`),不是我们请求的那个 —— provider 可能把别名规范成另一条。
           // 平台模型的生效值是它自己的寻址形式(`gugu-platform/<id>`),翻回规范 id;翻不出就是我们请求的那条(copilot 这类不回读的家)。
           const recorded = source === 'platform'
@@ -1186,9 +1256,10 @@ const ComposerForStore = observer(function ComposerForStore({
             reportInputFailure(translate('chat.modelSwitchNotRecordedTitle', { target: catalogName ?? plan.modelId }), error instanceof Error ? error.message : String(error));
             return;
           }
+          if (effort !== undefined) await handleEffortChange(effort);
           setInputFailure(null);
           platformCatalog.refresh();
-        });
+        }).finally(() => { writingModel.current = false; });
         return;
       }
       if (plan.kind === 'unavailable') {
@@ -1208,52 +1279,15 @@ const ComposerForStore = observer(function ComposerForStore({
         value: plan.modelId,
         label: plan.displayName,
         source: plan.source === 'platform' ? 'platform' : 'own',
+        effort,
       });
     },
-    [store, advertisedModels, platformCatalog.models, runningOn, runningCustomModel, sessionModelOptions, providerCapabilities, reportInputFailure, translate, providerId, switchBeforeFirstStart]
+    [store, planForOption, platformCatalog, sessionModelOptions, providerCapabilities, reportInputFailure, translate, providerId, switchBeforeFirstStart, handleEffortChange, applyReload]
   );
 
-  /**
-   * 用户确认之后才动:先把目标设置落进会话记录,再让主进程按记录重开 —— 顺序反了会重开出旧配置。
-   *
-   * **三维共用这一个函数。** 它自己不知道任何维度的细节:载荷由 `reloadRequestFor` 翻译。
-   */
   const confirmReload = useCallback(async () => {
-    const pending = pendingReload;
-    if (!pending) return;
-    setReloading(true);
-    let succeeded = false;
-    try {
-      // ⚠️ ❌ 不在这里再调一次活会话的 setter —— 那是 **live** `set_config_option`,
-      //    而「这个值活会话接不了」正是我们要重开的原因,调它必然失败并弹一句误导的错误
-      //    (owner 2026-09-07 真机撞到),而且目标值根本没被持久化 ⇒ 重开之后跑的还是旧值。
-      //    ⇒ 目标值交给宿主,由它保证「先写记录、再停、再起」。
-      const result = await requestSessionReload(reloadRequestFor(pending, store.sessionId));
-      // 宿主停掉又重开之后,聊天面自己重挂(`_onSessionClosedByHost`:副本跟着会话 id 走)。失败时保留确认层，允许用户重试。
-      if (result.ok) {
-        succeeded = true;
-        setInputFailure(null);
-        // The host persists the new platform/own decision before reopening. Refresh the
-        // catalog so a platform -> BYOK handoff cannot keep the old source label in the UI.
-        platformCatalog.retry();
-      }
-      if (!result.ok) {
-        // 原话直接给用户 —— ❌ 不折成「重开失败」:两种事故的下一步完全不同。
-        reportInputFailure(translate(
-            pending.dimension === 'permission' ? 'chat.reloadConfirmTitlePermission' : 'chat.reloadConfirmTitleModel',
-            { target: pending.label },
-          ), result.startupReason ? { startupReason: result.startupReason, message: result.error } : result.error ?? '');
-        if (isCodexProviderStartupKind(result.startupReason ?? codexStartupKind(result.error))) {
-          setPendingReload(null);
-          onModelMenuRequest();
-        }
-      }
-    } finally {
-      setReloading(false);
-      // Keep the target in the confirmation surface after a failed restart so it can be retried.
-      if (succeeded) setPendingReload(null);
-    }
-  }, [pendingReload, store, platformCatalog, reportInputFailure, translate, onModelMenuRequest]);
+    if (pendingReload && await applyReload(pendingReload)) setPendingReload(null);
+  }, [pendingReload, applyReload]);
 
   /**
    * `/mcp` —— **咕咕自己的**命令:拦下来开面板,**一个字都不发给 agent**。
@@ -1462,14 +1496,13 @@ const ComposerForStore = observer(function ComposerForStore({
       <SessionHostQuestion sessionId={store.runtimeSessionId} session={hostSession} settlements={store.hostSettlements} />
       <ChatComposer
         className={scheduleSlotShown(schedules) ? sessionComposerFrameLiftClassName : undefined}
-        // 会话页的标签头不显示 harness,锁着的那颗 agent 标留在模型左边(私聊照旧藏)。
-        hideLockedAgent={false}
+        hideLockedAgent
         isWorking={a.isWorking}
         attachmentStatus={sendHold === 'waiting' ? translate('composer.attachmentWaiting') : undefined}
         notice={
           sendHold === 'blocked'
-              ? { variant: 'error', message: translate('composer.attachmentBlocked'), onDismiss: () => setSendHold(null) }
-              : store.permissionModeChangeNotice
+            ? { variant: 'error', message: translate('composer.attachmentBlocked'), onDismiss: () => setSendHold(null) }
+            : store.permissionModeChangeNotice
         }
         // Store owns both live sending and pre-session queue admission.
         // 正在用的咕咕模型要会员了(#7056):下一轮之前停下,原因与去路在面板那一行。
@@ -1509,6 +1542,7 @@ const ComposerForStore = observer(function ComposerForStore({
           customModel: runningCustomModel,
         })}
         onModelChange={handleModelChange}
+        effortOptionsForModel={effortOptionsForModel}
         modelMenuOpenRequest={modelMenuRequest}
         modelSettingNotice={modelSettingNotice}
         modelMenuNotice={lockedForTurn ? translate('composer.modelBusy') : modelPreparationNotice}
@@ -1520,7 +1554,13 @@ const ComposerForStore = observer(function ComposerForStore({
         effortOptions={localizeEffortOptions(sessionEffortOptions, translate)}
         selectedEffort={store.effort ?? undefined}
         defaultEffort={detachedDefaultEffort}
-        onEffortChange={handleEffortChange}
+        onEffortChange={effortId => {
+          if (writingModel.current) {
+            toast({ title: translate('composer.modelBusy') });
+            return;
+          }
+          void handleEffortChange(effortId);
+        }}
         fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup,
           ...(runningCustomModel ? { customSupported: customFast, recorded: hostSession?.data.fastMode } : {}) })}
         onFastModeChange={(enabled) => { void (runningCustomModel ? store.setCustomFastMode(enabled) : store.setFastMode(enabled)); }}
@@ -1543,11 +1583,13 @@ const ComposerForStore = observer(function ComposerForStore({
         agentLocked
         onAgentChange={() => {}}
         contextThresholds={contextThresholds}
+        contextWindowTaskId={store.sessionId}
         contextUsage={
           store.usage
             ? {
                 used: store.usage.contextUsed,
                 size: store.usage.contextSize,
+                autoCompact: store.usage.autoCompact,
                 cost: store.usage.cost,
                 costSource,
               }
@@ -1579,7 +1621,15 @@ const ComposerForStore = observer(function ComposerForStore({
         attachmentQualityLocked={sendHold === 'waiting'}
         dataDropTypes={dataDropTypes}
         onDataDropped={onDataDropped}
-        onViewAttachment={onViewAttachment}
+        onViewAttachment={(att, cell) => {
+          const source = fileUploads.draftFile(att.id);
+          if (openComposerImage(att, cell, source && ((file, caption) => {
+            if (sendingRef.current) throw new Error(translate('composer.attachmentWaiting'));
+            fileUploads.replaceImage(att.id, source, file);
+            if (caption) editorApiRef.current?.insertText(caption, 'end');
+          }))) return;
+          onViewAttachment(att, cell);
+        }}
       />
     </>,
     composerSlot
@@ -2052,9 +2102,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     setViewer({ src, alt });
   }, []);
 
-  /** 输入框里点开一枚 chip:图片进看图查看器,文本给 `text` —— 由 chip 手上有什么决定(#5269)。 */
-  const handleAttachmentView = useCallback((att: ComposerAttachment, cell: HTMLElement) => {
-    if (openComposerImage(att, cell)) return;
+  /** Text attachments open in the panel preview. */
+  const handleAttachmentView = useCallback((att: ComposerAttachment) => {
     setViewer({
       alt: att.name,
       text: att.previewText,
@@ -2309,7 +2358,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
             composer="slot"
             composerPlacement={store.isEmpty ? 'center' : 'bottom'}
             stickToBottom
-            pinUserMessages={tabKind !== 'side-chat'}
             onReady={handleReady}
             onDisposed={handleTranscriptGone}
             commands={transcriptCommands}

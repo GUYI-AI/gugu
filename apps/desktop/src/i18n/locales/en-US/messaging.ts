@@ -399,6 +399,7 @@ export default {
 
     "fileUnavailable": "File unavailable right now",
     "fileIntegrity": "This file failed verification: its bytes don't match its checksum, so it wasn't opened",
+    "fileServerOutdated": "The Gugu on this machine is too old. Update it to open files.",
     "fileNoAccess": "You no longer have access to this file",
     "fileUpdated": "This file was updated; open it again",
     "holderOffline": "{{machine}} is offline. This file opens when it is back online.",
@@ -481,6 +482,8 @@ export default {
     "replyUnavailable": "The original message is unavailable. Cancel the reply to send a new message.",
     "file": "File",
     "photos": "Photos",
+    "recentPhotos": "Recent photos",
+    "recentPhotoReadFailed": "Could not read this photo",
     "camera": "Camera",
     "memberType": {
       "agent": "Agent",
@@ -852,9 +855,8 @@ export default {
       "openTopic": "Open a topic",
       "react": "React",
       "reply": "Reply",
-      "quoteSelection": "Quote selection",
+      "comment": "Comment",
       "quoteToComposer": "Quote",
-      "quoteSelectionToComposer": "Comment",
       "openFile": "Open",
       "editMessage": "Edit and resend",
       "forkTask": "Fork this task",

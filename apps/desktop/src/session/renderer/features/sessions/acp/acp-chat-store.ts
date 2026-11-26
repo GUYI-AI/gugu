@@ -639,6 +639,7 @@ export class AcpChatStore {
   get usage(): {
     contextUsed: number;
     contextSize: number;
+    autoCompact?: { defaultTokens: number; ceiling: number };
     cost?: { amount: number; currency: string } | null;
   } | null {
     const session = this.session;

@@ -1,3 +1,4 @@
+import { modelContextLengths } from '@gugu/session-core/models/context-threshold';
 import { useMemo } from 'react';
 import { replica, useReplica, refreshFailure } from '@/lib/replica';
 import { followCatalogChanges, platformModels } from '@/lib/agentModelReplicas';
@@ -129,6 +130,8 @@ function parseModel(value: unknown): PlatformModelOption | null {
         : null,
     // 同一条纪律,但「坏值」与「空」要分开:`[]` 是目录的答案(没有这根轴),坏值是「不知道」⇒ null。
     reasoningEfforts: parsePlatformReasoningEfforts(raw.reasoningEfforts),
+    ...modelContextLengths(raw.contextLengths, raw.defaultContextLength,
+      typeof raw.contextWindow === "number" ? raw.contextWindow : null),
     // 只认 true:缺省(旧主进程)与坏值都按「不用会员」—— 门槛在网关,这一格判错只会标错、不会放行(#7056)。
     requiresMembership: raw.requiresMembership === true,
     // 同上:只认 true,旧主进程不带 ⇒ 没关。
@@ -221,6 +224,8 @@ function platformModelsFor(providerId: string, catalog: readonly PlatformCatalog
       // null: the catalog has no multiplier for this protocol, no context window, or says nothing of the levels.
       creditMultiplier: model.creditMultipliers?.[protocol] ?? null,
       contextWindow: model.contextWindow ?? null,
+      contextLengths: model.contextLengths,
+      defaultContextLength: model.defaultContextLength,
       reasoningEfforts: model.reasoningEfforts ?? null,
       requiresMembership: model.requiresMembership,
       hidden: model.hidden,

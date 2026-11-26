@@ -53,8 +53,10 @@ export type DeviceLinkSession = { handle(message: unknown): void; dispose(): voi
 
 /**
  * A request answered with a stream of bytes (only a device link can carry them: `D` frames beside its messages). It names its
- * stream in `payload.stream`; each `write` resolves when the line takes more. Its reply follows its last piece on the same
- * ordered line, so a reader holding the reply holds every byte. `<type>.cancel` with `{ stream }` (or the link closing) stops it.
+ * stream in `payload.stream`; each `write` resolves when the line takes more. Before its first piece the handler says which
+ * version it streams (`head`: `{ type: '<type>.head', stream, size, etag }`), so a reader needs no call of its
+ * own to learn it. Its reply follows its last piece on the same ordered line, so a reader holding the reply holds every
+ * byte. `<type>.cancel` with `{ stream }` (or the link closing) stops it.
  *
  * @@@stream-credit - draining the socket is not enough: ssh's channel window and the TCP buffers between here and the reader
  * hold megabytes, and every message on the link waits behind what is queued. So the reader acknowledges what it holds
@@ -66,8 +68,12 @@ export const STREAM_FIRST_WINDOW_BYTES = 1024 * 1024
 export const STREAM_MIN_WINDOW_BYTES = 256 * 1024
 export const STREAM_MAX_WINDOW_BYTES = 32 * 1024 * 1024
 
+export type StreamVersion = { size: number; etag: string }
+
 export type DeviceLinkStream = (payload: unknown, context: {
   userId: string
+  /** The version this stream is of, said once before its first `write`. */
+  head(version: StreamVersion): void
   write(offset: number, bytes: Uint8Array): Promise<void>
   signal: AbortSignal
 }) => Promise<unknown>
@@ -110,7 +116,8 @@ export function createDeviceLinkHost(options: {
         if (!open || controller.signal.aborted) throw new Error('stream stopped')
         await sendData(encodeDataFrame(id, offset, bytes))
       }
-      void handler(request.payload, { userId, write, signal: controller.signal }).then(
+      const head = (version: StreamVersion) => publish({ type: `${type}.head`, stream: id, size: version.size, etag: version.etag })
+      void handler(request.payload, { userId, head, write, signal: controller.signal }).then(
         (result) => ({ result }),
         (error: unknown) => ({ error: { code: controller.signal.aborted ? 'cancelled' : 'stream_failed', message: error instanceof Error ? error.message : String(error) } }),
       ).then((response) => {

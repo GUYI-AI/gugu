@@ -16,6 +16,11 @@ export function normalizeModelBaseUrl(value: string): string {
   return url.toString().replace(/\/+$/, '');
 }
 
+/** The entered URL is the identity; detected protocol routes may use other paths. */
+export function customModelApiUrl(connection: Pick<CustomModelMeta, 'apiUrl' | 'endpoints'>): string {
+  return normalizeModelBaseUrl(connection.apiUrl ?? connection.endpoints[0]!.baseUrl);
+}
+
 /**
  * The protocol an address names by its own path, before any network request: the vendor's documented route tail or
  * prefix. `undefined` when the path doesn't say (a bare `/v1` is served by several protocols), so the person chooses.
@@ -66,6 +71,8 @@ export const customModelEntrySchema = z.object({
   /** An explicitly selected models.dev ID for a relay ID that cannot be resolved directly. */
   modelsDevId: z.string().trim().min(1).max(200).optional(),
   contextWindow: z.number().int().positive().optional(),
+  contextLengths: z.array(z.number().int().positive()).max(20).optional(),
+  defaultContextLength: z.number().int().positive().optional(),
   maxOutput: z.number().int().positive().optional(),
 });
 
@@ -89,11 +96,15 @@ export const customModelRouteSchema = z.object({
 export type CustomModelRoute = z.infer<typeof customModelRouteSchema>;
 
 export const customModelMetaSchema = z.object({
+  apiUrl: modelEndpointSchema.shape.baseUrl.optional(),
   preset: z.string().nullable(),
   endpoints: z.array(modelEndpointSchema).min(1).max(4)
     .refine((entries) => new Set(entries.map(({ protocol }) => protocol)).size === entries.length, 'Use one address per protocol'),
   models: z.array(customModelEntrySchema).max(200)
     .refine((entries) => new Set(entries.map(({ id }) => id)).size === entries.length, 'Model IDs must be unique'),
+  // Keep per-model settings when a model is switched off. Runtime pickers read only `models`.
+  disabledModels: z.array(customModelEntrySchema).max(200)
+    .refine(entries => new Set(entries.map(({ id }) => id)).size === entries.length, 'Model IDs must be unique').optional(),
   routes: z.array(customModelRouteSchema).max(100)
     .refine((routes) => new Set(routes.map(({ id }) => id)).size === routes.length, 'Route IDs must be unique').optional(),
   /** The protocol the person picked for a harness (harness id → protocol); a harness not named here takes `matchCustomModel`'s order. */
@@ -197,7 +208,7 @@ export type SessionModelSelection = z.infer<typeof sessionModelSelectionSchema>;
 export type CustomModelRef = Extract<SessionModelSelection, { kind: 'custom' }>;
 
 /** Where a connection was found on this machine. Never carries the key or its fingerprint. */
-export const discoverySourceSchema = z.enum(['codex-auth', 'codex-provider', 'shell-env']);
+export const discoverySourceSchema = z.enum(['codex-auth', 'codex-provider', 'shell-env', 'claude-settings']);
 export type DiscoverySource = z.infer<typeof discoverySourceSchema>;
 
 export const customModelConnectionSchema = z.object({
@@ -205,6 +216,9 @@ export const customModelConnectionSchema = z.object({
   name: z.string(),
   credentialRef: z.string(),
   keySaved: z.boolean(),
+  managedNativeHarnesses: z.array(z.enum(['codex', 'claude'])).optional(),
+  keyConflict: z.boolean().optional(),
+  keyLast4: z.string().max(4).optional(),
   ...customModelMetaSchema.shape,
   models: z.array(customModelViewSchema),
   /**
