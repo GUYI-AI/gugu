@@ -73,7 +73,10 @@ import { serverNow } from '@gugu/core/shared/serverClock'
 
 import { proxyPlatformCredentialRequest, withinCredentialDeadline } from './platform-credential-proxy'
 import { forgetReviewRoute, reviewDivert } from '../session/main/core/agents/review-routes'
-import { armReviewer, platformReviewCandidates, readUserModelAllowlist, resolveHostClaudeReviewer } from '../session/main/core/agents/claude-reviewer'
+import {
+  armReviewer, claudeReviewRunContext, platformReviewCandidates, readUserModelAllowlist, resolveHostClaudeReviewer,
+  type ClaudeReviewRunContext,
+} from '../session/main/core/agents/claude-reviewer'
 import { assertTeamTaskSession, readTeamModelContext, teamModelStopReason, TeamFundingError, type TeamTaskIdentity } from '../team-model-funding'
 import { requireRuntimeAuth } from '@gugu/core'
 
@@ -1441,6 +1444,11 @@ export interface SessionpagePlatformModel {
    * 「字段加在这里还不够,schema 必须同时声明它」)。
    */
   switchableModels: readonly PlatformSwitchableModel[]
+  /**
+   * Claude's Auto mode verdict as this launch armed it from the ticket's switchable models; absent for other
+   * harnesses. The Chat UI menu takes it over the account catalog's verdict (`withLaunchedReview`).
+   */
+  autoReview?: ClaudeReviewRunContext
 }
 
 /** One entry of the switchable set: each model carries its OWN window and reasoning levels. */
@@ -1694,9 +1702,10 @@ export async function platformModelForSession(input: PlatformModelForSessionInpu
 }
 
 /**
- * The Auto mode reviewer of a Claude session on this ticket: the same resolution the run context showed the user.
- * Picks and the review rule read the stable model id (what Settings store); the CLI is told the gateway alias.
- * Null = none: the session's settings remove Auto mode rather than name a reviewer the CLI would swap.
+ * The Auto mode reviewer of a Claude session on this ticket, and the verdict the menu shows for it.
+ * Picks and the review rule read the stable model id (what Settings store); the CLI is told the gateway alias,
+ * so the user's allowlist is matched on the alias. A null model = none: the session's settings remove Auto mode
+ * rather than name a reviewer the CLI would swap, and the verdict says so.
  */
 async function platformLaunchReviewer(
   sessionId: string,
@@ -1704,8 +1713,9 @@ async function platformLaunchReviewer(
   ticket: readonly { id?: string; alias: string; displayName: string }[],
   membershipLocked: readonly string[],
   env: NodeJS.ProcessEnv,
-): Promise<string | null> {
+): Promise<{ model: string | null; review: ClaudeReviewRunContext }> {
   const models = ticket.map((entry) => ({ ...entry, id: entry.id || entry.alias }))
+  const aliasOf = (modelId: string) => models.find((entry) => entry.id === modelId)?.alias ?? modelId
   const resolution = await resolveHostClaudeReviewer({
     route: 'platform',
     mainModel: mainModelId,
@@ -1713,12 +1723,12 @@ async function platformLaunchReviewer(
       id: entry.id, displayName: entry.displayName, requiresMembership: membershipLocked.includes(entry.alias),
     }))),
     env,
+    cliModelName: (reviewer) => reviewer.kind === 'platform' ? aliasOf(reviewer.modelId) : reviewer.modelId,
   })
+  const review = claudeReviewRunContext(resolution)
   const reviewer = armReviewer(sessionId, resolution)
-  if (!reviewer) return null
-  return resolution.ok && resolution.reviewer.kind === 'platform'
-    ? models.find((entry) => entry.id === reviewer)?.alias ?? reviewer
-    : reviewer
+  if (!reviewer) return { model: null, review }
+  return { model: resolution.ok && resolution.reviewer.kind === 'platform' ? aliasOf(reviewer) : reviewer, review }
 }
 
 async function resolvePlatformModelForSession(input: PlatformModelForSessionInput): Promise<SessionpagePlatformModel> {
@@ -1878,10 +1888,11 @@ async function resolvePlatformModelForSession(input: PlatformModelForSessionInpu
       + 'this session can only use its designated model')
   }
   // Claude's Auto mode reviewer, armed in the settings document with the allowlist entry the CLI needs to honour it.
-  const autoReviewModel = input.providerId === 'claude'
+  const launchReview = input.providerId === 'claude'
     ? await platformLaunchReviewer(input.sessionId, selection?.source === 'platform' ? selection.modelId : launch.access.modelId ?? launch.access.model,
       launch.access.switchableModels, launch.access.membershipLocked, env)
     : undefined
+  const autoReviewModel = launchReview?.model
   const modelCapability = buildAcpModelCapability({
     dialect,
     engineId: input.providerId,
@@ -2013,6 +2024,7 @@ async function resolvePlatformModelForSession(input: PlatformModelForSessionInpu
     reasoningEfforts: launch.access.reasoningEfforts,
     modelCapability,
     switchableModels,
+    ...(launchReview ? { autoReview: launchReview.review } : {}),
   }
   platformClosureReleaseProofs.open(input.sessionId, launch.access.accessSessionId)
   if (credentialProxyRoute) credentialRoutes.set(credentialProxyRoute, input.sessionId)

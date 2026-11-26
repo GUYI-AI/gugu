@@ -116,5 +116,7 @@ it('offers no settings link where no reviewer choice would turn Auto mode on', (
   expect(detail('taskConfig.reviewMainModelUnsupported')).toBeUndefined()
   expect(detail('taskConfig.reviewCrossReviewerUnroutable')).toBeUndefined()
   expect(detail('taskConfig.reviewVersionUnsupported')).toBeUndefined()
+  // The ticket lacks the reviewer: choosing it again in Settings would not turn Auto mode on.
+  expect(detail('taskConfig.reviewReviewerNotOnTicket')).toBeUndefined()
   expect(detail('taskConfig.reviewPreferenceUnavailable')).toBeDefined()
 })
