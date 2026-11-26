@@ -8,3 +8,7 @@ it('replaces numeric references beyond Unicode without throwing', () => {
 it('replaces NUL numeric references with the replacement character', () => {
   expect(markdownPlainText('a&#0;b &#x0;')).toBe('a�b �')
 })
+
+it('replaces numeric surrogate references and keeps supplementary characters', () => {
+  expect(markdownPlainText('&#55296; &#xDFFF; &#128512;')).toBe('� � 😀')
+})
