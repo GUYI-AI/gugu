@@ -58,9 +58,14 @@ export type ModelChoice = ModelOption;
 export const effortOptionSchema = configOptionBaseSchema;
 export type EffortOption = z.infer<typeof effortOptionSchema>;
 
+/** Who reviews Auto mode: a Gugu model (charged in credits) or a model on the user's own connection. */
+export const autoReviewerSchema = z.object({ label: z.string(), kind: z.enum(['platform', 'connection']) });
+export type AutoReviewer = z.infer<typeof autoReviewerSchema>;
+
 export const modeOptionSchema = configOptionBaseSchema.extend({
   disabled: z.boolean().optional(),
   reviewByHaiku: z.boolean().optional(),
+  reviewer: autoReviewerSchema.optional(),
 });
 export type ModeOption = z.infer<typeof modeOptionSchema>;
 

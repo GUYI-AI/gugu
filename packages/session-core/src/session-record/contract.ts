@@ -707,7 +707,8 @@ export type UnreachedMachine = { deviceId: string | null; label: string | null; 
  * 界面上**不摆不存在的档**（@@@permission-three-modes 那条规矩）：摆一个按下去必失败的
  * 选择器，比不摆更糟。
  */
-export type SessionOptionChoice = { id: string; name: string; description?: string; disabled?: boolean; reviewByHaiku?: boolean };
+export type SessionOptionChoice = { id: string; name: string; description?: string; disabled?: boolean; reviewByHaiku?: boolean;
+  reviewer?: { label: string; kind: 'platform' | 'connection' } };
 
 export type SessionOptionGroup = {
   selected: string | null;
@@ -974,7 +975,8 @@ export type SessionpageSessionCreateModels = {
   /** Canonical native permission choices for this exact connection and model. */
   permissionOptions?: SessionOptionGroup | null;
   /** Verified on this model and selected host executable; absent on old/unknown hosts. */
-  autoReview?: { model: string; disabled?: boolean; reviewByHaiku?: boolean };
+  /** `reason`: a message key saying why Auto mode is off, when `disabled`. */
+  autoReview?: { model: string; disabled?: boolean; reason?: string; reviewByHaiku?: boolean; reviewer?: { label: string; kind: 'platform' | 'connection' } };
   customModels?: CustomModelConnection[];
   modelProtocols?: readonly ModelProtocol[];
   customModel?: { modelOptional?: true; convertFrom?: readonly ModelProtocol[] };

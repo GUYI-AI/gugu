@@ -167,6 +167,8 @@ export type AgentHostAcpSpawn = AcpSpawnResult & {
   autoReviewAllowed?: boolean;
   autoReviewUnavailable?: boolean;
   autoReviewByHaiku?: boolean;
+  autoReviewer?: { label: string; kind: 'platform' | 'connection' };
+  autoReviewReason?: string;
   env: Record<string, string>;
   cwd: string;
 };
@@ -761,6 +763,8 @@ export class AgentPluginHost {
       ...(ctx.runContext.autoReviewAllowed !== undefined ? { autoReviewAllowed: ctx.runContext.autoReviewAllowed } : {}),
       ...(ctx.runContext.autoReviewUnavailable ? { autoReviewUnavailable: true } : {}),
       ...(ctx.runContext.autoReviewByHaiku ? { autoReviewByHaiku: true } : {}),
+      ...(ctx.runContext.autoReviewer ? { autoReviewer: ctx.runContext.autoReviewer } : {}),
+      ...(ctx.runContext.autoReviewReason ? { autoReviewReason: ctx.runContext.autoReviewReason } : {}),
       env: composeAgentSpawnEnv(ctx.runContext, {
         providerEnv: {
           ...(await this.deps.resolveProviderEnv?.(providerId)),

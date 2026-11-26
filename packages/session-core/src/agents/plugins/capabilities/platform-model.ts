@@ -42,6 +42,11 @@ export interface PlatformModelInput {
   /** 令牌在哪些路由上能调哪些模型(#6921);没有 = `{}`。 */
   callableRoutes: PlatformCallableRoutes;
   /**
+   * The model the host resolved to review Auto mode on this platform session (a platform id, or a host route alias).
+   * `null` = the host found none: Auto mode is removed from the session. Absent = not resolved by the host.
+   */
+  autoReviewModel?: string | null;
+  /**
    * 「把这一家的线协议指向平台中转」那组环境变量 —— core 协议表的原话,宿主按这一家声明的
    * `wireProtocol` 算好递进来(插件看不见 core)。❌ 不在插件里另写一遍变量名。
    */

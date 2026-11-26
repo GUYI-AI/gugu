@@ -35,6 +35,16 @@ const configPathOf = (helper: string): string => {
   return match[1]
 }
 const legacyHelper = vi.hoisted(() => ({ enabled: false }))
+const reviewPreference = vi.hoisted(() => ({ value: null as unknown }))
+vi.mock('../../../../apps/desktop/electron/session/main/core/settings/settings-service', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../apps/desktop/electron/session/main/core/settings/settings-service')>()
+  const service = actual.appSettingsService
+  return { ...actual, appSettingsService: new Proxy(service, { get: (target, property, receiver) => property === 'get'
+    ? async (key: string, ...rest: unknown[]) => key === 'autoReviewModel'
+      ? reviewPreference.value
+      : (target.get as (...args: unknown[]) => unknown).call(target, key, ...rest)
+    : Reflect.get(target, property, receiver) }) }
+})
 vi.mock('@gugu/session-plugins/agents', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@gugu/session-plugins/agents')>()
   return { ...actual, resolveSessionpageCredentialLifecycle: (...args: Parameters<typeof actual.resolveSessionpageCredentialLifecycle>) => {
@@ -691,7 +701,8 @@ describe('#2503 session-page sessions carry the designated model', () => {
     try {
       const platform = await platformModelForSession({ surface, sessionId: SESSION, providerId: 'claude', authProvider, env: CLAUDE_TEST_ENV })
       const settings = JSON.parse(await readFile(platform.settingsDocumentPath!, 'utf8'))
-      expect(settings.permissions).toEqual({ deny: ['WebSearch'] })
+      // glm-5.3 has no Auto mode reviewer picked, so the same block also removes Auto mode.
+      expect(settings.permissions).toEqual({ deny: ['WebSearch'], disableAutoMode: 'disable' })
       expect(settings.permissions.deny).not.toContain('WebFetch')
       expect(claudePlatformSearchSession(SESSION)?.callableRoutes).toEqual(launch.access.callableRoutes)
       const search = platformWebSearchForSession(SESSION)
@@ -712,7 +723,8 @@ describe('#2503 session-page sessions carry the designated model', () => {
     launch.access.callableRoutes = routes
     resolveAgentModelLaunch.mockResolvedValue(launch)
     const platform = await platformModelForSession({ surface: 'cui', sessionId: SESSION, providerId: 'claude', authProvider, env: CLAUDE_TEST_ENV })
-    expect(JSON.parse(await readFile(platform.settingsDocumentPath!, 'utf8'))).not.toHaveProperty('permissions')
+    // Only the no-reviewer Auto mode switch is there (glm-5.3, nothing picked): no WebSearch rule.
+    expect(JSON.parse(await readFile(platform.settingsDocumentPath!, 'utf8')).permissions).toEqual({ disableAutoMode: 'disable' })
     expect(platformWebSearchForSession(SESSION).available()).toBe(false)
   })
   it('writes claude Chat UI the same settings document, but keeps it off the adapter argv', async () => {
@@ -1916,5 +1928,91 @@ describe('按需签发失败:分类、退避与盲续上限的测试口', () => 
     for (const bad of ['0', '-5', 'abc', '1.5']) {
       expect(renewedLifetimeMs({ GUGU_TEST_PLATFORM_RENEW_LIFETIME_MS: bad })).toBe(8 * 60 * 60_000)
     }
+  })
+})
+
+describe('Auto mode reviewer on a Claude platform session', () => {
+  type ReviewSettings = { env: Record<string, string>; availableModels?: string[]; permissions?: { disableAutoMode?: string } }
+  const catalog = [
+    { alias: 'claude-opus-4-6', displayName: 'Claude Opus 4.6', contextWindow: 200_000 },
+    { alias: 'claude-haiku-5-5', displayName: 'Claude Haiku 5.5', contextWindow: 200_000 },
+    { alias: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6', contextWindow: 200_000 },
+    { alias: 'glm-5', displayName: 'GLM-5', contextWindow: 200_000 },
+    { alias: 'claude-opus-5', displayName: 'Claude Opus 5', contextWindow: 200_000 },
+    { alias: 'claude-sonnet-5-5', displayName: 'Claude Sonnet 5.5', contextWindow: 200_000 },
+    { alias: 'claude-opus-5-5', displayName: 'Claude Opus 5.5', contextWindow: 200_000 },
+  ]
+  beforeEach(() => {
+    vi.clearAllMocks()
+    getSessions.mockResolvedValue([])
+    revokePlatformModelAccess.mockResolvedValue(undefined)
+    checkpointPlatformModelAccess.mockResolvedValue(undefined)
+    loadEngine.mockResolvedValue({ id: 'claude', modelConfigInjection: 'provider-env' })
+    agentOnThisSession()
+    reviewPreference.value = null
+  })
+  afterEach(async () => { await releasePlatformModelForSession(SESSION) })
+  async function launch(model: string, models = catalog): Promise<ReviewSettings> {
+    // Ticket rows: the stable id Settings store, and the gateway alias the CLI must send (different on purpose).
+    platformLaunch(`gw-${model}`, 60_000, 200_000, models.map(entry => ({ ...entry, id: entry.alias, alias: `gw-${entry.alias}` })))
+    const issued = await resolveAgentModelLaunch() as { access: { modelId: string } }
+    issued.access.modelId = model
+    resolveAgentModelLaunch.mockResolvedValue(issued)
+    const platform = await platformModelForSession({ surface: 'cui', sessionId: SESSION, providerId: 'claude', authProvider, env: CLAUDE_TEST_ENV })
+    expect(platform.settingsDocumentPath).not.toBeNull()
+    return JSON.parse(await readFile(platform.settingsDocumentPath!, 'utf8')) as ReviewSettings
+  }
+  /** The one shape the CLI cannot silently swap: a named reviewer is an allowed model, or Auto mode is gone. */
+  function expectNoSilentSwap(settings: ReviewSettings) {
+    const reviewer = settings.env.CLAUDE_CODE_AUTO_MODE_MODEL
+    if (reviewer) {
+      expect(settings.availableModels?.map(id => id.replace(/\[[^\]]*\]$/, ''))).toContain(reviewer)
+      expect(['claude-opus-5', 'claude-sonnet-5-5', 'claude-opus-5-5'].flatMap(id => [id, `gw-${id}`])).not.toContain(reviewer)
+      expect(settings.permissions?.disableAutoMode).toBeUndefined()
+    } else {
+      expect(settings.permissions?.disableAutoMode).toBe('disable')
+    }
+  }
+
+  it('keeps Claude 4.6 on the platform Haiku, listed as an allowed model', async () => {
+    const settings = await launch('claude-opus-4-6')
+    expect(settings.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe('gw-claude-haiku-5-5')
+    expect(settings.env.CLAUDE_CODE_AUTO_MODE_SERVER).toBe('0')
+    expectNoSilentSwap(settings)
+  })
+  it('adds nothing beyond the ticket models to the allowlist for the reviewer', async () => {
+    const settings = await launch('claude-opus-4-6', [catalog[0]!, catalog[1]!])
+    expect(settings.availableModels).toEqual(['gw-claude-opus-4-6', 'gw-claude-haiku-5-5'])
+    expectNoSilentSwap(settings)
+  })
+  it('removes Auto mode on a non-Claude model with no reviewer picked, rather than reviewing with it', async () => {
+    const settings = await launch('glm-5')
+    expect(settings.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBeUndefined()
+    expectNoSilentSwap(settings)
+  })
+  it('names the reviewer the user picked from the catalog on a non-Claude model', async () => {
+    reviewPreference.value = { kind: 'platform', modelId: 'claude-sonnet-4-6' }
+    const settings = await launch('glm-5')
+    expect(settings.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe('gw-claude-sonnet-4-6')
+    expectNoSilentSwap(settings)
+  })
+  it('removes Auto mode when the picked reviewer is not on this session ticket', async () => {
+    reviewPreference.value = { kind: 'platform', modelId: 'claude-sonnet-4-6' }
+    const settings = await launch('claude-opus-4-6', catalog.filter(entry => entry.alias !== 'claude-sonnet-4-6'))
+    expect(settings.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBeUndefined()
+    expect(settings.availableModels).not.toContain('gw-claude-sonnet-4-6')
+    expectNoSilentSwap(settings)
+  })
+  it.each(['claude-opus-5', 'claude-sonnet-5-5', 'claude-opus-5-5'])('never names %s, which the CLI ignores as a reviewer', async (modelId) => {
+    reviewPreference.value = { kind: 'platform', modelId }
+    const settings = await launch('claude-opus-4-6')
+    expect(settings.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBeUndefined()
+    expectNoSilentSwap(settings)
+  })
+  it('says Claude 4.5 cannot run Auto mode by removing it, whatever was picked', async () => {
+    reviewPreference.value = { kind: 'platform', modelId: 'claude-haiku-5-5' }
+    const settings = await launch('claude-sonnet-4-5', [...catalog, { alias: 'claude-sonnet-4-5', displayName: 'Claude Sonnet 4.5', contextWindow: 200_000 }])
+    expectNoSilentSwap(settings)
+    expect(settings.permissions?.disableAutoMode).toBe('disable')
   })
 })

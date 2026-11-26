@@ -96,6 +96,16 @@ export async function resolveLocalAgentRunContext(
     const custom = await resolveCustomModelRunContext(providerId, options.sessionId, options.sourceSessionId, options.role === 'acp');
     Object.assign(connection, custom, { unsetEnv: [...(connection.unsetEnv ?? []), ...(custom.unsetEnv ?? [])] });
   }
+  if (providerId === 'claude' && options.sessionId && !connection.customModel) {
+    // A Gugu-model session: the host resolves its reviewer (the launch arms the same one on the session ticket).
+    const { sessionPlatformModel } = await import('@main/core/sessions/platform-model-selection');
+    const own = await sessionPlatformModel(options.sessionId);
+    const decided = own === undefined && options.sourceSessionId ? await sessionPlatformModel(options.sourceSessionId) : own;
+    if (decided?.modelId) {
+      const { platformClaudeReviewContext } = await import('./claude-reviewer');
+      Object.assign(connection, await platformClaudeReviewContext(decided.modelId, options.role === 'acp' ? 'acp' : 'pty', { ...env, ...configRootEnv }));
+    }
+  }
   if (providerId === 'claude' && !connection.customModel) {
     const credentialFacts = { ...env };
     for (const key of connection.unsetEnv ?? []) delete credentialFacts[key];

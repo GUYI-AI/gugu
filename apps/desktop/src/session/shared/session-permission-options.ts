@@ -7,7 +7,7 @@ export type NativePermissionChoice = { id: string; name: string; description?: s
 export function buildSessionPermissionOptions(input: {
   modeMap?: ProviderPermissionModeMap;
   native?: readonly NativePermissionChoice[];
-  review?: { allowed: boolean; reason?: string; byHaiku?: boolean };
+  review?: { allowed: boolean; reason?: string; byHaiku?: boolean; reviewer?: { label: string; kind: 'platform' | 'connection' } };
   leg?: 'acp' | 'tui';
   structuralFullAccess?: boolean;
 }): SessionOptionGroup | null {
@@ -27,6 +27,7 @@ export function buildSessionPermissionOptions(input: {
         ? review?.reason ?? 'taskConfig.reviewEligibilityUnknown'
         : native ? 'taskConfig.permissionNativeUnavailable' : 'taskConfig.reviewEligibilityUnknown' } : {}),
       ...(tier === 'ai-review' && review?.byHaiku ? { reviewByHaiku: true } : {}),
+      ...(tier === 'ai-review' && allowed && review?.reviewer ? { reviewer: review.reviewer } : {}),
     });
   }
   return available.length ? { selected: null, available } : null;

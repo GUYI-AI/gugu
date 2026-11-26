@@ -1,5 +1,4 @@
 import { buildSessionPermissionOptions } from '@shared/session-permission-options';
-import { customClaudeReviewSource } from '@gugu/session-core/models/auto-review-source';
 import { customModelEfforts, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { createFailureLogFields } from './create-failure-log-fields';
 import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
@@ -304,10 +303,20 @@ export async function createModels(
     const customRef = customModelRefFromOption(requestedModel);
     const customRecords = await (await import('@main/core/agents/custom-models')).listCustomModels();
     const reviewConnection = customRef ? customRecords.find(record => record.id === customRef.connectionId) : undefined;
-    const reviewEndpoint = reviewConnection?.endpoints.find(endpoint => endpoint.protocol === 'anthropic-messages');
-    const customReview = request.harness === 'claude' && customRef && reviewConnection?.keySaved && reviewEndpoint
-      ? customClaudeReviewSource({ connectionId: customRef.connectionId, endpoint: reviewEndpoint.baseUrl, selectedModel: customRef.modelId, models: reviewConnection.models,
-        preference: await (await import('@main/core/settings/settings-service')).appSettingsService.get('autoReviewModel') }) : null;
+    // Claude on a gateway (a Gugu model or a connection): the host's reviewer decides, the one the session launches with.
+    const reviewRoute = platformModel ? 'platform' as const : customRef ? 'custom' as const : 'own' as const;
+    const reviewer = await import('@main/core/agents/claude-reviewer');
+    const customFacts = customRef && reviewConnection
+      ? (await import('@main/core/agents/custom-models')).claudeReviewSessionFacts(reviewConnection, customRef.modelId) : undefined;
+    const hostReview = request.harness === 'claude' && reviewRoute !== 'own'
+      ? await reviewer.resolveHostClaudeReviewer({
+        route: reviewRoute,
+        mainModel: platformModel ? requestedModel!.replace(/^platform:/, '') : customRef?.modelId,
+        platformModels: reviewer.platformReviewCandidates(catalog.models),
+        connections: customRecords,
+        ...(customFacts ? { session: customFacts } : {}),
+      })
+      : null;
     const customEntry = customRef && customRecords.find(({ id }) => id === customRef.connectionId)?.models.find(({ id }) => id === customRef.modelId);
     const customEfforts = customRef ? customModelEfforts(customEntry ?? undefined, agent.capabilities?.effort) : null;
     const resolvedEfforts = customRef && !customEfforts ? null : resolveCreateEfforts({
@@ -324,9 +333,13 @@ export async function createModels(
     const fast = customRef ? null : platformModel
       ? await platformCreationFastGroup(request.harness, requestedModel!)
       : creationFastGroup(agent.capabilities, requestedModel ?? catalog.selected, state);
-    const reviewQualified = (!customRef || request.harness !== 'claude' || customReview !== null) && catalogAllowsAutoReview(agent.capabilities?.autoApprove?.modes, state,
-          platformModel ? 'platform' : customRef ? 'custom' : 'own', runtimeModelId(requestedModel) ?? (state.kind === 'ready' ? state.selected : null));
-    const reviewAllowed = reviewQualified && customReview?.kind !== 'platform-fallback';
+    // The CLI facts decide whether Auto mode is shown at all; the host's reviewer whether it can be picked.
+    const reviewQualified = catalogAllowsAutoReview(agent.capabilities?.autoApprove?.modes, state, reviewRoute,
+      runtimeModelId(requestedModel) ?? (state.kind === 'ready' ? state.selected : null), hostReview ? { ok: true } : undefined);
+    const reviewAllowed = reviewQualified && hostReview?.ok !== false;
+    const hostReviewer = hostReview?.ok ? hostReview.reviewer : undefined;
+    const reviewByHaiku = hostReviewer?.kind === 'connection' && hostReviewer.byHaiku === true;
+    const reviewReason = hostReview && !hostReview.ok ? reviewer.CLAUDE_REVIEW_REASON_KEYS[hostReview.reason] : undefined;
     const cliVersion = state.kind === 'ready' || state.kind === 'auth-required' ? state.cliVersion : undefined;
     const floor = agent.capabilities?.autoApprove?.modes?.['ai-review']?.reviewRequirements?.minimumCliVersion;
     const versionTooOld = cliVersion && floor && cliVersion.split('.').reduce((n, part) => n * 10000 + Number(part), 0) < floor.split('.').reduce((n, part) => n * 10000 + Number(part), 0);
@@ -335,9 +348,11 @@ export async function createModels(
       native: state.kind === 'ready' || state.kind === 'auth-required' ? state.permissionModes : undefined,
       structuralFullAccess: request.harness === 'grok',
       leg: sessionpageLegOfView(view.view),
-      review: { allowed: reviewAllowed, byHaiku: customReview?.kind === 'own' && customReview.byHaiku,
+      review: { allowed: reviewAllowed, byHaiku: reviewByHaiku,
+        ...(hostReviewer ? { reviewer: { label: hostReviewer.label, kind: hostReviewer.kind } } : {}),
         reason: !cliVersion ? 'taskConfig.reviewEligibilityUnknown' : versionTooOld ? 'taskConfig.reviewVersionUnsupported'
-          : state.kind !== 'ready' ? 'taskConfig.reviewEligibilityUnknown' : !state.reviewerAvailable ? 'taskConfig.reviewNativeUnavailable' : 'taskConfig.reviewUnavailable' },
+          : state.kind !== 'ready' ? 'taskConfig.reviewEligibilityUnknown' : !state.reviewerAvailable ? 'taskConfig.reviewNativeUnavailable'
+            : reviewReason ?? 'taskConfig.reviewUnavailable' },
     });
     return {
       ok: true,
@@ -359,7 +374,12 @@ export async function createModels(
           ...(m.hidden ? { hidden: true } : {}),
         })),
         selected: catalog.selected,
-        ...(reviewQualified ? { autoReview: { model: requestedModel ?? (state.kind === 'ready' ? state.selected! : ''), ...(customReview?.kind === 'platform-fallback' ? { disabled: true } : {}), ...(customReview?.kind === 'own' && customReview.byHaiku ? { reviewByHaiku: true } : {}) } } : {}),
+        ...(reviewQualified ? { autoReview: {
+          model: requestedModel ?? (state.kind === 'ready' ? state.selected! : ''),
+          ...(reviewReason ? { disabled: true, reason: reviewReason } : {}),
+          ...(reviewByHaiku ? { reviewByHaiku: true } : {}),
+          ...(hostReviewer ? { reviewer: { label: hostReviewer.label, kind: hostReviewer.kind } } : {}),
+        } } : {}),
         efforts: Object.entries(resolvedEfforts?.options ?? {}).map(([id, option]) => ({
           id,
           name: option.name,

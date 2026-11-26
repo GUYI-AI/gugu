@@ -593,7 +593,9 @@ export class LocalSessionProvider implements SessionProvider {
         const available = runContext.autoReviewAllowed !== false && catalogAllowsAutoReview(plugin.capabilities.autoApprove.modes,
           { ...catalog, cliVersion: runContext.cliVersion },
           platformModelForSpawn ? 'platform' : platformModelForSpawn === null ? runContext.customModel ? 'custom' : 'own' : 'unknown',
-          platformModelForSpawn?.modelId ?? runtimeModelId(session.model) ?? (catalog.kind === 'ready' ? catalog.selected : null));
+          platformModelForSpawn?.modelId ?? runtimeModelId(session.model) ?? (catalog.kind === 'ready' ? catalog.selected : null),
+          // A gateway session's reviewer was resolved with its run context; that verdict replaces the main-model name rule.
+          runContext.autoReviewAllowed !== undefined ? { ok: runContext.autoReviewAllowed } : undefined);
         if (!available) throw new Error('AI review is unavailable for this session executable and model');
       }
       let agentCommand = plugin.behavior.prompt!.buildCommand({
