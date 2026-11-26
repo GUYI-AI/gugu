@@ -6,26 +6,27 @@ import { copyTextWithFeedback } from '@/lib/copyTextWithFeedback'
 /**
  * The host's text preview's selection menu: the same DOM an App page's runtime draws (selection-menu-dom.ts), from the
  * same table (`selectionMenu`), placed by the same rule — again as the preview scrolls, in the same frame. Copy is done
- * here; what Comment does is the caller's (the conversation's comment box).
+ * here; what Cite and Comment (`onSend`) do is the caller's (the conversation's composer, or its comment box).
  */
-export function FileSelectionMenu({ items, text, anchor, container, onComment, onClose }: {
+export function FileSelectionMenu({ items, text, anchor, container, onCite, onSend, onClose }: {
   items: readonly SelectionMenuItem[]
   text: string
   /** The selection's box on screen, read again as it moves. */
   anchor: () => DOMRect
   container?: HTMLElement | null
-  onComment?: () => void
+  onCite?: () => void
+  onSend?: () => void
   onClose: () => void
 }) {
-  const latest = useRef({ text, anchor, onComment, onClose })
-  latest.current = { text, anchor, onComment, onClose }
+  const latest = useRef({ text, anchor, onCite, onSend, onClose })
+  latest.current = { text, anchor, onCite, onSend, onClose }
   useLayoutEffect(() => {
     const host = container ?? document.body
     const doc = host.ownerDocument
     const run = (action: FileSelectionAction) => {
-      const { text: words, onComment: comment, onClose: close } = latest.current
+      const { text: words, onCite: cite, onSend: send, onClose: close } = latest.current
       if (action === 'copy') void copyTextWithFeedback(words).catch(() => undefined)
-      else comment?.()
+      else (action === 'cite' ? cite : send)?.()
       close()
     }
     const menu = drawSelectionMenu(doc, items, Boolean(text), run)

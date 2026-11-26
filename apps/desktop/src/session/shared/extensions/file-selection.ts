@@ -8,11 +8,11 @@ import type { AnnotationConversation } from '../browser-annotation';
  * whoever shows the file only draws the menu the host gave it, from one table (`selectionMenu`), and hands the selection
  * over on a press:
  * - Copy, when there are words (a phone's sandboxed page has no copy menu of its own);
- * - Comment (wire `send`), the host's numbered comment box at the selection; saved, the comment joins the conversation's
- *   draft and goes with the person's next send.
+ * - Cite, the words and a pill per place into the conversation's composer, for the person to go on writing;
+ * - Send, the same cite with a line of the person's own, which they write in the host's own box and send themselves.
  * An App's page draws it with the runtime (`gugu.files.showSelection`, the table came with `files.open`), in its own frame;
- * the host's text preview draws the same DOM (selection-menu-dom.ts). A page can press the menu itself: so Comment only opens
- * the host's box — nothing is sent without the person.
+ * the host's text preview draws the same DOM (selection-menu-dom.ts). A page can press the menu itself: so Cite only drafts
+ * and Send only opens the host's box — what a page can do is what `gugu.dispatch` drafts already can.
  */
 
 export const EXTENSION_FILE_SELECTION_METHOD = 'extensions.fileSelection';
@@ -39,20 +39,20 @@ export function placeTarget(file: FileReference, place: SelectionPlace): string 
 /** Where the page's selection is, in the page's CSS px, and the page's size. */
 export interface SelectionBox { rect: { x: number; y: number; width: number; height: number }; viewport: { width: number; height: number } }
 
-/** Main → the window that draws the page: the person pressed Comment (wire name `send`) on this selection. */
+/** Main → the window that draws the page: the person pressed Cite or Comment (wire name `send`) on this selection. */
 export interface FileSelectionAsk extends SelectionBox {
   webContentsId: number;
-  action: 'send';
+  action: 'cite' | 'send';
   conversation: AnnotationConversation;
   file: FileReference;
   pick: FileSelectionPick;
 }
 
-export type FileSelectionAction = 'copy' | 'send';
+export type FileSelectionAction = 'copy' | 'cite' | 'send';
 
 /**
  * The conversation a page's selection belongs to: the session whose page it is, else the chat it is drawn in, else none.
- * The one answer for which actions there are and whose draft a comment joins.
+ * The one answer for which actions there are, where a cite goes and whose draft an annotation joins.
  */
 export function selectionConversationOf(page: { session?: string | null; chat?: string | null }): AnnotationConversation | null {
   if (page.session) return { kind: 'session', sessionId: page.session };
@@ -62,8 +62,8 @@ export function selectionConversationOf(page: { session?: string | null; chat?: 
 
 /** The menu's words, in the person's language: one source for every place that draws it. `send` is Comment's wire name (API 60). */
 const WORDS = {
-  'zh-CN': { copy: '复制', send: '评论' },
-  'en-US': { copy: 'Copy', send: 'Comment' },
+  'zh-CN': { copy: '复制', cite: '引用', send: '评论' },
+  'en-US': { copy: 'Copy', cite: 'Cite', send: 'Comment' },
 } as const;
 export function selectionWords(locale: string): (typeof WORDS)[keyof typeof WORDS] {
   return locale.startsWith('zh') ? WORDS['zh-CN'] : WORDS['en-US'];
@@ -72,14 +72,13 @@ export function selectionWords(locale: string): (typeof WORDS)[keyof typeof WORD
 export interface SelectionMenuItem { id: FileSelectionAction; label: string }
 
 /**
- * The menu, in order, for a page's file: Copy always (drawn only when a pick has words: `drawnItems`); Comment with a
- * conversation, a file it can name for its readers and a surface whose composer sends comments. A selection is commented on,
- * never quoted: quoting is for a whole message.
+ * The menu, in order, for a page's file: Copy always (drawn only when a pick has words: `drawnItems`); Cite with a
+ * conversation and a file it can name for its readers; Comment also needs a surface whose composer sends comments (a phone's task page cites only).
  */
 export function selectionMenu(conversation: AnnotationConversation | null, named: boolean, canSend: boolean, locale: string): SelectionMenuItem[] {
   const words = selectionWords(locale);
   const there = Boolean(conversation && named);
-  return (['copy', ...(there && canSend ? ['send' as const] : [])] as FileSelectionAction[])
+  return (['copy', ...(there ? ['cite' as const] : []), ...(there && canSend ? ['send' as const] : [])] as FileSelectionAction[])
     .map((id) => ({ id, label: words[id] }));
 }
 
@@ -96,7 +95,7 @@ export function selectionFileKey(ref: AppFileRef): string {
 const finite = z.number().finite();
 const word = z.string().min(1).max(200);
 const action = z.object({
-  action: z.enum(['send']),
+  action: z.enum(['cite', 'send']),
   file: z.unknown(),
   places: z.array(z.object({ at: z.record(word, word).refine((at) => Object.keys(at).length > 0), label: word.optional() }).strict()).min(1).max(8),
   text: z.string().min(1).max(16 * 1024).optional(),
@@ -110,10 +109,10 @@ const action = z.object({
  * the version the page shows (the entry's `version`, when it gave one): what was picked was picked on that one, so its
  * pills point there, not at a newer version that came in since.
  */
-export function parseSelectionAction(input: unknown): SelectionBox & { action: 'send'; file: AppFileRef; version?: number; pick: FileSelectionPick } {
+export function parseSelectionAction(input: unknown): SelectionBox & { action: 'cite' | 'send'; file: AppFileRef; version?: number; pick: FileSelectionPick } {
   const parsed = action.safeParse(input);
   if (!parsed.success) {
-    throw Object.assign(new Error('A selection action is { action: send, file, places: [{ at, label? }] (1–8), text?, code?, rect, viewport } (CSS px)'), { code: 'invalid' });
+    throw Object.assign(new Error('A selection action is { action: cite | send, file, places: [{ at, label? }] (1–8), text?, code?, rect, viewport } (CSS px)'), { code: 'invalid' });
   }
   const { action: pressed, file, places, text, code, rect, viewport } = parsed.data;
   const version = (file as { version?: unknown } | null)?.version;

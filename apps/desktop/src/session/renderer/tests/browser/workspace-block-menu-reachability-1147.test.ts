@@ -209,7 +209,7 @@ async function openHandle(insertion = true) {
   await pointer(x, y, 'mouseReleased');
   await until('the block menu opens in the host', menuOpen);
   expect(shown!.items.filter((item) => item.type === 'separator')).toHaveLength(1);
-  expect(labels()).toEqual(['Insert below this paragraph', 'Turn into', 'Duplicate', 'Move up', 'Move down', 'Delete', 'Copy link to block']);
+  expect(labels()).toEqual(['Insert below this paragraph', 'Turn into', 'Duplicate', 'Move up', 'Move down', 'Delete', 'Copy link to block', 'Cite']);
   // Each kind of block is named once per submenu; Quote and Code block are in both because both are what they say.
   expect(labels(menuItem('Turn into').items)).toEqual(['Heading', 'List', 'Quote', 'Code block']);
   if (insertion) expect(labels(menuItem('Insert below this paragraph').items)).toEqual(['Table', 'Image…', 'File…', 'Heading', 'List', 'To-do', 'Quote', 'Code block', 'Divider']);
@@ -223,7 +223,7 @@ async function readMenu() {
   await pointer(box.left + 30, box.top + box.height / 2, 'mousePressed', { button: 'right', buttons: 2 });
   await pointer(box.left + 30, box.top + box.height / 2, 'mouseReleased', { button: 'right' });
   await until('reading right-click offers the existing block links', menuOpen);
-  expect(labels()).toEqual(['Copy link to block']);
+  expect(labels()).toEqual(['Copy link to block', 'Cite']);
 }
 
 it('keeps the block through left padding, opens its menu, and changes only on another paragraph row', async () => {
@@ -575,11 +575,13 @@ it.each([['Heading', '## '], ['List', '- '], ['Quote', '> ']])('turns an empty c
   expect(file.text).toBe(expected + 'Ready\n\nAfter.');
 });
 
-it('copies the whole block link from the actions handle; no Cite (a selection is commented on, quoting is for a whole message)', async () => {
+it('copies the whole block link and cites that source span from the actions handle', async () => {
   const first = 'First paragraph keeps its own actions.';
   await actOnParagraph(first, 'Copy link to block');
   await until('the block link reaches the clipboard', () => copied.at(-1) === 'gugu-file://reachability#3');
-  expect(dispatch).not.toHaveBeenCalled();
+  await actOnParagraph(first, 'Cite');
+  await until('the whole block is cited through the host', () => dispatch.mock.calls.length === 1);
+  expect(dispatch.mock.calls[0]).toEqual(['', { draft: true, refs: [expect.objectContaining({ file: entry, at: expect.objectContaining({ lines: '3' }) })] }]);
 });
 
 it('moves, duplicates and deletes full source blocks without changing their neighbors', async () => {
@@ -631,6 +633,10 @@ it('keeps reading clean and offers block links on right-click', async () => {
   await readMenu();
   await pick('Copy link to block');
   await until('the reading block link is copied', () => copied.at(-1) === 'gugu-file://reachability#3');
+  await readMenu();
+  await pick('Cite');
+  await until('reading cites the original source span', () => dispatch.mock.calls.length === 1);
+  expect(dispatch.mock.calls[0]).toEqual(['', { draft: true, refs: [expect.objectContaining({ file: entry, at: expect.objectContaining({ lines: '3' }) })] }]);
   expect(file.text).toBe(text);
 });
 
@@ -659,6 +665,9 @@ it('keeps every side control hidden for a read-only document, with reading links
   await readMenu();
   await pick('Copy link to block');
   await until('the read-only block link is copied', () => copied.at(-1) === 'gugu-file://reachability#3');
+  await readMenu();
+  await pick('Cite');
+  await until('the read-only source span is cited', () => dispatch.mock.calls.length === 1);
   expect(file.text).toBe(text);
 });
 

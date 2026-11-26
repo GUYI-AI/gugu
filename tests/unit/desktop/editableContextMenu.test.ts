@@ -12,7 +12,7 @@ vi.mock('electron', () => ({
   BrowserWindow: { fromWebContents: (contents: { owner: BrowserWindow }) => contents.owner },
   clipboard: {},
 }))
-const labels = { undo: 'Undo', redo: 'Redo', cut: 'Cut', copy: 'Copy', paste: 'Paste', selectAll: 'Select All', comment: 'Comment' }
+const labels = { undo: 'Undo', redo: 'Redo', cut: 'Cut', copy: 'Copy', paste: 'Paste', selectAll: 'Select All', quoteSelection: 'Quote Selection', quoteFile: 'Quote File' }
 const originalHitTest = document.elementFromPoint
 afterEach(() => {
   document.body.replaceChildren()

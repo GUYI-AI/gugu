@@ -14,7 +14,7 @@ let harness: ReturnType<typeof createReactHarness>
 let root: HTMLElement
 let body: HTMLElement
 let unbind: () => void
-const comment = vi.fn()
+const quote = vi.fn()
 const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
 const menuItems = () => [...document.querySelectorAll<HTMLElement>('[role=menuitem]')]
 const item = (label: string) => menuItems().find(node => node.querySelector('.gg-menu-item-label')?.textContent === label)!
@@ -39,12 +39,12 @@ beforeEach(async () => {
   state.browserCopy.mockClear()
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: state.browserCopy } })
   state.toast.mockClear()
-  comment.mockReset()
+  quote.mockReset()
   root = document.createElement('aside')
   root.innerHTML = '<header>fixture.txt</header><div data-file-selection>Precise file selection</div>'
   document.body.append(root)
   body = root.lastElementChild as HTMLElement
-  unbind = bindFileViewerMenu(root, () => ({ comment, canSelectAll: true }), state.toast)
+  unbind = bindFileViewerMenu(root, () => ({ quote, canSelectAll: true }), state.toast)
   harness = createReactHarness()
   await harness.render(createNode(MobileFileContextMenu))
   vi.useFakeTimers()
@@ -63,16 +63,16 @@ describe('mobile file menu uses captured viewer actions', () => {
   it('copies the captured selection through the host after focus clears it', async () => {
     select()
     await hold()
-    expect(menuItems().map(node => node.querySelector('.gg-menu-item-label')?.textContent)).toEqual(['Copy', 'Select All', 'Comment'])
+    expect(menuItems().map(node => node.querySelector('.gg-menu-item-label')?.textContent)).toEqual(['Copy', 'Select All', 'Quote Selection', 'Quote File'])
     document.getSelection()!.removeAllRanges()
     vi.useRealTimers()
     await clickElement(item('Copy'))
     expect(state.copy).toHaveBeenCalledWith('Precise file selection')
     expect(state.browserCopy).not.toHaveBeenCalled()
-    expect(comment).not.toHaveBeenCalled()
+    expect(quote).not.toHaveBeenCalled()
   })
 
-  it('comments on the captured selection through the existing binding and suppresses the release tap', async () => {
+  it('quotes the captured selection through the existing binding and suppresses the release tap', async () => {
     select()
     await hold()
     const release = new Event('touchend', { bubbles: true, cancelable: true })
@@ -80,13 +80,13 @@ describe('mobile file menu uses captured viewer actions', () => {
     expect(release.defaultPrevented).toBe(true)
     document.getSelection()!.removeAllRanges()
     vi.useRealTimers()
-    await clickElement(item('Comment'))
-    expect(comment).toHaveBeenCalledWith({ text: 'Precise file selection' }, expect.anything())
+    await clickElement(item('Quote Selection'))
+    expect(quote).toHaveBeenCalledWith({ text: 'Precise file selection' })
   })
 
   it('ignores selections outside the file and supports an HTML header without reaching into its iframe', async () => {
     unbind()
-    unbind = bindFileViewerMenu(root, () => ({ comment, canSelectAll: false }), state.toast)
+    unbind = bindFileViewerMenu(root, () => ({ quote, canSelectAll: false }), state.toast)
     const frame = document.createElement('iframe')
     frame.setAttribute('sandbox', 'allow-scripts')
     body.replaceChildren(frame)
@@ -102,22 +102,23 @@ describe('mobile file menu uses captured viewer actions', () => {
     await hold(root.firstElementChild as HTMLElement)
     expect(item('Copy').getAttribute('aria-disabled')).toBe('true')
     expect(item('Select All').getAttribute('aria-disabled')).toBe('true')
-    expect(item('Comment').getAttribute('aria-disabled')).toBe('true')
-    expect(comment).not.toHaveBeenCalled()
+    expect(item('Quote Selection').getAttribute('aria-disabled')).toBe('true')
+    vi.useRealTimers()
+    await clickElement(item('Quote File'))
+    expect(quote).toHaveBeenCalledWith(null)
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
     outside.remove()
   })
 
   it('does not execute a captured action against a replacement file', async () => {
-    select()
     await hold()
     unbind()
-    const nextComment = vi.fn()
-    unbind = bindFileViewerMenu(root, () => ({ comment: nextComment }), state.toast)
+    const nextQuote = vi.fn()
+    unbind = bindFileViewerMenu(root, () => ({ quote: nextQuote }), state.toast)
     vi.useRealTimers()
-    await clickElement(item('Comment'))
-    expect(comment).not.toHaveBeenCalled()
-    expect(nextComment).not.toHaveBeenCalled()
+    await clickElement(item('Quote File'))
+    expect(quote).not.toHaveBeenCalled()
+    expect(nextQuote).not.toHaveBeenCalled()
   })
 
   it.each(['short tap', 'scroll', 'cancel', 'mouse'])('leaves %s without a long-press menu or suppressed click', async mode => {

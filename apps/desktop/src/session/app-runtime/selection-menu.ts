@@ -7,7 +7,7 @@ import { guguError, type GuguHost } from './host';
  * `gugu.files.showSelection` (API 60, file-selection.ts): the host's selection menu, drawn in this page from the table its
  * file came with (`files.open`), so it is where the selection is in the same frame — nothing asked of the host until a
  * press. Not while the pointer is still selecting; not while the selection is out of view. Copy is the host's clipboard;
- * Comment (wire `send`) hands the selection to the host in the person's gesture (`filesSelectionAction`).
+ * Cite and Comment (wire `send`) hand the selection to the host in the person's gesture (`filesSelectionAction`).
  */
 export function selectionMenuApi(host: GuguHost) {
   const menus = new Map<string, SelectionMenuItem[]>();

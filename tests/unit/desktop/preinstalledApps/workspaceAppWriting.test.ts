@@ -201,15 +201,20 @@ describe('markdown redesign: the real document page', () => {
     close()
   })
 
-  test('M5 reading right-click offers only the block link, with its line; no Cite (a selection is commented on, quoting is for a whole message)', async () => {
+  test('M5 reading right-click offers only block links and citing, with the original line fingerprint', async () => {
     const block = paragraph()
     block.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 80, clientY: 110 }))
     await until('the block links are in the host menu', () => shown !== null)
     expect(gugu.showContextMenu).toHaveBeenLastCalledWith(expect.objectContaining({ x: 80, y: 110 }))
-    expect(labels()).toEqual(['Copy link to block'])
+    expect(labels()).toEqual(['Copy link to block', 'Cite'])
     await pick('Copy link to block')
     await until('the block link is copied', () => gugu.clipboard.writeText.mock.calls.length > 0)
     expect(gugu.linkTo).toHaveBeenLastCalledWith(expect.objectContaining({ file: entry, at: expect.objectContaining({ lines: '6' }) }))
+    block.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    await until('the block links are in the host menu again', () => shown !== null)
+    await pick('Cite')
+    await until('the block is cited', () => gugu.dispatch.mock.calls.length > 0)
+    expect(gugu.dispatch).toHaveBeenLastCalledWith('', { draft: true, refs: [expect.objectContaining({ file: entry, at: expect.objectContaining({ lines: '6', h: expect.any(String) }) })] })
   })
 
   test('M6 a read-only file has no side control in any mode', async () => {

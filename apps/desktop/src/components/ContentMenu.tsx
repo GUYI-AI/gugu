@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronLeft, MessageSquare, MoreHorizontal } from '@/lib/icons'
+import { ChevronLeft, FileText, MoreHorizontal, Reply } from '@/lib/icons'
 import { formatHotkeyText } from '@/session/renderer/lib/ui/shortcut-format'
 import type { RendererContentContextMenu } from '@/lib/contentContextMenu'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
@@ -50,7 +50,7 @@ function Rows({ items: given, onAction, onOpen }: RowsProps & { onOpen?: (row: R
   const { top: items, more } = contentMenuLayout(given)
   // Icons are all or none in one list: a row without one keeps the empty slot, so every label starts on one edge (「Any」 over members).
   const slot = given.some(item => item.type !== 'separator' && (item.person || item.icon || item.program)) ? <span aria-hidden /> : undefined
-  const iconOf = (item: Row) => item.icon === 'comment' ? <MessageSquare /> : item.program ? <ProgramIcon id={item.program} /> : slot
+  const iconOf = (item: Row) => item.icon === 'quote' ? <Reply /> : item.icon === 'file' ? <FileText /> : item.program ? <ProgramIcon id={item.program} /> : slot
   const rows = (list: readonly ContentMenuItem[]) => list.map((item, index) => item.type === 'separator' ? <MenuSeparator key={index} />
     : item.items ? onOpen ? <MenuItem key={item.id} icon={iconOf(item)} submenu closeOnClick={false} onClick={() => onOpen(item)}>{item.label}</MenuItem>
       : <Submenu key={item.id} item={item} icon={iconOf(item)} onAction={onAction} />

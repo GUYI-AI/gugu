@@ -1,6 +1,6 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { FileTextContent } from '@/components/preview/FileTextContent'
 import { until } from '../../../../../../../tests/support/awaitCondition'
@@ -18,14 +18,15 @@ afterEach(async () => {
   document.getSelection()?.removeAllRanges()
 })
 
-it.each([390, 1000])('keeps native source selection and the one menu (Copy · Comment) usable at %spx', async width => {
+it.each([390, 1000])('keeps native source selection and the one menu (a phone\'s: Copy · Cite) usable at %spx', async width => {
   await page.viewport(width, 700)
+  const cite = vi.fn()
   host = document.createElement('div')
   Object.assign(host.style, { width: '100%', maxWidth: '480px', fontSize: '14px', paddingTop: '100px' })
   document.body.append(host)
   root = createRoot(host)
   const file = { name: 'notes.txt', target: '/home/me/notes.txt' }
-  root.render(<FileTextContent kind="text" content={'first\nsecond\nthird'} selectable={{ conversation: { kind: 'chat', chatId: 'g-1' }, file, sends: true }} />)
+  root.render(<FileTextContent kind="text" content={'first\nsecond\nthird'} selectable={{ conversation: { kind: 'chat', chatId: 'g-1' }, file, cite, sends: false }} />)
   await until('the file has rendered its source lines', () => host.querySelectorAll('.gg-file-source-row').length === 3)
   const rows = [...host.querySelectorAll<HTMLElement>('.gg-file-source-row')]
   const lineHeight = parseFloat(getComputedStyle(host.querySelector('.gg-file-source')!).lineHeight)
@@ -37,10 +38,14 @@ it.each([390, 1000])('keeps native source selection and the one menu (Copy · Co
   document.getSelection()?.addRange(range)
   document.dispatchEvent(new Event('selectionchange'))
   await until('the selected range offers the menu', () => !!document.querySelector('.gugu-selection-menu button'))
-  expect([...document.querySelectorAll<HTMLElement>('.gugu-selection-menu button')].map(button => button.dataset.fileSelectionAction)).toEqual(['copy', 'send'])
+  expect([...document.querySelectorAll<HTMLElement>('.gugu-selection-menu button')].map(button => button.dataset.fileSelectionAction)).toEqual(['copy', 'cite'])
   const box = document.querySelector('.gugu-selection-menu')!.getBoundingClientRect()
   expect(box.left).toBeGreaterThanOrEqual(0)
   expect(box.right).toBeLessThanOrEqual(width)
+  await page.elementLocator(document.querySelector('.gugu-selection-menu [data-file-selection-action="cite"]')!).click()
+  await until('the selection reaches the cite callback', () => cite.mock.calls.length === 1)
+  expect(cite.mock.calls[0]![0]).toMatchObject({ refs: [], quote: expect.stringMatching(/second[\s\S]*\/home\/me\/notes\.txt$/) })
+  await until('the action closes once cited', () => !document.querySelector('.gugu-selection-menu'))
 })
 
 it('comments on a source selection into the conversation\'s draft: the file where it is, its lines and words; nothing is sent', async () => {
@@ -54,7 +59,7 @@ it('comments on a source selection into the conversation\'s draft: the file wher
   root = createRoot(host)
   await act(async () => {
     root.render(<><FileTextContent kind="text" content={'same line\nselected words\nselected words'}
-      selectable={{ conversation: { kind: 'chat', chatId }, file: { name: 'pricing.txt', target: path }, sends: true }} /><SelectionLineLayer /></>)
+      selectable={{ conversation: { kind: 'chat', chatId }, file: { name: 'pricing.txt', target: path }, cite: vi.fn(), sends: true }} /><SelectionLineLayer /></>)
   })
   const range = document.createRange()
   const selected = host.querySelector('[data-file-line="3"]')!.firstChild!
@@ -62,8 +67,8 @@ it('comments on a source selection into the conversation\'s draft: the file wher
   range.setEnd(selected, 8)
   document.getSelection()?.addRange(range)
   document.dispatchEvent(new Event('selectionchange'))
-  await until('the file offers Copy · Comment', () => document.querySelectorAll('.gugu-selection-menu button').length === 2)
-  expect([...document.querySelectorAll<HTMLElement>('.gugu-selection-menu button')].map(button => button.dataset.fileSelectionAction)).toEqual(['copy', 'send'])
+  await until('the file offers Copy · Cite · Comment', () => document.querySelectorAll('.gugu-selection-menu button').length === 3)
+  expect([...document.querySelectorAll<HTMLElement>('.gugu-selection-menu button')].map(button => button.dataset.fileSelectionAction)).toEqual(['copy', 'cite', 'send'])
   await act(async () => { await userEvent.click(document.querySelector('.gugu-selection-menu [data-file-selection-action="send"]')!) })
   const editor = () => document.querySelector<HTMLFormElement>('[data-annotation-editor]')
   await until('the line is open at the selection', () => !!editor())

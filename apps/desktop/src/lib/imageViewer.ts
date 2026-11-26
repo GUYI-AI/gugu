@@ -39,6 +39,8 @@ export interface ImageViewerItem {
   full?: (progress?: FileProgress) => Promise<string>
   /** 原图的像素尺寸,取自文件记录。查看器从打开到关闭都按它排版:缩略图、原图只是画进同一个框的像素。 */
   size?: Size
+  /** File previews keep their existing citation producer when opening the shared image viewer. */
+  quote?: () => Promise<void> | void
   /** An unsent composer image: the editor's Done hands the edited copy back here, in its place. */
   replace?: (file: File, caption: string) => void
 }

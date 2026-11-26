@@ -7,7 +7,7 @@ export const CONTENT_CONTEXT_MENU_ACTION = 'content-context-menu:action';
 export type ContentMenuItem =
   | { type: 'separator' }
   | {
-    type?: 'item'; id: string; label: string; enabled?: boolean; hotkey?: Hotkey; icon?: 'comment'; items?: ContentMenuItem[];
+    type?: 'item'; id: string; label: string; enabled?: boolean; hotkey?: Hotkey; icon?: 'quote' | 'file'; items?: ContentMenuItem[];
     /** One of a choice; the chosen one is marked. */
     checked?: boolean;
     /** Removes or undoes something; drawn in the danger color. */

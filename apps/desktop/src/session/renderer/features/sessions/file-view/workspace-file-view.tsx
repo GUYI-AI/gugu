@@ -13,6 +13,8 @@ import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { registerHtmlPreview } from '@/components/preview/html-preview-registration';
 import { mimeTypeFromName } from '@gugu/core/shared/imageMime.mjs';
+import { citeIntoConversation } from '@renderer/lib/editor/cite-into-conversation';
+import { selectionCite, viewerPick } from '@/components/preview/quote-preview-file';
 import { selectionConversationOf } from '@shared/extensions/file-selection';
 import { fileChangesChannel } from '@shared/core/fs/fsEvents';
 import { workspaceBackend, workspaceEvents, workspaceRpc } from '../workspace-backend/workspace-backend';
@@ -71,7 +73,7 @@ export function WorkspaceFileView({ root, tabId, projectId, workspaceId, session
   const file = useMemo<HostedPreviewFile>(() => {
     const fileName = fileBaseName(path);
     const conversation = selectionConversationOf({ session: sessionId, chat: chatId });
-    // Named where it is: its path on the machine it is on (file-selection.ts), for a comment on its selection.
+    // Named where it is: its path on the machine it is on (file-selection.ts), the same for a cite and a comment.
     const reference = { name: fileName, target: absolutePath };
     const { elsewhere } = workspaceBackend(projectId);
     const kind = getFileKind(path);
@@ -91,8 +93,9 @@ export function WorkspaceFileView({ root, tabId, projectId, workspaceId, session
         key: `${workspaceId}:${path}@${revision}`,
         read: () => readWorkspaceFileBytes(projectId, workspaceId, path, inWorkspace, takeBegunRead?.()),
         registerHtml: (documentHtml) => registerHtmlPreview(documentHtml, (content) => workspaceRpc(projectId).files.createPreview(projectId, workspaceId, absolutePath, content)),
-        // A selection's comment (the selection menu and the file menu alike) goes into this conversation's draft.
-        selectable: { conversation, file: reference, sends: true },
+        // One cite for a selection and the file menu's 引用: the session's draft, the file named by its path on its machine.
+        quote: (selection) => conversation ? citeIntoConversation(conversation, selectionCite(conversation, reference, selection && viewerPick(selection))) : Promise.resolve(),
+        selectable: { conversation, file: reference, cite: (cite) => conversation ? citeIntoConversation(conversation, cite) : undefined, sends: true },
         ...(sessionId ? { annotation: { sessionId, path } } : {}),
         // On another machine this computer's programs cannot reach it: it is downloaded instead.
         ...(elsewhere ? {} : {

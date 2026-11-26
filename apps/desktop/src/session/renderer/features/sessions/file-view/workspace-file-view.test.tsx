@@ -29,6 +29,7 @@ vi.mock('@renderer/lib/ipc', () => ({ rpc: {} }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
 vi.mock('@renderer/features/remote-hosts/workspace/remote-file-actions', () => ({ downloadSessionFile: vi.fn() }));
+vi.mock('@renderer/lib/editor/cite-into-conversation', () => ({ citeIntoConversation: vi.fn() }));
 vi.mock('./file-view-kinds', () => ({ FOLDER_APP_FILE_TAB: 'folder', openFolderInTab: vi.fn() }));
 
 import { WorkspaceFileView } from './workspace-file-view';

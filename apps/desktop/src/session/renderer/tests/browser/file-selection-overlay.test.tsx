@@ -6,14 +6,15 @@ import { runFileSelection } from '@renderer/features/sessions/annotations/file-s
 import { SelectionLineLayer } from '@renderer/features/sessions/annotations/selection-line'
 import { sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
 import type { FileSelectionAsk } from '@shared/extensions/file-selection'
+import { APP_COMPOSE_EVENT } from '@shared/extensions/app-runtime-protocol'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@gugu/session-ui/styles/global'
 import '@gugu/session-ui/theme/theme.css'
 import '@gugu/session-ui/theme/semantic.css'
 import '@/styles/tokens.css'
 
-// Comment pressed on an App page's selection menu reaches the window (the menu itself is the page's runtime's). Here
-// the page is a plain box of the same size: what is judged is the host's half — the comment box.
+// Cite or Comment pressed on an App page's selection menu reaches the window (the menu itself is the page's runtime's). Here
+// the page is a plain box of the same size: what is judged is the host's half — a draft, or the comment box.
 let guest: HTMLDivElement, host: HTMLDivElement, root: Root
 beforeEach(async () => {
   host = document.createElement('div')
@@ -32,26 +33,50 @@ afterEach(async () => {
 })
 
 const chatId = crypto.randomUUID()
-const ask = (): FileSelectionAsk => ({
-  webContentsId: 7, action: 'send', conversation: { kind: 'chat', chatId },
+const ask = (action: 'cite' | 'send'): FileSelectionAsk => ({
+  webContentsId: 7, action, conversation: { kind: 'chat', chatId },
   file: { name: 'AGENTS.md', target: '/home/me/work/AGENTS.md' },
   pick: { text: 'run the gates', places: [{ at: { lines: '12-13' } }] },
   rect: { x: 40, y: 60, width: 120, height: 18 }, viewport: { width: 400, height: 300 },
 })
 const line = () => document.querySelector('[data-annotation-editor]')
 
+it('Cite drafts the words and the file\'s pill into the conversation; nothing is sent', async () => {
+  const drafts: unknown[] = []
+  const take = (event: Event) => drafts.push((event as CustomEvent).detail)
+  document.addEventListener(APP_COMPOSE_EVENT, take)
+  await act(async () => runFileSelection(guest, null, ask('cite')))
+  document.removeEventListener(APP_COMPOSE_EVENT, take)
+  // A file on a computer is named in words in a chat, its path written out (a chat has no pill that opens it).
+  expect(drafts).toMatchObject([{ chatId, text: expect.stringMatching(/^> run the gates\n\nAGENTS\.md \([^)]+\): \/home\/me\/work\/AGENTS\.md$/), refs: [] }])
+  expect(line()).toBeNull()
+})
+
+it('Cite of a chat folder\'s file drafts its pill alone: the link names the lines, the words are not quoted beside it', async () => {
+  const drafts: Array<{ chatId: string; text: string; refs: { label: string; link: string }[] }> = []
+  const take = (event: Event) => drafts.push((event as CustomEvent).detail)
+  const link = `gugu-file://${crypto.randomUUID()}?v=2#lines=57`
+  document.addEventListener(APP_COMPOSE_EVENT, take)
+  await act(async () => runFileSelection(guest, null, { ...ask('cite'), file: { name: 'RETENTION.md', target: link.replace(/#.*/, '') },
+    pick: { text: 'large files skip project groups', places: [{ at: { lines: '57' } }] } }))
+  document.removeEventListener(APP_COMPOSE_EVENT, take)
+  expect(drafts).toHaveLength(1)
+  expect(drafts[0]!.text).toBe('')
+  expect(drafts[0]!.refs).toEqual([{ label: expect.stringMatching(/^RETENTION\.md \(/), link }])
+})
+
 it('Comment opens the numbered box at the selection; saved, the comment joins the draft and nothing is sent; a press elsewhere dismisses it', async () => {
   const draft = sessionAnnotations.forConversation({ kind: 'chat', chatId })
   draft.clear()
-  await act(async () => runFileSelection(guest, null, ask()))
+  await act(async () => runFileSelection(guest, null, ask('send')))
   await until('the box is open at the selection', () => !!line())
   expect(line()!.getBoundingClientRect().top).toBeGreaterThanOrEqual(20)
   expect(line()!.textContent).toContain('1')
   await act(async () => { await userEvent.keyboard('Say which gates{Enter}') })
   await until('the comment joins the draft', () => draft.items.length === 1)
-  expect(draft.items[0]).toMatchObject({ kind: 'file', file: ask().file, places: [{ at: { lines: '12-13' } }], text: 'run the gates', annotation: 'Say which gates', number: 1 })
+  expect(draft.items[0]).toMatchObject({ kind: 'file', file: ask('send').file, places: [{ at: { lines: '12-13' } }], text: 'run the gates', annotation: 'Say which gates', number: 1 })
   await until('the box goes once saved', () => !line())
-  await act(async () => runFileSelection(guest, null, ask()))
+  await act(async () => runFileSelection(guest, null, ask('send')))
   await until('opened again, numbered next', () => !!line() && line()!.textContent!.includes('2'))
   await act(async () => { await userEvent.click(guest) })
   await until('a press elsewhere dismisses it', () => !line())

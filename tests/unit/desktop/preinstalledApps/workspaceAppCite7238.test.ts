@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-// #7238: a pill to a markdown file's lines opens the 群文件夹 App there. Judged on the real app.js and the real CodeMirror
-// (bound by a stand-in that puts the file's text in): a pill's link marks its lines in the source and the preview, found
-// again when the file changed above them (and said), and only said when the lines themselves changed. A place is the
-// file's it came for. (The App no longer cites a selection: a selection is commented on, in the host's comment box.)
+// #7238: the 群文件夹 App cites a markdown file's places as pills to their lines, and a pill opens the file there. Judged on
+// the real app.js and the real CodeMirror (bound by a stand-in that puts the file's text in): Cite hands
+// `gugu.dispatch('', { draft: true, refs })` — each range of the selection a pill with `at: { lines, h }` named by its lines, the picked words not quoted beside it; a
+// selection in the preview is cited by the lines its blocks were written on; a
+// pill's link marks its lines in the source and the preview, found again when the file changed above them (and said),
+// and only said when the lines themselves changed. A place is the file's it came for; a JSON file's cite stays a quote.
 // The preview is a stand-in that marks lines as gugu.markdown's `sourceLines` does (judged in markdown-entry.test.ts).
 // Every wait is on a fact (until), not a clock.
 import { readFileSync } from 'node:fs'
@@ -13,7 +15,11 @@ import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 // @ts-expect-error — 内置 App 是不经构建的纯 ES module,没有类型;运行时 import 可用。
 import { fingerprint } from '../../../../apps/desktop/preinstalled-apps/workspace/lines.js'
 import { until } from '../../../support/awaitCondition'
+import { fileCiteDraft } from '../../../../packages/session-shared/src/markdown/mention-grammar'
 import { documentToHtml } from '../../../../packages/session-chat-ui/src/core/markdown/to-html'
+import { parseMarkdownToBlocks } from '../../../../packages/session-chat-ui/src/core/markdown/parse'
+import { appendToDraft } from '../../../../apps/desktop/src/store/chatDraftWrites'
+import { annotatedSend } from '../../../../apps/desktop/src/session/renderer/features/sessions/annotations/session-annotations'
 
 const TEXT = ['# 发布计划', '', '目标：十月上线', '负责人：小王', '', '## 风险', '- 支付接口可能延期', '', '- 甲：Api 文档，API 冻结', '- 乙'].join('\n')
 const entry = {
@@ -116,9 +122,19 @@ const gugu = {
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement
 const view = () => EditorView.findFromDOM(document.querySelector('.cm-editor') as HTMLElement)!
+const line = (n: number) => view().state.doc.line(n)
 const select = (...ranges: [number, number][]) => view().dispatch({ selection: EditorSelection.create(ranges.map(([from, to]) => EditorSelection.range(from, to))) })
 const marked = (cls: string) => [...document.querySelectorAll('.cm-line')].flatMap((l, i) => (l.classList.contains(cls) ? [i + 1] : []))
 const previewMarked = (cls: string) => [...document.querySelectorAll(`#preview .${cls}`)].map((b) => b.getAttribute('data-line'))
+/** The host's right-click 引用 on the viewer that holds the selection: the App's own cite (`gugu.dispatch` draft). */
+let menuRequest = 0
+function citeSelection() {
+  const root = $(document.body.classList.contains('picks-in-preview') ? 'preview' : 'editor')
+  const requestId = `cite-${++menuRequest}`
+  root.dispatchEvent(new CustomEvent('gugu:file-viewer-menu', { detail: { action: 'snapshot', requestId, selection: { text: '' } } }))
+  root.dispatchEvent(new CustomEvent('gugu:file-viewer-menu', { detail: { action: 'quote-selection', requestId, selection: { text: '' } } }))
+}
+const refsOfLastCompose = () => (gugu.dispatch.mock.calls.at(-1)![1] as { refs: unknown[] }).refs
 /** The editor's text changed by someone else: the file says so and the preview draws it again. */
 async function edit(change: { from: number; to?: number; insert: string }) {
   view().dispatch({ changes: change })
@@ -145,6 +161,67 @@ beforeEach(() => {
   gugu.dispatch.mockClear()
   select([0, 0])
   document.getSelection()?.removeAllRanges()
+})
+
+describe('Cite: pills to the picked lines, and no quote beside them', () => {
+  test('the native menu keeps its picked lines after focus changes and quotes a whole file without selection', async () => {
+    select([line(3).from, line(4).to])
+    const root = $('editor')
+    expect(root.dataset.guguFileViewer).toBeTruthy()
+    const request = { action: 'snapshot', requestId: 'native', selection: { text: '' } }
+    root.dispatchEvent(new CustomEvent('gugu:file-viewer-menu', { detail: request }))
+    expect(request.selection.text).toBe('目标：十月上线\n负责人：小王')
+    select([0, 0])
+    root.dispatchEvent(new CustomEvent('gugu:file-viewer-menu', { detail: { ...request, action: 'quote-selection' } }))
+    await until('native Cite composed', () => gugu.dispatch.mock.calls.length > 0)
+    expect(refsOfLastCompose()).toEqual([{ file: entry, at: { lines: '3-4', h: fingerprint('目标：十月上线\n负责人：小王') }, label: 'Lines 3–4' }])
+    expect(gugu.dispatch.mock.calls.at(-1)![0]).toBe('')
+    root.dispatchEvent(new CustomEvent('gugu:file-viewer-menu', { detail: { ...request, action: 'snapshot', requestId: 'whole' } }))
+    root.dispatchEvent(new CustomEvent('gugu:file-viewer-menu', { detail: { ...request, action: 'quote-file', requestId: 'whole' } }))
+    await until('whole file composed', () => gugu.dispatch.mock.calls.length === 2)
+    expect(refsOfLastCompose()).toEqual([{ file: entry }])
+  })
+
+  test('each range of the selection is one pill: its lines and their fingerprint; the draft has no quote', async () => {
+    select([line(3).from, line(4).to], [line(7).from + 2, line(7).from + 6])
+    citeSelection()
+    await until('Cite has composed', () => gugu.dispatch.mock.calls.length > 0)
+    expect(gugu.dispatch).toHaveBeenCalledOnce()
+    expect(gugu.dispatch.mock.calls[0]![0]).toBe('')
+    // Cited, the selection goes.
+    await until('the selection bar has gone', () => !document.body.classList.contains('has-selection'))
+    expect(refsOfLastCompose()).toEqual([
+      { file: entry, at: { lines: '3-4', h: fingerprint('目标：十月上线\n负责人：小王') }, label: 'Lines 3–4' },
+      // A phrase inside a line: that line.
+      { file: entry, at: { lines: '7', h: fingerprint('- 支付接口可能延期') }, label: 'Line 7' },
+    ])
+  })
+
+  test('picked in the source, the pill names the lines the words are on', async () => {
+    select([line(6).from, line(7).to])
+    citeSelection()
+    await until('Cite has composed', () => gugu.dispatch.mock.calls.length > 0)
+    expect(gugu.dispatch).toHaveBeenCalledOnce()
+    expect(gugu.dispatch.mock.calls[0]![0]).toBe('')
+    expect(refsOfLastCompose()).toEqual([{ file: entry, at: { lines: '6-7', h: fingerprint('## 风险\n- 支付接口可能延期') }, label: 'Lines 6–7' }])
+  })
+
+  test('a selection in the preview is cited by the source lines its ends fall on', async () => {
+    const blocks = [...document.querySelectorAll('#preview [data-line]')]
+    // From the paragraph on lines 3–4 into the block on lines 6–7 (a heading and its list, no blank line between).
+    const [from, to] = [blocks.find((b) => b.getAttribute('data-line') === '3-4')!, blocks.find((b) => b.getAttribute('data-line') === '6-7')!]
+    const range = document.createRange()
+    range.setStart(from.firstChild!, 0)
+    range.setEnd(to.firstChild!, 6)
+    document.getSelection()!.addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+    citeSelection()
+    await until('Cite has composed', () => gugu.dispatch.mock.calls.length > 0)
+    expect(gugu.dispatch).toHaveBeenCalledOnce()
+    const [ref] = refsOfLastCompose() as { at: { lines: string; h: string } }[]
+    // It ends six characters into line 6 (`## 风险`): the list item on line 7 is not picked.
+    expect(ref!.at).toEqual({ lines: '3-6', h: fingerprint(TEXT.split('\n').slice(2, 6).join('\n')) })
+  })
 })
 
 describe('a pill opens the file at its lines', () => {
@@ -253,7 +330,7 @@ describe("a link's find= opens the file at its words", () => {
   })
 })
 
-describe("a pill's place is the file's it came for", () => {
+describe("a pill's place is the file's it came for; a JSON file's cite stays a quote", () => {
   test('a place for a file still opening is not shown on the file opened next, even where its lines read the same', async () => {
     // A file slow to open (it never comes): the page is on it when its pill's place comes (#7232), then plan is opened.
     gugu.files.open.mockImplementationOnce(() => new Promise(() => {}))
@@ -275,5 +352,65 @@ describe("a pill's place is the file's it came for", () => {
     // A place whose link names another file is not shown on this one, though its line 1 reads the same.
     link({ type: 'link', tab: 'main', path: '', query: { lines: '1', h: fingerprint(file.text.split('\n')[0]!) }, file: 'elsewhere' })
     expect(marked('cm-found')).toEqual([])
+  })
+
+  test('JSON: each range quoted with the lines it is shown on, and a pill to the file — its words as they are', async () => {
+    contextChanged(ctxOf('cfg'))
+    await until('the JSON file is shown', () => document.querySelector('.cm-editor') !== null && view().state.doc.toString().includes('不是标题'))
+    select([line(2).from, line(3).to])
+    citeSelection()
+    await until('Cite has composed', () => gugu.dispatch.mock.calls.length > 0)
+    expect(gugu.dispatch.mock.calls).toEqual([['Lines 2–3\n>   "a": "**粗**",\n>   "b": "# 不是标题"', { draft: true, refs: [{ file: config.entry }] }]])
+  })
+})
+
+// One way a selection reaches the conversation: Cite. Its draft is the words quoted, then a pill to the file and its
+// lines; the person's own words follow; what is sent is that text, drawn in the bubble as quotes and pills.
+describe("a session file's selection reaches the chat one way: Cite", () => {
+  test('two cites and a note: pills in order, no quote; the agent reads path, lines and note', async () => {
+    contextChanged(ctxOf(sessionEntry.id))
+    await until('the session file is open', () => $('doc-title').textContent === 'proof.md' && document.querySelector('#preview [data-line="3-4"]') !== null && document.querySelector('.cm-editor') !== null && view().state.doc.toString() === SESSION_TEXT)
+    gugu.dispatch.mockClear()
+    const paragraph = document.querySelector('#preview [data-line="3-4"]')!
+    const range = document.createRange()
+    range.selectNodeContents(paragraph)
+    document.getSelection()!.removeAllRanges()
+    document.getSelection()!.addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+    citeSelection()
+    await until('the first cite is composed', () => gugu.dispatch.mock.calls.length === 1)
+    document.getSelection()!.removeAllRanges()
+    select([line(6).from, line(6).to])
+    citeSelection()
+    await until('the second cite is composed', () => gugu.dispatch.mock.calls.length === 2)
+    // Into the session's composer as main writes a working-copy draft, one after the other; the person's note last.
+    const drafts = gugu.dispatch.mock.calls.map(([text, options]) => `${fileCiteDraft(text, (options as { refs: { file: { id: string }; label?: unknown }[] }).refs)}\n`)
+    const draft = appendToDraft(appendToDraft(drafts[0]!, drafts[1]!), '怎么证明？')
+    const sent = annotatedSend(draft, [], 'en-US').text
+    expect(sent).toBe([
+      '@[proof.md (Lines 3–4)](docs/proof.md)', '', '@[proof.md (Line 6)](docs/proof.md)', '', '怎么证明？',
+    ].join('\n'))
+    expect(sent).not.toMatch(/^#|\{\s*"path"|"startLine"|"annotation"/m)
+    // The user bubble's own parse (a session page says a path is a file) draws two pills and no quote.
+    const bubble = document.createElement('div')
+    bubble.innerHTML = parseMarkdownToBlocks('sent', sent, { resolve: (token) => ({ id: token, label: token, kind: 'file' }) })
+      .map((block) => (block.kind === 'html' ? block.html : '')).join('')
+    expect(bubble.querySelector('blockquote')).toBeNull()
+    expect([...bubble.querySelectorAll('.gg-md-mention')].map((pill) => pill.textContent)).toEqual(['proof.md (Lines 3–4)', 'proof.md (Line 6)'])
+    expect(bubble.textContent).not.toMatch(/@\[|\]\(|\{|Selected text|Selection 1/)
+    expect(bubble.textContent).toContain('怎么证明？')
+  })
+
+  test("a code file's cite is the same pill to its lines", async () => {
+    contextChanged(ctxOf(codeEntry.id))
+    await until('the code file is shown', () => $('doc-title').textContent === 'bound.py' && document.querySelector('.code-view') !== null && view().state.doc.toString() === CODE)
+    gugu.dispatch.mockClear()
+    select([line(3).from, line(4).to])
+    citeSelection()
+    await until('Cite has composed', () => gugu.dispatch.mock.calls.length === 1)
+    const [text, options] = gugu.dispatch.mock.calls[0]! as [string, { refs: { file: { id: string }; label?: unknown }[] }]
+    expect(text).toBe('')
+    expect(options.refs.map(({ label }) => label)).toEqual(['Lines 3–4'])
+    expect(fileCiteDraft(text, options.refs)).toBe('@[bound.py (Lines 3–4)](src/bound.py)')
   })
 })

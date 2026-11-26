@@ -17,6 +17,7 @@ import { useBackLayer } from './ui/sheetStack'
 import { IconButton } from './ui/IconButton'
 import { Button } from './ui/Button'
 import { bindFileViewerMenu } from './preview/file-viewer-menu'
+import { quoteChatFile } from './preview/quote-preview-file'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { fetchBlob, downloadBlob } from '../lib/download'
 import { canWriteImageToClipboard, writeImageBlobToClipboard } from '../lib/imageClipboard'
@@ -541,10 +542,14 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
           let unbindMenu: (() => void) | undefined
           const bindMenu = () => {
             unbindMenu?.()
-            // A picture is not quoted (quoting is for a whole message): its menu has only its resource's actions.
-            const { resource } = request.items[pswp.currIndex] ?? {}
-            unbindMenu = resource && pswp.element ? bindFileViewerMenu(pswp.element, () => ({ resource, canSelectAll: false }), (error) => {
-              log.error({ error: String(error) }, 'image menu failed')
+            const { quote, resource } = request.items[pswp.currIndex] ?? {}
+            unbindMenu = (quote || resource) && pswp.element ? bindFileViewerMenu(pswp.element, () => ({ resource, quote: () => {
+              pswp.close()
+              if (quote) return quote()
+              if (resource?.target.kind === 'file' && resource.target.version !== undefined) return quoteChatFile(resource.target.itemId, resource.target.version, null)
+              throw new Error('This image has no file reference to quote')
+            }, canSelectAll: false }), (error) => {
+              log.error({ error: String(error) }, 'image citation failed')
               latest.current.toast(String(error), 'error')
             }) : undefined
           }

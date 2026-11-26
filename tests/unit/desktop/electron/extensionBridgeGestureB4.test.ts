@@ -56,7 +56,7 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   showSession: () => host.showSession('s-1'),
   dispatch: () => host.dispatch('picked'),
   clipboardWriteText: () => host.clipboard.writeText('hi'),
-  filesSelectionAction: () => (host.appFiles as unknown as Record<string, (args: unknown) => Promise<unknown>>).selectionAction!({ action: 'send', file: { workspace: 'session:s-1', id: 'a.md' }, places: [{ at: { lines: '1' } }], rect: { x: 0, y: 0, width: 1, height: 1 }, viewport: { width: 9, height: 9 } }),
+  filesSelectionAction: () => (host.appFiles as unknown as Record<string, (args: unknown) => Promise<unknown>>).selectionAction!({ action: 'cite', file: { workspace: 'session:s-1', id: 'a.md' }, places: [{ at: { lines: '1' } }], rect: { x: 0, y: 0, width: 1, height: 1 }, viewport: { width: 9, height: 9 } }),
   cloudWrite: () => host.cloud.write('radar_save', {}),
   credentialsWrite: () => host.credentials.write('github.com', 'PUT', 'https://api.github.com/repos/a/b/pulls/1/merge'),
   credentialsChoose: () => host.credentials.choose('github.com', { hint: 'A token' }),
