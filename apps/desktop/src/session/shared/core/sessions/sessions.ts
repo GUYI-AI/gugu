@@ -309,6 +309,13 @@ export type ArchivedSessionRef = {
 export type ArchiveOutcome = { archived: ArchivedSessionRef[]; unreached: UnreachedMachine[] };
 
 /**
+ * 「已归档」里的永久删除的回执(owner 2026-11-26)。`deleted` 是这次真正删掉的行(子会话在前、点名的在后,
+ * 含别的机器上删掉的);`unreached` 是够不着的机器,它们上面的行原样留着;`failed` 是这次没删成的行和原因
+ * (云端没回执、还没归档……),一条失败不拦别的。
+ */
+export type PermanentDeleteOutcome = { deleted: ArchivedSessionRef[]; unreached: UnreachedMachine[]; failed: Array<ArchivedSessionRef & { reason: string }> };
+
+/**
  * 改父会话被拒、因为挂上去会成环时,主进程报错原话的开头(agent 的 `session_set_parent` 读到的就是这句)。
  * 侧栏凭它把「成环」与「够不着」分开说:成环可能隔着侧栏看不见的已归档会话,侧栏自己挡不全。
  */
