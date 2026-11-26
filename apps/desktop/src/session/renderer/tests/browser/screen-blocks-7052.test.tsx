@@ -1,6 +1,7 @@
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { page } from 'vitest/browser';
+import { publishChatSummaries } from '@/lib/chatSummariesBridge';
 import { ScreenFrame, screenDropHandlers } from '@renderer/app/screen-frame';
 import { BlockGrip, blockReturnDropTarget } from '@renderer/app/block-grip';
 import { blockDropPreview, navigateToGroupRoot, resolveBlockDrop, setBlockDropPreview } from '@renderer/app/screen-layout-actions';
@@ -220,9 +221,14 @@ describe('一屏几块的骨架 (#7052)', () => {
   });
 
   it.each(['topic', 'group'])('removes just the chosen %s from a topic and parent group split', async closed => {
+    publishChatSummaries([
+      { id: 'group', kind: 'group', name: 'Group', unread_count: 0 },
+      { id: 'topic', kind: 'topic', source_chat_id: 'group', name: 'Topic', unread_count: 0 },
+    ]);
+    onTestFinished(() => publishChatSummaries([]));
     screenLayout.show({ kind: 'chat', chatId: 'topic' });
     root!.render(<WorkspaceLayoutContextProvider><ScreenFrame /></WorkspaceLayoutContextProvider>);
-    navigateToGroupRoot('group', true);
+    screenLayout.showBeside({ kind: 'chat', chatId: 'group' });
     await until('both conversations visible', () => blockWidths().length === 2);
     const blockId = (chatId: string) => screenLayout.order.find(id => {
       const block = screenLayout.blocks.get(id);
