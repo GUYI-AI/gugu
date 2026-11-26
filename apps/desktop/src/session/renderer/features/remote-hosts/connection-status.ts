@@ -1,6 +1,7 @@
 // #6264「会话页里的别的机器」:和别的机器的连接此刻处在哪一步,以及每一步给人看的那句话。
 // 侧栏机器名旁那颗点、聊天界面消息列表末尾那一行、真终端最后一行状态,都从这里取判据与措辞 ——
 // 三处说同一件事,❌ 各写一套。纯函数(翻译函数注入),每条判据都有单测。
+import type { RemoteHostDevice } from '../../../shared/remote-hosts';
 import { formatBytes, type ServerMachineNotice } from '@gugu/core/cloud/serverMachineHealth';
 import { cloudComputerFailureKindOf } from '@gugu/core/cloud/cloudComputer';
 import type { CloudComputerPresence, DeviceServerUpdate } from '@gugu/core/shared/types/deviceHost';
@@ -58,7 +59,7 @@ export function hostConnectionState(input: {
   /** 问它问不通(列表读不出来 / 保活连着没回话)。 */
   unreachable: boolean;
   /** #6264 远程 SSH 的机器:设备连接的状况(见 RemoteHostDevice.sshLink)。 */
-  sshLink?: 'signInRequired' | 'unreachable' | 'outdated' | 'updating' | null;
+  sshLink?: RemoteHostDevice['sshLink'];
   /** #7199 云电脑此刻的样子(见 RemoteHostDevice.cloudComputer);不是云电脑 = 缺席。 */
   cloudComputer?: CloudComputerPresence | null;
   /** #7199 这一端正在叫醒它 / 叫醒没成。 */
@@ -70,7 +71,8 @@ export function hostConnectionState(input: {
   // 远程 SSH 的机器只看 SSH 这一条:要先登录就说要先登录,❌ 与顶上那张卡片各说各的(「重连中」vs「要先登录」)。
   if (input.sshLink === 'signInRequired') return 'sign-in';
   if (input.sshLink === 'updating') return 'updating';
-  if (input.sshLink === 'outdated') return 'update-failed';
+  if (input.sshLink === 'waitingIdle' || input.sshLink === 'confirmationRequired' || input.sshLink === 'outdated') return 'outdated';
+  if (input.sshLink === 'updateFailed') return 'update-failed';
   if (input.sshLink === 'unreachable') return 'reconnecting';
   // 云电脑:管家说的睡 / 醒压过库里的在线与否(睡下后租约还要 2 分钟才过期)。
   // A completed refusal/timeout wins over stale manager progress until a new explicit attempt or an awake snapshot.

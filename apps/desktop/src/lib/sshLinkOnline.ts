@@ -1,7 +1,24 @@
 // #6264 远程 SSH 的机器,在添加它的这台电脑上:这台电脑与它之间走 SSH(设备连接),所以在线与否也看这条连接。
 // 别的电脑与手机上它照常列出、经咕咕云使用,在线读心跳(owner 2026-10-08 选 B,product spec)。
+import { serverProtocolTooOld } from '@gugu/core/cloud/serverMachineHealth'
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { SshLinkFailure, SshLinkState } from './sshLink'
+
+// An update already observed on the host takes precedence over a pending local protocol probe.
+// Authentication, transport errors and explicit attempt failures keep their own cause.
+export function reportedSshUpdate(device: Pick<Device, 'is_online' | 'capabilities'>, problem: SshLinkFailure | null): SshLinkFailure | null {
+  if (!device.is_online || (problem !== 'outdated' && problem !== 'waitingIdle' && problem !== 'confirmationRequired' && problem !== 'updating')) return problem
+  const caps = device.capabilities
+  const update = caps?.server_update
+  if (update && update.version !== caps.app_version) {
+    if (update.state === 'ready') return 'waitingIdle'
+    if (update.state === 'downloading' || update.state === 'switching') return 'updating'
+    if (update.state === 'failed') return 'updateFailed'
+  }
+  const outcome = caps?.server_update_outcome ?? update?.lastOutcome
+  if (outcome?.kind === 'switched' && typeof caps.remote_protocol === 'number' && !serverProtocolTooOld(caps.remote_protocol)) return null
+  return problem
+}
 
 /**
  * #6264 远程 SSH 的机器在不在线,只看这台电脑到它的 SSH 设备连接(❌ 看咕咕云心跳 —— 那是另一个服务的读数)。
@@ -19,8 +36,8 @@ export function sshLinkFacts(
   if (!isSshMachine) return { isOnline: cloudOnline }
   if (problem === 'signInRequired' || problem === 'hostKeyChanged') return { isOnline: false, sshLink: 'signInRequired' }
   if (problem === 'notSignedIn') return { isOnline: false, sshLink: null }
-  if (problem === 'outdated' || problem === 'updating') return { isOnline: true, sshLink: problem }
-  if (problem === 'waitingIdle') return { isOnline: true, sshLink: 'outdated' }
+  if (problem === 'outdated' || problem === 'updateFailed' || problem === 'updating') return { isOnline: true, sshLink: problem }
+  if (problem === 'waitingIdle' || problem === 'confirmationRequired') return { isOnline: true, sshLink: problem }
   if (problem && problem !== 'unmapped') return { isOnline: true, sshLink: 'unreachable' }
   return { isOnline: true, sshLink: null }
 }
