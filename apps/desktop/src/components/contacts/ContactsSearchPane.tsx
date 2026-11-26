@@ -1,8 +1,7 @@
 import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
-import { useHotkey } from '@tanstack/react-hotkeys'
-import { COMMANDS, getEffectiveHotkey, getHotkeyRegistration, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts'
+import { useCommandProvider } from '@renderer/lib/commands/use-command-provider'
 import { Search } from '@/lib/icons'
 import { recentChatActivity, searchContacts } from '@/lib/contactSearch'
 import { normalizeMentionKey } from '@/lib/mentionMatch'
@@ -98,12 +97,12 @@ export function useDesktopContactSearch({ enabled, query, onQuery, sections, peo
       open(rows[current]!)
     }
   }
-  // ⌘F(用户在设置里给「当前视图内查找」app.find 绑的那个键)在通讯录上就是聚焦这个框。会话页的快捷键绑定器
-  // (CommandShortcutBinder)只在会话工作区可见时挂着,切到通讯录这个 tab 它就卸了 ⇒ 这里按同一份设置自己绑,两处不会同时在。
-  const keyboard = useShortcutOverrides()
-  useHotkey(getHotkeyRegistration('app.find', keyboard), () => { input.current?.focus(); input.current?.select() }, {
-    enabled: enabled && onScreen && getEffectiveHotkey('app.find', keyboard) !== null,
-    ignoreInputs: COMMANDS['app.find'].ignoreInputs,
+  // ⌘F(「当前视图内查找」app.find 绑的那个键)在通讯录上就是聚焦这个框。通讯录画在外壳里,会话页隐藏时它照样要答。
+  useCommandProvider({
+    scopeId: 'session-sub',
+    surface: 'shell',
+    isActive: () => enabled && onScreen,
+    getCommands: () => [{ id: 'app.find', hideFromPalette: true, execute: () => { input.current?.focus(); input.current?.select() } }],
   })
 
   const field = (

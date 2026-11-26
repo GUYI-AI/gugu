@@ -393,8 +393,15 @@ body[data-state='doc'] .doc-message, body.gone .modes { display: none; }
 .files-toolbar.places-icons .place-switch gugu-icon { margin-inline-end: 0; }
 .files-toolbar > .sort { flex: 0 1 auto; min-width: 0; }
 #sort-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-@container (min-width: 720px) {
+@container (720px <= width < 880px) {
   .files-toolbar:has(~ .file-list:not(.as-grid)) > .sort { display: none; }
+}
+/* Room for two columns of rows (a full view, owner 11-26): the rows flow across, left to right, and the order is the bar's
+   menu, ❌ a table head over columns it no longer lines up with. Narrower, the list stays one column. */
+@container (width >= 880px) {
+  .file-list:not(.as-grid) { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); column-gap: var(--em-spacing-lg); align-content: start; }
+  .file-list:not(.as-grid) > :not(.file) { grid-column: 1 / -1; }
+  .file-list:not(.as-grid) > .table-head { display: none; }
 }
 /* 按名称筛选 (owner 11-07: no jumping; 11-08: the field opens beside the 🔍 that was pressed): the box takes the kinds'
    room, so 🔍 and everything after it keep their place, and the field inside sits at its right end, against 🔍, up to

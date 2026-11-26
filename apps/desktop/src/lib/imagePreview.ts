@@ -20,6 +20,13 @@ export async function scaleImage(file: Blob, { fit, max, type, quality }: ScaleI
   } finally { bitmap.close() }
 }
 
+/** An image's own pixel size; none where this renderer cannot decode it (a local decoder need not read every uploadable format). */
+export async function imageSize(file: Blob): Promise<{ width: number; height: number } | undefined> {
+  const bitmap = await createImageBitmap(file).catch(() => null)
+  if (!bitmap) return undefined
+  try { return { width: bitmap.width, height: bitmap.height } } finally { bitmap.close() }
+}
+
 /** An image's preview: 560 px wide at most. Drawn where the sender has a canvas: the phone, the web, and the desktop window for its main process too. */
 export const IMAGE_PREVIEW: ScaleImage = { fit: 'width', max: 560, type: 'image/webp' }
 
