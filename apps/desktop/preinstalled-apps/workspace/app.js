@@ -798,6 +798,7 @@ function renderChrome() {
   // Nothing to go back to on screen (the conversation is beside it): no button that does nothing.
   $('page-back').hidden = !state.ctx?.navigation?.canBack
   $('select-files').textContent = state.selecting || state.picked.size ? t.pickDone : t.pick
+  $('pick-all').setAttribute('aria-label', t.pickAll)
   renderTools()
   $('new-label').textContent = t.new
   $('new-doc').hidden = !canWriteHere()
@@ -4298,8 +4299,8 @@ function renderPicks() {
   const select = $('select-files')
   select.textContent = state.selecting || count ? t.pickDone : t.pick
   select.setAttribute('aria-pressed', String(state.selecting || count > 0))
-  const all = $('file-list').querySelector('.pick-all')
-  all?.setAttribute('aria-checked', count && count === state.order.length ? 'true' : count ? 'mixed' : 'false')
+  const checked = count && count === state.order.length ? 'true' : count ? 'mixed' : 'false'
+  for (const all of document.querySelectorAll('.pick-all')) all.setAttribute('aria-checked', checked)
   const bar = $('pick-bar')
   bar.hidden = count === 0
   if (!count) return void bar.replaceChildren()
@@ -4541,6 +4542,7 @@ function start() {
   $('search').addEventListener('focusout', (event) => {
     if (!state.filter && !$('search').contains(event.relatedTarget) && event.relatedTarget !== $('search-toggle')) showSearch(false)
   })
+  $('pick-all').onclick = () => pickAll()
   $('select-files').onclick = () => {
     if (state.selecting || state.picked.size) clearPicks()
     else { state.selecting = true; renderPicks() }
