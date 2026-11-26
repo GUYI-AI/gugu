@@ -460,6 +460,8 @@ export interface ProvisionResumeRecord {
   deviceId: string
   blueprint: AgentProvisionBlueprint
   members: ProvisionResumeMemberRef[]
+  /** Exact creation inputs, persisted before start so a retry cannot pick a different model. Legacy records omit it. */
+  createChoice?: AgentCreateChoice
 }
 
 // Strict versioned deep schema (F3b/P1-e): reject a record whose nested shapes are malformed, missing a required
@@ -564,6 +566,13 @@ function isBlueprintWellFormed(x: unknown): boolean {
   if (b.kind === 'team' && !(isNonEmptyStr(b.group_chat_id) && isStr(b.team_name) && isStr(b.group_prompt))) return false
   return b.members.every((mem) => isBlueprintMemberWellFormed(mem, b.kind as 'single' | 'team'))
 }
+function isAgentCreateChoice(value: unknown): value is AgentCreateChoice {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const choice = value as Record<string, unknown>
+  return Object.entries(choice).every(([key, v]) =>
+    (key === 'model' || key === 'effort' || key === 'permissionMode') && (v === null || isNonEmptyStr(v)))
+}
+
 export function isProvisionResumeRecord(x: unknown): x is ProvisionResumeRecord {
   if (!x || typeof x !== 'object') return false
   const r = x as Record<string, unknown>
@@ -573,6 +582,7 @@ export function isProvisionResumeRecord(x: unknown): x is ProvisionResumeRecord 
     typeof r.operationId === 'string' &&
     typeof r.deviceId === 'string' &&
     isBlueprintWellFormed(r.blueprint) &&
+    (r.createChoice === undefined || isAgentCreateChoice(r.createChoice)) &&
     Array.isArray(r.members) &&
     r.members.length > 0 &&
     // each ref is validated against ITS blueprint member (matched by member_key) so intent correspondence holds
@@ -686,6 +696,9 @@ export async function assertResumeRecordOwner(
   const current = await getOwnerUserId()
   if (!current || current !== record.ownerUserId) {
     throw new Error(`resume: record owner ${record.ownerUserId} does not match current auth owner — refusing to read another account's sources`)
+  }
+  if (record.createChoice !== undefined && !isAgentCreateChoice(record.createChoice)) {
+    throw new Error('resume: record creation choice is invalid')
   }
   const bp = record.blueprint
   if (!bp || (bp.kind !== 'single' && bp.kind !== 'team')) {
@@ -957,6 +970,9 @@ export async function provisionSingleAgent(
   }
 
   const record: ProvisionResumeRecord = { version: 2, ownerUserId, operationId, deviceId, blueprint, members: [memberRef] }
+  if (deps.model !== undefined || deps.effort !== undefined || deps.permissionMode !== undefined) {
+    record.createChoice = { model: deps.model ?? null, effort: deps.effort ?? null, permissionMode: deps.permissionMode ?? null }
+  }
   if (!isProvisionResumeRecord(record)) {
     throw new Error('provisionSingleAgent produced an invalid durable resume record')
   }
@@ -1020,7 +1036,7 @@ async function driveSingleProvision(
   if (!provisionId) throw new Error('resume record has no member ref')
   // start is idempotent on the same id + blueprint: a replay (response-loss / resume) returns the EXISTING
   // operation, never a second one. Raw memory (if any) rides p_memory_content, validated against the blueprint.
-  const choice = { model: deps.model, effort: deps.effort, permissionMode: deps.permissionMode }
+  const choice = record.createChoice ?? { model: deps.model, effort: deps.effort, permissionMode: deps.permissionMode }
   const operation = deps.assistant
     ? await startAssistantProvisionOperation(record.operationId, record.deviceId, record.blueprint, choice, deps.assistant)
     : await startProvisionOperation(

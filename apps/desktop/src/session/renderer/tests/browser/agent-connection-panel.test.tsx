@@ -33,7 +33,9 @@ const control = vi.hoisted(() => ({
   selected: '',
   rejectSelect: false,
   busy: false,
-  removed: [] as Array<{ connectionId: string; stopBusySessions?: boolean }>
+  removed: [] as Array<{ connectionId: string; stopBusySessions?: boolean }>,
+  /** What the real sign-in window started its login with (#3857: it opens nested in the detail, not via the global store). */
+  login: null as Record<string, unknown> | null
 }))
 
 const NAMES: Record<string, string> = { codex: 'Codex', claude: 'Claude', pi: 'Pi', opencode: 'OpenCode', amp: 'Amp', kilocode: 'Kilo Code' }
@@ -163,7 +165,9 @@ vi.mock('@renderer/lib/stores/use-agent-auth-status', () => ({
 
 vi.mock('@renderer/lib/acp/auth-login-binding', () => ({
   AcpAuthLoginBinding: {
-    create: async () => ({
+    create: async (args: Record<string, unknown>) => {
+      control.login = args
+      return {
       sendInput: () => {},
       resize: () => {},
       markUrlHandled: () => {},
@@ -174,9 +178,18 @@ vi.mock('@renderer/lib/acp/auth-login-binding', () => ({
           return () => {}
         }
       }
-    })
+    }
+    }
   }
 }))
+
+/** The sign-in a detail asked for opens nested in that detail (@@@modal-surface): the real window, and its login. */
+const nestedSignIn = async (login: Record<string, unknown>) => {
+  await until('the sign-in opens nested in the detail', () => document.querySelector('[data-surface-modal="agentSignInModal"][data-nested]') !== null)
+  expect(modalStore.isOpen, 'not through the global modal store').toBe(false)
+  await until('the real sign-in starts its login', () => control.login !== null)
+  expect(control.login).toMatchObject(login)
+}
 
 // The panels open inside the signed-in app: the model catalog a switch refreshes is an account's reading.
 followRendererSession('SIGNED_IN', 'reader')
@@ -195,6 +208,7 @@ beforeEach(() => {
   control.rejectSelect = false
   control.busy = false
   control.removed = []
+  control.login = null
   control.connections = [{ id: 'native', kind: 'native', name: 'CLI', current: true }]
   // The subscription readings are replicas: they live in the one client (lib/replica), cleared after each case.
   client = queryClient
@@ -412,13 +426,7 @@ it.each([1440, 1024, 800, 390])(
       item.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))
     ).toBe(true)
     await userEvent.click(page.getByRole('menuitem', { name: 'Sign in', exact: true }))
-    expect(modalStore.activeModalId).toBe('agentSignInModal')
-    expect(modalStore.activeModalArgs).toMatchObject({
-      providerId: 'codex',
-      connectionId: 'saved-account',
-      steps: [{ methodId: 'codex-login' }]
-    })
-    expect(modalStore.activeModalArgs).not.toHaveProperty('portalContainer')
+    await nestedSignIn({ providerId: 'codex', connectionId: 'saved-account', methodId: 'codex-login' })
   }
 )
 
@@ -433,8 +441,7 @@ it('an authenticated native Codex connection keeps its row login entry and menu 
   await expect.element(login).toBeVisible()
   expect(page.getByRole('menuitem', { name: 'Remove', exact: true }).query()).toBeNull()
   await userEvent.click(login)
-  await until('the native login flow opens without deleting the connection', () => modalStore.activeModalId === 'agentSignInModal')
-  expect(modalStore.activeModalArgs).toMatchObject({ providerId: 'codex', connectionId: 'native' })
+  await nestedSignIn({ providerId: 'codex', connectionId: 'native' })
   expect(control.removed).toEqual([])
 })
 
@@ -466,7 +473,7 @@ it('working sessions refuse a task connection switch with a calm status and keep
 })
 
 it.each([800, 1440])(
-  'the real global sign-in terminal remains accessible and clickable above the detail at %ipx',
+  'the real sign-in terminal remains accessible and clickable above the detail at %ipx',
   async (width) => {
     await page.viewport(width, 900)
     control.connections.push({
@@ -499,7 +506,7 @@ it.each([800, 1440])(
         ?.closest('button')
     ).toBe(cancel.element())
     await userEvent.click(cancel)
-    await until('the real login has closed', () => !modalStore.isOpen)
+    await until('the real login has closed', () => login.query() === null)
     await expect.element(page.getByRole('dialog', { name: 'Codex', exact: true })).toBeVisible()
   }
 )
@@ -526,8 +533,7 @@ it('OpenCode detail is that same section: no separate Account row, and Account s
   // 「账号」= 登它 CLI 自己那一份:不存连接、不起名，直接是那个登录窗口。
   expect(document.querySelector('.subscription-connection-form input[name="name"]')).toBeNull()
   await userEvent.click(page.getByRole('button', { name: 'Sign in', exact: true }))
-  expect(modalStore.activeModalId).toBe('agentSignInModal')
-  expect(modalStore.activeModalArgs).toMatchObject({ providerId: 'opencode', steps: [{ methodId: 'opencode-login', transport: 'terminal' }] })
+  await nestedSignIn({ providerId: 'opencode', methodId: 'opencode-login' })
   expect(control.created).toBeNull()
 })
 

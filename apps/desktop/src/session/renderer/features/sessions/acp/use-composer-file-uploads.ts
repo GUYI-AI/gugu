@@ -137,12 +137,12 @@ export function createComposerFileUploads(readArgs: () => ComposerFileUploadArgs
     void start(chipId, upload.file);
   };
 
-  /** 上一枚 chip 或替换指定槽位，并立刻开始放。 */
+  /** 上一枚 chip(已经在条上的就地接着用)并立刻开始放。 */
   const add = (
-    (chip: ComposerAttachment, file: File, slot = chip.id) => {
+    (chip: ComposerAttachment, file: File) => {
       const placing = { ...chip, state: 'uploading' as const, progress: 0, cancelable: true };
-      readArgs().setAttachments((prev) => prev.some((att) => att.id === slot)
-        ? prev.map((att) => (att.id === slot ? placing : att))
+      readArgs().setAttachments((prev) => prev.some((att) => att.id === chip.id)
+        ? prev.map((att) => (att.id === chip.id ? placing : att))
         : [...prev, placing]);
       const settled = start(chip.id, file);
       // 粘贴的截图由 start 按选中的那份出预览;其余还没有预览的图片在这里读一份缩略图。
@@ -207,9 +207,9 @@ export function createComposerFileUploads(readArgs: () => ComposerFileUploadArgs
 
   const replaceImage = (chipId: string, original: File, edited: File, hasLocalPreview?: boolean) => {
     if (uploads.get(chipId)?.file !== original) throw new Error(readArgs().translate('attachmentViewer.unavailable'));
-    // The slot stays put. New bytes get their own name, placement and upload callbacks.
+    // Keep the editor's attachment ID at its inline position. The new bytes start a new placement.
     forget(chipId);
-    void add({ id: crypto.randomUUID(), kind: 'image', name: edited.name, mimeType: edited.type, hasLocalPreview }, edited, chipId);
+    void add({ id: chipId, kind: 'image', name: edited.name, mimeType: edited.type, hasLocalPreview }, edited);
   };
 
   /** 这枚 chip 是不是这里在管(放着、放好、失败)。 */

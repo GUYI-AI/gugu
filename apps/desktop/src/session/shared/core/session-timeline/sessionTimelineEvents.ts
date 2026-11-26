@@ -1,4 +1,4 @@
-import type { SessionpageSessionEvent, SessionpageSessionsEvent } from '@gugu/session-core/session-record/contract';
+import type { SessionpageRecordStatusEvent, SessionpageSessionEvent, SessionpageSessionsEvent } from '@gugu/session-core/session-record/contract';
 import { defineEvent } from '@shared/lib/ipc/events';
 import type { TaskExchangePage } from '../sessions/task-collaboration';
 
@@ -16,6 +16,9 @@ export const taskExchangeChannel = defineEvent<TaskExchangePage>('session:task-e
  */
 export const sessionpageSessionTimelineChannel =
   defineEvent<SessionpageSessionEvent>('session-timeline:push');
+
+/** Local Codex record waiting/failure; data events retain their existing protocol for other readers. */
+export const sessionpageRecordStatusChannel = defineEvent<SessionpageRecordStatusEvent>('session-record:status');
 
 /** 整台机器的会话列表推送口(topic = subscriptionId)。 */
 export const sessionpageSessionListChannel = defineEvent<SessionpageSessionsEvent>('session-list:push');

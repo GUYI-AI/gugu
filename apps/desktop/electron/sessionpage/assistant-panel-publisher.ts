@@ -29,6 +29,8 @@ export async function publishAssistantPanelCollection(input: {
 }): Promise<void> {
   const scoped = deviceDomains.includes(input.domain)
   const markerKey = scoped ? `__collection__:${input.deviceId}` : '__collection__'
+  const canRecreate = (item: AssistantPanelItem) => ['memory','files','skills','voice-notes'].includes(input.domain)
+    && item.deletion_source === 'runtime' && item.deletion_runtime_instance_id === input.instanceId && item.device_id === input.deviceId
   async function commit(key: string, expectedRevision: string, operation: 'save' | 'remove' | 'prepared' | 'error', data: Record<string, unknown>, body?: { itemId: string; sha256: string }) {
     const change = { operationId: randomUUID(),domain: input.domain,key,expectedRevision,operation,data,body,
       deviceId: input.deviceId,runtimeInstanceId: input.instanceId }
@@ -69,8 +71,11 @@ export async function publishAssistantPanelCollection(input: {
         continue
       }
       const current = await input.cloud.resource(input.assistantId,input.domain,row.key)
-      if (current?.deleted_at) { changed = true; await input.revoke(current,row); continue }
-      if (pending.has(row.key) || (current?.revision ?? '0') !== (revisions.get(row.key) ?? '0')) { changed = true; continue }
+      const recreating = !!current?.deleted_at && canRecreate(current)
+      if (current?.deleted_at && !recreating) { changed = true; await input.revoke(current,row); continue }
+      // A tombstone is absent from a visible snapshot. Its own exact revision,
+      // checked again by the RPC, is the expected version for this replacement.
+      if (pending.has(row.key) || !recreating && (current?.revision ?? '0') !== (revisions.get(row.key) ?? '0')) { changed = true; continue }
       const reused = digest && current?.body_item_id && current.body_sha256 === digest
         ? { itemId: current.body_item_id,sha256: digest } : undefined
       if (!digest || reused) await input.bodyFailures.clear(input.domain,row.key)
@@ -97,7 +102,7 @@ export async function publishAssistantPanelCollection(input: {
         if (uploaded && body) await input.discard(body.itemId).catch(() => undefined)
         // A deletion which won the version race must also remove the local copy.
         const latest = await input.cloud.resource(input.assistantId,input.domain,row.key)
-        if (latest?.deleted_at) { await input.revoke(latest,row); continue }
+        if (latest?.deleted_at && !canRecreate(latest)) { await input.revoke(latest,row); continue }
         if (['PT409','55000'].includes(String((error as { code?: string }).code))) continue
         if ((error as { code?: string }).code === 'invalid-body') { invalidBody ??= error; continue }
         throw error

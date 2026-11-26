@@ -38,6 +38,8 @@ export type SessionpageTimelineClient = {
   subscribeSessionEvents(deviceId: string, subscriptionId: string, onResult: (result: TimelineAfterResult) => void): () => void
   /** A transport that reads incrementally itself can expose a precise read failure. */
   subscribeSessionErrors?(deviceId: string, subscriptionId: string, onError: (error: unknown) => void): () => void
+  /** The cached cursor can be reconciled over a request independent of the subscription window. */
+  reconcileOnSubscribe?: boolean
   /** 到那台机器的窗口断了 / 又通了。又通 = 那边已拆了这条窗口上的订阅,要重订。 */
   onLinkChange(deviceId: string, cb: (open: boolean) => void): () => void
   sendSessionText(
@@ -187,10 +189,10 @@ export function useTimelineSession(
     return attachSessionFollow({ client, deviceId, sessionId, enabled, lean }, () => { olderGeneration.current++ })
   }, [client, deviceId, sessionId, enabled, lean])
 
-  // 世代变了 ⇒ 手里那份接不上,重新走一遍「快照 + 订阅」。
+  // An older page can report a different epoch while a history request is in flight.
   useEffect(() => {
-    if (timeline.needsSnapshot) reload()
-  }, [timeline.needsSnapshot, reload])
+    if (timeline.needsSnapshot && deviceId && sessionId) restartSessionFollow({ client, deviceId, sessionId, enabled, lean }, true)
+  }, [timeline.needsSnapshot, client, deviceId, sessionId, enabled, lean])
 
   /*
    * 边看边存。**防抖**:一条流式消息每秒推好几次,每次都整份序列化 + 写库
@@ -339,7 +341,7 @@ export function useTimelineSession(
 /** `lean`: the first page following a session sets it for the stream; folded pages keep what reply progress and question cards read. */
 /** What following a session's stream asks of its machine: pages, the subscription and its pushes, the link. */
 export type TimelineStreamClient = Pick<SessionpageTimelineClient, 'fetchSnapshot' | 'fetchAfter' | 'subscribeSession' | 'unsubscribeSession'
-  | 'subscribeSessionEvents' | 'subscribeSessionErrors' | 'onLinkChange'>
+  | 'subscribeSessionEvents' | 'subscribeSessionErrors' | 'onLinkChange' | 'reconcileOnSubscribe'>
 export type FollowParams = { client: TimelineStreamClient; deviceId: string; sessionId: string; enabled: boolean; lean?: LeanPage }
 /** One follow of a session's host stream, shared by every page showing it (ref-counted); writes `sessionStreams`. */
 type SessionFollow = {
@@ -411,55 +413,76 @@ export function followSessionStream(params: FollowParams, onOlderReset: () => vo
   }
 }
 
-function restartSessionFollow(params: FollowParams): void {
+function restartSessionFollow(params: FollowParams, forceSnapshot = false): void {
   const follow = follows.get(sessionStreamKey(params))
   if (!follow) return
   follow.stop()
-  follow.stop = runSessionFollow(follow)
+  follow.stop = runSessionFollow(follow, forceSnapshot)
 }
 
-function runSessionFollow(follow: SessionFollow): () => void {
+function runSessionFollow(follow: SessionFollow, forceSnapshot = false): () => void {
   const { client, deviceId, sessionId, enabled, lean } = follow.params
-  const { write, setTimeline } = streamWriters({ deviceId, sessionId })
-  const applyResult = (result: TimelineAfterResult) => {
-    if (!result.ok) follow.resetOlder()
-    setTimeline((current) => {
-      const next = applyTimelineResult(current, result)
-      follow.cursor = next.cursor
-      return next
+  const cacheKey = { deviceId, sessionId }
+  const key = sessionStreamKey(cacheKey)
+  const { write, setTimeline } = streamWriters(cacheKey)
+  const heldTimeline = () => sessionStreams.get()[key]?.timeline
+  let cancelled = false
+  let needsFreshSnapshot = forceSnapshot
+  let restarting = false
+  const retiredEpochs = new Set<string>()
+  // Finish the current callback before tearing down its subscription. A gap takes priority over a reconnect.
+  const reload = () => {
+    if (restarting) return
+    restarting = true
+    queueMicrotask(() => {
+      if (!cancelled && follows.get(key) === follow) restartSessionFollow(follow.params, needsFreshSnapshot)
     })
-    if (!result.ok) timelineLog.info({ reason: result.reset }, 'Timeline snapshot reset')
   }
-  // Out of the stack that asks for it (a callback of this very follow): start over once it has returned.
-  const reload = () => { queueMicrotask(() => { if (follows.get(sessionStreamKey(follow.params)) === follow) restartSessionFollow(follow.params) }) }
+  const applyResult = (result: TimelineAfterResult): boolean => {
+    const current = heldTimeline() ?? emptyAgentWatchTimeline()
+    const received = result.ok ? result.batch.cursor : result.snapshot.cursor
+    const next = retiredEpochs.has(received.epoch) ? current : applyTimelineResult(current, result)
+    if (next === current) {
+      timelineLog.debug({ epoch: received.epoch, heldEpoch: current.cursor?.epoch, heldSeq: current.cursor?.seq,
+        fromSeq: result.ok ? result.batch.from : undefined, receivedSeq: received.seq }, 'Discarded stale timeline result')
+      return false
+    }
+    if (next.needsSnapshot) {
+      needsFreshSnapshot = true
+      reload()
+      return false
+    }
+    if (!result.ok) {
+      if (current.cursor && current.cursor.epoch !== received.epoch) retiredEpochs.add(current.cursor.epoch)
+      follow.resetOlder()
+      timelineLog.info({ reason: result.reset }, 'Timeline snapshot reset')
+    }
+    follow.cursor = next.cursor
+    setTimeline(() => next)
+    return true
+  }
   if (!enabled) {
-    // Its machine is away: what this phone saw last time is still true, so it is still shown — ❌ a blank page.
-    let cancelled = false
-    const cached = readCachedTimeline({ deviceId, sessionId })
+    const cached = heldTimeline() ?? readCachedTimeline(cacheKey)
     write({ error: null, errorCode: null, link: 'lost', timeline: cached ?? emptyAgentWatchTimeline() })
-    if (!cached) void hydrateCachedTimeline({ deviceId, sessionId }).then((stored) => { if (!cancelled && stored) write({ timeline: stored }) })
+    if (!cached) void hydrateCachedTimeline(cacheKey).then((stored) => { if (!cancelled && stored) write({ timeline: stored }) })
     return () => { cancelled = true }
   }
-  let cancelled = false
   const recoveryAbort = new AbortController()
   const subscriptionId = newLocalId()
-  const cacheKey = { deviceId, sessionId }
   follow.ready = false
   follow.synced = false
   follow.cursor = null
-  write({ error: null, link: 'connecting' })
-
   /*
    * 先把**上次看到的那一份**画出来(本地底稿),再去对账。
    * owner 2026-09-08 拍板要这一层:以前每次进页都得等机器把整份快照送过来才有东西看,
    * 于是首屏永远是「正在读取时间线…」。底稿不是事实源 —— 它只活到下面第一次对账为止。
    */
-  const cached = readCachedTimeline(cacheKey)
-  if (cached) {
+  const cached = heldTimeline() ?? readCachedTimeline(cacheKey)
+  if (!forceSnapshot && cached?.cursor) {
     follow.cursor = cached.cursor
     follow.ready = true
   }
-  write(cached ? { timeline: cached, phase: 'ready' } : { phase: 'loading' })
+  write({ error: null, link: 'connecting', ...(cached ? { timeline: cached, phase: 'ready' } : { phase: 'loading' }) })
 
   /*
    * 补缺口失败不清空已有的那一份:屏幕上那段仍然是真的,只是没有更新。会自己好的读失败按既有退避自动补几次，
@@ -475,10 +498,13 @@ function runSessionFollow(follow: SessionFollow): () => void {
     if (cancelled || !follow.ready || !cursor) return Promise.resolve()
     catchUpRunning = recoverTimelineRead(() => client.fetchAfter(deviceId, sessionId, cursor, lean), recoveryAbort.signal)
       .then((result) => {
-        if (cancelled) return
+        if (cancelled || restarting || follow.cursor?.epoch !== cursor.epoch) return
+        // A concurrent push can already have advanced beyond a reset response to an older request.
+        if (!result.ok && result.snapshot.cursor.epoch === cursor.epoch
+          && follow.cursor.seq > cursor.seq && result.snapshot.cursor.seq < follow.cursor.seq) return
+        if (!applyResult(result)) return
         write(catchUpReported ? { link: 'ok', error: null, errorCode: null } : { link: 'ok' })
         catchUpReported = false
-        applyResult(result)
         follow.synced = true
       })
       .catch((err) => {
@@ -499,7 +525,7 @@ function runSessionFollow(follow: SessionFollow): () => void {
    * ⚠️ 但也不能无限等：本地库卡住（配额、被禁、另一个标签页占着升级）不该把打开会话拖死，
    * 所以给它一个上限，超时就当没有存档，照旧整份拉。
    */
-  const hydrated: Promise<void> = cached
+  const hydrated: Promise<void> = forceSnapshot || cached
     ? Promise.resolve()
     : Promise.race([
         hydrateCachedTimeline(cacheKey),
@@ -507,14 +533,18 @@ function runSessionFollow(follow: SessionFollow): () => void {
       ]).then((stored) => {
         if (cancelled || follow.ready || !stored) return
         follow.cursor = stored.cursor
-        follow.ready = true
+        follow.ready = stored.cursor !== null
         write({ timeline: stored, phase: 'ready' })
       })
 
   // 先挂监听再发 subscribe:反过来的话,宿主在应答与挂监听之间推的那一批没人收。
   const stopEvents = client.subscribeSessionEvents(deviceId, subscriptionId, (result) => {
-    if (cancelled || !follow.ready) return
-    applyResult(result)
+    if (cancelled || restarting || !follow.ready || !applyResult(result)) return
+    follow.synced = true
+    if (catchUpReported) {
+      catchUpReported = false
+      write({ link: 'ok', error: null, errorCode: null })
+    }
   })
   const stopErrors = client.subscribeSessionErrors?.(deviceId, subscriptionId, () => {
     if (cancelled) return
@@ -542,22 +572,21 @@ function runSessionFollow(follow: SessionFollow): () => void {
     try {
       await hydrated
       if (cancelled) return
-      // 先给本地那份一个装上的机会,再决定要不要整份拉(重试时它早已完成,await 是白拿的)。
-      // 手里已经有本地那份 ⇒ 只从它的游标订阅,❌ 不再整份拉一次快照(那正是「加载很久」的来处)。
-      // 订阅那一刻那台机器就先推游标之后的那一段(宿主 `deliver`、手机轮询的第一拍),❌ 再另问一遍补差量(同一段读两次);
-      // 世代对不上时那一推直接是一份新快照,由 reducer 认出来。
       if (follow.ready && follow.cursor) {
-        await client.subscribeSession(deviceId, sessionId, subscriptionId, follow.cursor, lean)
-        if (cancelled) return
-        write({ waitingForRecord: false, error: null, errorCode: null, link: 'ok' })
+        const cursor = follow.cursor
+        // A cached phone open reconciles once even if the subscription push or its ACK is delayed.
+        if (attempt === 0 && client.reconcileOnSubscribe) void catchUp()
+        await client.subscribeSession(deviceId, sessionId, subscriptionId, cursor, lean)
+        if (cancelled || restarting) return
+        if (!catchUpReported) write({ waitingForRecord: false, error: null, errorCode: null, link: 'ok' })
         attempt = 0
-        // The host pushes what came after the cursor (or a reset) before it answers the subscribe, on the same window.
-        follow.synced = true
+        if (!client.reconcileOnSubscribe) follow.synced = true
         return
       }
       const snapshot = await client.fetchSnapshot(deviceId, sessionId, undefined, lean)
       if (cancelled) return
       follow.resetOlder()
+      needsFreshSnapshot = false
       follow.cursor = snapshot.cursor
       follow.ready = true
       follow.synced = true
@@ -602,8 +631,8 @@ function runSessionFollow(follow: SessionFollow): () => void {
     stopEvents()
     stopErrors?.()
     // 走之前把手里这份存下来:下次进来第一帧就有东西。
-    const current = sessionStreams.get()[sessionStreamKey(cacheKey)]?.timeline ?? emptyAgentWatchTimeline()
-    if (current.cursor && current.turns.length > 0) writeCachedTimeline(cacheKey, current)
+    const current = heldTimeline()
+    if (current) writeCachedTimeline(cacheKey, current)
     // 退订是尽力而为:页面已经走了,退订失败只会让宿主多推一会儿给没人听的 subscriptionId。
     void client.unsubscribeSession(deviceId, subscriptionId).catch(() => undefined)
   }

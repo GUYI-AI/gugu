@@ -109,6 +109,7 @@ import type {
   PromptEditorRef,
   RenderMentionIcon,
 } from '../prompt-editor/types';
+import type { ComposerContextThresholds } from './context-threshold';
 import { ContextUsageIndicator } from './context-usage-indicator';
 import type { ContextUsage } from './context-usage-indicator';
 import { PermissionBand } from './permission-band';
@@ -306,6 +307,7 @@ export interface ChatComposerProps {
   onAttach?: () => void;
   /** Context-window usage data for the toolbar donut indicator. Hidden when null/undefined. */
   contextUsage?: ContextUsage | null;
+  contextThresholds?: ComposerContextThresholds;
 
   /**
    * Host-controlled attachment list. By default the composer creates image
@@ -323,6 +325,12 @@ export interface ChatComposerProps {
    * When supplied, the host owns uploading and adding preview attachments.
    */
   onImageFilesDropped?: (files: File[], source?: 'paste' | 'drop') => void;
+  /**
+   * Images are placed in the text where they were pasted, dropped or attached (a chip with a thumbnail), not on the
+   * attachment strip. The text then carries each one's place as a marker (`inlineImageParts`): only for hosts that send it.
+   * Not on the phone capsule: its photo tiles are where a photo is edited and its quality chosen.
+   */
+  inlineImages?: boolean;
   onAttachmentQualityChange?: (id: string) => void;
   attachmentQualityLocked?: boolean;
   /**
@@ -360,7 +368,7 @@ export interface ChatComposerProps {
    * 用户点了附件条上的一枚 chip —— 宿主拿它开预览对话框(#5269)。
    * 只有手上真有可看内容的 chip 才点得开(`attachmentPreviewKind`),所以宿主这里不必再判类型。
    */
-  onViewAttachment?: (att: ComposerAttachment) => void;
+  onViewAttachment?: (att: ComposerAttachment, cell: HTMLElement) => void;
   /** 点了失败 chip 上的「重试」(只对 `retryable` 的 chip 出现)。 */
   onRetryAttachment?: (id: string) => void;
 
@@ -473,11 +481,13 @@ export function ChatComposer({
   onStop,
   onAttach,
   contextUsage,
+  contextThresholds,
   attachments = [],
   attachmentStatus,
   attachmentExtra,
   onAttachmentsChange,
   onImageFilesDropped,
+  inlineImages: inlineImagesWanted = false,
   onAttachmentQualityChange,
   attachmentQualityLocked,
   onFilesDropped,
@@ -516,6 +526,7 @@ export function ChatComposer({
   const rootRef = useRef<HTMLDivElement>(null);
   const phoneCapsule = mobile && phoneActions;
   const phoneEditor = usePhoneComposer(phoneCapsule, rootRef);
+  const inlineImages = inlineImagesWanted && !phoneCapsule;
   // @@@phone-has-attachment - whether the capsule holds a paperclip (ours via onAttach, or a host's in toolbarExtra that
   // carries data-phone-attachment). phone-composer.css reads this attribute instead of :has(), which WebView < 105 drops.
   // Written on the element, not through state: no render follows (React does not own this attribute).
@@ -589,6 +600,35 @@ export function ChatComposer({
       });
     };
   }, []);
+
+  // ── Inline images ───────────────────────────────────────────────────────────
+  // The host's attachment list stays the one ledger; the editor shows each image at its place. A new image goes where
+  // the caret is (or where it was dropped); one the host no longer holds leaves the text.
+  const dropPointRef = useRef<{ left: number; top: number } | null>(null);
+  const inlineImageItems = () => attachmentsRef.current.filter((att) => att.kind === 'image').map((att) => ({ id: att.id, src: att.previewUrl ?? null, name: att.name }));
+  useEffect(() => {
+    const editor = editorRef.current;
+    // A queued prompt being edited borrows this editor; the draft's pictures stay out of it.
+    if (!inlineImages || !editor || queueEdit) return;
+    const images = inlineImageItems();
+    editor.updateInlineImages(images);
+    const placed = new Set(editor.inlineImageIds());
+    const fresh = images.filter((image) => !placed.has(image.id));
+    if (fresh.length) editor.insertInlineImages(fresh, dropPointRef.current ?? undefined);
+    dropPointRef.current = null;
+  }, [attachments, inlineImages, queueEdit]);
+  const removeInlineImages = (ids: string[]) => {
+    const removed = attachments.filter((att) => ids.includes(att.id));
+    if (removed.length === 0) return;
+    for (const att of removed) if (att.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(att.previewUrl);
+    onAttachmentsChange?.(attachments.filter((att) => !ids.includes(att.id)));
+  };
+  const viewInlineImage = (id: string, cell: HTMLElement) => {
+    const att = attachments.find((item) => item.id === id);
+    if (att) onViewAttachment?.(att, cell);
+  };
+  // A failed upload keeps its chip on the strip too: that is where its reason and Retry are.
+  const stripAttachments = inlineImages ? attachments.filter((att) => att.kind !== 'image' || att.state === 'error') : attachments;
 
   const hasContent = hasText || attachments.length > 0;
   const canSubmit = (hostCanSubmit ?? true) && (!phoneActions || (hasContent && !phoneSubmitting));
@@ -702,6 +742,7 @@ export function ChatComposer({
 
     const imageFiles = files.filter((file) => isImageFile(file));
     const nonImageFiles = files.filter((file) => !isImageFile(file));
+    if (inlineImages && imageFiles.length > 0) dropPointRef.current = { left: e.clientX, top: e.clientY };
     if (imageFiles.length > 0 && onImageFilesDropped) {
       onImageFilesDropped(imageFiles, 'drop');
     } else if (imageFiles.length > 0 && onAttachmentsChange) {
@@ -787,6 +828,11 @@ export function ChatComposer({
       : (placeholder ?? translate('composer.messagePlaceholder'));
 
   const renderHeader = mobile ? renderPhoneHeader : undefined;
+  const findContextThreshold: ComposerContextThresholds = (model, window) =>
+    contextThresholds?.(model, window ?? (model === selectedModel ? contextUsage?.size : undefined));
+  const currentContextThreshold = selectedModel && !modelUnknown
+    ? findContextThreshold(selectedModel, modelOptions?.[selectedModel]?.modelFeatures?.contextWindowSize)
+    : undefined;
   const modelControl = (
               <ComposerModelMenu
                 panel={modelPanel}
@@ -805,6 +851,7 @@ export function ChatComposer({
                 onManageModels={onManageModels}
                 modelUpgrade={modelUpgrade}
                 onModelUpgrade={onModelUpgrade}
+                contextThresholds={findContextThreshold}
                 effortItems={effortItems}
                 selectedEffort={selectedEffort}
                 onEffortChange={onEffortChange}
@@ -821,7 +868,11 @@ export function ChatComposer({
       ref={receiveEditor}
       placeholder={resolvedPlaceholder}
       disabled={disabled || !!queueEdit?.pending}
-      onChange={(text) => { setHasText(!!text.trim()); (queueEdit ? changeQueueEdit : onInputChange)?.(text); }}
+      onChange={(text) => {
+        setHasText(!!text.trim()); (queueEdit ? changeQueueEdit : onInputChange)?.(text);
+        // A draft written back into the editor (its markers) gets its thumbnails, or loses pictures no longer held.
+        if (inlineImages && !queueEdit && text.includes('(gugu-attachment:')) queueMicrotask(() => editorRef.current?.updateInlineImages(inlineImageItems()));
+      }}
       onDocumentClear={phoneCapsule ? phoneEditor.onDocumentClear : undefined}
       onPasteText={queueEdit ? undefined : handlePastedText}
       clearOnSubmit={queueEdit ? false : (editorOptions?.clearOnSubmit ?? true)}
@@ -834,6 +885,8 @@ export function ChatComposer({
       queryCommands={queryCommands}
       onCommand={onCommand}
       getPromptHistory={queueEdit ? undefined : getPromptHistory}
+      onViewInlineImage={inlineImages ? viewInlineImage : undefined}
+      onInlineImagesRemoved={inlineImages ? removeInlineImages : undefined}
     />
   );
 
@@ -892,7 +945,7 @@ export function ChatComposer({
           onDrop={queueEdit ? undefined : handleDrop}
         >
           {/* Attachment chips — anatomy vendored from assistant-ui (#5269), see composer-attachment-chip.tsx */}
-          {!queueEdit && <ComposerAttachmentStrip attachments={attachments} status={attachmentStatus} extra={attachmentExtra}
+          {!queueEdit && <ComposerAttachmentStrip attachments={stripAttachments} status={attachmentStatus} extra={attachmentExtra}
             onView={onViewAttachment} onRemove={onAttachmentsChange ? removeAttachment : undefined} onRetry={onRetryAttachment} onQualityChange={onAttachmentQualityChange} qualityLocked={disabled || attachmentQualityLocked} />}
 
           {/* Editor area */}
@@ -1036,9 +1089,6 @@ export function ChatComposer({
 
             {/* Right: usage donut + harness + model + send/stop */}
             <div data-slot="composer-actions-end" className={styles.toolbarRight}>
-              {contextUsage && contextUsage.size > 0 && (
-                <ContextUsageIndicator usage={contextUsage} disabled={disabled} />
-              )}
               {/* Harness (agent) selector first, then model — owner-specified order: gugu wants
                   the Harness picked explicitly first rather than folded into the model trigger's icon. */}
               {agentOptionsLoading && (
@@ -1065,6 +1115,10 @@ export function ChatComposer({
                   「模型」和「推理强度」结构对称,各自显示当前值并向右飞出二级。
                   解剖与那批注释随组件一起搬去了 `composer-model-menu.tsx`(#4981 A1),
                   渲染出来的 DOM 一个字节都没变。 */}
+              {((contextUsage?.size ?? 0) > 0 || currentContextThreshold) && (
+                <ContextUsageIndicator usage={contextUsage} threshold={currentContextThreshold}
+                  harness={selectedAgentItem ?? undefined} disabled={disabled} />
+              )}
               {!renderHeader && modelControl}
 
               {queueEdit ? (

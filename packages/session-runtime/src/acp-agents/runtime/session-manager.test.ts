@@ -3435,6 +3435,35 @@ describe('recorded platform model on a resumed provider session (#6196)', () => 
   });
 
   // 阴控:自报当前值已是它 ⇒ 断言已成立,不再发(同一判据,只差 currentValue)。
+  it.each(['gugu-platform/relay-model', 'api-key-connection/relay-model'])('asserts the recorded custom model after load reports %s', async (selected) => {
+    const h = makeAcpHarness();
+    const rt = new AcpRuntime(h.deps);
+    const input = resumeInput('conv-custom-resume', { model: 'relay-model' });
+    input.runContext.customModel = { model: 'relay-model', runtimeOption: 'api-key-connection/relay-model' };
+    h.agent.loadSession.mockResolvedValueOnce({
+      configOptions: [{
+        ...platformModelOptions(selected)[0]!,
+        options: [
+          { value: 'gugu-platform/relay-model', name: 'relay-model' },
+          { value: 'api-key-connection/relay-model', name: 'Relay model' },
+        ],
+      }],
+    });
+
+    const result = await rt.resumeSession(input);
+
+    expect(isOk(result)).toBe(true);
+    if (selected === 'api-key-connection/relay-model') {
+      expect(h.agent.setSessionConfigOption).not.toHaveBeenCalled();
+    } else {
+      expect(h.agent.setSessionConfigOption).toHaveBeenCalledExactlyOnceWith({
+        sessionId: 'session-existing',
+        configId: 'model',
+        value: 'api-key-connection/relay-model',
+      });
+    }
+  });
+
   it('does not re-send when the resumed session already reports the recorded model', async () => {
     const h = makeAcpHarness();
     const rt = new AcpRuntime(h.deps);

@@ -435,7 +435,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       memberProfiles={drawerMemberProfiles}
       currentUserId={user?.id ?? null}
       onOpenUserChat={onOpenUserChat}
-      onWhisper={isGroupChat ? (target) => setWhisperTarget({ userId: target.id, displayName: target.displayName }) : undefined}
+      onWhisper={isRoomChatSurface ? (target) => setWhisperTarget({ userId: target.id, displayName: target.displayName }) : undefined}
       groupCollabSnapshot={groupCollabSnapshot}
       groupSettings={groupSettings}
       groupCollabError={groupCollabError}
@@ -660,7 +660,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         authorityRevision={authorityRevision}
         chatId={activeChatId}
         currentUserId={user?.id ?? null}
-        isGroupChat={isGroupChat}
+        isRoomChat={isRoomChatSurface}
         groupEditControlsFor={messageListenEditControlsFor}
         onOpenUserChat={onOpenUserChat}
         onWhisper={(target) => setWhisperTarget({ userId: target.id, displayName: target.displayName })}

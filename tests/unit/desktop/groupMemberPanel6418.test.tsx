@@ -681,4 +681,26 @@ describe('a topic open as the main conversation', () => {
     expect(getGroupCollab.mock.calls.map((call) => call[0])).not.toContain('source')
     expect(harness.container.querySelector('[data-testid="member-list-panel"]')?.getAttribute('data-chat-kind')).toBe('topic')
   })
+
+  // A whisper is allowed per message whatever the conversation: a topic participant's card on its members page offers it, as a group's does.
+  it.each([false, true])('a participant\'s card on the topic members page offers Whisper and hands it the chosen member (mobile=%s)', async (mobile) => {
+    shell.mobile = mobile
+    const onWhisper = vi.fn()
+    await renderWithAppProviders(harness, createNode(ChatSettingsPanel, {
+      activeChat: chat({ id: 'topic-1', kind: 'topic', name: 'Current topic', source_chat_id: 'source' }), mobile,
+      messages: [], onClose: vi.fn(), onClearMessages: vi.fn(),
+      onSetNotificationLevel: vi.fn(), onTogglePinned: vi.fn(), memberProfiles: [], currentUserId: 'owner-1', onWhisper,
+      groupCollabSnapshot: SNAPSHOT, groupAgentStatuses: {}, onReloadGroupCollab: vi.fn(),
+      onLeaveGroup: vi.fn(), onDissolveGroup: vi.fn(),
+    } as never), { auth: { id: 'owner-1' }, contacts: { contacts: [] }, chat: { chats: [chat({ id: 'topic-1', kind: 'topic', name: 'Current topic', source_chat_id: 'source' })], getImRepository: async () => repository, identitiesById: { a1: displayIdentity('a1', { type: 'agent', display_name: 'Claude 28', owner_user_id: 'owner-1' }) } } })
+    if (!mobile) await act(async () => { q('[data-testid="group-settings-members"]')!.click() })
+    await settle()
+    await waitForCondition(() => q('[data-member-row="a1"]') !== null, 'the topic participant row')
+    await click(q('[data-member-row="a1"]'))
+    await waitForCondition(() => q('[data-testid="group-member-profile-menu"]') !== null, 'profile card open')
+    const whisper = [...document.querySelectorAll<HTMLElement>('[data-testid="group-member-profile-menu"] button')].find((button) => button.textContent?.trim() === '悄悄话')
+    expect(whisper, 'Whisper on a topic participant\'s card').toBeDefined()
+    await click(whisper!)
+    expect(onWhisper).toHaveBeenCalledWith(expect.objectContaining({ id: 'a1' }))
+  })
 })

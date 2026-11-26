@@ -12,6 +12,7 @@ import { requestResult, transactionDone } from './indexedDbHandle'
 
 const DB_NAME = 'gugu.messages.v1'
 const STORES = ['messages', 'ranges', 'tombstones', 'access', 'accounts'] as const
+const RETIRED_ACCOUNTS = 'retired_accounts'
 type StoreName = (typeof STORES)[number]
 type MessageRecord = { accountId: string; id: string; chatId: string; claimed: string | null; message: MessageItem }
 type RangeRecord = { accountId: string; chatId: string; root: string; ranges: SeqRange[] }
@@ -23,14 +24,17 @@ const accountRange = (accountId: string) => IDBKeyRange.bound([accountId], [acco
 const chatRange = (accountId: string, chatId: string) => IDBKeyRange.bound([accountId, chatId], [accountId, chatId, []])
 
 function openDatabase(indexedDb: IDBFactory): Promise<IDBDatabase> {
-  const opening = indexedDb.open(DB_NAME, 1)
-  opening.onupgradeneeded = () => {
+  const opening = indexedDb.open(DB_NAME, 2)
+  opening.onupgradeneeded = (event) => {
     const db = opening.result
-    db.createObjectStore('messages', { keyPath: ['accountId', 'id'] }).createIndex('chat', ['accountId', 'chatId'])
-    db.createObjectStore('ranges', { keyPath: ['accountId', 'chatId', 'root'] })
-    db.createObjectStore('tombstones', { keyPath: ['accountId', 'chatId', 'messageId'] })
-    db.createObjectStore('access', { keyPath: ['accountId', 'chatId'] })
-    db.createObjectStore('accounts', { keyPath: 'accountId' })
+    if (event.oldVersion === 0) {
+      db.createObjectStore('messages', { keyPath: ['accountId', 'id'] }).createIndex('chat', ['accountId', 'chatId'])
+      db.createObjectStore('ranges', { keyPath: ['accountId', 'chatId', 'root'] })
+      db.createObjectStore('tombstones', { keyPath: ['accountId', 'chatId', 'messageId'] })
+      db.createObjectStore('access', { keyPath: ['accountId', 'chatId'] })
+      db.createObjectStore('accounts', { keyPath: 'accountId' })
+    }
+    db.createObjectStore(RETIRED_ACCOUNTS, { keyPath: 'accountId' })
   }
   return requestResult(opening)
 }
@@ -158,7 +162,7 @@ class AccountRows {
   }
 }
 
-export function createLocalMessageStore({ indexedDb = globalThis.indexedDB }: { indexedDb?: IDBFactory } = {}): MessageStore & { close(): void } {
+export function createLocalMessageStore({ indexedDb = globalThis.indexedDB }: { indexedDb?: IDBFactory } = {}): MessageStore & { retireAccount(accountId: string): Promise<void>; close(): void } {
   const handle = createIndexedDbHandle(() => openDatabase(indexedDb))
   const accounts = new Map<string, Promise<AccountRows>>()
   const loads = new Map<string, Promise<void>>()
@@ -221,24 +225,33 @@ export function createLocalMessageStore({ indexedDb = globalThis.indexedDB }: { 
   }
 
   /** Runs the contract in memory, then commits its writes in one IndexedDB transaction. Any failure drops the memory copy. */
-  async function run<T>(accountId: string, chatIds: (rows: AccountRows) => Iterable<string>, body: (rows: AccountRows) => T): Promise<T> {
+  async function run<T>(accountId: string, chatIds: (rows: AccountRows) => Iterable<string>, body: (rows: AccountRows) => T,
+    write = false, allowRetired = false): Promise<T> {
     const rows = await account(accountId)
     await load(rows, chatIds(rows))
     rows.operations = []
     try {
-      const result = body(rows)
-      const operations = rows.operations
-      rows.operations = []
-      if (operations.length) {
-        const db = await handle.get()
-        const transaction = db.transaction([...STORES], 'readwrite')
-        for (const operation of operations) {
-          const store = transaction.objectStore(operation.store)
-          if ('put' in operation) store.put(operation.put)
-          else store.delete(operation.delete)
-        }
-        await transactionDone(transaction)
+      const db = await handle.get()
+      // Every writer locks the retirement marker with its rows. A batch ordered
+      // before retirement is purged; one ordered after it cannot recreate data.
+      const transaction = db.transaction(write ? [...STORES, RETIRED_ACCOUNTS] : [RETIRED_ACCOUNTS], write ? 'readwrite' : 'readonly')
+      const done = transactionDone(transaction)
+      let result!: T
+      let failure: unknown
+      const check = transaction.objectStore(RETIRED_ACCOUNTS).get(accountId)
+      check.onsuccess = () => {
+        try {
+          if (check.result && !allowRetired) throw Object.assign(new Error('im_account_retired'), { code: 'im_account_retired' })
+          result = body(rows)
+          for (const operation of rows.operations) {
+            const store = transaction.objectStore(operation.store)
+            if ('put' in operation) store.put(operation.put)
+            else store.delete(operation.delete)
+          }
+          rows.operations = []
+        } catch (error) { failure = error; transaction.abort() }
       }
+      await done.catch(error => { throw failure ?? error })
       return result
     } catch (error) {
       // Memory may hold half of a batch, or a batch IndexedDB refused: it is a cache of disk, so read disk again.
@@ -261,7 +274,7 @@ export function createLocalMessageStore({ indexedDb = globalThis.indexedDB }: { 
     ingest: (accountId: string, batch: ImMessageBatch): Promise<ImMessageWrite[]> =>
       run(accountId, rows => chatsOfBatch(batch, chatId => [...rows.children.get(chatId) ?? []],
         chatId => rows.access.get(chatId)?.sourceChatId ?? null),
-        rows => operations(rows).ingest(batch)),
+        rows => operations(rows).ingest(batch), true),
     windows: (accountId: string, chatIds: string[], limit: number): Promise<MessageItem[]> =>
       run(accountId, () => chatIds, rows => operations(rows).windows(chatIds, limit)),
     async page(accountId: string, page: ImMessagePage): Promise<ImMessagePageResult> {
@@ -269,9 +282,22 @@ export function createLocalMessageStore({ indexedDb = globalThis.indexedDB }: { 
       const chats = page.ids ? await chatsOfIds(rows, page.ids) : [page.chatId!]
       return run(accountId, () => chats, current => operations(current).page(page))
     },
-    throughRevision: async (accountId: string) => (await account(accountId)).through,
+    throughRevision: (accountId: string) => run(accountId, () => [], rows => rows.through),
     async clearAccount(accountId: string) {
-      await run(accountId, () => [], rows => operations(rows).clear())
+      await run(accountId, () => [], rows => operations(rows).clear(), true, true)
+      accounts.delete(accountId)
+    },
+    /** Only the trusted-deleted finalizer retires an owner; ordinary logout just clears. */
+    async retireAccount(accountId: string) {
+      requireId(accountId)
+      const db = await handle.get()
+      const transaction = db.transaction([...STORES, RETIRED_ACCOUNTS], 'readwrite')
+      const done = transactionDone(transaction)
+      try {
+        transaction.objectStore(RETIRED_ACCOUNTS).put({ accountId, protocolVersion: 2 })
+        for (const name of STORES) transaction.objectStore(name).delete(name === 'accounts' ? accountId : accountRange(accountId))
+      } catch (error) { transaction.abort(); await done.catch(() => undefined); throw error }
+      await done
       accounts.delete(accountId)
     },
     close: () => handle.close(),

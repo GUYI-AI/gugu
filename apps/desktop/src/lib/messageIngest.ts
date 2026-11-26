@@ -8,7 +8,12 @@ import { acceptMessageWrites, clearMessageWindows, initializeMessageWindows, mes
 import { MAX_WINDOW } from '../store/chatMessageWindow'
 const commits = new Map<string, Promise<unknown>>()
 /** One store per IndexedDB factory: the page has exactly one (unit tests hand each case a fresh one). */
-let phoneStore: { factory: IDBFactory; store: MessageStore } | undefined
+let phoneStore: { factory: IDBFactory; store: ReturnType<typeof createLocalMessageStore> } | undefined
+
+function phoneMessages(): ReturnType<typeof createLocalMessageStore> {
+  if (phoneStore?.factory !== globalThis.indexedDB) phoneStore = { factory: globalThis.indexedDB, store: createLocalMessageStore() }
+  return phoneStore.store
+}
 
 /**
  * @@@client-state-model - the one place a platform picks where the message store runs: the desktop's session SQLite in
@@ -17,8 +22,16 @@ let phoneStore: { factory: IDBFactory; store: MessageStore } | undefined
 function store(): MessageStore {
   const bridge = desktopIpc()
   if (bridge) return createRPCClient<{ imMessages: typeof imMessagesController }>(bridge.invoke).imMessages
-  if (phoneStore?.factory !== globalThis.indexedDB) phoneStore = { factory: globalThis.indexedDB, store: createLocalMessageStore() }
-  return phoneStore.store
+  return phoneMessages()
+}
+
+/** Native has already proved deletion. Drain this renderer; the desktop's native
+ * receiver retired SQLite, while the phone must also retire its separate DB.
+ */
+export async function retireClosedMessageAccount(accountId: string): Promise<void> {
+  clearMessageWindows(accountId)
+  await commits.get(accountId)?.then(() => undefined, () => undefined)
+  if (!desktopIpc()) await phoneMessages().retireAccount(accountId)
 }
 
 /** Read-only access cannot acquire either renderer write method. */

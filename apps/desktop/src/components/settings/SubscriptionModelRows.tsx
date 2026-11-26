@@ -7,6 +7,7 @@ import { Button } from '@renderer/lib/ui/button';
 import { AppIcon } from '@renderer/lib/components/app-icon';
 import type { ReactNode } from 'react';
 import { CodingPlanGroup } from './CodingPlanGroup';
+import { subscriptionPlans } from '@gugu/session-core/models/provider-presets';
 import { InlineConnectionName } from './InlineConnectionName';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useConnectionDetails } from '@renderer/features/settings/subscriptions/listed-connections';
@@ -23,7 +24,7 @@ export function SubscriptionModelRows({ agent, machine, connections, busy, onSig
   const { translate } = useSessionMessages();
   const subscriptions = connections;
   if (subscriptions?.length === 0 && !error) return null;
-  return <CodingPlanGroup id={agent.id === 'codex' ? 'chatgpt-subscription' : 'claude-subscription'} name={agent.id === 'codex' ? 'ChatGPT' : 'Claude'} icon={<AppIcon id={agent.id} size={20} />}>
+  return <CodingPlanGroup id={agent.id === 'codex' ? 'chatgpt-subscription' : 'claude-subscription'} name={subscriptionPlans[agent.id]?.vendor ?? agent.name} icon={<AppIcon id={agent.id} size={20} />}>
     {notice}
     {error && <SettingsRow description={<SettingsNote tone="danger" role="alert">{error}</SettingsNote>} control={<Button size="sm" variant="outline" onClick={onRetry}>{translate('common.retry')}</Button>} />}
     {!error && !connections && <SettingsRow control={<Unknown className="h-4 w-32" />} />}

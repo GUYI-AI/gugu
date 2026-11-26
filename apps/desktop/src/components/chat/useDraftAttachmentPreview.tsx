@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
 import type { ComposerAttachment } from '@gugu/session-ui/react/components'
 import { workingCopyImageItem } from '@/lib/attachmentBytes'
-import { openImageViewer } from '@/lib/imageViewer'
+import { openComposerImage, openImageViewer } from '@/lib/imageViewer'
 import { Sheet } from '../ui/Sheet'
 import { MessageFilePreview, type HostedPreviewFile } from './MessageFilePreview'
 
@@ -17,12 +17,14 @@ export function useDraftAttachmentPreview(
   const current = visible && preview?.scope === scope ? preview : null
   useEffect(() => { if (preview && !current) setPreview(null) }, [preview, current])
 
-  function open(attachment: ComposerAttachment) {
+  function open(attachment: ComposerAttachment, cell?: HTMLElement) {
     const file = fileOf(attachment.id)
+    const edit = file && replace ? (edited: File, caption: string) => replace(attachment.id, edited, caption, file) : undefined
+    if (openComposerImage(attachment, cell, edit)) return
     if (!file) return
     const read = async () => file
     if (isRenderableImage(file.name, file.type)) {
-      openImageViewer([{ ...workingCopyImageItem(file.name, read), ...(replace ? { replace: (edited: File, caption: string) => replace(attachment.id, edited, caption, file) } : {}) }])
+      openImageViewer([{ ...workingCopyImageItem(file.name, read), ...(edit ? { replace: edit } : {}) }])
       return
     }
     setPreview({ scope, file: {

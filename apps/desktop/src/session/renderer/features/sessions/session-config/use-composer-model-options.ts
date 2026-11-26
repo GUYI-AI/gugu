@@ -1,8 +1,11 @@
 import { useReplica } from '@/lib/replica';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { customModels } from './custom-models';
-import { customComposerOptions } from './custom-model-options';
-import { customModelOptionId, type CustomModelConnection, type CustomModelRef } from '@gugu/session-core/models/custom-model';
+import { customComposerOptions, ownModelTag } from './custom-model-options';
+import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
+import { subscriptionPlan } from '@renderer/features/settings/subscriptions/subscription-queries';
+import { subscriptionPlans } from '@gugu/session-core/models/provider-presets';
+import { customModelOptionId, type CustomModelRef } from '@gugu/session-core/models/custom-model';
 import { useMemo } from 'react';
 import { vendorName } from '@/i18n/vendorName';
 import type { ComposerModelOption } from '@gugu/session-ui/react/components';
@@ -18,13 +21,14 @@ import { modelProviderIcon } from './model-provider-icon';
 import { billingLinksAvailable, openBillingPage } from '@/lib/appLinks';
 import type { ComposerModelUpgrade } from '@gugu/session-ui/react/components';
 import { openShellSettings } from '@renderer/lib/open-shell-settings';
+import { platform } from '@/platform';
 
 /**
  * @@@composer-model-assembly —— **模型下拉的装配只有这一份**。
  *
- * 两个入口(新建会话页 `initial-session-section`、会话页 `acp-chat-panel`)点开的是
- * 同一张卡:一级按厂商(组头 / 过滤药丸 / 行内 logo),二级是「你的 {agent} 模型」与
- * 「咕咕提供的模型 · 按积分计费」。
+ * 三个入口(新建会话页 `initial-session-section`、会话页 `acp-chat-panel`、终端会话 `terminal-model-menu`)
+ * 点开的是同一张卡:一张平的清单,咕咕的模型在前、不带标签;用户自己配的每行带标签说是谁的
+ * (Coding Plan 写家名、按量 key 写域名,owner 11-19 / 11-25)。组头与顶上的厂商筛选块都已撤。
  *
  * ⚠️ 从前这两处**各自手搓这段参数**,于是同一个下拉已经开始两种长相:新建页取不到 agent 名
  * 时兜底成 `'agent'`(组头照在),会话页那份写的是 `providerId ? … : null`(**组头整个消失**)。
@@ -55,21 +59,26 @@ export function useComposerModelOptions(
   // The heading names the agent: unknown until the list is read, ❌ the raw id renamed when it lands.
   const agentName = agents.state === 'unknown' ? null : composerOwnTierAgentName(agentList, providerId);
   const remote = useLibraryHost().remote;
-  const custom = useReplica(customModels, [remote?.deviceId ?? null]);
-  // Records live on the machine that saved them. Another machine still lists this one's, as unusable there (no key).
-  const own = useReplica(customModels, [null]);
-  const records = custom.state !== 'value' ? undefined
-    : !remote ? custom.value
-      : own.state === 'value' ? withOwnRecords(custom.value, own.value) : undefined;
-  const error = (custom.state === 'unknown' ? null : custom.error) ?? (remote && own.state !== 'unknown' ? own.error : null) ?? null;
+  const machine = remote?.deviceId ?? null;
+  const custom = useReplica(customModels, [machine]);
+  const records = custom.state === 'value' ? custom.value : undefined;
+  const error = custom.state === 'unknown' ? null : custom.error;
   const agent = agentList?.find((entry) => entry.id === providerId);
+  // Read only (`probe: false`): the tag follows the sign-in the agent list already reports, ❌ a probe per menu.
+  const { auth } = useAgentAuthStatus(providerId, undefined, { machine, probe: false });
+  const credentialKind = auth?.status.kind === 'authenticated' ? auth.status.credentialKind : undefined;
+  // The tier (「ChatGPT Plus」) comes from the plan reading the Subscriptions page keeps (cached, 30 s fresh): read only
+  // for a harness sold as a plan sign-in (ChatGPT / Claude) while it is signed in.
+  const readsPlan = !!providerId && !!subscriptionPlans[providerId] && auth?.status.kind === 'authenticated';
+  const plan = useReplica(subscriptionPlan, readsPlan && providerId ? [machine, providerId] : null);
+  const ownTag = ownModelTag(providerId, { credentialKind, plan: plan.state === 'value' ? plan.value : undefined });
 
   return useMemo(
     () => {
       if (agentName === null) return undefined;
-      const base = assembleComposerModelOptions(harnessOptions, platformModels, agentName, translate, currentPlatformModelId);
+      const base = assembleComposerModelOptions(harnessOptions, platformModels, agentName, translate, currentPlatformModelId, ownTag);
       if (!providerId) return base;
-      const options = records && customComposerOptions(records, agent, remote?.deviceLabel ?? translate('customModels.device'), translate);
+      const options = records && customComposerOptions(records, agent, translate, platform.capabilities.modelSettings ? machine : undefined);
       if (!records || error) {
         return { ...base, ...options, 'custom-models-status': {
           name: translate(error ? 'customModels.listFailed' : 'customModels.loading'),
@@ -79,15 +88,8 @@ export function useComposerModelOptions(
       }
       return base || Object.keys(options ?? {}).length ? { ...base, ...options } : null;
     },
-    [harnessOptions, platformModels, translate, agentName, currentPlatformModelId, records, error, agent, providerId, remote?.deviceLabel]
+    [harnessOptions, platformModels, translate, agentName, currentPlatformModelId, ownTag, records, error, agent, providerId, machine]
   );
-}
-
-/** The task machine's records, then this machine's that it lacks (same address = it has it), without their key there. */
-export function withOwnRecords(machine: readonly CustomModelConnection[], own: readonly CustomModelConnection[]): CustomModelConnection[] {
-  const addresses = new Set(machine.flatMap((record) => record.endpoints.map((endpoint) => endpoint.baseUrl)));
-  return [...machine, ...own.filter((record) => !record.endpoints.some((endpoint) => addresses.has(endpoint.baseUrl)))
-    .map((record) => ({ ...record, keySaved: false }))];
 }
 
 type Translate = (key: SessionMessageLookupKey, values?: SessionMessageValues) => string;
@@ -101,12 +103,14 @@ export function assembleComposerModelOptions(
   platformModels: readonly PlatformModelRow[],
   agentName: string,
   translate: Translate = translateSessionMessage,
-  currentPlatformModelId?: string | null
+  currentPlatformModelId?: string | null,
+  /** 用户自己那档的标签(`ownModelTag`)。不给 = 不贴。 */
+  ownTag?: string | null
 ): Record<string, ComposerModelOption> | null {
   return composerModelOptions(
     harnessOptions,
     platformModels,
-    { ownTierLabel: composerTierLabel('own', agentName, translate), icon: modelProviderIcon, providerName: vendorName },
+    { ownTierLabel: composerTierLabel('own', agentName, translate), icon: modelProviderIcon, providerName: vendorName, ownTag },
     currentPlatformModelId
   );
 }
@@ -147,7 +151,7 @@ export function openMembershipPage(): void {
 
 /**
  * 模型面板底部的两条去路(#7056,对齐 Cursor):三个模型菜单(新建页、Chat UI 会话、终端会话)共用这一份。
- *  - 「配置自定义模型」打开设置里的模型列表;
+ *  - 「配置模型」打开设置里的模型列表,是清单的最后一行(跟着清单滚,owner 11-25);
  *  - 「升级解锁更多模型」只给这一档有用不了的模型的人(免费档),悬停列出是哪几个,点了去网页面板。
  * 这一档用不了的模型**不进清单**:列出来点了才说要会员「像是埋雷」(owner 2026-10-10)。
  */

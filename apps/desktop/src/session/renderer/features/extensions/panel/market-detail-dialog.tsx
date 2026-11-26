@@ -1,3 +1,4 @@
+import { cn } from '@renderer/utils/utils';
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Ellipsis, Trash2, XIcon } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
@@ -65,7 +66,7 @@ export function MarketDetailConfirmations({ children }: { children: ReactNode })
       {children}
       {request && (
         <Dialog open onOpenChange={(open) => { if (!open) finish(false); }}>
-          <DialogContent className="z-[51] rounded-2xl bg-background sm:max-w-[480px]" data-testid="market-detail-confirmation">
+          <DialogContent className="rounded-2xl bg-background sm:max-w-[480px]" data-testid="market-detail-confirmation">
             <DialogHeader className="pb-4">
               <DialogTitle className="text-base font-semibold">{request.title}</DialogTitle>
             </DialogHeader>
@@ -99,7 +100,7 @@ export function MarketDetailDialog({ onClose, children }: { onClose: () => void;
 }
 
 export function MarketDetailCard({
-  name, publisher, icon, actions, devices, facts, subtitle, notice, onUninstall, children,
+  name, publisher, icon, actions, devices, facts, subtitle, notice, onUninstall, alternate, children,
 }: {
   name: string;
   publisher?: string;
@@ -110,9 +111,26 @@ export function MarketDetailCard({
   subtitle?: ReactNode;
   notice?: ReactNode;
   onUninstall?: () => void;
+  /** A second view that takes the place of the facts and children while it is shown (an agent's 高级设置). */
+  alternate?: { shown: boolean; view: ReactNode };
   children?: ReactNode;
 }) {
   const { translate } = useSessionMessages();
+  const details = (
+    <>
+      {!!facts?.length && (
+        <dl className="flex flex-wrap divide-x divide-border rounded-2xl border border-border py-3 text-center">
+          {facts.map(({ label, value }) => (
+            <div key={label} className="flex min-w-20 flex-1 flex-col-reverse gap-1 px-2">
+              <dt className="text-xs text-foreground-muted">{label}</dt>
+              <dd className="font-semibold">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {children}
+    </>
+  );
   return (
     <>
       <div data-slot="dialog-header" className="relative shrink-0 pt-6 pr-16 pl-6">
@@ -150,17 +168,13 @@ export function MarketDetailCard({
       <div className="min-h-0 space-y-6 overflow-y-auto px-6 pt-5 pb-6">
         {notice}
         {subtitle && <div className="leading-relaxed text-foreground-muted [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">{subtitle}</div>}
-        {!!facts?.length && (
-          <dl className="flex flex-wrap divide-x divide-border rounded-2xl border border-border py-3 text-center">
-            {facts.map(({ label, value }) => (
-              <div key={label} className="flex min-w-20 flex-1 flex-col-reverse gap-1 px-2">
-                <dt className="text-xs text-foreground-muted">{label}</dt>
-                <dd className="font-semibold">{value}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
-        {children}
+        {alternate ? (
+          // Both views share one grid cell, so switching keeps the dialog's height instead of jumping.
+          <div className="grid [&>*]:[grid-area:1/1]">
+            <div className={cn('min-w-0 space-y-6', alternate.shown && 'invisible')} inert={alternate.shown}>{details}</div>
+            <div className={cn('min-w-0', !alternate.shown && 'invisible')} inert={!alternate.shown}>{alternate.view}</div>
+          </div>
+        ) : details}
       </div>
     </>
   );

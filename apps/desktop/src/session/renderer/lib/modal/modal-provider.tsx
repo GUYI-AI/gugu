@@ -6,26 +6,26 @@ import { modalStore } from './modal-store';
 
 export type { BaseModalProps, ModalComponent } from '@/components/ui/modal-registry';
 
-type UserArgs<MId extends ModalId> = Omit<ModalArgs<MId>, 'onSuccess' | 'onClose'> & {
+export type UserArgs<MId extends ModalId> = Omit<ModalArgs<MId>, 'onSuccess' | 'onClose'> & {
   onSuccess?: (
     result: ModalArgs<MId> extends { onSuccess: (result: infer R) => void } ? R : unknown
   ) => void;
   onClose?: () => void;
 };
 
-type ModalId = keyof typeof modalRegistry;
+export type ModalId = keyof typeof modalRegistry;
 
 type ModalArgs<TId extends ModalId> = Parameters<(typeof modalRegistry)[TId]['component']>[0];
 
-export function wrapArgs<TId extends ModalId>(args: UserArgs<TId>): Record<string, any> {
+export function wrapArgs<TId extends ModalId>(args: UserArgs<TId>, close: (outcome: 'completed' | 'dismissed') => void = (outcome) => modalStore.closeModal(outcome)): Record<string, any> {
   return {
     ...args,
     onSuccess: (result: any) => {
-      modalStore.closeModal('completed');
+      close('completed');
       args.onSuccess?.(result);
     },
     onClose: () => {
-      modalStore.closeModal('dismissed');
+      close('dismissed');
       args.onClose?.();
     },
     // 有的弹窗另有一个收尾动作(确认框的取消键另有说法,如「只关会话」):它也要先把弹窗收起,
@@ -33,7 +33,7 @@ export function wrapArgs<TId extends ModalId>(args: UserArgs<TId>): Record<strin
     ...('onCancel' in args && typeof args.onCancel === 'function'
       ? {
           onCancel: () => {
-            modalStore.closeModal('dismissed');
+            close('dismissed');
             (args.onCancel as () => void)();
           },
         }

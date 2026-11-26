@@ -30,7 +30,7 @@ import { tokenVars } from '@session-ui/theme/tokens.css';
 
 export const popupSurface = style({
   position: 'relative',
-  zIndex: 50,
+  zIndex: 'var(--z-popover, 50)',
   transformOrigin: 'var(--transform-origin)',
   // design.md shape 表:menu / popover / tooltip = --radius-surface(10px)。
   borderRadius: tokenVars.radiusSurface,

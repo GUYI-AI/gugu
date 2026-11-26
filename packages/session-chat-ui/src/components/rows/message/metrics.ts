@@ -100,7 +100,7 @@ export function attachStripHeight(attachments: readonly ChatAttachment[] | undef
   return fileRowsHeight(attachments.map(attachmentRowKind), available) + vars.attachGap;
 }
 
-/** 缺席 = 图片(历史生产者只送图,见 `ChatAttachment.kind`);批注画成一条文件行。 */
+/** 缺席 = 图片(历史生产者只送图,见 `ChatAttachment.kind`);评论画成一条文件行。 */
 export function attachmentRowKind(attachment: ChatAttachment): FileRowKind {
   return attachment.kind === 'file' || attachment.kind === 'annotation' ? 'file' : 'image';
 }

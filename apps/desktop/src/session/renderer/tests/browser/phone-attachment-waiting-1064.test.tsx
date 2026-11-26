@@ -111,9 +111,11 @@ it('uploads an edited image in the original draft slot and ignores the late orig
     await page.elementLocator(chips()[0]!).click()
     const image = open.mock.lastCall?.[0]
     expect(image?.alt).toBe(original.name)
+    const originalChip = chips()[0]
     await act(async () => { await image!.replace!(edited, '') })
     await until('edited upload started', () => place.mock.calls.length === 3)
     expect(chips().map(chip => chip.title.split(',')[0])).toEqual([edited.name, neighbor.name])
+    expect(chips()[0]).toBe(originalChip)
     await send()
     await act(async () => { late.resolve() })
     expect(status()).not.toBeNull()

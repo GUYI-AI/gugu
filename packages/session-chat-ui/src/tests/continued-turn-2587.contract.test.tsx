@@ -50,6 +50,35 @@ function mount() {
 const heads = (host: HTMLElement) => [...host.querySelectorAll<HTMLElement>('[data-conversation-part="head"]')];
 const bodies = (host: HTMLElement) => [...host.querySelectorAll<HTMLElement>('[data-conversation-part="body"]')].map(el => el.textContent ?? '');
 
+it('keeps a manually collapsed process closed when its live turn commits', async () => {
+  const v = mount();
+  const turn: TranscriptTurn = {
+    id: 'next', seq: 1, initiator: 'user', startedAt: 5000,
+    items: [
+      { kind: 'message', id: 'next-input', seq: 0, role: 'user', text: 'Run another command.' },
+      bash('next-command', 1),
+    ],
+  };
+  const row = () => v.host.querySelector<HTMLElement>('[data-conversation-process="next:process"]');
+  const expanded = () => row()?.getAttribute('aria-expanded');
+  v.state.transcript.activeTurn.set(turn);
+  await until('the live process is expanded', () => expanded() === 'true');
+  row()!.click();
+  await until('the reader collapses the live process', () => expanded() === 'false');
+
+  batch(() => {
+    v.state.transcript.history.append([{
+      ...turn, endedAt: 10000, outcome: { kind: 'done' },
+      items: [...turn.items, { kind: 'message', id: 'next-reply', seq: 2, role: 'assistant', text: 'Command finished.' }],
+    }]);
+    v.state.transcript.activeTurn.set(null);
+  });
+  await until('the completed reply appears', () => bodies(v.host).some(text => text.includes('Command finished.')));
+  expect(expanded()).toBe('false');
+  row()!.click();
+  await until('the completed process can still be opened', () => expanded() === 'true');
+});
+
 describe('a turn woken by its own finished task continues the answered segment (#2587)', () => {
   it('turns the answered process line live, keeps it through the commit, and never shows a standalone completion row', async () => {
     const v = mount();

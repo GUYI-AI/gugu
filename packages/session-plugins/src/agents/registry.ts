@@ -562,7 +562,7 @@ export { claudeAcpPlatformSessionMeta, claudeSessionFlagSettings, type ClaudeAcp
 export { materializePiModelConfig } from './impl/pi/session-bundle';
 // 宿主登记中继入口用的变量名 —— 只此一份,❌ 在宿主(local-session)里另写一个字面量。
 export { GUGU_MCP_STDIO_RELAY_ENTRY_ENV } from './impl/antigravity/session-bundle';
-export { effortOptionsFromReasoningVariants } from './helpers/opencode-family-model-config';
+export { OPENCODE_FAMILY_CONNECTION_PROVIDER_ID, effortOptionsFromReasoningVariants } from './helpers/opencode-family-model-config';
 // opencode 家 TUI 腿(serve/attach)的会话名判读:宿主的 serve transport 读 SSE 时用。
 export { opencodeFamilyUpdatedTitle } from './helpers/opencode-family-title';
 // @@@5380 agent 事件 hook 的 `notify` 回调值。宿主侧只需要**值**(它进 thread-open 的

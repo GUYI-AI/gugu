@@ -57,7 +57,8 @@ export function probeModelList(probe: CustomModelProtocolProbe): ModelList {
 /** key / 地址一变就重读(表单里打字时等 400ms 停下再读);已存的连接立刻读。 */
 export function useConnectionModelList(
   machine: string | null,
-  source: ConnectionModelSource | null
+  source: ConnectionModelSource | null,
+  refresh = 0,
 ): ModelList {
   const sourceKey = source ? JSON.stringify(source) : ''
   const [list, setList] = useState<ModelList>({ kind: 'waiting' })
@@ -95,7 +96,7 @@ export function useConnectionModelList(
       cancelled = true
       clearTimeout(timer)
     }
-  }, [machine, sourceKey])
+  }, [machine, sourceKey, refresh])
   return list
 }
 

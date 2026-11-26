@@ -5,6 +5,7 @@ import { Avatar } from '@/components/Avatar'
 import { Button } from '@/components/ui/Button'
 import { Hash, Users, ChevronRight } from '@/lib/icons'
 import { followLink } from '@/lib/guguLinks'
+import { useChatStore } from '@/store/chatContext'
 import { PhoneComposerControl, PhoneComposerSheet } from '../composer/PhoneComposerControls'
 import { preserveComposerFocus } from '../composer/composer-focus'
 import { openPhoneSidebarSession } from './phone-sidebar-navigation'
@@ -16,6 +17,8 @@ import './room-composer-catalog'
 import './phone-room-composer.css'
 import { phoneMenuBar } from '../composer/phone-menu-bar'
 import { PhoneNavigationPicker } from './PhoneNavigationPicker'
+import { PhoneTopicPinRow } from './PhoneTopicPinRow'
+import { phoneTopicsWithPins } from './room-composer-models'
 
 export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebarControls({ sidebar, model, skillDraft, nativeSkills }: { sidebar: PhoneSessionSidebarModel; modelControl?: ReactNode; model?: ExistingSessionModel; skillDraft?: ReturnType<typeof creationSkillInput>; nativeSkills?: ReactNode }) {
   const { t } = useTranslation('mobileRoomControls')
@@ -25,6 +28,8 @@ export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebar
   const machine = device ? { device, localProjectId: current?.session.projectId ?? '', path: '', available: device.is_online } : undefined
   const harness = current?.session.harness ?? null
   const [view, setView] = useState<'agents' | 'topics' | null>(null)
+  const { chats } = useChatStore('chats')
+  const topicChoices = view === 'topics' ? phoneTopicsWithPins(topics.topics ?? [], new Map(chats.map(chat => [chat.id, chat]))) : []
   const titleCount = view === 'topics' ? topics.topics?.length : (source ? listed.length : undefined)
   const menu = phoneMenuBar(source ? 'roomAgent' : 'agent', { topics: !!source, agents: listed.length > 0 })
   const nextEntry = !anchor ? null : anchor.kind === 'agent' ? `session:${families.topLevelOf.get(anchor.agentUserId)?.[0]?.id ?? sessionId}` : `chat:${anchor.chatId}`
@@ -51,10 +56,12 @@ export const PhoneSessionSidebarControls = observer(function PhoneSessionSidebar
           <span className="gg-phone-room-choice-name">{name}</span><ChevronRight aria-hidden />
         </Button>)}
       </PhoneNavigationPicker> : view === 'topics' ? <PhoneNavigationPicker key={`topics:${source}`} kind="topics"
-        items={[null, ...(topics.topics ?? [])]} nameOf={topic => topic?.name ?? t('main')} ready={topics.topics !== null && !topics.error}>
+        items={[null, ...topicChoices]} nameOf={topic => topic?.name ?? t('main')} ready={topics.topics !== null && !topics.error}>
         {shown => <>
-          {shown.map(topic => topic ? <Button key={topic.chat_id} variant="ghost" className="gg-phone-room-choice" data-topic-id={topic.chat_id}
-            onClick={() => { setView(null); followLink({ kind: 'chat', chatId: topic.chat_id }) }}><Hash /><span className="gg-phone-room-choice-name gg-phone-room-topic-name">{topic.name}</span></Button>
+          {shown.map(topic => topic ? <PhoneTopicPinRow key={topic.chat_id} topic={topic}>
+            <Button variant="ghost" className="gg-phone-room-choice" data-topic-id={topic.chat_id}
+              onClick={() => { setView(null); followLink({ kind: 'chat', chatId: topic.chat_id }) }}><Hash /><span className="gg-phone-room-choice-name gg-phone-room-topic-name">{topic.name}</span></Button>
+          </PhoneTopicPinRow>
             : <Button key="main" variant="ghost" className="gg-phone-room-choice" onClick={() => { setView(null); if (source) followLink({ kind: 'chat', chatId: source }) }}>{t('main')}</Button>)}
           {topics.topics === null && !topics.error && <p role="status" className="gg-phone-composer-sheet-status">{t('loadingTopics')}</p>}
           {topics.error && <div role="alert">{topics.error}<Button variant="ghost" onClick={topics.reload}>{t('retry')}</Button></div>}

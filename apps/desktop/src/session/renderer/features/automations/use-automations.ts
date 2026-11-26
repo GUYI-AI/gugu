@@ -4,11 +4,11 @@ import type {
   CreateAutomationParams,
   UpdateAutomationSettingsPatch,
 } from '@shared/core/automations/automation';
+import type { AutomationRun } from '@shared/core/automations/automation-run';
 import { useAutomationsHost, type AutomationsHost } from './automations-host';
 import {
-  automationLatestRun,
-  automationNextRun,
   automationRunCounts,
+  automationRunHeads,
   automationRunPage,
   automations as automationsModel,
   RUNS,
@@ -61,7 +61,8 @@ export function useAutomations() {
 
   const runNow = useMutation({
     mutationFn: (id: string) => api.runAutomation(id),
-    onSuccess: (_run, id) => void refreshTag(RUNS, machine, id),
+    // The whole machine: its run heads are one entry for every automation (only shown entries read again).
+    onSuccess: () => void refreshTag(RUNS, machine),
   }, queryClient);
 
   const stop = useMutation({
@@ -88,12 +89,18 @@ export function useAutomations() {
   };
 }
 
+/** One automation's latest or next run, out of its machine's one read of them all. */
+function useRunHead(automationId: string, which: 'latest' | 'next'): Reading<AutomationRun | null> {
+  const heads = useMachineReplica(automationRunHeads, []);
+  return heads.state === 'value' ? { ...heads, value: heads.value[automationId]?.[which] ?? null } : heads;
+}
+
 export function useScheduledAutomationRun(automationId: string) {
-  return useMachineReplica(automationNextRun, [automationId]);
+  return useRunHead(automationId, 'next');
 }
 
 export function useLatestAutomationRun(automationId: string) {
-  return useMachineReplica(automationLatestRun, [automationId]);
+  return useRunHead(automationId, 'latest');
 }
 
 export function useAutomationRunsPaginated(automationId: string, page: number, status: RunStatusFilter) {

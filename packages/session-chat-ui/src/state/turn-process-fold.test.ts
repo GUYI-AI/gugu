@@ -21,6 +21,7 @@ const SEGMENTERS: Record<string, ItemSegmenter> = Object.fromEntries(
     'thinking',
     'execute',
     'execute-tool-call',
+    'mcp-tool-call',
     'subagent-done-tool-call',
     'turn-outcome',
     'turn-process',
@@ -74,6 +75,13 @@ const kinds = (units: ReturnType<typeof flattenTier>) => units.map((u) => u.kind
 const ids = (units: ReturnType<typeof flattenTier>) => units.map((u) => u.itemId);
 const header = (units: ReturnType<typeof flattenTier>) =>
   units.find((u) => u.kind === 'turn-process')?.data as TurnProcessItem | undefined;
+
+function afterCollapsingLiveProcess(beforeClick: TranscriptTurn, current: TranscriptTurn = beforeClick) {
+  const live = ctxWith({ foldTurnProcess: true, active: true });
+  const process = header(flattenTier([beforeClick], live, SEGMENTERS));
+  const clicked = process?.toggleId ?? process?.id;
+  return flattenTier([current], { ...live, isTurnProcessExpanded: (id) => id === clicked }, SEGMENTERS);
+}
 
 /**
  * 钩子说的话：桥把等级折进正文，逐行加 `<HookName> says: `（见 lib/hook-notice.ts）。
@@ -641,14 +649,9 @@ describe('flattenTier × foldTurnProcess (#4874 → #4981 时间头)', () => {
     expect(header(units)?.startedAt).toBe(5_000);
   });
 
-  it('活动层点一下头 ⇒ 收起(同一把开关,活动层反着读)', () => {
+  it('活动层点一下头 ⇒ 收起', () => {
     const live = turn('t8', [user('u8'), thinking('th8'), tool('c8')], undefined, { startedAt: 5_000 });
-    const toggled = new Set([turnProcessId('t8')]);
-    const units = flattenTier(
-      [live],
-      ctxWith({ foldTurnProcess: true, active: true, isTurnProcessExpanded: (id) => toggled.has(id) }),
-      SEGMENTERS
-    );
+    const units = afterCollapsingLiveProcess(live);
     expect(ids(units)).toEqual(['u8', turnProcessId('t8')]);
   });
 
@@ -742,21 +745,21 @@ describe('flattenTier × foldTurnProcess (#4874 → #4981 时间头)', () => {
 
   it('一开始干活,头就收得起来:收起时那句话和命令都在头里', () => {
     const live = turn('t21', [user('u21'), reply('a1', '先跑第一条'), bash('c1')], undefined, { startedAt: 7_000 });
-    const toggled = new Set([turnProcessId('t21')]);
-    const closed = flattenTier([live], ctxWith({ foldTurnProcess: true, active: true, isTurnProcessExpanded: (id) => toggled.has(id) }), SEGMENTERS);
+    const closed = afterCollapsingLiveProcess(live);
     expect(ids(closed)).toEqual(['u21', turnProcessId('t21')]);
   });
 
   it('那句话之后的提问 / 人说的话 / 边界线留在头外面,收起来也看得见', () => {
     const ask = { kind: 'unknown-tool-call', id: 't:tool:q1', seq: 0, toolCallId: 'q1', title: 'AskUserQuestion', name: 'AskUserQuestion', status: 'done', parentToolCallId: null } as unknown as ChatItem;
     const notice = { kind: 'session-notice', id: 'n22', seq: 0, code: 'effort-unavailable', detail: 'x', effectiveValue: 'low', at: 9_000 } as unknown as ChatItem;
-    const toggled = new Set([turnProcessId('t22')]);
-    const closed = (items: ChatItem[]) =>
-      flattenTier([turn('t22', items, undefined, { startedAt: 7_000 })], ctxWith({ foldTurnProcess: true, active: true, isTurnProcessExpanded: (id) => toggled.has(id) }), SEGMENTERS);
-    expect(ids(closed([user('u22'), reply('a1'), bash('c1'), user('steer')]))).toEqual(['u22', turnProcessId('t22'), 'steer']);
-    expect(ids(closed([user('u22'), reply('a1'), bash('c1'), notice]))).toEqual(['u22', turnProcessId('t22'), 'n22']);
+    const processItems = [user('u22'), reply('a1'), bash('c1')];
+    const running = (items: ChatItem[]) => turn('t22', items, undefined, { startedAt: 7_000 });
+    const live = running(processItems);
+    const closed = (next: ChatItem) => afterCollapsingLiveProcess(live, running([...processItems, next]));
+    expect(ids(closed(user('steer')))).toEqual(['u22', turnProcessId('t22'), 'steer']);
+    expect(ids(closed(notice))).toEqual(['u22', turnProcessId('t22'), 'n22']);
     // 提问紧跟那句话(还没干活)⇒ 不算过程,头照旧占位
-    const asked = flattenTier([turn('t22', [user('u22'), reply('a1'), ask], undefined, { startedAt: 7_000 })], ctxWith({ foldTurnProcess: true, active: true }), SEGMENTERS);
+    const asked = flattenTier([running([user('u22'), reply('a1'), ask])], ctxWith({ foldTurnProcess: true, active: true }), SEGMENTERS);
     expect(header(asked)).toMatchObject({ placeholder: true });
   });
 
@@ -815,8 +818,7 @@ describe('flattenTier × foldTurnProcess (#4874 → #4981 时间头)', () => {
     const live = turn('t20', [user('u20'), thinking('th20'), tool('c20')], undefined, { startedAt: 5_000 });
     const open = flattenTier([live], ctxWith({ foldTurnProcess: true, active: true }), SEGMENTERS);
     expect(header(open)).toMatchObject({ withBody: true });
-    const toggled = new Set([turnProcessId('t20')]);
-    const closed = flattenTier([live], ctxWith({ foldTurnProcess: true, active: true, isTurnProcessExpanded: (id) => toggled.has(id) }), SEGMENTERS);
+    const closed = afterCollapsingLiveProcess(live);
     expect(ids(closed)).toEqual(['u20', turnProcessId('t20')]);
     expect(header(closed)).not.toHaveProperty('withBody');
   });
@@ -1004,6 +1006,20 @@ describe('agent conversation segment process', () => {
       { stepCount: 1, label: 'Ran 1 shell command' }, { stepCount: 1, label: 'Ran 1 shell command' },
     ]);
     expect(ids(units).filter(id => ['p1', 'mid', 'p2', 'final'].includes(id))).toEqual(['p1', 'mid', 'p2', 'final']);
+  });
+  it.each([true, false])('folds MCP with commands and thinking in a single summary (live: %s)', active => {
+    const details = (id: string, name: string): ChatItem => ({
+      kind: 'mcp-tool-call', id, seq: 0, toolCallId: id, status: 'done',
+      title: name, server: 'gugu', tool: name,
+    });
+    const record = turn('mcp-run', [
+      user('u'), bash('first'), details('session', 'session_get'), thinking('thought'),
+      details('catalog', 'catalog_list'), bash('last'), ...(active ? [] : [reply('answer')]),
+    ], active ? undefined : DONE);
+    const runs = conversation(record, active, !active).filter(unit => unit.kind === 'tool-run');
+    expect(runs.map(unit => unit.data)).toMatchObject([
+      { stepCount: 5, label: 'Thought 1 time, ran 2 shell commands, called 2 MCP tools' },
+    ]);
   });
   it('keeps the failure outcome visible beside the same readable reply/process structure', () => {
     const record = completed(); record.outcome = { kind: 'error', reason: 'prompt_failed' };

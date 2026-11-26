@@ -140,7 +140,7 @@ function MarketConnectorCard({
       {authorization && authorizationOwnDialog && authorize?.(authorization, finishConnect)}
       {authorization && !authorizationOwnDialog && (
         <Dialog open onOpenChange={(open) => { if (!open) finishConnect(false); }}>
-          <DialogContent className="z-[51] rounded-2xl bg-background sm:max-w-[480px]">
+          <DialogContent className="rounded-2xl bg-background sm:max-w-[480px]">
             {authorize
               ? authorize(authorization, finishConnect)
               : <MarketConnectorAuthorization id={id} host={authorization.host} done={finishConnect} key={authorization.host.key} />}

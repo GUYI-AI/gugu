@@ -4,7 +4,7 @@ registerLocaleNamespace('mobileTaskFlow', {
   'zh-CN': {
     phoneAgent: '手机 Agent',
     phoneModelDefaultHint: '使用手机 Agent 的默认模型。',
-    setupPhone: '设置这台手机',
+    setupPhone: '设置这台手机来运行智能体',
     noHost: '开启这台手机的任务宿主，或在电脑上登录同一账号。',
     createTask: '创建智能体',
     sendToGroup: '发到',
@@ -56,7 +56,7 @@ registerLocaleNamespace('mobileTaskFlow', {
   'en-US': {
     phoneAgent: 'Phone Agent',
     phoneModelDefaultHint: 'Use the phone agent’s default model.',
-    setupPhone: 'Set up this phone',
+    setupPhone: 'Set up this phone to run agents',
     noHost: 'Enable this phone’s task host, or sign in to Gugu on a computer.',
     createTask: 'Create agent',
     sendToGroup: 'Post to',

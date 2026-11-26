@@ -9,9 +9,13 @@ import { forgetCachedAccountProjects } from '@/session/renderer/features/project
  */
 export async function logout(onSignedOut?: () => void): Promise<{ success: boolean }> {
   const result = await sessionCoordinator.logout()
-  if (result.success) {
-    forgetCachedAccountProjects()
-    onSignedOut?.()
-  }
+  if (result.success) finishSignedOut(onSignedOut)
   return result
+}
+
+/** The one tail after an account has left this renderer: ordinary sign-out above, and account
+ * closure, whose native side already retired Auth (it never calls logout() again). */
+export function finishSignedOut(onSignedOut?: () => void): void {
+  forgetCachedAccountProjects()
+  onSignedOut?.()
 }

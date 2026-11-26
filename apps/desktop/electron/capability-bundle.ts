@@ -1,3 +1,4 @@
+import { CONTEXT_THRESHOLD_ENV, CONTEXT_WINDOW_ENV, type ContextThresholdPreference } from '@gugu/session-core/models/context-threshold'
 import { platformModelAccessEnv, resolveGuguHome } from '@gugu/core'
 import type {
   CapabilityPackage,
@@ -329,14 +330,35 @@ export function buildSessionBootstrapBundle(
   }
 }
 
+let readSessionContextThreshold: ((id: string) => Promise<ContextThresholdPreference | undefined>) | undefined
+
+export function setSessionContextThresholdReader(reader: typeof readSessionContextThreshold): void {
+  readSessionContextThreshold = reader
+}
+
+async function withSessionContextThreshold<T extends BuildSessionBootstrapBundleDeps>(deps: T): Promise<T> {
+  if (!deps.sessionKey || !readSessionContextThreshold) return deps
+  const threshold = await readSessionContextThreshold(deps.sessionKey)
+    ?? ('libraryFrom' in deps && typeof deps.libraryFrom === 'string' ? await readSessionContextThreshold(deps.libraryFrom) : undefined)
+  if (!threshold) return deps
+  return {
+    ...deps,
+    additionalEnv: {
+      ...deps.additionalEnv,
+      [CONTEXT_THRESHOLD_ENV]: String(threshold.tokens),
+      [CONTEXT_WINDOW_ENV]: String(threshold.maximum),
+    },
+  }
+}
+
 /** Identity is optional for session-TUI materialization; only the social bridge depends on it. */
-export function buildSessionTuiSessionBundle(input: {
+export async function buildSessionTuiSessionBundle(input: {
   bootstrap: BuildSessionBootstrapBundleDeps
   identity: SessionTuiSessionIdentityBundleDeps | null
 }): Promise<SessionCapabilityBundle> {
   return input.identity
     ? buildSessionBundle({ ...input.bootstrap, ...input.identity })
-    : Promise.resolve(buildSessionBootstrapBundle(input.bootstrap))
+    : buildSessionBootstrapBundle(await withSessionContextThreshold(input.bootstrap))
 }
 
 /**
@@ -540,7 +562,7 @@ export async function buildSessionBundle(
     ? await sessionExtensionBridge({ grantKey: deps.socialBridgeDeps.grantKey, subjectId: deps.agentUserId, ...(agentId ? { agentId } : {}), ...(deps.extensionTools ? { extensionTools: deps.extensionTools } : {}) })
     : { servers: [], skills: [], apps: [], origins: [] }
   const integrationSkills = sessionIntegrationSkillBridge ? await sessionIntegrationSkillBridge() : []
-  const bootstrap = buildSessionBootstrapBundle(deps)
+  const bootstrap = buildSessionBootstrapBundle(await withSessionContextThreshold(deps))
   const taken = [...bootstrap.mcpServers, ...socialBridge, ...integrations, ...extensions.servers]
   // 密钥(env 值、Authorization)与用户自己的那批同一种转换:换成 GUGU_SESSION_MCP_ENV_* 引用,值随 env 走。
   const picked = sessionLibraryMcpBridge && agentId ? await sessionLibraryMcpBridge(agentId, deps.libraryFrom) : null
@@ -1172,8 +1194,7 @@ export const GUGU_APPS_SEARCH_LINE = [
   'An App not listed here may have been installed since, be switched off or be only in the market.',
   'Before you answer a message that names an App ("the budget App") or a game, look it up with catalog_call app_search { query } — even when a tool of your own could do it (a device\'s calendar, hosting the game yourself): the person asked for the App, and a game\'s App keeps the game for everyone in the chat.',
   'To install an App or change its version, use app_install. If an App cannot do what is asked, ask "Shall I fork a version?" before inspecting source or using shell (guide_read apps-fork).',
-  '> (from Wei) let\'s play a round of werewolf',
-  'catalog_call app_search { query: "werewolf" } → an App row → use its tools, or do what its next says',
+  'For example, when someone asks to play a game, call catalog_call app_search with the game\'s name; an App row → use its tools, or do what its next says.',
 ].join('\n')
 
 /**

@@ -15,8 +15,8 @@ const topics = vi.hoisted(() => ['new', 'old'].map((id) => ({
   id, kind: 'topic', source_chat_id: 'g', status: 'active', name: `Topic ${id}`, created_at: '2026-11-01T00:00:00Z',
   last_message_at: '2026-11-01T00:00:00Z', last_message_preview: null, unread_count: 3, pinned_message_id: null, last_read_seq: 0, next_message_seq: 4,
 })) as unknown as ChatItem[])
-vi.mock('@/components/chat/useChatTopicPins', () => ({
-  useChatTopicPins: () => ({ topics, pinned: [], others: topics, set: () => {} }),
+vi.mock('@/components/chat/useGroupTopics', () => ({
+  useGroupTopics: () => topics,
 }))
 
 const { DropdownMenu } = await import('@/components/ui/Menu')

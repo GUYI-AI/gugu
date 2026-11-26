@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentProvision, AgentProvisionOperation } from '@gugu/core/shared/types/agentProvision'
+import type { SessionpageSessionCreateModels } from '@gugu/session-core/session-record/contract'
+import { DEFAULT_PLATFORM_MODEL_BY_PROVIDER } from '../../../../apps/desktop/src/session/shared/core/sessions/new-session-defaults'
+import { platformOptionId } from '../../../../apps/desktop/src/session/shared/platform-model-id'
+
+const setup = vi.hoisted(() => ({ catalog: vi.fn(), prepare: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/lib/agentModelSelection', () => ({ fetchAgentHarnessModels: setup.catalog }))
 
 const db = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), owner: 'owner', readError: false }))
 // The rules main answers the window with (#1931): the built-in copy here.
@@ -18,9 +24,9 @@ vi.mock('../../../../apps/desktop/src/lib/listDevicesOnceIdentified', () => ({ l
 vi.mock('../../../../apps/desktop/src/lib/cloudComputer', async (original) => ({ ...await original<object>(), provisionCloudComputer: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/contacts', () => ({ contactsService: { agentLookAvatarUrl: () => 'avatar' } }))
 vi.mock('../../../../apps/desktop/src/platform/desktopIpc', () => ({ desktopIpc: () => ({ invoke: async () => ({ workdir: '/assistant' }) }) }))
-vi.mock('../../../../apps/desktop/src/lib/assistantSetupPreparation', () => ({ prepareLocalAssistantSetup: async () => ({ workdir: '/assistant' }) }))
+vi.mock('../../../../apps/desktop/src/lib/assistantSetupPreparation', () => ({ prepareLocalAssistantSetup: setup.prepare }))
 
-import { buildSingleBlueprint, type ProvisionResumeRecord } from '../../../../apps/desktop/src/lib/agentProvision'
+import { buildSingleBlueprint, resumeSingleAgent, type ProvisionResumeRecord } from '../../../../apps/desktop/src/lib/agentProvision'
 import { assistantResumeStore, pendingLocalAssistant, resumeLocalAssistant, setUpAssistantOnThisComputer } from '../../../../apps/desktop/src/lib/assistantSetup'
 
 const OLD_OP = '11111111-1111-4111-8111-111111111111'
@@ -43,6 +49,8 @@ function member(id: string, operationId: string): AgentProvision {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  setup.catalog.mockReset().mockImplementation(async (_device: string, engine: string) => catalog(engine))
+  setup.prepare.mockReset().mockResolvedValue({ workdir: '/assistant' })
   vi.stubEnv('GUGU_PLATFORM_MODELS_ENABLED', 'false')
   localStorage.clear()
   db.owner = 'owner'; db.readError = false; settle = 'cancelled'
@@ -162,5 +170,102 @@ describe('removed assistant setup recovery (#861)', () => {
     await expect(resumeLocalAssistant(record)).rejects.toMatchObject({ kind: 'cancelled' })
     expect(pendingLocalAssistant('owner')).toBeNull()
     expect(db.rpc).not.toHaveBeenCalled()
+  })
+})
+
+function catalog(harness: string): SessionpageSessionCreateModels {
+  return {
+    harness, transport: 'acp', models: [
+      { id: 'native-default', name: 'Native default', source: 'harness' },
+      { id: platformOptionId(DEFAULT_PLATFORM_MODEL_BY_PROVIDER[harness]!), name: 'Platform default', source: 'gugu' },
+    ], selected: 'native-default', efforts: [], selectedEffort: null,
+    harnessState: 'ready', harnessReason: null, guguReason: null,
+    selectedCredential: 'uncredentialed', harnessAuth: 'signed-out',
+  }
+}
+
+const draft = { name: 'Gugu', color: 0, rest: 'neutral' as const, owner: { preferredName: 'Owner', about: '' } }
+function starts() {
+  return db.rpc.mock.calls.filter(call => call[0] === 'start_agent_provision_operation').map(call => call[1] as Record<string, unknown>)
+}
+
+describe('local assistant creation model (#3804)', () => {
+  beforeEach(() => assistantResumeStore.forget('owner', OLD_OP))
+
+  it.each(['claude', 'codex'] as const)('passes a concrete platform default for an unsigned-in %s host', async engine => {
+    await expect(setUpAssistantOnThisComputer(draft, 'device', { engine })).rejects.toMatchObject({ kind: 'still-starting' })
+    expect(setup.catalog).toHaveBeenCalledWith('device', engine, true)
+    const model = platformOptionId(DEFAULT_PLATFORM_MODEL_BY_PROVIDER[engine]!)
+    expect(starts()[0]?.p_model).toBe(model)
+    expect(pendingLocalAssistant('owner')?.createChoice).toEqual({ model, effort: null, permissionMode: null })
+    expect(setup.prepare).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the native default for a host with usable own credentials', async () => {
+    setup.catalog.mockResolvedValue({ ...catalog('codex'), selectedCredential: 'credentialed', harnessAuth: 'signed-in' })
+    await expect(setUpAssistantOnThisComputer(draft, 'device', { engine: 'codex' })).rejects.toMatchObject({ kind: 'still-starting' })
+    expect(starts()[0]?.p_model).toBeNull()
+  })
+
+  it('skips hidden and membership-only platform models when picking a fallback', async () => {
+    const models = catalog('codex')
+    models.models[1]!.hidden = true
+    models.models.push({ id: platformOptionId('membership-only'), name: 'Premium', source: 'gugu', requires_membership: true },
+      { id: platformOptionId('available'), name: 'Available', source: 'gugu' })
+    setup.catalog.mockResolvedValue(models)
+    await expect(setUpAssistantOnThisComputer(draft, 'device', { engine: 'codex' })).rejects.toMatchObject({ kind: 'still-starting' })
+    expect(starts()[0]?.p_model).toBe(platformOptionId('available'))
+  })
+
+  it('fails before home preparation or provisioning when no model can run', async () => {
+    setup.catalog.mockResolvedValue({ ...catalog('codex'), models: [], guguReason: 'No platform models are available' })
+    await expect(setUpAssistantOnThisComputer(draft, 'device', { engine: 'codex' })).rejects.toThrow('No platform models are available')
+    expect(setup.prepare).not.toHaveBeenCalled()
+    expect(db.rpc).not.toHaveBeenCalled()
+    expect(pendingLocalAssistant('owner')).toBeNull()
+  })
+
+  it('preserves catalog errors before any fresh setup side effects', async () => {
+    setup.catalog.mockRejectedValue(new Error('catalog unavailable'))
+    await expect(setUpAssistantOnThisComputer(draft, 'device')).rejects.toThrow('catalog unavailable')
+    expect(setup.prepare).not.toHaveBeenCalled()
+    expect(db.rpc).not.toHaveBeenCalled()
+  })
+
+  it('replays the exact persisted model without re-reading a changed or unavailable catalog', async () => {
+    await expect(setUpAssistantOnThisComputer(draft, 'device', { engine: 'codex' })).rejects.toMatchObject({ kind: 'still-starting' })
+    const saved = pendingLocalAssistant('owner')!
+    setup.catalog.mockRejectedValue(new Error('catalog changed'))
+    await expect(resumeLocalAssistant(saved)).rejects.toMatchObject({ kind: 'still-starting' })
+    expect(setup.catalog).toHaveBeenCalledOnce()
+    expect(starts().map(args => [args.p_operation_id, args.p_model])).toEqual([
+      [saved.operationId, saved.createChoice!.model], [saved.operationId, saved.createChoice!.model],
+    ])
+  })
+
+  it('uses the durable choice even if a generic resume caller supplies a different one', async () => {
+    await expect(setUpAssistantOnThisComputer(draft, 'device', { engine: 'codex' })).rejects.toMatchObject({ kind: 'still-starting' })
+    const saved = pendingLocalAssistant('owner')!
+    await resumeSingleAgent(saved, { resumeStore: assistantResumeStore, model: platformOptionId('different'), effort: 'high' })
+    expect(starts().map(args => [args.p_model, args.p_effort, args.p_permission_mode])).toEqual([
+      [saved.createChoice!.model, null, null], [saved.createChoice!.model, null, null],
+    ])
+  })
+
+  it('rejects a corrupt recorded choice before local preparation or cloud reads', async () => {
+    const corrupt = { ...record, createChoice: { model: 42 } } as unknown as ProvisionResumeRecord
+    await expect(resumeLocalAssistant(corrupt)).rejects.toThrow('creation choice is invalid')
+    expect(db.from).not.toHaveBeenCalled()
+    expect(db.rpc).not.toHaveBeenCalled()
+    expect(setup.prepare).not.toHaveBeenCalled()
+  })
+
+  it('keeps null for a legacy interrupted setup rather than changing its immutable inputs', async () => {
+    const legacy = { ...record }
+    members.get(OLD_MEMBER)!.agent_user_id = 'removed-agent'
+    setup.catalog.mockRejectedValue(new Error('catalog changed'))
+    await expect(resumeLocalAssistant(legacy)).rejects.toMatchObject({ kind: 'still-starting' })
+    expect(starts()[0]?.p_model).toBeNull()
+    expect(setup.catalog).not.toHaveBeenCalled()
   })
 })
