@@ -72,12 +72,14 @@ export const BlockGrip = observer(function BlockGrip({
 function stickyReveal(grip: HTMLElement | null): (() => void) | undefined {
   const bar = grip?.closest<HTMLElement>('.session-tab-bar');
   if (!grip || !bar) return undefined;
+  // Chat header actions can sit beside the tab bar. Both read the same header state.
+  const header = bar.closest<HTMLElement>('[data-chat-workspace-header]') ?? bar;
   const doc = bar.ownerDocument;
   const view = doc.defaultView ?? window;
-  const show = () => { bar.dataset.gripShown = ''; };
-  const hide = () => { delete bar.dataset.gripShown; };
+  const show = () => { header.dataset.gripShown = ''; };
+  const hide = () => { delete header.dataset.gripShown; };
   const moved = (event: PointerEvent) => {
-    if (!('gripShown' in bar.dataset)) return;
+    if (!('gripShown' in header.dataset)) return;
     const r = bar.getBoundingClientRect();
     if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) hide();
   };
