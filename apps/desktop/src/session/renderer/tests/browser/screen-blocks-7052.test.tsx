@@ -219,6 +219,25 @@ describe('一屏几块的骨架 (#7052)', () => {
     expect(screenLayout.order.map((id) => screenLayout.blocks.get(id))).toEqual([{ kind: 'chat', chatId: 'chat-root' }]);
   });
 
+  it.each(['topic', 'group'])('removes just the chosen %s from a topic and parent group split', async closed => {
+    screenLayout.show({ kind: 'chat', chatId: 'topic' });
+    root!.render(<WorkspaceLayoutContextProvider><ScreenFrame /></WorkspaceLayoutContextProvider>);
+    navigateToGroupRoot('group', true);
+    await until('both conversations visible', () => blockWidths().length === 2);
+    const blockId = (chatId: string) => screenLayout.order.find(id => {
+      const block = screenLayout.blocks.get(id);
+      return block?.kind === 'chat' && block.chatId === chatId;
+    })!;
+    const button = (id: string) => document.querySelector<HTMLButtonElement>(
+      `[data-screen-block="${id}"] button:is([aria-label="取消并排"],[aria-label="Remove from split view"])`
+    );
+    const keep = blockId(closed === 'topic' ? 'group' : 'topic');
+    await until('a close action on each side', () => screenLayout.order.every(id => !!button(id)));
+    button(blockId(closed))!.click();
+    await until('the survivor fills the screen', () => screenLayout.order.length === 1 && !button(keep));
+    expect(screenLayout.order).toEqual([keep]);
+  });
+
   // 只有一块时是「一格的组」,不重挂:从群里点 agent 的名字,参与者在右边分出一块,同一组从 1 格变 2 格
   // (2026-10 曾在这一步整窗崩到 Something went wrong)。
   it('从单块打开群参与者:不抛错,右边那块按记住的宽度;收回又占满', async () => {

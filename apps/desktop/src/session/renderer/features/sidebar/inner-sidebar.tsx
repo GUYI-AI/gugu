@@ -296,7 +296,7 @@ const InnerHeadRow = observer(function InnerHeadRow({
   // #2600 项目群和别的群一样戴群自己的头像(没设 = 成员拼图),❌ 文件夹封面。
   const avatar: ReactNode = <GroupHeadAvatar chatId={chatId} summary={summary} />;
   return (
-    <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={() => { setInnerSidebarTopicsAll(null); navigateToGroupRoot(chatId); }} trailingButtons={1}
+    <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={(beside) => { setInnerSidebarTopicsAll(null); navigateToGroupRoot(chatId, beside); }} trailingButtons={1}
       createAction={{ label: translate('sidebar.createAgent'), onClick: newAgent }}>
       <InnerSidebarFoldButton />
     </InnerHeadRowLayout>

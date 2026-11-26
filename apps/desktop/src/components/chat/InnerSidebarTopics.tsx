@@ -71,8 +71,10 @@ function TopicRows({ chatId, all, query }: { chatId: string; all: boolean; query
     (store) => topicsOfChat(store.chats, chatId),
     (store) => [chatId, store.chats.filter((chat) => chat.source_chat_id === chatId)],
   )
+  const { focusedChatId, split = [] } = useSidebarChatView()
+  const openTopicIds = topics.filter(topic => topic.id === focusedChatId || split.includes(blockKey.chat(topic.id))).map(topic => topic.id)
   const needle = query.trim().toLocaleLowerCase()
-  const rows = innerSidebarTopicRows(needle ? topics.filter((topic) => (topic.name ?? '').toLocaleLowerCase().includes(needle)) : topics, { all })
+  const rows = innerSidebarTopicRows(needle ? topics.filter((topic) => (topic.name ?? '').toLocaleLowerCase().includes(needle)) : topics, { all, openTopicIds })
   const level = innerSidebarTopicRows(topics, { all: false })
   const sourceRole = useChatStoreSelect((store) => store.chats.find((chat) => chat.id === chatId)?.my_role ?? 'unknown')
   const { settings, error } = useGroupChatSettings(rows.shown.length ? chatId : null, sourceRole)
@@ -83,8 +85,6 @@ function TopicRows({ chatId, all, query }: { chatId: string; all: boolean; query
     [chatId, topics.length, level.hidden, level.calling],
   )
 
-  // 行高亮 = 屏上聚焦的那条会话(与聊天列表同一个真值)。它是并排着的一块(会话页发来的 split)= 右键可「取消并排」。
-  const { focusedChatId, split = [] } = useSidebarChatView()
   // 与聊天列表侧栏那一份点话题同一条路:话题和群一样是一条主会话,请会话页摆出它自己那一块(#62)。
   const open = useStableHandler((topic: ChatItem, beside: boolean) => {
     const sessionPage = readSessionpageViewRequestBridge()
@@ -138,7 +138,7 @@ const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin
     <>
       <SidebarMenuRow
         role="listitem"
-        isActive={active}
+        isActive={active || Boolean(onLeaveSplit)}
         className="group/row gap-1 pr-1"
         draggable
         onDragStart={(event) => startChatDrag(event, topic, topic.name)}
@@ -146,7 +146,7 @@ const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin
         onClick={(event) => onOpen(topic, event.metaKey || event.ctrlKey)}
         onContextMenu={menu.onContextMenu}
       >
-        <SidebarMenuAction allowNativeDrag data-topic-row={topic.id} data-pane-opener="" aria-label={topic.name ?? ''}
+        <SidebarMenuAction allowNativeDrag data-topic-row={topic.id} data-pane-opener="" aria-current={active ? 'page' : undefined} aria-label={topic.name ?? ''}
           className={cn('gap-2', sidebarRowContentInsetX)}>
           <MessageSquare className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
           <span className="truncate">{topic.name}</span>

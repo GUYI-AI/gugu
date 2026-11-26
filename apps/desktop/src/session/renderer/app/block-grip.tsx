@@ -4,7 +4,17 @@ import { ContextMenu } from '@/components/ui/Menu';
 import { clearDraggedScreenContent, setDraggedScreenContent, type DraggedScreenContent } from '@renderer/lib/drag-screen-content';
 import { dropShapeOf, hideDropHighlight, showDropHighlight } from '@renderer/lib/drop-highlight';
 import { screenLayout, type WindowableContent } from './screen-layout';
+import { IconButton } from '@/components/ui/IconButton';
+import { X } from '@/lib/icons';
+import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { closeScreenBlock, openInWindow, screenBlockElement, setBlockDropPreview } from './screen-layout-actions';
+
+export const CloseSplitBlock = observer(function CloseSplitBlock({ blockId }: { blockId: string }) {
+  const { translate } = useSessionMessages();
+  if (screenLayout.order.length < 2) return null;
+  const label = translate('screen.leaveSplit');
+  return <IconButton size="sm" aria-label={label} title={label} onClick={() => closeScreenBlock(blockId)}><X /></IconButton>;
+});
 
 /**
  * 每块左上的把手(V2 小胶囊,照 iPadOS 26 窗口左上那颗):只在这屏分成几块时有,一块时没有 —— 只为挪动、拿走一块而在。
