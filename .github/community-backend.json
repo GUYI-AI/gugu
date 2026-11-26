@@ -1,5 +1,5 @@
 {
   "repository": "GUYI-AI/gugu-supabase",
-  "ref": "a30552694b6d479c84b05e2e98b84c5b76a837f7",
-  "status": "Backend #413 merged on dev: owner-scoped App agent bindings and my_app_agent, including legacy provision compatibility and cancel cleanup; retains #409 annotations."
+  "ref": "35baf6a587257acdee2b3c534697c2578a89d170",
+  "status": "Backend #422 merged on dev: a document's content type comes from its name, and a name without a text suffix is refused; retains #413."
 }
