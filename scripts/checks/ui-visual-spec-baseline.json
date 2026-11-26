@@ -26,6 +26,6 @@
   },
   "offLadderFontSizeLiteralsNote": "#7333 字阶换成 12/14/16/20/24 后,旧字阶 11/13/15/17 的写死字号按范围记账,只减不增。剩下的:session 4 = 代码编辑器/终端的默认等宽字号 2(用户可调,等宽一面)+ 快捷键速查表键帽 1 + assistant-today.css 1(设置里的小标签;助理内置页随入口切到助理 App 删掉后,语音笔记列表那 4 处不在了;日记小日历那 1 处随死样式删掉);session-chat-ui 0(icons.css.ts 的字体图标字形随转录 pill 的 devicon 一起删掉)。",
   "handRotatedSpinners": {},
-  "settingsSelfDrawnBoxes": 36,
-  "settingsSelfDrawnBoxesNote": "2026-11-22 settings floating cards (owner variant B): 46 → 36. Usage cards/tiles/tables/filter, resource-monitor tiles and the shortcuts box moved onto gg-settings-surface. The rest are dialog insets, controls and the canonical card rule itself; new settings blocks use SettingsGroup or gg-settings-surface."
+  "settingsSelfDrawnBoxes": 35,
+  "settingsSelfDrawnBoxesNote": "2026-11-25 #3755 shared settings groups: 36 → 35. 2026-11-22 settings floating cards (owner variant B): 46 → 36. Usage cards/tiles/tables/filter, resource-monitor tiles and the shortcuts box moved onto gg-settings-surface. The rest are dialog insets, controls and the canonical card rule itself; new settings blocks use SettingsGroup or gg-settings-surface."
 }

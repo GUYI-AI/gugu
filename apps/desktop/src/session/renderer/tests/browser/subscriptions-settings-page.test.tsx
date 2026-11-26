@@ -46,6 +46,7 @@ vi.mock('@renderer/lib/ipc', async (importOriginal) => {
       CLAUDE,
       ...(control.codex ? [{ id: 'codex', name: 'Codex', reading: 'installed', status: 'available', capabilities: CLAUDE.capabilities }] : []),
       ...(control.others ? [KIMI, PI] : []),
+      ...(control.detectedPlan ? [{ id: 'copilot', name: 'Copilot', reading: 'installed', status: 'available', capabilities: { ...CLAUDE.capabilities, subscription: true } }] : []),
       ...(control.keyed ? [QWEN, KIRO, MIMO] : []),
     ].map(agent => ({
       installOptions: [],
@@ -114,6 +115,8 @@ const control = vi.hoisted(() => ({
   keyed: false,
   /** 这几家各有各的连接(缺席的家共用 `connections`,与之前一样)。 */
   connectionsByProvider: {} as Record<string, HarnessConnection[]>,
+  detectedPlan: false,
+  nativePayer: undefined as 'api-key' | 'custom-endpoint' | undefined,
 }));
 
 function connectionsOf(providerId: string | undefined): HarnessConnection[] {
@@ -185,7 +188,9 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
       }
       return { success: true };
     },
-    readSubscription: async () => {
+    readSubscription: async ({ providerId, connectionId }: { providerId?: string; connectionId?: string }) => {
+      if (providerId === 'copilot') return { success: true, data: { payer: 'subscription', plan: 'Copilot Pro' } };
+      if (connectionId === 'native' && control.nativePayer) return { success: true, data: { payer: control.nativePayer } };
       if (control.hold) await control.hold;
       return { success: true, data: control.signedOut ? { payer: 'not-signed-in' } : { payer: 'subscription', plan: 'Claude Max 20x' } };
     },
@@ -240,6 +245,8 @@ beforeEach(() => {
   control.renamed = [];
   control.forcedUsage = [];
   control.origin = undefined;
+  control.nativePayer = undefined;
+  control.detectedPlan = false;
   control.selected = '';
   control.codex = false;
   control.agentHomes = [];
@@ -1003,4 +1010,23 @@ it.each([
   expect(row.textContent).toContain('使用中');
   expect(row.textContent).not.toContain('环境变量');
   expect(row.textContent).not.toContain('配置文件');
+});
+
+
+it.each(['api-key', 'custom-endpoint'] as const)('omits native %s connections from Coding Plan', async payer => {
+  control.nativePayer = payer;
+  control.connectionsByProvider.claude = [
+    { id: 'native', kind: 'native', name: 'CLI relay', current: true },
+    { id: 'actual-plan', kind: 'account', name: 'Actual plan', current: false },
+  ];
+  root.render(<ModelsFixture />);
+  await until('the saved plan is shown', () => !!host.querySelector('[data-subscription-model="claude:actual-plan"]'));
+  expect(host.querySelector('[data-subscription-model="claude:native"]')).toBeNull();
+});
+
+
+it('shows the detected subscription of another installed harness in Coding Plan', async () => {
+  control.detectedPlan = true;
+  root.render(<ModelsFixture />);
+  await until('Copilot plan is shown', () => host.querySelector('[data-coding-provider="copilot"]')?.textContent?.includes('Copilot Pro') === true);
 });

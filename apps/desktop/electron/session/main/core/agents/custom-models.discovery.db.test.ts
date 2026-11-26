@@ -28,6 +28,8 @@ beforeEach(async () => {
   state.fixture.sqlite.exec("INSERT INTO projects (id, name, path) VALUES ('project','Project','/repo')");
   home = await mkdtemp(join(tmpdir(), 'codex-home-'));
   vi.stubEnv('CODEX_HOME', home);
+  vi.stubEnv('CLAUDE_CONFIG_DIR', home);
+  for (const name of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL']) vi.stubEnv(name, '');
   for (const name of ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'ACME_API_KEY']) vi.stubEnv(name, '');
   // Listing probes a discovered custom address; these tests stay off the network unless one answers for itself.
   installEnvironmentFetch(async () => { throw new TypeError('offline'); });
@@ -52,76 +54,89 @@ async function twoFound() {
   vi.stubEnv('ACME_API_KEY', ROTATED);
 }
 
-it('shows what the machine already has in the existing list without writing a row, a secret or a default', async () => {
+it('automatically saves the discovered connections once and exposes no keys', async () => {
   await twoFound();
-  const before = { rows: allRows().length, secrets: state.fixture!.secretStore.secrets.size };
-  const list = await listCustomModels();
-  expect(list.map(connection => connection.name).sort()).toEqual(['Acme Gateway', 'OpenAI']);
-  expect(await named('OpenAI')).toMatchObject({ preset: 'openai', keySaved: true, discovered: { source: 'codex-auth', keyLast4: 'WXYZ' } });
-  expect(await named('Acme Gateway')).toMatchObject({ preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: ACME }], models: [{ id: 'acme-large' }], discovered: { source: 'codex-provider', keyLast4: 'QRST' } });
-  expect({ rows: allRows().length, secrets: state.fixture!.secretStore.secrets.size }).toEqual(before);
-  expect(JSON.stringify(list)).not.toContain(KEY);
-  expect(JSON.stringify(list)).not.toContain(ROTATED);
-  expect(Object.keys((await named('OpenAI')).discovered!).sort()).toEqual(['keyLast4', 'source']);
+  const [first, second] = await Promise.all([listCustomModels(), listCustomModels()]);
+  expect(first).toEqual(second);
+  expect(rows()).toHaveLength(2);
+  expect(state.fixture!.secretStore.secrets.size).toBe(2);
+  expect(first).toEqual(expect.arrayContaining([
+    expect.objectContaining({ name: 'OpenAI', preset: 'openai', models: [] }),
+    expect.objectContaining({ name: 'Acme Gateway', managedNativeHarnesses: ['codex'], models: [{ id: 'acme-large' }] }),
+  ]));
+  expect(JSON.stringify(first)).not.toContain(KEY);
+  expect(JSON.stringify(first)).not.toContain(ROTATED);
 });
 
-it('keeps the same ids and the same count however often it is read', async () => {
+it('merges the same URL and key while preserving disabled models', async () => {
+  const saved = await saveCustomModel({ name: 'My Acme', apiKey: ROTATED, preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: ACME }], models: [{ id: 'mine' }], disabledModels: [{ id: 'acme-large', image: false }] });
   await twoFound();
-  const first = await listCustomModels();
-  for (let index = 0; index < 4; index += 1) expect(await listCustomModels()).toEqual(first);
-  expect(allRows()).toHaveLength(0);
+  expect(await named('My Acme')).toMatchObject({ id: saved.id, models: [{ id: 'mine' }], disabledModels: [{ id: 'acme-large', image: false }], managedNativeHarnesses: ['codex'] });
+  await expect(validateCustomModelSelection('codex', { kind: 'custom', connectionId: saved.id, modelId: 'acme-large' })).rejects.toThrow('Select a model');
 });
 
-it('writes the connection once, under the id it was shown with, only when someone first uses it', async () => {
+it('shows an imported key conflict without storing the second key and honors the user choice', async () => {
+  const mine = await saveCustomModel({ name: 'My Acme', apiKey: KEY, preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: ACME }], models: [{ id: 'mine' }] });
   await twoFound();
-  const acme = await named('Acme Gateway');
-  await expect(validateCustomModelSelection('codex', { kind: 'custom', connectionId: acme.id, modelId: 'acme-large' })).resolves.toEqual({ id: 'acme-large' });
-  expect(rows()).toHaveLength(1);
-  expect(rows()[0]).toMatchObject({ accountId: acme.id });
-  expect([...state.fixture!.secretStore.secrets.values()]).toEqual([ROTATED]);
-  expect(JSON.stringify(rows()[0]!.meta)).not.toContain(ROTATED);
-  expect(rows()[0]!.meta?.customModel?.discovery).toMatchObject({ source: 'codex-provider', keyLast4: 'QRST' });
-  const again = await listCustomModels();
-  expect(again.map(connection => connection.id).sort()).toEqual([acme.id, (await named('OpenAI')).id].sort());
-  expect(again).toHaveLength(2);
-  session('bound', 'codex', customModelOptionId({ connectionId: acme.id, modelId: 'acme-large' }));
-  expect((await resolveCustomModel('codex', 'bound'))?.models[0]).toBe('acme-large');
-  expect(rows()).toHaveLength(1);
+  const candidate = await named('Acme Gateway');
+  expect(candidate).toMatchObject({ keyConflict: true });
+  expect(await named('My Acme')).toMatchObject({ keyConflict: true });
+  expect([...state.fixture!.secretStore.secrets.values()]).not.toContain(ROTATED);
+  await expect(validateCustomModelSelection('codex', { kind: 'custom', connectionId: candidate.id, modelId: 'acme-large' })).rejects.toThrow('no longer exists');
+  await saveCustomModel({ id: mine.id, name: mine.name, preset: mine.preset, endpoints: mine.endpoints, models: [], resolveUrlConflict: true });
+  expect(await named('My Acme')).toMatchObject({ models: [{ id: 'mine' }, { id: 'acme-large' }] });
+  expect(await named('Acme Gateway')).toBeUndefined();
 });
 
-it('two callers using the same unsaved connection at once still make one row and one secret', async () => {
+it('does not create a second configuration for a discovered URL with a different key', async () => {
   await twoFound();
-  const { id } = await named('Acme Gateway');
-  const use = () => validateCustomModelSelection('codex', { kind: 'custom', connectionId: id, modelId: 'acme-large' });
-  await Promise.all([use(), use(), use(), use(), use()]);
-  expect(rows()).toHaveLength(1);
+  await expect(saveCustomModel({ name: 'Other Acme key', apiKey: KEY, preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: ACME }], models: [{ id: 'mine' }] })).rejects.toThrow('already has a key');
+  expect((await listCustomModels()).map(connection => connection.name).sort()).toEqual(['Acme Gateway', 'OpenAI']);
+});
+
+const atAcme = { name: 'Acme', preset: null, endpoints: [{ protocol: 'openai-responses' as const, baseUrl: ACME }] };
+
+it('serializes simultaneous additions to one normalized URL and merges models without replacing the saved key', async () => {
+  const first = saveCustomModel({ ...atAcme, apiKey: KEY, apiUrl: `${ACME}/`, models: [{ id: 'a' }] });
+  const second = saveCustomModel({ ...atAcme, apiUrl: ACME, models: [{ id: 'b' }, { id: 'a' }] });
+  const [a, b] = await Promise.all([first, second]);
+  expect(b.id).toBe(a.id);
+  expect(b.models).toEqual([{ id: 'a' }, { id: 'b' }]);
+  await expect(saveCustomModel({ ...atAcme, apiKey: ROTATED, models: [{ id: 'c' }] })).rejects.toThrow('already has a key');
+  const other = await saveCustomModel({ ...atAcme, apiUrl: 'https://acme.example.test/other', endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://acme.example.test/other' }], apiKey: ROTATED, models: [{ id: 'c' }] });
+  expect(other.id).not.toBe(a.id);
+  expect(rows()).toHaveLength(2);
+});
+
+async function legacy(id: string, key: string, model: string) {
+  await state.fixture!.registry.upsertAccount({ providerId: 'models:custom', accountId: id, secret: key,
+    meta: { displayName: 'Acme', customModel: { preset: null, endpoints: atAcme.endpoints, models: [{ id: model }] } } });
+}
+
+it('merges legacy duplicates with the same key and preserves bound session references', async () => {
+  const firstId = '10000000-0000-4000-8000-000000000001';
+  const secondId = '10000000-0000-4000-8000-000000000002';
+  await legacy(firstId, KEY, 'a');
+  await legacy(secondId, KEY, 'b');
+  session('old-a', 'codex', customModelOptionId({ connectionId: firstId, modelId: 'a' }));
+  session('old-b', 'codex', customModelOptionId({ connectionId: secondId, modelId: 'b' }));
+  const listed = await listCustomModels();
+  expect(listed).toHaveLength(1);
+  expect(listed[0]!.models).toEqual(expect.arrayContaining([{ id: 'a' }, { id: 'b' }]));
+  expect((await resolveCustomModel('codex', 'old-a'))?.models[0]).toBe('a');
+  expect((await resolveCustomModel('codex', 'old-b'))?.models[0]).toBe('b');
   expect(state.fixture!.secretStore.secrets.size).toBe(1);
 });
 
-it('refuses an id whose source changed before it was used, and never points it at another key', async () => {
-  await twoFound();
-  const old = await named('Acme Gateway');
-  vi.stubEnv('ACME_API_KEY', 'sk-live-newnewnewnewnewNEWK');
-  await expect(validateCustomModelSelection('codex', { kind: 'custom', connectionId: old.id, modelId: 'acme-large' })).rejects.toThrow('no longer exists');
-  expect(rows()).toHaveLength(0);
-  const next = await named('Acme Gateway');
-  expect(next.id).not.toBe(old.id);
-  expect(next.discovered?.keyLast4).toBe('NEWK');
-});
-
-it('prefers an existing saved connection with the same address and key, in the list and for new sources', async () => {
-  await twoFound();
-  const saved = await saveCustomModel({ name: 'My Acme', apiKey: ROTATED, preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: ACME }], models: [{ id: 'mine' }] });
-  const list = await listCustomModels();
-  expect(list.map(connection => connection.name).sort()).toEqual(['My Acme', 'OpenAI']);
-  expect(list.find(connection => connection.name === 'My Acme')!.id).toBe(saved.id);
-  expect(rows()).toHaveLength(1);
-});
-
-it('a saved connection with a different key does not hide the discovered one', async () => {
-  await twoFound();
-  await saveCustomModel({ name: 'Other Acme key', apiKey: 'sk-live-someoneelsesomeoneEL', preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: ACME }], models: [{ id: 'mine' }] });
-  expect((await listCustomModels()).map(connection => connection.name).sort()).toEqual(['Acme Gateway', 'OpenAI', 'Other Acme key']);
+it('requires an explicit saved key choice for conflicting legacy duplicates', async () => {
+  await legacy('10000000-0000-4000-8000-000000000001', KEY, 'a');
+  await legacy('10000000-0000-4000-8000-000000000002', ROTATED, 'b');
+  expect(await listCustomModels()).toHaveLength(2);
+  await expect(saveCustomModel({ ...atAcme, models: [{ id: 'c' }] })).rejects.toThrow('multiple saved keys');
+  const winner = await saveCustomModel({ ...atAcme, id: '10000000-0000-4000-8000-000000000002', models: [], resolveUrlConflict: true });
+  expect(winner.keyLast4).toBe('QRST');
+  expect(winner.models).toEqual([{ id: 'b' }, { id: 'a' }]);
+  expect(await listCustomModels()).toHaveLength(1);
 });
 
 it('removing a discovered connection keeps it removed on every later scan and keeps its row for bound sessions', async () => {
@@ -129,18 +144,8 @@ it('removing a discovered connection keeps it removed on every later scan and ke
   const acme = await named('Acme Gateway');
   await removeCustomModel(acme.id);
   for (let index = 0; index < 3; index += 1) expect((await listCustomModels()).map(connection => connection.name)).toEqual(['OpenAI']);
-  expect(rows()).toHaveLength(1);
-  expect(rows()[0]!.meta?.customModel).toMatchObject({ removed: true, discovery: { source: 'codex-provider' } });
-});
-
-it('a removal record never holds the default; the first connection really used takes it, as any first saved row does', async () => {
-  await twoFound();
-  const acme = await named('Acme Gateway');
-  const openai = await named('OpenAI');
-  await removeCustomModel(acme.id);
-  expect(rows().map(row => row.isDefault)).toEqual([false]);
-  await saveCustomModel({ id: openai.id, name: 'OpenAI', preset: 'openai', endpoints: openai.endpoints, models: [{ id: 'picked' }] });
-  expect(Object.fromEntries(rows().map(row => [row.accountId, row.isDefault]))).toEqual({ [acme.id]: false, [openai.id]: true });
+  expect(rows()).toHaveLength(2);
+  expect(rows().find(row => row.accountId === acme.id)!.meta?.customModel).toMatchObject({ removed: true, discovery: { source: 'codex-provider' } });
 });
 
 it('removing a connection drops its key from encrypted storage, saved by hand or first used from a discovery, and bound sessions stop at unavailable', async () => {
@@ -148,12 +153,12 @@ it('removing a connection drops its key from encrypted storage, saved by hand or
   const manual = await saveCustomModel({ name: 'By hand', preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://hand.example.test/v1' }], models: [{ id: 'm' }], apiKey: 'sk-live-handhandhandhandhand' });
   const acme = await named('Acme Gateway');
   await saveCustomModel({ id: acme.id, name: acme.name, preset: null, endpoints: acme.endpoints, models: [{ id: 'acme-large' }] });
-  expect(state.fixture!.secretStore.secrets.size).toBe(2);
+  expect(state.fixture!.secretStore.secrets.size).toBe(3);
   session('bound', 'codex', customModelOptionId({ connectionId: manual.id, modelId: 'm' }));
   await removeCustomModel(manual.id);
   await removeCustomModel(acme.id);
-  expect(state.fixture!.secretStore.secrets.size).toBe(0);
-  expect(rows().map(row => row.meta?.customModel?.removed)).toEqual([true, true]);
+  expect([...state.fixture!.secretStore.secrets.values()]).toEqual([KEY]);
+  expect(rows().filter(row => row.meta?.customModel?.removed)).toHaveLength(2);
   await expect(resolveCustomModel('codex', 'bound')).rejects.toThrow('Custom model unavailable');
 });
 
@@ -162,10 +167,10 @@ const names = async () => (await listCustomModels()).map(connection => connectio
 
 it('a connection saved by hand and removed does not make the same key on this machine come back, though its key is gone', async () => {
   await twoFound();
-  const mine = await saveCustomModel({ name: 'Mine', apiKey: KEY, preset: 'openai', endpoints: [{ protocol: 'openai-responses', baseUrl: OPENAI }], models: [{ id: 'm' }] });
-  expect(await names()).toEqual(['Acme Gateway', 'Mine']);
+  const mine = await saveCustomModel({ name: 'OpenAI', apiKey: KEY, preset: 'openai', endpoints: [{ protocol: 'openai-responses', baseUrl: OPENAI }], models: [{ id: 'm' }] });
+  expect(await names()).toEqual(['Acme Gateway', 'OpenAI']);
   await removeCustomModel(mine.id);
-  expect(state.fixture!.secretStore.secrets.size).toBe(0);
+  expect([...state.fixture!.secretStore.secrets.values()]).toEqual([ROTATED]);
   for (let index = 0; index < 2; index += 1) expect(await names()).toEqual(['Acme Gateway']);
   expect(JSON.stringify(rows()[0]!.meta)).not.toContain(KEY);
 });
@@ -178,7 +183,7 @@ it('a connection removed by an earlier build loses its key at startup and still 
   });
   expect(await names()).toEqual(['Acme Gateway']);
   await dropRemovedConnectionKeys();
-  expect(state.fixture!.secretStore.secrets.size).toBe(0);
+  expect([...state.fixture!.secretStore.secrets.values()]).toEqual([ROTATED]);
   expect(await names()).toEqual(['Acme Gateway']);
   const before = rows()[0]!.updatedAt;
   await dropRemovedConnectionKeys();
@@ -193,8 +198,8 @@ it('editing a discovered connection saves it as that connection and keeps its di
   expect(saved).toMatchObject({ id: acme.id, name: 'Acme renamed', models: [{ id: 'picked' }], keySaved: true });
   const list = await listCustomModels();
   expect(list.map(connection => connection.name).sort()).toEqual(['Acme renamed', 'OpenAI']);
-  expect(rows()).toHaveLength(1);
-  expect(rows()[0]!.meta?.customModel?.discovery).toMatchObject({ source: 'codex-provider', keyLast4: 'QRST' });
+  expect(rows()).toHaveLength(2);
+  expect(rows().find(row => row.accountId === acme.id)!.meta?.customModel?.discovery).toMatchObject({ source: 'codex-provider', keyLast4: 'QRST' });
 });
 
 it('a discovered custom address is listed with every protocol it answers, not only the one its config names', async () => {
@@ -211,7 +216,7 @@ it('a discovered custom address is listed with every protocol it answers, not on
   ]);
 });
 
-it('testing a discovered connection uses its key only in the host request', async () => {
+it('testing an imported connection uses its key only in the host request', async () => {
   await twoFound();
   const acme = await named('Acme Gateway');
   const fetcher = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({ data: [{ id: 'acme-large' }] }));
@@ -221,7 +226,7 @@ it('testing a discovered connection uses its key only in the host request', asyn
   expect(new Headers(fetcher.mock.calls[0]![1]?.headers).get('authorization')).toBe(`Bearer ${ROTATED}`);
 });
 
-it('a connection that was written once stays after its source disappears', async () => {
+it('an imported connection stays after its source disappears', async () => {
   await twoFound();
   const acme = await named('Acme Gateway');
   await validateCustomModelSelection('codex', { kind: 'custom', connectionId: acme.id, modelId: 'acme-large' });
@@ -229,7 +234,7 @@ it('a connection that was written once stays after its source disappears', async
   await rm(join(home, 'config.toml'));
   vi.stubEnv('ACME_API_KEY', '');
   expect((await listCustomModels()).map(connection => connection.name).sort()).toEqual(['Acme Gateway', 'OpenAI']);
-  expect(rows()).toHaveLength(1);
+  expect(rows()).toHaveLength(2);
   expect((await resolveCustomModel('codex', 'bound'))?.models[0]).toBe('acme-large');
 });
 
@@ -243,4 +248,38 @@ it('an unreadable or broken source does not take the existing connections out of
   const saved = await saveCustomModel({ name: 'Mine', apiKey: KEY, preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://mine.example.test/v1' }], models: [{ id: 'm' }] });
   await config('not = = toml');
   expect((await listCustomModels()).map(connection => connection.id)).toEqual([saved.id]);
+});
+
+
+it('imports a directly configured Claude API key and explicit model', async () => {
+  await writeFile(join(home, 'settings.json'), JSON.stringify({ env: {
+    ANTHROPIC_BASE_URL: 'https://claude-relay.example.test', ANTHROPIC_API_KEY: KEY, ANTHROPIC_MODEL: 'claude-model',
+  } }));
+  expect(await listCustomModels()).toEqual([expect.objectContaining({ name: 'claude-relay.example.test',
+    managedNativeHarnesses: ['claude'], models: [{ id: 'claude-model' }], keySaved: true })]);
+});
+
+
+it('adding a model to an existing address preserves its routes and declared Fast capability', async () => {
+  const route = { id: '10000000-0000-4000-8000-000000000010', incoming: 'anthropic-messages', outgoing: 'openai-responses' } as const;
+  const first = await saveCustomModel({ ...atAcme, apiKey: KEY, routes: [route], models: [{ id: 'a', fast: true }] });
+  const added = await saveCustomModel({ ...atAcme, routes: [], models: [{ id: 'b' }] });
+  expect(added).toMatchObject({ id: first.id, routes: [route], models: [{ id: 'a', fast: true }, { id: 'b' }] });
+  const edited = await saveCustomModel({ ...atAcme, id: first.id, routes: [], models: added.models });
+  expect(edited.routes).toEqual([]);
+});
+
+it('merging legacy connections with the same key retains both protocol routes', async () => {
+  const routeA = { id: '10000000-0000-4000-8000-000000000011', incoming: 'anthropic-messages', outgoing: 'openai-responses', modelId: 'a' } as const;
+  const routeB = { id: '10000000-0000-4000-8000-000000000012', incoming: 'gemini-generate-content', outgoing: 'openai-responses', modelId: 'b' } as const;
+  for (const [id, model, route] of [
+    ['10000000-0000-4000-8000-000000000001', 'a', routeA],
+    ['10000000-0000-4000-8000-000000000002', 'b', routeB],
+  ] as const) {
+    await state.fixture!.registry.upsertAccount({ providerId: 'models:custom', accountId: id, secret: KEY,
+      meta: { displayName: 'Acme', customModel: { preset: null, endpoints: atAcme.endpoints, models: [{ id: model }], routes: [route] } } });
+  }
+  const listed = await listCustomModels();
+  expect(listed).toHaveLength(1);
+  expect(listed[0]!.routes).toEqual(expect.arrayContaining([routeA, routeB]));
 });

@@ -100,7 +100,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     return icon && <span className="gg-model-provider-icon" aria-hidden="true">{icon}</span>;
   };
   const providerLabel = (id: string) => <span className="gg-model-provider-option">{iconOf(id)}<span>{labelOf(id)}</span></span>;
-  const editedModel = connection?.models.find(({ id }) => id === modelId) ?? connection?.models[0];
+  const editedModel = modelId === undefined ? connection?.models[0] : connection?.models.find(({ id }) => id === modelId);
   const [endpoints, setEndpoints] = useState<CustomModelMeta['endpoints']>(connection?.endpoints ?? initialPreset?.endpoints ?? [{ protocol: 'openai-chat-completions', baseUrl: '' }]);
   const [apiKey, setApiKey] = useState('');
   const keyInput = useRef<HTMLInputElement>(null);

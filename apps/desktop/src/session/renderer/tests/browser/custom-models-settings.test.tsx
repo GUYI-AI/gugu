@@ -264,19 +264,19 @@ it('shows migrated records with no model or key and a repair entrypoint', async 
   await expect.element(page.getByTestId('custom-model-provider')).toHaveTextContent('Custom');
   expect(document.querySelector<HTMLInputElement>('[data-testid=custom-model-key]')?.value).toBe('');
 });
-it('separates coding plans, official API keys and custom endpoints, including migrated providers', async () => {
+it('keeps coding plans separate and groups API and custom models by their connections', async () => {
   state.rows = [
-    { ...record(), id: 'plan', preset: 'kimi-coding', keySaved: true, models: [{ id: 'plan-model' }] },
-    { ...record(), id: 'api', preset: 'deepseek', keySaved: true, models: [{ id: 'api-model' }] },
+    { ...record(), endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://plan.test/v1' }], id: 'plan', preset: 'kimi-coding', keySaved: true, models: [{ id: 'plan-model' }] },
+    { ...record(), endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://api.test/v1' }], id: 'api', preset: 'deepseek', keySaved: true, models: [{ id: 'api-model' }] },
     { ...record(), id: 'custom', preset: 'old-relay', keySaved: true, models: [{ id: 'relay-model' }] },
   ];
   render(<CustomModelsGroup />);
   await until('all three existing connections render', () => document.querySelectorAll('[data-custom-connection]').length === 3);
   expect(document.querySelector('[data-custom-connection="plan"]')?.closest('section')?.getAttribute('data-testid')).toBe('settings-coding-plans');
-  expect(document.querySelector('[data-custom-connection="api"]')?.closest('section')?.getAttribute('data-testid')).toBe('settings-api-models');
+  expect(document.querySelector('[data-custom-connection="api"]')?.closest('section')?.getAttribute('data-testid')).toBe('settings-custom-models');
   const custom = document.querySelector('[data-custom-connection="custom"]')!;
   expect(custom.closest('section')?.getAttribute('data-testid')).toBe('settings-custom-models');
-  expect(custom.textContent).toContain('provider.test');
+  expect(custom.textContent).toContain('Existing provider');
 });
 it.each([
   ['coding-plan', 'Add plan', 'Claude subscription', 'ChatGPT subscription', 'DeepSeek'],
