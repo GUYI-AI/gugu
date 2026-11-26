@@ -5,7 +5,7 @@ import { isElementVisible } from '@/lib/elementVisibility'
  * 有就报 `occluded`:网页收起、占位换成一张截图,浮层照常画在上面。同 VS Code 内置浏览器的做法。
  *
  * 两种看法,缺一不可:
- * - **采样**:在那一块上撒一张网格,每个点问 `elementFromPoint` 最上面是谁 —— 不是占位自己就是被盖住了。
+ * - **采样**:在那一块上撒一张网格,每个点问 `elementsFromPoint` —— 占位在那一点上、却不在最上面,就是被盖住了。
  *   能看见界面里一切点得着的东西(起始页、加载失败页、远端提问卡片、菜单、弹窗…),不必一个个登记。
  * - **按选择器量**:点不着的(`pointer-events: none` 的提示、toast 外框、拖拽落点预览)采样看不见,
  *   按它们的标记量一遍外框。
@@ -104,11 +104,11 @@ export function isBrowserPageOccluded(placeholder: HTMLElement, rect: PageRect):
   const doc = placeholder.ownerDocument;
   if (doc.documentElement.hasAttribute('data-gugu-dragging')) return true;
   for (const [x, y] of occlusionSamplePoints(rect)) {
-    const top = doc.elementFromPoint(x, y);
-    // 圆角/裁切边缘的命中会退回到外层容器;装着网页的祖先不是盖住网页的浮层。
-    if (!top || top === placeholder || placeholder.contains(top) || top.contains(placeholder)) continue;
+    // 只问占位自己画得到的点:圆角裁掉的角上,命中的是它背后的东西(外层容器、并排的另一层页面),不是盖在它上面的浮层。
+    const stack = doc.elementsFromPoint(x, y);
+    if (stack.indexOf(placeholder) <= 0) continue;
     // 分栏的拖动条:看得见的只是边上一根线,两侧各伸出几像素看不见的「好抓」区,伸进网页那一块不算盖着。
-    if (top.closest(RESIZE_HANDLE_SELECTOR)) continue;
+    if (stack[0].closest(RESIZE_HANDLE_SELECTOR)) continue;
     return true;
   }
   for (const element of trackedOccluders(doc)) {
