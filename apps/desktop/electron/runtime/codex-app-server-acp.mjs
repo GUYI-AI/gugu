@@ -1085,8 +1085,10 @@ async function publishAvailableCommandsInner(cwd, extraRoots) {
   const availableCommands = [
     { name: 'compact', description: 'Compact the conversation context' },
     // `/goal` 交给 codex 自己的 `thread/goal/*`(见 session/prompt 里的 runGoalCommand)。
+    // ACP v2 keeps an input only with its `type`; without it the hint is dropped on the client and the host cannot see
+    // that this /goal takes `--tokens`.
     { name: 'goal', description: 'Set a goal Codex keeps working toward until it is done',
-      input: { hint: `[${GOAL_TOKENS_FLAG} N] <goal> | clear | pause | resume` } },
+      input: { type: 'text', hint: `[${GOAL_TOKENS_FLAG} N] <goal> | clear | pause | resume` } },
   ]
   for (const entry of Array.isArray(response?.data) ? response.data : []) {
     for (const skill of Array.isArray(entry?.skills) ? entry.skills : []) {

@@ -45,7 +45,7 @@ rl.on('line', (line) => {
 })
 `
 
-type Update = { sessionUpdate: string; title?: string; description?: string; availableCommands?: { name: string; input?: { hint?: string } }[]; content?: unknown }
+type Update = { sessionUpdate: string; title?: string; description?: string; availableCommands?: { name: string; input?: { type?: string; hint?: string } }[]; content?: unknown }
 
 let dir = ''
 let adapter: ChildProcessWithoutNullStreams | null = null
@@ -115,7 +115,9 @@ describe('Codex ACP /goal is codex thread goal', () => {
     const rig = start()
     await openSession(rig)
     const commands = await awaitFact('commands', () => rig.updates.find((update) => update.sessionUpdate === 'available_commands_update'))
-    expect(commands.availableCommands).toContainEqual(expect.objectContaining({ name: 'goal', input: { hint: expect.stringContaining('--tokens') } }))
+    // The client reads commands through the ACP v2 schema, which drops an input that has no `type`.
+    const goal = commands.availableCommands?.find((command) => command.name === 'goal')
+    expect(goal?.input).toEqual({ type: 'text', hint: expect.stringContaining('--tokens') })
   })
 
   it('sets the goal with its token budget on codex and shows when codex stops it at the budget', async () => {
