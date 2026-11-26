@@ -1,7 +1,7 @@
 import './inner-sidebar-head.css';
 import { Button } from '@/components/ui/Button';
 import { PanelLeft, SquarePen } from '@/lib/icons';
-import type { CSSProperties, ReactNode } from 'react';
+import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import { Chip } from '@/components/ui/Chip';
 import { TITLEBAR_ACTION_SLOT_GAP_PX, TITLEBAR_ACTION_SLOT_WIDTH_PX } from '@/lib/window-chrome';
 import { Button as TabStripButton } from '@renderer/lib/ui/button';
@@ -16,6 +16,22 @@ import {
 } from './sidebar-primitives';
 
 // #2548 内层侧栏里几样零件:群 / 项目那一列(inner-sidebar.tsx)与示例项目那一列(sample-inner-sidebar.tsx)画同一个样子。
+
+/**
+ * @@@inner-modules (owner 11-26, direction A, GUYI-AI/gugu-dev#1515): the column's modules ("My topics", "My agents"; a future
+ * pinned / members / schedule module is one more entry) in one ordered list, drawn as one floating panel inside the group's
+ * card (inner-sidebar-head.css [data-inner-module-stack]). The head row is not a module: it stays on the card as the group's
+ * title. `open` = the one module opened in place (the topics' "All"): it takes the panel and the others step aside.
+ */
+export type InnerModule = { id: string; node: ReactNode };
+export function InnerModuleStack({ modules, open = null }: { modules: readonly InnerModule[]; open?: string | null }) {
+  const shown = open ? modules.filter((module) => module.id === open) : modules;
+  return (
+    <div className="min-h-0 overflow-x-hidden overflow-y-auto" data-region="inner-sidebar-scroll" data-inner-module-stack="">
+      {shown.map((module) => <Fragment key={module.id}>{module.node}</Fragment>)}
+    </div>
+  );
+}
 
 /** 分区里什么都没有时那一行字。 */
 export const innerSectionEmptyClass = 'ms-2 px-2 py-1 text-[length:var(--font-caption)] leading-[18px] text-foreground-muted';

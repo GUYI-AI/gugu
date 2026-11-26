@@ -1110,10 +1110,11 @@
   --shell-bg: var(--ground);
   --nav-rail: transparent;
 }
-/* The two sidebars lie on the window ground, not on a card: their secondary text, whichever renderer's name it goes by,
+/* The sidebar lies on the window ground, not on a card: its secondary text, whichever renderer's name it goes by,
    is the ground's. A var() resolves where it is declared, so the derived names (--color-*, --text-secondary) that were
-   resolved at the root are set here too, ❌ only their sources. */
-:root[data-theme='light'][data-window-material] :is([data-region='left-sidebar'], [data-region='inner-sidebar']) {
+   resolved at the root are set here too, ❌ only their sources. The group's inner column is on the group's card
+   (desktop-shell.css @@@inner-on-card), so it keeps the card's own secondary text. */
+:root[data-theme='light'][data-window-material] [data-region='left-sidebar'] {
   --muted-fg: var(--shell-muted-fg);
   --text-secondary: var(--shell-muted-fg);
   --foreground-muted: var(--shell-muted-fg);
@@ -1130,7 +1131,7 @@
    它们靠根的底色当正文底,不能跟着透。 */
 :root[data-window-material] .gg-session-frame:has([data-workspace-left-panel]:not(.hidden)),
 :root[data-window-material] .gugu-skin:has([data-workspace-left-panel]:not(.hidden)),
-:root[data-window-material] .gugu-skin :is([data-workspace-left-panel], [data-region='inner-sidebar']),
+:root[data-window-material] .gugu-skin [data-workspace-left-panel],
 :root[data-window-material] .gugu-skin [data-workspace-left-panel] [data-region='left-sidebar']:not(.bg-background-2) {
   background-color: transparent;
 }

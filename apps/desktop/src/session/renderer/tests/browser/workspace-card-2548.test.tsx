@@ -4,14 +4,17 @@ import { createReactHarness } from '../../../../../../../tests/support/testHarne
 import { WorkspaceLayout, WorkspaceContentLayout } from '@renderer/lib/layout/workspace-layout';
 import { useInnerSidebarFrame, WorkspaceLayoutContextProvider } from '@renderer/lib/layout/layout-provider';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
+import { InnerModuleStack } from '@renderer/features/sidebar/inner-sidebar-parts';
 import '@/styles/tokens.css';
 import '@/components/sessionpage/EmdashSessionFrame.css';
 import '@renderer/index.css';
 
 /**
  * GUYI-AI/gugu#2548 叠一层(owner 11-12): beside the one list, the content is a card stacked on the list — the same
- * layering as the icon rail and the list. A group's / project's inner column belongs to the list layer (full height, no
- * card of its own), so the content surface alone is the card — the same shape as the task page.
+ * layering as the icon rail and the list. Direction A (owner 11-26, GUYI-AI/gugu-dev#1515, desktop-shell.css
+ * @@@inner-on-card): a group's / project's inner column is the left part of that card — the card's face, its top and bottom
+ * gap and left corners — and no line runs between it and the content; its modules float as one panel inside the card
+ * (inner-sidebar-head.css @@@inner-modules); folded, the content surface is the whole card again.
  */
 
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
@@ -31,12 +34,26 @@ afterEach(() => {
 });
 
 /** The inner column as InnerSidebarFrame draws it: filling the slot the layout sizes (today's width, 240). */
-function InnerColumn() {
-  useInnerSidebarFrame();
-  return <div data-region="inner-sidebar" className="relative flex h-full w-full flex-col bg-background-tertiary" />;
+function InnerColumn({ folded = false, open = null }: { folded?: boolean; open?: string | null }) {
+  useInnerSidebarFrame(folded);
+  return (
+    <div data-region="inner-sidebar" className="relative flex h-full w-full flex-col">
+      <div data-test-head="" style={{ height: 79 }} />
+      <InnerModuleStack open={open} modules={[
+        { id: 'topics', node: <div data-inner-sidebar-section="topics" style={{ height: 120 }} /> },
+        { id: 'agents', node: <div data-inner-sidebar-section="agents" style={{ height: 60 }} /> },
+      ]} />
+    </div>
+  );
 }
 
-async function renderDesktop(theme: 'light' | 'dark', inner: boolean) {
+/** Which sides a ring of 0.5px offset shadows draws (x/y offsets of each shadow, read from the computed value). */
+function ringSides(shadow: string): string[] {
+  return [...shadow.matchAll(/(-?[\d.]+)px (-?[\d.]+)px [\d.]+px [\d.]+px/g)].map(([, x, y]) =>
+    Number(x) < 0 ? 'left' : Number(x) > 0 ? 'right' : Number(y) < 0 ? 'top' : 'bottom');
+}
+
+async function renderDesktop(theme: 'light' | 'dark', inner: boolean, folded = false, open: string | null = null) {
   document.documentElement.dataset.theme = theme;
   // 界面减法 #10: the list is the window's leftmost column and lies on the window's ground like the old rail did; both
   // themes run with the desktop window's marker like the real main window.
@@ -49,7 +66,7 @@ async function renderDesktop(theme: 'light' | 'dark', inner: boolean) {
           <SessionLocalizationProvider><WorkspaceLayoutContextProvider>
             <WorkspaceLayout
               leftSidebar={<div>one list</div>}
-              innerSidebar={inner ? <InnerColumn /> : null}
+              innerSidebar={inner ? <InnerColumn folded={folded} open={open} /> : null}
               mainContent={<WorkspaceContentLayout titlebarSlot={null} mainPanel={<div>reading surface</div>} />}
             />
           </WorkspaceLayoutContextProvider></SessionLocalizationProvider>
@@ -79,31 +96,72 @@ for (const theme of ['light', 'dark'] as const) {
     expect(style.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
   });
 
-  it(`${theme}: the inner column sits on the list layer and the content surface alone is the card`, async () => {
+  it(`${theme}: the inner column is the left part of the card: its face, its gap, its left corners, no line to the content`, async () => {
     const { shell, list, surface, column } = await renderDesktop(theme, true);
     expect(column).not.toBeNull();
     const left = column!.getBoundingClientRect();
     const right = surface.getBoundingClientRect();
+    const col = getComputedStyle(column!);
+    const card = getComputedStyle(surface);
     expect(left.left).toBeCloseTo(list.right);
-    expect(left.top, 'the column runs the full height, like the list').toBeCloseTo(shell.top);
-    expect(left.bottom).toBeCloseTo(shell.bottom);
-    expect(getComputedStyle(column!).borderRadius).toBe('0px');
-    expect(getComputedStyle(column!).boxShadow).toBe('none');
     expect(right.left).toBeCloseTo(left.right);
-    expect(left.top + parseFloat(getComputedStyle(column!).paddingTop), 'its first row lines up with the card').toBeCloseTo(right.top);
-    expect(right.top - shell.top).toBeCloseTo(5);
-    expect(shell.right - right.right).toBeCloseTo(5);
-    expect(shell.bottom - right.bottom).toBeCloseTo(5);
-    expect(getComputedStyle(surface).borderRadius).toBe('12px');
-    expect(getComputedStyle(surface).boxShadow).not.toBe('none');
+    expect(left.top, 'the column starts where the card starts').toBeCloseTo(right.top);
+    expect(left.bottom).toBeCloseTo(right.bottom);
+    // Beside the column the card keeps the conversation's 8px gap everywhere (the layout marks it data-inner-column).
+    expect(surface.hasAttribute('data-inner-column')).toBe(true);
+    expect(right.top - shell.top).toBeCloseTo(8);
+    expect(shell.right - right.right).toBeCloseTo(8);
+    expect(shell.bottom - right.bottom).toBeCloseTo(8);
+    expect(col.backgroundColor, 'one face').toBe(card.backgroundColor);
+    expect(col.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+    expect([col.borderTopLeftRadius, col.borderBottomLeftRadius, col.borderTopRightRadius, col.borderBottomRightRadius]).toEqual(['12px', '12px', '0px', '0px']);
+    expect([card.borderTopLeftRadius, card.borderBottomLeftRadius, card.borderTopRightRadius, card.borderBottomRightRadius]).toEqual(['0px', '0px', '12px', '12px']);
+    // The ring: the column draws the card's left side, the content the rest; neither draws the line between them.
+    expect(ringSides(col.boxShadow)).toEqual(['left', 'top', 'bottom']);
+    expect(ringSides(card.boxShadow)).toEqual(['top', 'right', 'bottom']);
+    expect(col.borderLeftWidth).toBe('0px');
   });
 
-  it(`${theme}: the list and the inner column lie on the window's material (no outer frame), ❌ a veil of their own`, async () => {
-    const { column } = await renderDesktop(theme, true);
+  it(`${theme}: the modules float as one panel inside the card: the lift, the surface radius, a gap, as tall as they are`, async () => {
+    const { surface, column } = await renderDesktop(theme, true);
+    const stack = column!.querySelector<HTMLElement>('[data-inner-module-stack]')!;
+    const style = getComputedStyle(stack);
+    // The product's one lift and surface radius, resolved in this theme (no new elevation or colour).
+    const probe = document.createElement('div');
+    probe.style.boxShadow = 'var(--shadow-lift)';
+    stack.parentElement!.append(probe);
+    expect(style.boxShadow).toBe(getComputedStyle(probe).boxShadow);
+    probe.remove();
+    expect(style.boxShadow).not.toBe('none');
+    expect(style.borderRadius).toBe('12px');
+    expect(style.backgroundColor, 'the card face, not a third colour').toBe(getComputedStyle(surface).backgroundColor);
+    const box = stack.getBoundingClientRect();
+    const col = column!.getBoundingClientRect();
+    expect(box.left - col.left).toBeCloseTo(8);
+    expect(col.right - box.right).toBeCloseTo(8);
+    expect(box.height, 'as tall as its modules, not the column').toBeLessThan(col.height - 300);
+    expect([...stack.querySelectorAll('[data-inner-sidebar-section]')].map((e) => e.getAttribute('data-inner-sidebar-section'))).toEqual(['topics', 'agents']);
+  });
+
+  it(`${theme}: one module opened in place takes the panel; the others step aside`, async () => {
+    const { column } = await renderDesktop(theme, true, false, 'topics');
+    const stack = column!.querySelector<HTMLElement>('[data-inner-module-stack]')!;
+    expect([...stack.querySelectorAll('[data-inner-sidebar-section]')].map((e) => e.getAttribute('data-inner-sidebar-section'))).toEqual(['topics']);
+  });
+
+  it(`${theme}: folded, the content surface is the whole card again`, async () => {
+    const { surface } = await renderDesktop(theme, true, true);
+    const card = getComputedStyle(surface);
+    expect(card.borderRadius).toBe('12px');
+    expect(card.boxShadow).toMatch(/0px 0px 0px 0\.5px/);
+  });
+
+  it(`${theme}: the list lies on the window's material (no outer frame), ❌ a veil of its own; the column is on the card`, async () => {
+    const { column, surface } = await renderDesktop(theme, true);
     const frame = harness.container.querySelector<HTMLElement>('[data-desktop-shell] > div')!;
     const list = harness.container.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
     expect(getComputedStyle(frame).marginTop).toBe('0px');
     expect(getComputedStyle(list).backgroundColor).toBe('rgba(0, 0, 0, 0)');
-    expect(getComputedStyle(column!).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    expect(getComputedStyle(column!).backgroundColor).toBe(getComputedStyle(surface).backgroundColor);
   });
 }

@@ -36,9 +36,45 @@
   overflow: visible;
 }
 
-/* #2548 群 / 项目的内层栏归列表那一层(整列通高、无卡片);只让出正文卡片的上缝,头一行与正文页头对齐。 */
+/* @@@inner-on-card (owner 11-26, direction A, GUYI-AI/gugu-dev#1515): the group's / project's inner column is the left part of
+ * the group's own card, not a continuation of the list. It takes the card's face and left edge (radius, hairline, the same top
+ * and bottom gap); the card gives up its left corners and left hairline, so column and messages are one card with no line
+ * between them. The list/column boundary is the card's edge; inside, the column's modules float as one panel
+ * (inner-sidebar-head.css @@@inner-modules).
+ * While the column is shown (registered and not folded) the layout marks the content surface `data-inner-column`
+ * (workspace-layout.tsx), so no rule here needs a :has() on an ancestor; folded, the mark goes and the card keeps its corners.
+ * Beside the column the card keeps the conversation's 8px gap and ring, and the column takes the same. */
 .gugu-skin [data-workspace-shell] > [data-panel-slot='inner'] [data-region='inner-sidebar'] {
-  padding-top: var(--desktop-surface-inset);
+  --inner-card-ring: color-mix(in oklab, var(--fg) 6%, transparent);
+  margin-block: 8px;
+  height: calc(100% - 16px);
+  border-radius: var(--radius-surface) 0 0 var(--radius-surface);
+  background: var(--bg);
+  box-shadow: -0.5px 0 0 var(--inner-card-ring), 0 -0.5px 0 var(--inner-card-ring), 0 0.5px 0 var(--inner-card-ring);
+}
+.gugu-skin [data-workspace-content-surface][data-inner-column] {
+  --workspace-chrome-inset: 8px;
+}
+.gugu-skin [data-workspace-content-surface][data-inner-column]:not(:has([data-surface-chat='cards'])) {
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+  box-shadow: 0 -0.5px 0 color-mix(in oklab, var(--fg) 6%, transparent), 0.5px 0 0 color-mix(in oklab, var(--fg) 6%, transparent), 0 0.5px 0 color-mix(in oklab, var(--fg) 6%, transparent);
+}
+/* Beside a tool the conversation is its own card (session index.css [data-chat-card-head] / [data-chat-card]): that card
+ * gives up its left corners and left ring to the column the same way. */
+.gugu-skin [data-workspace-content-surface][data-inner-column] [data-chat-card-head] {
+  border-start-start-radius: 0;
+  box-shadow: 0.5px 0 0 var(--chat-card-ring), 0 -0.5px 0 var(--chat-card-ring);
+}
+.gugu-skin [data-workspace-content-surface][data-inner-column] [data-chat-card] {
+  border-end-start-radius: 0;
+  box-shadow: 0.5px 0 0 var(--chat-card-ring), 0 0.5px 0 var(--chat-card-ring);
+}
+/* With the column beside it, the conversation (its messages and composer together) keeps --spacing-lg more room from the
+ * column's edge: someone else's left-aligned messages do not sit against the column's rows, and still line up with the
+ * composer. */
+.gugu-skin [data-workspace-content-surface][data-inner-column] [data-testid='session-chat-panel'] {
+  padding-inline-start: var(--spacing-lg);
 }
 
 /* The curved content surface owns this boundary. Full-height list borders otherwise
@@ -75,7 +111,7 @@
 
 /* 列表直接画在窗口底上;它与外框之间不重复叠半透明色。 */
 :root[data-window-material] [data-desktop-shell][data-gugu-shell-phase] .gg-pane[data-role='nav'],
-:root[data-window-material] [data-desktop-shell] .gugu-skin :is([data-workspace-left-panel], [data-region='inner-sidebar']) {
+:root[data-window-material] [data-desktop-shell] .gugu-skin [data-workspace-left-panel] {
   background-color: transparent;
 }
 

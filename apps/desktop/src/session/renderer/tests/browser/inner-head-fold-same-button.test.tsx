@@ -126,8 +126,9 @@ it('the two-line group button covers the avatar and lower row, with independent 
   await page.elementLocator(harness.container.firstElementChild!).hover({ position: { x: 450, y: 100 } });
   await harness.render(row(true));
   expect(button()).toHaveAttribute('aria-current', 'page');
-  // v16: the open group's block wears the selected fill (7% of the foreground).
-  expect(getComputedStyle(button()).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+  // Direction A (GUYI-AI/gugu-dev#1515): the head is the group's title on the group's card, so the open group's block wears
+  // no selected fill; it stays marked as the current page.
+  expect(getComputedStyle(button()).backgroundColor).toBe('rgba(0, 0, 0, 0)');
   // Keyboard focus keeps the same hover surface on the selected block.
   expect(hoverLayer().content).toBe('""');
   expect([hoverLayer().left, hoverLayer().right, hoverLayer().borderRadius]).toEqual(['0px', '32px', '12px']);
