@@ -1,37 +1,25 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import type { AnnotationConversation } from '@shared/browser-annotation';
-import { notify } from '@/lib/notices';
-import { useSendSelection } from '@renderer/lib/editor/cite-into-conversation';
 import { AnnotationEditor } from './annotation-editor';
-import { sessionAnnotations, type MessageAnnotationSelection } from './session-annotations';
+import { sessionAnnotations, type FileAnnotationSelection, type MessageAnnotationSelection } from './session-annotations';
 
 /**
  * The small box at a selection: the host's one input beside selected words — a message's, a file's — where the person
- * writes a line. What the line does is the opener's (`save`): a comment joins its conversation's draft, a file's Send goes
- * out at once (through `send`, the way typed words go). Drawn by the shell's layer (`SelectionLineLayer`), mounted once;
- * a press or a wheel anywhere else dismisses it.
+ * writes a comment, numbered as the conversation's draft's next; saved, it joins that draft and goes with the next send.
+ * Drawn by the shell's layer (`SelectionLineLayer`), mounted once; a press or a wheel anywhere else dismisses it.
  */
-type Line = {
-  id: string; at: DOMRect; within: HTMLElement; container: HTMLElement | null;
-  number?: number; words?: { placeholder: string; submit: string };
-  save: (text: string, send: ReturnType<typeof useSendSelection>) => Promise<void> | void;
-};
+type Line = { id: string; at: DOMRect; within: HTMLElement; container: HTMLElement | null; number: number; save: (text: string) => void };
 let lines: readonly Line[] = [];
 const listeners = new Set<() => void>();
 const changed = (next: readonly Line[]) => { lines = next; for (const listener of listeners) listener(); };
-const failed = (error: unknown) => notify({ tier: 'error', title: error instanceof Error ? error.message : String(error) });
 
-/** The line at `at` (this window's px), kept inside `within`; one per element. */
-export function openSelectionLine(line: Omit<Line, 'id'>): void {
-  changed([...lines.filter((current) => current.within !== line.within), { ...line, id: crypto.randomUUID() }]);
-}
-
-/** A comment on part of a message: numbered as the draft's next, it joins the draft when saved and goes with the next send. */
+/** A comment on part of a message or a file, at `at` (this window's px), kept inside `within`; one per element. */
 export function openCommentLine(conversation: AnnotationConversation, at: DOMRect, within: HTMLElement,
-  selection: Omit<MessageAnnotationSelection, 'annotation'>): void {
+  selection: Omit<MessageAnnotationSelection, 'annotation'> | Omit<FileAnnotationSelection, 'annotation'>, container: HTMLElement | null = null): void {
   const draft = sessionAnnotations.forConversation(conversation);
-  openSelectionLine({ at, within, container: null, number: draft.nextAnnotationNumber, save: (text) => { if (text) draft.add({ ...selection, annotation: text }); } });
+  changed([...lines.filter((current) => current.within !== within), { id: crypto.randomUUID(), at, within, container, number: draft.nextAnnotationNumber,
+    save: (text) => { if (text) draft.add({ ...selection, annotation: text }); } }]);
 }
 
 function close(line: Line): void {
@@ -46,8 +34,6 @@ export function SelectionLineLayer() {
 }
 
 function SelectionLine({ line }: { line: Line }) {
-  const send = useSendSelection();
-  const [busy, setBusy] = useState(false);
   useEffect(() => {
     const doc = line.within.ownerDocument;
     const outside = (event: Event) => { if (!(event.target as Element | null)?.closest?.('[data-selection-line]')) close(line); };
@@ -61,9 +47,6 @@ function SelectionLine({ line }: { line: Line }) {
     left: Math.max(box.left + 8, Math.min(line.at.left, box.right - width - 8)),
     top: Math.max(box.top + 8, Math.min(line.at.top - 48, box.bottom - 48)),
   }}>
-    <AnnotationEditor number={line.number} words={line.words} busy={busy} onCancel={() => close(line)} onSave={(text) => {
-      setBusy(true);
-      Promise.resolve(line.save(text, send)).then(() => close(line), (error: unknown) => { setBusy(false); failed(error); });
-    }} />
+    <AnnotationEditor number={line.number} onCancel={() => close(line)} onSave={(text) => { line.save(text); close(line); }} />
   </div>;
 }

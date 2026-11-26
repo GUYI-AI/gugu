@@ -6,7 +6,7 @@ import { copyTextWithFeedback } from '@/lib/copyTextWithFeedback'
 /**
  * The host's text preview's selection menu: the same DOM an App page's runtime draws (selection-menu-dom.ts), from the
  * same table (`selectionMenu`), placed by the same rule — again as the preview scrolls, in the same frame. Copy is done
- * here; what Cite and Send do is the caller's (the conversation's composer, or its Send line).
+ * here; what Cite and Comment (`onSend`) do is the caller's (the conversation's composer, or its comment box).
  */
 export function FileSelectionMenu({ items, text, anchor, container, onCite, onSend, onClose }: {
   items: readonly SelectionMenuItem[]

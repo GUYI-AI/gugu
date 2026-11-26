@@ -4,6 +4,8 @@ import { enUSAnnotationMessages, zhCNAnnotationMessages } from '../../../localiz
 import { annotationConversationKey, type AnnotationConversation } from '@shared/browser-annotation';
 import type { TurnAnnotation } from '@gugu/session-core/acp/client';
 import { getRendererSession } from '@/lib/sessionPublication';
+import { placeTarget, type FileReference, type SelectionPlace } from '@shared/extensions/file-selection';
+import { placeLabel } from '@/components/preview/quote-preview-file';
 
 export type AnnotationRect = { x: number; y: number; width: number; height: number };
 export type BrowserAnnotationSelection = {
@@ -41,7 +43,15 @@ export type MessageAnnotationSelection = {
   text: string;
   annotation: string;
 };
-type AnnotationSelection = BrowserAnnotationSelection | DiffAnnotationSelection | MessageAnnotationSelection;
+/** Part of a file: the file where it lives, the places picked (a pill's each), and the words when there are any. */
+export type FileAnnotationSelection = {
+  kind: 'file';
+  file: FileReference;
+  places: SelectionPlace[];
+  text?: string;
+  annotation: string;
+};
+type AnnotationSelection = BrowserAnnotationSelection | DiffAnnotationSelection | MessageAnnotationSelection | FileAnnotationSelection;
 type AnnotationIdentity = { id: string; number: number };
 export type SessionAnnotation = AnnotationSelection & AnnotationIdentity;
 
@@ -125,6 +135,10 @@ export const sessionAnnotations = {
 
 /** What a comment points at, as the composer and the sent message's card both name it. */
 export function annotationPlace(item: AnnotationSelection): string {
+  if (item.kind === 'file') {
+    const where = item.places.map(placeLabel).filter(Boolean).join(' · ');
+    return where ? `${item.file.name} (${where})` : item.file.name;
+  }
   return item.kind === 'browser' ? item.filePath ?? item.url : item.kind === 'message' ? item.authorName : item.path;
 }
 
@@ -154,6 +168,13 @@ export function promptAnnotations(items: readonly SessionAnnotation[], locale: S
       copy('annotations.prompt.sourceEvidence'),
       ...item.text.split(/\r?\n/).map(line => `> ${line}`),
       '',
+      copy('annotations.prompt.comment'), item.annotation,
+    ].join('\n') : item.kind === 'file' ? [
+      copy('annotations.prompt.userComment', { number: item.number }),
+      copy('annotations.prompt.file'),
+      `${copy('annotations.prompt.filePath')} ${JSON.stringify(item.file.target)}`,
+      ...item.places.map(place => `${copy('annotations.prompt.place')} ${JSON.stringify(placeLabel(place) || place.at)} ${JSON.stringify(placeTarget(item.file, place))}`),
+      ...(item.text ? [copy('annotations.prompt.sourceEvidence'), ...item.text.split(/\r?\n/).map(line => `> ${line}`), ''] : []),
       copy('annotations.prompt.comment'), item.annotation,
     ].join('\n') : item.kind === 'diff' ? [
       copy('annotations.prompt.userComment', { number: item.number }),
