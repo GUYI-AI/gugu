@@ -32,3 +32,10 @@ it('reads every remote in CRLF output', async () => {
     ] })
   } finally { await repository.dispose() }
 })
+
+it('does not trim significant whitespace from numstat filenames', () => {
+  expect([...parseNumstat('1\t2\tfile with space \n')]).toEqual([['file with space ', { additions: 1, deletions: 2 }]])
+  expect([...parseNumstat('1\t2\tfirst\n3\t4\tlast \t\n')]).toEqual([
+    ['first', { additions: 1, deletions: 2 }], ['last \t', { additions: 3, deletions: 4 }],
+  ])
+})
