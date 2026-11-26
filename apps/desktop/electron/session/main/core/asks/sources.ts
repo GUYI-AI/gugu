@@ -9,6 +9,8 @@ export const ASK_SOURCE_SPEC = {
   'app-install': { waitKind: 'approval', raisedBy: 'host', timeoutMs: INSTALL_CONSENT_HUMAN_WINDOW_MS },
   // Asked inside the agent's device_call: the same human window, inside the harness's tool-call limit.
   'device-capability': { waitKind: 'approval', raisedBy: 'host', timeoutMs: INSTALL_CONSENT_HUMAN_WINDOW_MS },
+  // A password request (password-vault/beta-messages.ts): the vault's own deadline ends it, with its outcome.
+  'password': { waitKind: 'approval', raisedBy: 'host' },
 } as const satisfies Record<AskSource, AskSourceSpec>;
 
 /** Archived records may name a source removed in a later release. */

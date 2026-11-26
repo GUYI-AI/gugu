@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { GuguMcpContext } from '../../../apps/desktop/electron/acp-engine-utils'
 import { BetaPasswordSaves } from '../../../apps/desktop/electron/password-vault/beta-save'
-import { PASSWORD_REQUEST_PREFIX, passwordGrantLevel, type PasswordItem } from '../../../packages/core/src/shared/passwordBetaProtocol'
+import { passwordGrantLevel, type PasswordItem } from '../../../packages/core/src/shared/passwordBetaProtocol'
 
+// The request opens as an Ask of the Agent's session (beta-messages.ts); here, what it would carry.
 const posted: string[] = []
-const context = (sent = true) => ({ kind: 'social', agentId: 'agent-1',
-  runHostAction: async (action: { request_id: string; text: string }) => { posted.push(action.text); return sent ? { status: 'sent', message_id: action.request_id } : { status: 'failed' } },
-}) as unknown as GuguMcpContext
+let opens = true
+vi.mock('../../../apps/desktop/electron/password-vault/beta-messages', () => ({
+  openPasswordRequest: async (view: unknown) => { if (!opens) throw new Error('password_notification_unavailable'); posted.push(JSON.stringify(view)) },
+}))
+const context = (sent = true) => { opens = sent; return { kind: 'social', agentId: 'agent-1' } as unknown as GuguMcpContext }
 const caller = { agentId: 'agent-1', sessionId: 'session-1' }
 function saves() {
   const deliver = vi.fn(async (_session: string, _request: string, _status: string, _credential?: string) => {}), changed = vi.fn()
@@ -15,7 +18,7 @@ function saves() {
 }
 const item: PasswordItem = { reference: { id: '22222222-2222-4222-8222-222222222222', version: 3, epoch: 'e' }, origin: 'https://github.com', name: '',
   maskedAccount: 'd***@example.com', accountSecret: false, hasPassword: true, fields: [{ id: '33333333-3333-4333-8333-333333333333', name: 'API Key', secret: true }], grants: [], sites: [] }
-afterEach(() => { posted.length = 0; vi.useRealTimers() })
+afterEach(() => { posted.length = 0; opens = true; vi.useRealTimers() })
 
 describe('Agent save requests', () => {
   it('posts metadata only; the proposed values reach only the person draft', async () => {
@@ -23,11 +26,10 @@ describe('Agent save requests', () => {
     const reply = await value.request(context(), caller, 'https://github.com', undefined, { account: 'dev@example.com', password: 'canary-secret', fields: [{ name: 'API Key', value: 'canary-key' }] })
     expect(reply.status).toBe('pending')
     expect(posted).toHaveLength(1)
-    expect(posted[0].startsWith(PASSWORD_REQUEST_PREFIX)).toBe(true)
     expect(posted[0]).not.toContain('canary')
     expect(posted[0]).not.toContain('dev@example.com')
     // The card shows the proposed account the way every stored account is shown: masked.
-    expect(JSON.parse(posted[0].slice(PASSWORD_REQUEST_PREFIX.length))).toMatchObject({ kind: 'save', origin: 'https://github.com', agentName: '研究助理', maskedAccount: 'd***@example.com' })
+    expect(JSON.parse(posted[0])).toMatchObject({ kind: 'save', origin: 'https://github.com', agentName: '研究助理', maskedAccount: 'd***@example.com' })
     expect(value.pending().map(request => request.requestId)).toEqual([reply.requestId])
     expect(value.draft(reply.requestId)).toMatchObject({ account: 'dev@example.com', password: 'canary-secret', fields: [{ name: 'API Key', value: 'canary-key' }] })
   })
@@ -84,7 +86,13 @@ describe('Agent save requests', () => {
       [rejected.requestId, 'rejected'], [expired.requestId, 'expired'], [invalidated.requestId, 'invalidated']])
     expect(value.pending()).toEqual([])
   })
-  it('a request whose message was not sent leaves nothing pending', async () => {
+  it('carries what the Agent says to enter and where to make it, never a value', async () => {
+    const { value } = saves()
+    await value.request(context(), caller, 'https://github.com', undefined,
+      { fields: [{ name: 'Token' }], hint: 'A GitHub fine-grained token: Pull requests read/write', help: 'https://github.com/settings/personal-access-tokens/new' })
+    expect(JSON.parse(posted[0])).toMatchObject({ hint: 'A GitHub fine-grained token: Pull requests read/write', help: 'https://github.com/settings/personal-access-tokens/new' })
+  })
+  it('a request that could not be opened leaves nothing pending', async () => {
     const { value } = saves()
     await expect(value.request(context(false), caller, 'https://github.com', undefined, { password: 'canary-secret' })).rejects.toThrow()
     expect(value.pending()).toEqual([])

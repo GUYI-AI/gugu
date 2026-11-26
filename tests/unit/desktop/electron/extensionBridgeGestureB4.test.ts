@@ -36,7 +36,7 @@ type Host = {
   clipboard: { writeText(text: string): Promise<unknown> }
   appFiles: Record<'openWith' | 'upload' | 'download' | 'forward', (args: unknown) => Promise<unknown>>
   cloud: Record<'write', (...args: unknown[]) => Promise<unknown>>
-  credentials: Record<'write', (...args: unknown[]) => Promise<unknown>>
+  credentials: Record<'write' | 'choose', (...args: unknown[]) => Promise<unknown>>
   pickAgent(ask: Record<string, unknown>): Promise<unknown>
   assistant: Record<'open' | 'advanceSetup' | 'rename' | 'connect', (name: string, value: string) => Promise<unknown>>
   bindings: { openWork(name: string, handle: string): Promise<unknown> }
@@ -59,6 +59,7 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   filesSelectionAction: () => (host.appFiles as unknown as Record<string, (args: unknown) => Promise<unknown>>).selectionAction!({ action: 'cite', file: { workspace: 'session:s-1', id: 'a.md' }, places: [{ at: { lines: '1' } }], rect: { x: 0, y: 0, width: 1, height: 1 }, viewport: { width: 9, height: 9 } }),
   cloudWrite: () => host.cloud.write('radar_save', {}),
   credentialsWrite: () => host.credentials.write('github.com', 'PUT', 'https://api.github.com/repos/a/b/pulls/1/merge'),
+  credentialsChoose: () => host.credentials.choose('github.com', { hint: 'A token' }),
   pickAgent: () => host.pickAgent({}),
   openLink: () => host.openLink('gugu://ext/radar/radar'),
   // #1925 (44): one of the assistant's host screens, and the setup steps an App draws.

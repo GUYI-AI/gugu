@@ -17,6 +17,7 @@ import { CreatePrModal } from '@renderer/features/sessions/diff-view/changes-pan
 import { ConfirmActionDialog } from '@renderer/lib/components/confirm-action-dialog'
 import { ExternalLinkChoiceDialog } from '@renderer/lib/components/external-link-choice-dialog'
 import { OpenWithChooser } from '@renderer/features/extensions/open-with-chooser'
+import { AppCredentialDialog } from '@renderer/features/extensions/panel/app-credential-dialog'
 import { GithubDeviceFlowModal } from '@renderer/lib/components/github-device-flow-modal'
 import { UnsavedChangesDialog } from '@renderer/lib/components/unsaved-changes-dialog'
 import { createModal, type ModalRegistryEntry } from '@/components/ui/modal-registry'
@@ -32,6 +33,7 @@ export const modalRegistry = {
   confirmActionModal: createModal(ConfirmActionDialog, { size: 'xs' }),
   confirmExternalLinkModal: createModal(ExternalLinkChoiceDialog, { size: 'sm' }),
   openWithChooserModal: createModal(OpenWithChooser, { size: 'sm' }),
+  appCredentialModal: createModal(AppCredentialDialog, { size: 'sm' }),
   unsavedChangesModal: createModal(UnsavedChangesDialog, { size: 'xs' }),
   promptModal: createModal(PromptModal, { size: 'lg' }),
   themeImportModal: createModal(ThemeImportModal, { size: 'sm' }),

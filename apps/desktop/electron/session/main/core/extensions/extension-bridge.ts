@@ -2377,6 +2377,13 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       return await appCredentials.request(extensionId, args, method === 'credentialsWrite');
     }
 
+    case 'credentialsChoose': {
+      // The person's own dialog, in the window that draws the page they clicked; never on a page an agent works.
+      if (caller.binding?.operator.kind === 'agent') throw Object.assign(new Error('Saved credentials are chosen only on a page the person works'), { code: 'unavailable' });
+      const { appCredentials } = await import('@main/core/extensions/app-credentials-instance');
+      return await appCredentials.choose(extensionId, extensionsService().get(extensionId).manifest.name, args, thePage(caller));
+    }
+
     case 'cloudRead':
     case 'cloudWrite':
     case 'cloudProgramWrite': {

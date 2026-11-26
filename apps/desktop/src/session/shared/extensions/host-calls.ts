@@ -130,6 +130,8 @@ export const HOST_CALLS = {
   // `gugu.credentials` (61): a request sent by the host with the person's picked credential for that website.
   'credentials.read': { verb: 'credentialsRead', pack: (site: string, url: string, options?: { headers?: Record<string, string> }) => ({ site, url, ...(options?.headers ? { headers: options.headers } : {}) }) },
   'credentials.write': { verb: 'credentialsWrite', pack: (site: string, method: string, url: string, body?: unknown, options?: { headers?: Record<string, string> }) => ({ site, method, url, ...(body === undefined ? {} : { body }), ...(options?.headers ? { headers: options.headers } : {}) }) },
+  // 64: the host's dialog to pick or save the credential the App uses on that website.
+  'credentials.choose': { verb: 'credentialsChoose', pack: (site: string, options?: { hint?: string; help?: string }) => ({ site, ...options }) },
   pickAgent: { verb: 'pickAgent' },
   readData: { verb: 'readData', pack: (path: string) => ({ path }) },
   writeData: { verb: 'writeData', pack: (path: string, content: string) => ({ path, content }) },
