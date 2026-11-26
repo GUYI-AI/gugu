@@ -54,6 +54,7 @@ export async function permanentlyDeleteSessions(
   if (targets.length > PERMANENT_DELETE_BATCH) throw new Error(`permanentlyDeleteSessions takes at most ${PERMANENT_DELETE_BATCH} sessions per call`);
   if (options.withChildren !== undefined && typeof options.withChildren !== 'boolean') throw new Error('withChildren must be a boolean');
 
+  const startedAt = Date.now();
   const outcome: PermanentDeleteOutcome = { deleted: [], unreached: [], failed: [] };
   const problems: Problem[] = [];
   const fail = (ref: ArchivedSessionRef, reason: PermanentDeleteFailure, error?: unknown) => {
@@ -147,6 +148,10 @@ export async function permanentlyDeleteSessions(
     await yieldToLoop();
   }
   await logProblems(problems, host);
+  log.info('permanentlyDeleteSessions: batch settled', {
+    requested: targets.length, deleted: outcome.deleted.map((ref) => ref.sessionId), failed: outcome.failed.length,
+    unreached: outcome.unreached.length, ms: Date.now() - startedAt,
+  });
   return outcome;
 }
 

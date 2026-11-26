@@ -24,6 +24,8 @@ import { uniqueAgentDisplayName } from '@gugu/core/shared/agentDefaultName'
 import { createLogger } from '../lib/logger'
 
 const log = createLogger('sessionpage/task-names')
+// The one irreversible step of 已归档 → 永久删除: always leave a line in gugu-main.log (ids only, never content).
+const permanentDeleteLog = createLogger('sessionpage/permanent-delete')
 import { makeIdentityClient } from '../supabase'
 import {
   SESSION_CACHE_KEY,
@@ -247,7 +249,10 @@ export function createSessionpageIdentityHost(deps: SessionpageIdentityHostDeps)
       if (!agentUserIds.length) return []
       const auth = await deps.getAuth()
       if (!auth) throw new Error('Permanently deleting a task needs a connection and a signed-in account')
-      return (await purgeOwnedAgentHistory(makeIdentityClient(auth.accessToken), agentUserIds)).purged
+      const receipt = await purgeOwnedAgentHistory(makeIdentityClient(auth.accessToken), agentUserIds)
+      permanentDeleteLog.info({ requested: agentUserIds.length, purged: receipt.purged, conversations: receipt.conversations },
+        'Purged the private history of removed agent identities')
+      return receipt.purged
     },
     async restore(target, removedIdentity) {
       if (!(await deps.getAuth())) throw new Error('Restoring this task needs a connection and a signed-in account')
