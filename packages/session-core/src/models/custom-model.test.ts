@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chatModel, customModelAcceptsImages, customModelCatalogLevels, customModelDefaultEffort, customModelEfforts, customModelEntrySchema, customModelMetaSchema, proposedDefaultEffort, customModelOptionId, customModelRefFromOption, customModelRuntimeOption, detectModelProtocol, matchCustomModel, modelEndpointSchema, normalizeModelBaseUrl, runtimeModelId, sessionModelSelectionSchema } from './custom-model';
+import { CONVERSION_PREFERENCE, chatModel, customModelAcceptsImages, customModelCatalogLevels, customModelDefaultEffort, customModelEfforts, customModelEntrySchema, customModelMetaSchema, proposedDefaultEffort, customModelOptionId, customModelRefFromOption, customModelRuntimeOption, detectModelProtocol, matchCustomModel, modelEndpointSchema, normalizeModelBaseUrl, runtimeModelId, sessionModelSelectionSchema } from './custom-model';
 import { providerPresets } from './provider-presets';
 
 const connectionId = '481825a8-60b9-4c83-8d1b-f104e3db0269';
@@ -184,5 +184,22 @@ describe('custom model thinking levels', () => {
     expect(customModelEntrySchema.parse(declared)).toEqual(declared);
     expect(customModelEntrySchema.safeParse({ id: 'm', efforts: ['ultra'] }).success).toBe(false);
     expect(customModelEntrySchema.safeParse({ id: 'm', defaultEffort: 'default' }).success).toBe(false);
+  });
+});
+
+// owner 2026-11-27 03:17: routing is automatic; a harness the address does not take natively is converted to Responses first.
+describe('automatic routing', () => {
+  const responses = { protocol: 'openai-responses' as const, baseUrl: 'https://relay.test/v1' };
+  const chat = { protocol: 'openai-chat-completions' as const, baseUrl: 'https://relay.test/v1' };
+  const connection = { endpoints: [chat, responses], keySaved: true };
+  it('converts to Responses before OpenAI Chat, whatever order the harness declares', () => {
+    expect(CONVERSION_PREFERENCE.slice(0, 2)).toEqual(['openai-responses', 'openai-chat-completions']);
+    expect(matchCustomModel({ nativeProtocol: 'anthropic-messages', convertFrom: ['openai-chat-completions', 'openai-responses'], connection }))
+      .toEqual({ endpoint: responses, converted: true });
+    expect(matchCustomModel({ nativeProtocol: 'anthropic-messages', convertFrom: ['openai-chat-completions', 'openai-responses'], connection: { ...connection, endpoints: [chat] } }))
+      .toEqual({ endpoint: chat, converted: true });
+  });
+  it('still sends the harness own protocol unconverted when the address takes it', () => {
+    expect(matchCustomModel({ nativeProtocol: 'openai-chat-completions', convertFrom: ['openai-responses'], connection })).toEqual({ endpoint: chat });
   });
 });
