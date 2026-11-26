@@ -5,6 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { notifyManager as readModelNotify } from '@tanstack/react-query'
 import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { conversationLink, groupFileLink } from '@gugu/core/shared/ui/guguLink'
+import { pillCite } from '@gugu/session-shared/markdown'
 import { Markdown } from '../../../../apps/desktop/src/components/markdown/Markdown'
 import { AuthContext } from '../../../../apps/desktop/src/store/auth'
 import { ChatStoreProvider } from '../../../../apps/desktop/src/store/chatContext'
@@ -72,6 +73,22 @@ async function render(content: string, trust: 'chat' | 'document' = 'chat', surf
 // Pills load lazily and then read: wait for both.
 const settle = (check: () => void) => vi.waitFor(async () => { await act(async () => { await vi.dynamicImportSettled() }); check() }, { timeout: 10000 })
 const pills = () => [...container.querySelectorAll<HTMLAnchorElement>('a.gg-md-mention')]
+
+describe('a message a past Cite composed (files are commented on now; what was cited still reads)', () => {
+  it("draws a chat folder file's cite as the pill to its lines, and a computer file's as its quote and its path", async () => {
+    mocks.fileMetadata.mockResolvedValue({ status: 'ready', revision: { source: 'managed-object', version: 2, file_name: 'pricing.txt', content_type: 'text/plain', size_bytes: 120 } })
+    const target = groupFileLink(DOC, { version: 2, at: { lines: '2' } })
+    // Word for word what Cite drafted (selectionCite, since removed): a pill per place, named by the file and its lines.
+    const folder = pillCite('', [{ label: 'pricing.txt (Line 2)', target }]).draft
+    const computer = '> Pro: 99 a month, 5 seats included\n\nnotes.txt (Line 2): /home/me/notes.txt'
+    await render(`${folder}\n\n${computer}`)
+    await settle(() => expect(pills()).toHaveLength(1))
+    expect(pills()[0]!.getAttribute('href')).toBe(target)
+    expect(pills()[0]!.textContent).toContain('pricing.txt')
+    expect(container.querySelector('blockquote')?.textContent).toContain('Pro: 99 a month, 5 seats included')
+    expect(container.textContent).toContain('notes.txt (Line 2): /home/me/notes.txt')
+  })
+})
 
 describe('chat link pills, drawn in place', () => {
   it('draws a file link as the file pill with the file name, in the sentence; it is not an @ mention', async () => {
