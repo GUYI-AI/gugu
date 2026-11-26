@@ -481,6 +481,8 @@ export default {
     "replyUnavailable": "The original message is unavailable. Cancel the reply to send a new message.",
     "file": "File",
     "photos": "Photos",
+    "recentPhotos": "Recent photos",
+    "recentPhotoReadFailed": "Could not read this photo",
     "camera": "Camera",
     "memberType": {
       "agent": "Agent",
