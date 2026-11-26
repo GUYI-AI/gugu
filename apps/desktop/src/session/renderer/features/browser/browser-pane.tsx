@@ -1,3 +1,4 @@
+import { openGroupApp, useGroupApps } from '@/components/chat/GroupAppsHere';
 import { Globe } from '@/lib/icons';
 import { openApp } from '@/components/appSlot/useOpenApp';
 import { OpenSuperseded, openLinkTarget } from '@/lib/guguLinks';
@@ -132,9 +133,15 @@ export const ChatBrowserPane = observer(function ChatBrowserPane({ chatId, tabId
   const conversation = isAnnotationConversation(pane.ctx.place) ? pane.ctx.place : undefined;
   const { translate } = useSessionMessages();
   const openFolder = () => openPanelItem(chatId, folderItem(), { from: tabId });
+  const groupApps = useGroupApps(chatId);
   const startPageActions: WorkspacePanelAction[] = [
     { id: 'files', label: translate('workspace.files'), icon: <TabKindMark kind={WORKSPACE_APP_KIND} />, shortcutSettingsKey: 'session.sidebarFiles', onClick: openFolder },
     { id: 'browser', label: translate('workspace.browser'), icon: <Globe className="size-3.5" />, shortcutSettingsKey: 'session.openBrowser', onClick() {} },
+    // The group's own Apps first: those in this group (owner 11-27: opened beside the group they are in).
+    ...groupApps.map((app): WorkspacePanelAction => ({
+      id: `group:${app.extensionId}`, label: app.name, icon: <ExtensionMark iconDataUrl={app.iconDataUrl} />, section: 'extensions',
+      onClick: () => { void openGroupApp(app, chatId, (extensionId) => openApp(extensionId, chatId, tabId)); },
+    })),
     // What is installed here not read yet: only the host's own actions (the Apps appear when it is read).
     ...(peekInstalledAppsTracked()?.appsIn('page') ?? []).map((app): WorkspacePanelAction => ({
       id: app.extensionId, label: app.name, icon: <ExtensionMark iconDataUrl={app.iconDataUrl} />,

@@ -124,7 +124,7 @@ function onApp(app: CatalogInstalledApp): Pick<AppSearchHit, 'state' | 'next' | 
       // 5-minute game rounds 2-3 (10-29): 「on」 was read as 「in this chat」 for a chat App made in another chat; A/B r02: told
       // only what the call does, the agent asked first — a person asking for it in a chat is the go-ahead.
       (contributes.tabs.some((tab) => claimedSuffixes(tab, 'chat').length > 0)
-        ? `. It is on your owner's computer only, in no chat yet. Asked for in a chat, call app_install { app: "${id}", chat_id: <that chat>, data } now, without asking first — the request is the go-ahead; it adds the data file, checks it and posts the card`
+        ? `. Asked for in a chat that has no file of it yet, call app_install { app: "${id}", chat_id: <that chat>, data } now, without asking first — the request is the go-ahead; it adds the data file, checks it and posts the card`
         : '') +
       '. For a feature its tools or tabs do not provide, read guide_read apps-fork and ask "Shall I fork a version?" before making changes or building a workaround.',
     tabs: contributes.tabs.map((tab) => extensionTabKind(id, tab.name)),
