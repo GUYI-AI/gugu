@@ -172,9 +172,9 @@ const ERROR_REASON_KEY: Record<ErrorReason, ChatTranslationKey> = {
   set_mode_failed: 'transcript.reasonSetModeFailed',
 };
 
-const CANCELLED_REASON_KEY: Record<CancelledReason, ChatTranslationKey> = {
+/** `interrupted_for_message` has no words: `flatten` draws no row for a turn stopped to take a new message. */
+const CANCELLED_REASON_KEY: Record<Exclude<CancelledReason, 'interrupted_for_message'>, ChatTranslationKey> = {
   cancelled: 'transcript.reasonCancelledByUser',
-  interrupted_for_message: 'transcript.reasonInterruptedForMessage',
 };
 
 /** 原因的人话说明；没有 reason 时返回 null（文案自己已经说清了发生什么）。 */
@@ -190,7 +190,7 @@ function reasonText(outcome: TranscriptTurnOutcome, translate: ChatTranslator): 
       if (outcome.said) return outcome.said;
       return outcome.reason ? translate(ERROR_REASON_KEY[outcome.reason]) : null;
     case 'cancelled':
-      return outcome.reason ? translate(CANCELLED_REASON_KEY[outcome.reason]) : null;
+      return outcome.reason && outcome.reason !== 'interrupted_for_message' ? translate(CANCELLED_REASON_KEY[outcome.reason]) : null;
     default:
       return null;
   }

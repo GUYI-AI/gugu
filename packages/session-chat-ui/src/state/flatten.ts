@@ -666,7 +666,10 @@ export function flattenTier(
     }
 
     // A refused turn ends like a done one, but it is the turn a person most needs to step back from.
-    if (!ctx.active && turn.outcome && (turn.outcome.kind !== 'done' || turn.outcome.reason === 'refusal')) {
+    // A turn stopped so the harness could take a new message draws nothing (owner 2026-11-27 05:35: not disclosed): no row,
+    // so the messages on either side of it stay one group.
+    if (!ctx.active && turn.outcome && (turn.outcome.kind !== 'done' || turn.outcome.reason === 'refusal')
+      && !(turn.outcome.kind === 'cancelled' && turn.outcome.reason === 'interrupted_for_message')) {
       const prompt = turnPrompt(turn);
       processItem({
         kind: 'turn-outcome',

@@ -76,6 +76,23 @@ describe('approved A2A activity', () => {
     expect(t.scroll().scrollHeight).toBe(before);
   });
 
+  // Owner 2026-11-27 05:35: a turn stopped to take a new message is not disclosed, and its row split one group into several.
+  it('draws no row for a turn stopped to take a new message and keeps the received messages one group', async () => {
+    const interrupted = { kind: 'cancelled' as const, reason: 'interrupted_for_message' as const };
+    const records = ['one', 'two', 'three'].map((id, seq): TranscriptTurn => ({ ...turn(id, [delivery(`${id}-input`)]), seq,
+      ...(id === 'three' ? {} : { outcome: interrupted }) }));
+    const t = await mount(800, records);
+    expect(t.host.querySelector('[data-slot="turn-outcome"]')).toBeNull();
+    expect(t.host.querySelectorAll('[data-agent-activity]')).toHaveLength(1);
+    expect(t.head()!.textContent).toContain('Received 3 messages');
+    expect(t.host.textContent).not.toContain('paused to take a new message');
+  });
+  it('still says a turn the person stopped was stopped', async () => {
+    const records = [turn('in', [delivery('incoming')]), { ...turn('stopped', [ordinary('Half an answer')]), outcome: { kind: 'cancelled' as const, reason: 'cancelled' as const } }];
+    const t = await mount(800, records);
+    await until('the stopped turn says so', () => !!t.host.querySelector('[data-slot="turn-outcome"]'));
+  });
+
   it('never pins an activity header, closed or opened, nor paints anything over its messages', async () => {
     // Owner 2026-11-21: an opened exchange pinned its header under the question and cut the next bubble in half.
     const t = await mount(800, [turn('own', [ordinary('Owner question', 'user'),
