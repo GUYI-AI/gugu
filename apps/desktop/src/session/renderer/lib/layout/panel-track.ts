@@ -13,7 +13,8 @@ import { playSpring } from './panel-clock';
  *  · A slot made with `exit: 'clip'` goes to or from nothing the same held way: its content stays where it is laid out at its
  *    open size and its drawn edge closes over it (the inner column, owner 11-26: the column narrows from its right edge, its
  *    contents do not move). The track does not fade it; it writes `--panel-clip` (how much of the content is past the drawn
- *    edge) on the content, so what rides that edge (the column's line) and what fades with it are the slot's own CSS.
+ *    edge) and `--panel-open` (drawn ÷ laid-out size) on the content only, so what rides that edge (the column's line) and what
+ *    fades with it are the slot's own CSS, and a frame restyles only the slot's own subtree.
  */
 
 /** Every edge this close to where it goes ends the move: the spring's sub-pixel tail would hold the landing layout back. */
@@ -242,7 +243,9 @@ export class PanelTrack {
       const p = paintSlot(slot.geometry, slot.exit === 'slide' && Math.min(slot.from.size, slot.target.size) < PANEL_LANDED_PX);
       if (slot.exit === 'clip') {
         const clip = slot.geometry.content - slot.geometry.drawn;
-        nodes.content.style.setProperty('--panel-clip', clip > PANEL_LANDED_PX ? `${clip}px` : '');
+        const held = clip > PANEL_LANDED_PX;
+        nodes.content.style.setProperty('--panel-clip', held ? `${clip}px` : '');
+        nodes.content.style.setProperty('--panel-open', held && slot.geometry.content > 0 ? String(slot.geometry.drawn / slot.geometry.content) : '');
       }
       nodes.place.style[size] = `${slot.geometry.drawn}px`;
       nodes.content.style[size] = `${slot.geometry.content}px`;

@@ -4,6 +4,7 @@ import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider'
 import { INNER_SIDEBAR_MIN_WIDTH_PX, innerSidebarMaxWidth, SIDEBAR_MIN_WIDTH_PX } from '@renderer/lib/layout/layout-provider';
 import { PanelSlot } from '@renderer/lib/layout/panel-slot';
 import { PANEL_LANDED_PX } from '@renderer/lib/layout/panel-track';
+import { RESTORE_LANE_FOLLOWER } from '@renderer/lib/components/titlebar/shell-restore-lane';
 import { PanelResizeDragGuard, PanelResizeHandle } from '@renderer/lib/layout/panel-resize-handle';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
@@ -70,20 +71,25 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     fillNode.current = element;
     track.attachFill(element);
   }, [track]);
-  // @@@inner-fold-motion (owner 11-26) — every frame of the inner column's move: `--inner-open` on the shell (drawn ÷ laid-out
-  // width, 1 open … 0 folded), which the column's contents and the restore lane fade by (desktop-shell.css); and the card's
-  // `data-inner-column` (@@@inner-on-card), held while any of the column is drawn, so the card gives up its left corners at
-  // the start of an unfold and takes them back at the end of a fold, ❌ at the click (a seam for the whole move).
+  // @@@inner-fold-motion (owner 11-26) — every frame of the inner column's move: the restore lane's button and the tab strip that
+  // leaves it room get `--shell-restore-lane-shown` on themselves (0 → 1 over the second half of a fold, 1 → 0 over the first
+  // half of an unfold), and the card's `data-inner-column` (@@@inner-on-card) is held while any of the column is drawn, so the
+  // card gives up its left corners at the start of an unfold and takes them back at the end of a fold, ❌ at the click (a seam
+  // for the whole move). ❌ An inherited variable on the shell or the page: every frame would restyle every element under it
+  // (11-26: the fold ran far slower than the list's and the tools' for that alone). The followers are a live collection.
   useLayoutEffect(() => {
+    const fill = fillNode.current;
+    const followers = fill?.getElementsByClassName(RESTORE_LANE_FOLLOWER);
     const paint = () => {
       const drawn = track.drawn('inner');
       const content = track.content('inner');
-      workspaceRootRef.current?.style.setProperty('--inner-open', String(content > 0 ? Math.min(1, drawn / content) : 0));
-      fillNode.current?.toggleAttribute('data-inner-column', innerSidebarShown || drawn > PANEL_LANDED_PX);
+      const shown = String(Math.max(0, Math.min(1, 1 - (2 * drawn) / (content || 1))));
+      for (const follower of followers ?? []) (follower as HTMLElement).style.setProperty('--shell-restore-lane-shown', shown);
+      fill?.toggleAttribute('data-inner-column', innerSidebarShown || drawn > PANEL_LANDED_PX);
     };
     paint();
     return track.subscribe(paint);
-  }, [track, workspaceRootRef, innerSidebarShown]);
+  }, [track, innerSidebarShown]);
 
   const maxSidebarWidth = () => {
     const rootWidth = workspaceRootRef.current?.clientWidth ?? 0;

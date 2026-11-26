@@ -183,7 +183,7 @@ for (const theme of ['light', 'dark'] as const) {
     expect(open, 'the column is open').toBeGreaterThan(150);
     const headLeft = head.getBoundingClientRect().left;
 
-    type Frame = { drawn: number; headLeft: number; lineRight: number; placeRight: number; marked: boolean; opacity: number };
+    type Frame = { drawn: number; headLeft: number; lineRight: number; placeRight: number; marked: boolean; opacity: number; leaked: string };
     const read = (): Frame => {
       const box = place.getBoundingClientRect();
       const line = getComputedStyle(stack, '::after');
@@ -194,6 +194,8 @@ for (const theme of ['light', 'dark'] as const) {
         placeRight: box.right,
         marked: surface.hasAttribute('data-inner-column'),
         opacity: Number(getComputedStyle(fades).opacity),
+        // What drives the fade is on the column only: an inherited variable above it would restyle the whole page every frame.
+        leaked: getComputedStyle(surface).getPropertyValue('--panel-open') + getComputedStyle(surface).getPropertyValue('--inner-open'),
       };
     };
     const frames: Frame[] = [];
@@ -214,6 +216,7 @@ for (const theme of ['light', 'dark'] as const) {
       expect(frame.lineRight, 'the line is on the drawn edge').toBeCloseTo(frame.placeRight, 0);
       expect(frame.marked, 'the card gives up its left corners until the column is gone').toBe(true);
       expect(frame.opacity, 'faded out over the first half').toBeCloseTo(Math.max(0, Math.min(1, (2 * frame.drawn) / open - 1)), 1);
+      expect(frame.leaked, 'no per-frame variable reaches the conversation').toBe('');
     }
     expect(frames.at(-1)!.marked, 'landed: the card has its corners back').toBe(false);
 
