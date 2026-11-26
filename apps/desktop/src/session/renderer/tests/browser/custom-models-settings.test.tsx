@@ -272,6 +272,14 @@ it('shows migrated records with no model or key and a repair entrypoint', async 
   await expect.element(page.getByTestId('custom-model-provider')).toHaveTextContent('Custom');
   expect(document.querySelector<HTMLInputElement>('[data-testid=custom-model-key]')?.value).toBe('');
 });
+it('says a saved key this device cannot read as unreadable, not as missing (#4043)', async () => {
+  state.rows = [{ ...record(), keyUnreadable: true }];
+  render(<Sheet ariaLabel="Settings" zIndex="var(--z-settings)" onClose={() => {}}><CustomModelsGroup /></Sheet>);
+  const row = () => document.querySelector('[data-custom-connection]');
+  await until('the device record renders inside Settings', () => !!row());
+  expect(row()?.textContent).toContain('The saved key can’t be read on this device right now');
+  expect(row()?.textContent).not.toContain('No key saved on this device');
+});
 it('keeps coding plans separate and groups API and custom models by their connections', async () => {
   state.rows = [
     { ...record(), endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://plan.test/v1' }], id: 'plan', preset: 'kimi-coding', keySaved: true, models: [{ id: 'plan-model' }] },

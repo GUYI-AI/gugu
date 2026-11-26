@@ -3,7 +3,7 @@ import { customModelRefFromOption } from '@gugu/session-core/models/custom-model
 import { appSettingsModel, LOCAL_SETTINGS_HOST_KEY } from '@renderer/features/settings/app-settings-client';
 import type { ProviderPermissionModeMap } from '@gugu/session-core/acp/client';
 import { rpcOn } from '@renderer/lib/ipc';
-import { buildSessionPermissionOptions } from '@shared/session-permission-options';
+import { buildSessionPermissionOptions, PERMISSION_OPTIONS_UNREADABLE } from '@shared/session-permission-options';
 
 /** What the host offers for a harness, model and leg (its permission options among them); read again on every open. */
 const permissionMenu = replica({
@@ -26,5 +26,8 @@ export function usePermissionMenu(input: {
   const reading = useReplica(permissionMenu, connectionKnown && provider ? [machine, provider, leg, model, preferenceRevision] : null);
   const result = reading.state === 'value' ? reading.value : undefined;
   const group = result?.ok ? result.value.permissionOptions : undefined;
-  return group ?? buildSessionPermissionOptions({ modeMap, leg, structuralFullAccess: provider === 'grok' });
+  // A failed read says so; "eligibility could not be confirmed" is only what a read still under way shows (#4043).
+  const failed = reading.state === 'error' || (result !== undefined && !result.ok);
+  return group ?? buildSessionPermissionOptions({ modeMap, leg, structuralFullAccess: provider === 'grok',
+    ...(failed ? { review: { allowed: false, reason: PERMISSION_OPTIONS_UNREADABLE } } : {}) });
 }

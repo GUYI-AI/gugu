@@ -315,3 +315,43 @@ it('a connection added anyway stays unverified until a save the address answers'
   expect(checked.unverified).toBeUndefined();
   expect((await listCustomModels()).find(({ id }) => id === added.id)?.unverified).toBeUndefined();
 });
+
+/** The keychain refuses this one stored key, as macOS does when it may not ask the user (-25308). */
+function refuseKeyOf(credentialRef: string) {
+  const store = state.fixture!.secretStore;
+  const read = store.getSecret.bind(store);
+  return vi.spyOn(store, 'getSecret').mockImplementation(async (key) => {
+    if (key === credentialRef) throw new Error('Error while decrypting the ciphertext provided to safeStorage.decryptString.');
+    return read(key);
+  });
+}
+
+it('lists a connection whose saved key this device cannot read as that connection’s state, the others as before (#4043)', async () => {
+  const locked = await saveCustomModel({ name: 'Locked', apiKey: KEY, preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: ACME }], models: [{ id: 'm' }] });
+  const open = await saveCustomModel({ name: 'Open', apiKey: ROTATED, preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://open.example.test/v1' }], models: [{ id: 'n' }] });
+  refuseKeyOf(locked.credentialRef);
+  const listed = await listCustomModels();
+  const lockedView = listed.find(connection => connection.id === locked.id)!;
+  expect(lockedView).toMatchObject({ keySaved: false, keyUnreadable: true });
+  expect(lockedView).not.toHaveProperty('keyLast4');
+  const openView = listed.find(connection => connection.id === open.id)!;
+  expect(openView).toMatchObject({ keySaved: true, keyLast4: 'QRST' });
+  expect(openView).not.toHaveProperty('keyUnreadable');
+});
+
+it('offers no discovered copy of a stored connection whose key cannot be read (#4043)', async () => {
+  const mine = await saveCustomModel({ name: 'My Acme', apiKey: ROTATED, preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: ACME }], models: [{ id: 'mine' }] });
+  refuseKeyOf(mine.credentialRef);
+  await twoFound();
+  const listed = await listCustomModels();
+  expect(listed.map(connection => connection.name)).not.toContain('Acme Gateway');
+  expect(listed.find(connection => connection.id === mine.id)).toMatchObject({ keyUnreadable: true });
+  expect(rows().filter(row => row.accountId !== mine.id).map(row => row.meta?.displayName)).not.toContain('Acme Gateway');
+});
+
+it('still lists when the connections found on this machine cannot be saved (#4043)', async () => {
+  await twoFound();
+  vi.spyOn(state.fixture!.secretStore, 'setSecret').mockRejectedValue(new Error('keychain refused'));
+  const listed = await listCustomModels();
+  expect(listed.map(connection => connection.name)).toEqual(expect.arrayContaining(['OpenAI', 'Acme Gateway']));
+});
