@@ -75,11 +75,6 @@ export function HtmlRenderView(props: { block: HtmlRenderLeafLayout }) {
     onCleanup(() => observer.disconnect());
   };
   const close = () => setExpanded(false);
-  const onKey = (event: KeyboardEvent) => {
-    if (event.key === 'Escape' && expanded()) close();
-  };
-  window.addEventListener('keydown', onKey);
-  onCleanup(() => window.removeEventListener('keydown', onKey));
   return (
     <BlockFrame layout={props.block} class={codeGroup} ref={observeNear}>
       <Show when={near()}>
@@ -99,8 +94,9 @@ export function HtmlRenderView(props: { block: HtmlRenderLeafLayout }) {
         {/* Into the chat root, as the subagent panel: it carries the host's type variables and theme class. */}
         <Portal mount={expand.closest('[data-chat-root]') ?? document.body}>
           <div class={htmlRenderBackdrop} role="presentation" onClick={(event) => event.target === event.currentTarget && close()}>
-            <div class={htmlRenderDialog} role="dialog" aria-modal="true" aria-label={translate('transcript.htmlRenderTitle')}>
-              <button type="button" class={htmlRenderClose} aria-label={translate('transcript.htmlRenderClose')} onClick={close}>
+            {/* Escape is the open dialog's own key: focus starts on its close button, so the key reaches it. */}
+            <div class={htmlRenderDialog} role="dialog" aria-modal="true" aria-label={translate('transcript.htmlRenderTitle')} onKeyDown={(event) => event.key === 'Escape' && close()}>
+              <button ref={(button) => queueMicrotask(() => button.focus())} type="button" class={htmlRenderClose} aria-label={translate('transcript.htmlRenderClose')} onClick={close}>
                 <IconX />
               </button>
               <PageFrame

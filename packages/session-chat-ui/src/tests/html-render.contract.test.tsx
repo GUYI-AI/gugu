@@ -45,7 +45,9 @@ describe('html-render page expand', () => {
     // Both frames are the same opaque sandbox, never one with more rights.
     expect([...root.querySelectorAll('iframe')].map((frame) => frame.getAttribute('sandbox'))).toEqual(['allow-scripts', 'allow-scripts']);
 
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    // Escape inside the open dialog (focus starts on its close button).
+    await until('the close button has focus', () => document.activeElement === dialog()?.querySelector('button[aria-label="Close"]'));
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(dialog()).toBeNull();
 
     root.querySelector<HTMLButtonElement>('button[aria-label="Expand"]')!.click();
