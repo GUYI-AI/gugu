@@ -2,12 +2,13 @@
 // of its tab strip, the strip of a tab that went to its own window, and a minimal strip while the session is still
 // cold (its tabs are not mounted yet). Each block says its own machine; nothing is said for this computer.
 import { observer } from 'mobx-react-lite';
-import { type ReactNode, type RefObject, useContext, useLayoutEffect, useRef, useState } from 'react';
+import { lazy, Suspense, type ReactNode, type RefObject, useContext, useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { ConnectionStatus } from '@/components/connection/ConnectionStatus';
 import type { ConnectionState } from '@/components/connection/connectionState';
-import { DeviceRecoveryPanel, DeviceRecoveryStatus, type DeviceRecoveryProps } from '@/components/settings/DeviceRecoveryPanel';
+import type { DeviceRecoveryProps } from '@/components/settings/DeviceRecoveryPanel';
+import { DeviceRecoveryStatus } from '@/components/settings/DeviceRecoveryStatus';
 import { Popover } from '@/components/ui/Popover';
 import { IconButton } from '@/components/ui/IconButton';
 import { ChevronRight, X } from '@/lib/icons';
@@ -19,6 +20,9 @@ import { auxLayerOf } from '@renderer/app/aux-layers';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { useSessionViewContext } from '../session-view-context';
 import { TabBarActionRow } from '../titlebar-actions';
+
+// Reading a status must also work in a detached tab before the settings and account clients exist.
+const DeviceRecoveryPanel = lazy(() => import('@/components/settings/DeviceRecoveryPanel').then(module => ({ default: module.DeviceRecoveryPanel })));
 
 export const SessionMachineStatus = observer(function SessionMachineStatus() {
   const { projectId, sessionId } = useSessionViewContext();
@@ -95,10 +99,12 @@ function TaskDeviceRecovery({ sessionId, ...props }: Omit<DeviceRecoveryProps, '
           return editor ?? true;
         }}>
           <header><Popover.Title>{props.name}</Popover.Title><Popover.Close render={<IconButton size="sm" aria-label={t('devices.recovery.dismiss')}><X size={14} /></IconButton>} /></header>
-          <DeviceRecoveryPanel key={props.state} {...props} inTask onDone={() => {
-            returnToDraft.current = true;
-            setOpen(false);
-          }} />
+          <Suspense fallback={<span role="status">{t('devices.recovery.busy')}</span>}>
+            <DeviceRecoveryPanel key={props.state} {...props} inTask onDone={() => {
+              returnToDraft.current = true;
+              setOpen(false);
+            }} />
+          </Suspense>
         </Popover.Popup>
       </Popover.Positioner></Popover.Portal>
     </Popover.Root>

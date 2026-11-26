@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useConversationVisibility } from '../chat/useConversationVisibility'
-import { showSshStatusInPlace, sshLinkNoticeReason } from '@/lib/sshLinkNotice'
+import { showSshStatusInPlace } from '@/lib/sshLinkNotice'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../ui/Button'
 import { ChevronRight } from '@/lib/icons'
 import { reconnectDevice } from '@/lib/sessionpageNewSessionBridge'
 import { disconnectSshDevice, requestSshServerUpgrade, resumeSshDevice, signInSshMachine, startSshService, trustVerifiedIdentity } from '@/lib/sshLinkChannel'
-import type { SshLinkFailure, SshLinkOpenResult } from '@/lib/sshLink'
+import type { SshLinkOpenResult } from '@/lib/sshLink'
 import { CommandBlock } from './addServer/CommandBlock'
 import { formatRelativeTime } from '@/lib/relativeTime'
 import { AddServerPanel, type AddServerMethod } from './AddServerPanel'
@@ -17,9 +17,8 @@ import { readServerVersionSwitchBusyAgents, restartServerVersionNow, retryServer
 import { serverSupportsConfirmedRestart } from '@gugu/core/cloud/serverMachineHealth'
 import { useReplica } from '@/lib/replica'
 import { sshMachineAddresses } from '@/lib/sshMachineAddresses'
-import './device-recovery.css'
+import type { RecoveryState } from './DeviceRecoveryStatus'
 
-type RecoveryState = SshLinkFailure | 'connected' | 'checking' | 'offline'
 type Failure = Extract<SshLinkOpenResult, { ok: false }>
 export type DeviceRecoveryProps = {
   deviceId: string
@@ -31,18 +30,6 @@ export type DeviceRecoveryProps = {
   lastSync?: number
   inTask?: boolean
   onDone: () => void
-}
-
-export function DeviceRecoveryStatus({ deviceId, state }: { deviceId: string; state: RecoveryState }) {
-  const { t } = useTranslation('settings')
-  const reason = state === 'checking' || state === 'connected' || state === 'offline' ? null : sshLinkNoticeReason(state)
-  const { ref, shown } = useConversationVisibility<HTMLSpanElement>(!!reason && typeof IntersectionObserver !== 'undefined')
-  useEffect(() => {
-    if (shown && reason) return showSshStatusInPlace(deviceId, reason)
-  }, [shown, reason, deviceId])
-  return <span ref={ref} role="status" className="gg-recovery-status" data-state={state}>
-    <i aria-hidden="true" />{t(`devices.recovery.${state}.status`)}
-  </span>
 }
 
 export function DeviceRecoveryPanel({ deviceId, state, name, address, version, progress, lastSync, inTask, onDone }: DeviceRecoveryProps) {
