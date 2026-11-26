@@ -1,3 +1,4 @@
+import { sessionContextChoiceSchema } from '@shared/core/sessions/session-config'
 import { createTeamPaymentCheckout } from './team-payment-checkout'
 import { openTeamPaymentWindow } from './team-payment-window'
 import { releaseCustomModelForwarders } from './session/main/core/agents/custom-model-forwarder'
@@ -2704,6 +2705,7 @@ handleShellChannel(SESSIONPAGE_SESSION_RELOAD_CHANNEL, async (_event, input: unk
     modelSource?: unknown
     effort?: unknown
     mcpDisabledServers?: unknown
+    contextChoice?: unknown
     permissionMode?: unknown
   }
   const reason = row.reason === 'mcp-toggle'
@@ -2742,6 +2744,7 @@ handleShellChannel(SESSIONPAGE_SESSION_RELOAD_CHANNEL, async (_event, input: unk
         : {}),
       // 档位原样递,认不得的值由 reloadEmdashSession 响亮拒(❌ 在这里猜成某一档)。
       ...(row.permissionMode !== undefined ? { permissionMode: row.permissionMode as GuguPermissionMode } : {}),
+      ...(row.contextChoice !== undefined ? { contextChoice: sessionContextChoiceSchema.parse(row.contextChoice) } : {}),
     })
     // 从没起来过的会话只记下了选择(#7092):告诉渲染层接着正常首启,❌ 让它去重挂一条不存在的会话。
     return reloaded.nativeSession === 'not-started' ? { ok: true, notStarted: true } : { ok: true }

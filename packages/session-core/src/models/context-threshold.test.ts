@@ -16,3 +16,13 @@ it('lowers a saved auto-compaction threshold strictly below a smaller window', (
     [CONTEXT_WINDOW_ENV]: String(next.maximum),
   }, 1_000_000)).toEqual({ tokens: 299_999, reserve: 700_001 });
 });
+
+it('sets the chosen cap for a session without saving a model preference', () => {
+  const next = contextThresholdForWindow(undefined, 200_000);
+
+  expect(next).toEqual({ tokens: 199_999, maximum: 200_000 });
+  expect(contextCompactionSettings({
+    [CONTEXT_THRESHOLD_ENV]: String(next.tokens),
+    [CONTEXT_WINDOW_ENV]: String(next.maximum),
+  }, 1_000_000)).toEqual({ tokens: 199_999, reserve: 800_001 });
+});

@@ -110,7 +110,6 @@ import type {
   RenderMentionIcon,
 } from '../prompt-editor/types';
 import type { ComposerContextThresholds } from './context-threshold';
-import { modelContextLengths } from '@gugu/session-core/models/context-threshold';
 import { ContextUsageIndicator } from './context-usage-indicator';
 import type { ContextUsage } from './context-usage-indicator';
 import { PermissionBand } from './permission-band';
@@ -309,7 +308,6 @@ export interface ChatComposerProps {
   /** Context-window usage data for the toolbar donut indicator. Hidden when null/undefined. */
   contextUsage?: ContextUsage | null;
   contextThresholds?: ComposerContextThresholds;
-  contextWindowTaskId?: string;
 
   /**
    * Host-controlled attachment list. By default the composer creates image
@@ -485,7 +483,6 @@ export function ChatComposer({
   onAttach,
   contextUsage,
   contextThresholds,
-  contextWindowTaskId,
   attachments = [],
   attachmentStatus,
   attachmentExtra,
@@ -832,31 +829,11 @@ export function ChatComposer({
       : (placeholder ?? translate('composer.messagePlaceholder'));
 
   const renderHeader = mobile ? renderPhoneHeader : undefined;
-  const [contextWindow, setContextWindow] = React.useState<{ model: string; size: number; task?: string }>();
-  React.useEffect(() => {
-    setContextWindow(previous => previous?.model === selectedModel && previous?.task === contextWindowTaskId
-      ? previous : undefined);
-  }, [selectedModel, contextWindowTaskId]);
-
-  const findContextThreshold: ComposerContextThresholds = (model, window) => {
-    const selectedWindow = contextWindow?.model === model && contextWindow.task === contextWindowTaskId
-      ? contextWindow.size : undefined;
-    const maximum = selectedWindow ?? window ?? (model === selectedModel ? contextUsage?.size : undefined);
-    const threshold = contextThresholds?.(model, maximum);
-    if (!threshold) return undefined;
-    const { setMaximum } = threshold;
-    return {
-      ...threshold, selectedWindow,
-      selectWindow: setMaximum && (async size => {
-        await setMaximum(size);
-        setContextWindow({ model, size, task: contextWindowTaskId });
-      }),
-    };
-  };
+  const findContextThreshold: ComposerContextThresholds = (model, window) =>
+    contextThresholds?.(model, window ?? (model === selectedModel ? contextUsage?.size : undefined));
   const features = selectedModel ? modelOptions?.[selectedModel]?.modelFeatures : undefined;
-  const defaultWindow = modelContextLengths(features?.contextLengths, features?.defaultContextLength, features?.contextWindowSize)?.defaultContextLength;
   const currentContextThreshold = selectedModel && !modelUnknown
-    ? findContextThreshold(selectedModel, defaultWindow ?? features?.contextWindowSize)
+    ? findContextThreshold(selectedModel, features?.contextWindowSize)
     : undefined;
   const modelControl = (
               <ComposerModelMenu
