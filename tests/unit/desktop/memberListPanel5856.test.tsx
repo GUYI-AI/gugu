@@ -24,8 +24,10 @@ import type { ChatContextValue } from '../../../apps/desktop/src/store/chatConte
 import { createNode, createReactHarness, displayIdentity, renderWithAppProviders, typeInto } from '../../support/testHarness'
 import { publishRendererSession } from '../../../apps/desktop/src/lib/sessionPublication'
 import { setAgentDisplayStatusOverride, clearAgentDisplayStatusOverrides } from '../../support/agentDisplayStatusTestDouble'
+import { setAgentModelNameOverride, clearAgentModelNameOverrides } from '../../support/agentModelNameTestDouble'
 import { viewStateCache } from '../../../apps/desktop/src/session/renderer/lib/stores/view-state-cache'
 
+vi.mock('../../../apps/desktop/src/hooks/useAgentModelName', () => import('../../support/agentModelNameTestDouble'))
 vi.mock('../../../apps/desktop/src/lib/chat', () => ({
   chatService: {
     getGroupCollab: vi.fn(),
@@ -111,7 +113,7 @@ beforeEach(() => {
   // Member controls project the authoritative management capabilities.
   getSettings.mockResolvedValue(settingsRow(null, 5))
 })
-afterEach(() => { harness.cleanup(); vi.clearAllMocks(); vi.useRealTimers() })
+afterEach(() => { harness.cleanup(); vi.clearAllMocks(); vi.useRealTimers(); clearAgentModelNameOverrides() })
 
 // 页头归宿主画;测试宿主把标题与动作原样摆出来(话题改名框、邀请按钮都在这两块里)。
 const head = (title: ReactNode, actions: ReactNode) => createNode(Fragment, null, title, actions)
@@ -194,10 +196,19 @@ describe('MemberListPanel —— agent 行的引擎/模型', () => {
   })
 
   it('正例:给得出值时这两格必须真的出现(否则上一条判据是死的)', async () => {
-    await renderPanel(collab([agentItem('a1', { client: 'claude-code', model_source: 'opus-5' })]))
+    // #3938 模型来自 agent presence 的 model_name(宿主按模型清单的叫法上报)。
+    setAgentModelNameOverride('a1', 'Opus 5')
+    await renderPanel(collab([agentItem('a1', { client: 'claude-code' })]))
     const row = harness.container.querySelector('[data-member-row="a1"]') as HTMLElement
     expect(row.querySelector('[data-agent-meta="engine"]')?.textContent).toBe('claude-code')
-    expect(row.querySelector('[data-agent-meta="model"]')?.textContent).toBe('opus-5')
+    expect(row.querySelector('[data-agent-meta="model"]')?.textContent).toBe('Opus 5')
+  })
+
+  it('#3938 模型只读 presence:group_agent_states.model_source 没有写者,❌ 再拿它填那一格', async () => {
+    await renderPanel(collab([agentItem('a1', { model_source: 'stale-id' })]))
+    const row = harness.container.querySelector('[data-member-row="a1"]') as HTMLElement
+    expect(row.querySelector('[data-agent-meta="model"]')).toBeNull()
+    expect(row.textContent).not.toContain('stale-id')
   })
 
   it('client 恒为 null 的真实形状下,引擎从联系人档的 agent_type 兜住', async () => {

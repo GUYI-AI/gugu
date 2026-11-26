@@ -117,6 +117,12 @@ export const customModelMetaSchema = z.object({
    * inferred from the refusal. The first real request tells whether the key works; a later save that the address answers clears it.
    */
   unverified: z.boolean().optional(),
+  /** What the check that left it unverified found, kept for diagnosis and not shown (owner 2026-11-27); absent on older records. */
+  unverifiedReason: z.object({
+    reason: z.enum(['model-not-found', 'answered', 'unchecked', 'unauthorized', 'unreachable', 'dns', 'timeout', 'certificate', 'connection-refused', 'redirect', 'proxy']),
+    /** The model the check asked about. */
+    modelId: z.string().max(200).optional(),
+  }).optional(),
   removed: z.boolean().optional(),
 });
 export type CustomModelMeta = z.infer<typeof customModelMetaSchema>;
@@ -258,9 +264,15 @@ export function runtimeModelId(value: string | undefined | null): string | undef
 export type CustomModelUnavailableReason = 'protocol' | 'missing-key' | 'unsupported' | 'no-model';
 
 /**
+ * Which protocol a harness is converted to when the address does not take its own: Responses first, then OpenAI Chat
+ * (owner 2026-11-27 03:17, routing is automatic). The settings dialog lists what an address takes in this order too.
+ */
+export const CONVERSION_PREFERENCE: readonly ModelProtocol[] = ['openai-responses', 'openai-chat-completions', 'anthropic-messages', 'gemini-generate-content'];
+
+/**
  * The protocol the person picked for this harness wins when the harness can use it; otherwise native protocol, then the
  * writer's other explicitly supported protocols, then a protocol the harness declares the bundled local router can
- * convert (`converted: true`).
+ * convert (`converted: true`), in `CONVERSION_PREFERENCE` order.
  */
 export function matchCustomModel(input: {
   harness?: string;
@@ -274,7 +286,7 @@ export function matchCustomModel(input: {
 }): { endpoint: CustomModelMeta['endpoints'][number]; routeId?: string; converted?: true; reason?: never } | { endpoint?: never; routeId?: never; converted?: never; reason: CustomModelUnavailableReason } {
   if (!input.nativeProtocol) return { reason: 'unsupported' };
   const direct = [input.nativeProtocol, ...(input.protocols ?? [])];
-  const convertible = input.convertFrom ?? [];
+  const convertible = [...(input.convertFrom ?? [])].sort((a, b) => CONVERSION_PREFERENCE.indexOf(a) - CONVERSION_PREFERENCE.indexOf(b));
   const find = (protocols: readonly HarnessWireProtocol[]) =>
     protocols.map((protocol) => input.connection.endpoints.find((item) => item.protocol === protocol)).find(Boolean);
   const routes = input.connection.routes;

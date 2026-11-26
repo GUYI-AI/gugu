@@ -42,3 +42,28 @@ describe('last live effort (#3973)', () => {
     expect(JSON.stringify({ value: table.get('last-live-effort') }).length + key.length).toBeLessThanOrEqual(model!.maxBytes);
   });
 });
+
+describe('picked effort (gugu-dev#1579)', () => {
+  beforeEach(() => table.clear());
+
+  it('answers the level the person picked in this session until they reset it', async () => {
+    const { pickedEffort, rememberPickedEffort } = await import('./last-live-effort');
+    expect(pickedEffort(id(1))).toBeUndefined();
+    rememberPickedEffort(id(1), 'high');
+    expect(pickedEffort(id(1))).toBe('high');
+    expect(pickedEffort(id(2))).toBeUndefined();
+    rememberPickedEffort(id(1), null);
+    expect(pickedEffort(id(1))).toBeUndefined();
+    expect(pickedEffort(null)).toBeUndefined();
+  });
+
+  it('shares the capped entry with the last live levels', async () => {
+    const { rememberPickedEffort } = await import('./last-live-effort');
+    const { viewStateModelOf } = await import('@renderer/lib/stores/view-state-models');
+    const key = 'view:@device//ui:picked-effort';
+    const model = viewStateModelOf(key);
+    expect(model?.name).toBe('last live effort');
+    for (let i = 0; i < 40; i++) rememberPickedEffort(id(100 + i), 'xhigh');
+    expect(JSON.stringify({ value: table.get('picked-effort') }).length + key.length).toBeLessThanOrEqual(model!.maxBytes);
+  });
+});

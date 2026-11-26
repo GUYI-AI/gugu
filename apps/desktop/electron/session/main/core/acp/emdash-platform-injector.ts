@@ -8,6 +8,7 @@
 // 配置，平台凭据进入 main→worker 的内部 spawn 信封。
 
 import type { AcpPlatformInjection } from '@gugu/session-core/acp';
+import type { ClaudeReviewRunContext } from '../agents/claude-reviewer';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { EmdashSessionStartInfo } from './emdash-mcp-injector';
 
@@ -33,6 +34,8 @@ export type EmdashPlatformInjection =
       adapterEnv?: Record<string, string>;
       /** The platform model this start pins (canonical id), when the resolver named one. */
       model?: string;
+      /** Claude's Auto mode verdict as the launch armed it from the ticket; the menu shows it (`withLaunchedReview`). */
+      autoReview?: ClaudeReviewRunContext;
     }
   | { kind: 'adapter-spawn'; platformAccessSessionId: string; platform: AcpPlatformInjection }
   | {

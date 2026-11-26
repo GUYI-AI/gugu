@@ -44,7 +44,8 @@ export interface MessageMetaRowProps {
 }
 
 export function MessageMetaRow({ targetingLabels, forwardedFromMessageId, viaApp, viaAppSender, sentByAgent, agentSender, activitySource, replyProcessMessageId }: MessageMetaRowProps) {
-  const targetText = targetingLabels.join('、')
+  const { t } = useTranslation('messaging')
+  const targetText = targetingLabels.join(t('message.targetingSeparator'))
   if (!targetText && !forwardedFromMessageId && !viaApp && !sentByAgent && !activitySource && !replyProcessMessageId) return null
 
   return (

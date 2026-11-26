@@ -310,6 +310,8 @@ export function saveCustomModel(input: SaveCustomModel): Promise<CustomModelConn
       routes: input.routes ?? prior?.routes, harnessProtocols: input.harnessProtocols ?? prior?.harnessProtocols,
       // A save that does not say (switching a model on or off, keeping a key) keeps what the last check found.
       unverified: (input.unverified ?? prior?.unverified) || undefined,
+      // The reason travels with the mark: a save that says it is unverified says why, one the address answered clears both.
+      unverifiedReason: (input.unverified ?? prior?.unverified) ? (input.unverified ? input.unverifiedReason : prior?.unverifiedReason) : undefined,
       disabledModels: (input.disabledModels ?? prior?.disabledModels)?.filter(entry => !input.models.some(model => model.id === entry.id)) });
     const discovery = prior?.discovery;
     await registry.upsertAccount({ providerId: namespace, accountId: id, ...(input.apiKey ? { secret: input.apiKey } : {}), meta: {

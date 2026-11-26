@@ -24,6 +24,9 @@ const mocks = vi.hoisted(() => ({
   installAgent: vi.fn(),
   stopInstallProgress: vi.fn(),
   viewKind: vi.fn(),
+  selectionKey: vi.fn(),
+  selectionSet: vi.fn(),
+  selectionRefresh: vi.fn(),
 }));
 const devices = vi.hoisted(() => [] as Array<{ device_id: string; capabilities: { remote_protocol?: number } }>);
 
@@ -48,6 +51,9 @@ vi.mock('@/lib/taskAttachmentTarget', () => ({ assertTaskAttachmentProtocol: moc
 vi.mock('@/store/devicesCache', () => ({ readCachedDevices: () => devices }));
 vi.mock('@renderer/utils/logger', () => ({ log: { error: mocks.logError, warn: mocks.logWarn } }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: mocks.toast }));
+vi.mock('@renderer/features/sessions/session-config/platform-model-catalog', () => ({
+  sessionPlatformSelection: { key: mocks.selectionKey, set: mocks.selectionSet, refresh: mocks.selectionRefresh },
+}));
 
 const { useCreateSessionCallback } = await import('./use-create-session-callback');
 const { useRemoteInstallBeforeCreate } = await import('../remote-install-before-create');
@@ -342,6 +348,42 @@ describe('useCreateSessionCallback ordinary messaging', () => {
 
     expect(mocks.createSession.mock.calls[0]?.[0].sessionConfig.initialSession)
       .toEqual(expect.objectContaining({ permissionMode: 'read-only' }));
+  });
+
+  it('#1570 the new session page has its platform preselection at once: put under the new id before creating, read again once it exists', async () => {
+    initialSession.platformModel = 'glm-5.3-flash';
+    mocks.selectionKey.mockReturnValue(['sessionPlatformSelection', 'account-1']);
+    try {
+      await act(async () => root.render(React.createElement(Probe)));
+      act(() => latest?.handleCreateSession());
+      await act(async () => {});
+
+      expect(mocks.selectionSet).toHaveBeenCalledOnce();
+      const [key, value] = mocks.selectionSet.mock.calls[0]!;
+      const sessionId = mocks.createSession.mock.calls[0]?.[0].sessionConfig.initialSession.id;
+      expect(key).toEqual([sessionId, 'codex', 'acp', null]);
+      expect(value).toEqual({ agentDefault: null, sessionSelection: { modelId: 'glm-5.3-flash' } });
+      expect(mocks.selectionSet.mock.invocationCallOrder[0]).toBeLessThan(mocks.createSession.mock.invocationCallOrder[0]!);
+      expect(mocks.selectionRefresh).toHaveBeenCalledWith(...key);
+    } finally {
+      initialSession.platformModel = null;
+    }
+  });
+
+  it('#1570 no signed-in account: nothing is put, and the session is still created', async () => {
+    initialSession.platformModel = 'glm-5.3-flash';
+    mocks.selectionKey.mockReturnValue(null);
+    try {
+      await act(async () => root.render(React.createElement(Probe)));
+      act(() => latest?.handleCreateSession());
+      await act(async () => {});
+
+      expect(mocks.selectionSet).not.toHaveBeenCalled();
+      expect(mocks.selectionRefresh).not.toHaveBeenCalled();
+      expect(mocks.createSession).toHaveBeenCalledOnce();
+    } finally {
+      initialSession.platformModel = null;
+    }
   });
 
   // hook 的通用处理:只给出生群、不带 taskChatId 时,群原样进建会话的参数(主进程据此在身份建出来时进群),坐普通座位。

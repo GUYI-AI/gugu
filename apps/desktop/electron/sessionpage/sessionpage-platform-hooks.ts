@@ -415,6 +415,8 @@ export function createSessionpagePlatformHooks(deps: SessionpagePlatformHooksDep
           // conversation-owned adapter environment.
           adapterEnv: claudeAcpAdapterEnv(platform.spawnEnv),
           ...(platform.model ? { model: platform.model } : {}),
+          // What this launch armed for Auto mode: the menu shows it, not the catalog's guess.
+          ...(platform.autoReview ? { autoReview: platform.autoReview } : {}),
         }
       }
 

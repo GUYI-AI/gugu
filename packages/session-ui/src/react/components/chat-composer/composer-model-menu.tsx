@@ -313,7 +313,8 @@ export interface ComposerModelMenuProps {
    * (@@@unknown-slot), ❌ the literal "Model", ❌ `selectedModel` (a guess until then).
    */
   modelUnknown?: boolean;
-  onModelChange?: (modelId: string, effortId?: string) => void;
+  /** `effortPicked`: the person picked `effortId` themselves while switching (gugu-dev#1579), not carried over. */
+  onModelChange?: (modelId: string, effortId?: string, effortPicked?: boolean) => void;
   effortOptionsForModel?: (modelId: string) => Record<string, ComposerEffortOption> | null;
   /**
    * 宿主要把模型面板打开(例如「这个模型要会员」那一行上的「换模型」,#7056)。每变一次开一次;0 / 缺省 = 不开。
@@ -336,6 +337,11 @@ export interface ComposerModelMenuProps {
   selectedEffort?: string;
   onEffortChange?: (effortId: string) => void;
   defaultEffort?: string;
+  /**
+   * The level the person picked by hand (gugu-dev#1579), absent when the shown level was filled in by the app. Only this
+   * one follows a model switch; otherwise the new model starts at its own default.
+   */
+  pickedEffort?: string;
   /** Undefined means the current model/route does not offer Fast. */
   fastMode?: boolean;
   onFastModeChange?: (enabled: boolean) => void;
@@ -371,6 +377,7 @@ export function ComposerModelMenu({
   selectedEffort,
   onEffortChange,
   defaultEffort,
+  pickedEffort,
   fastMode,
   onFastModeChange,
   renderFastModeHint,
@@ -433,14 +440,16 @@ export function ComposerModelMenu({
   const effectiveEffortItem = selectedEffortItem ?? defaultEffortItem;
   const triggerEffort = selectedModelItem && !settingNotice && effortItems.length > 1 ? effectiveEffortItem : undefined;
 
+  // gugu-dev#1579 (owner 2026-11-27 「B」): only a level the person picked follows the switch. A level the app filled in
+  // (a model's default, the fixed medium) stays with its model: the new model starts at its own default.
   const effortForModelSwitch = (item: ComposerModelItem) => {
     if (item.id === (selectedModelItem?.aliasOf ?? selectedModelItem?.id)) return undefined;
     const options = effortOptionsForModel?.(item.id);
     if (!options) return undefined;
-    const current = effectiveEffortItem?.id;
-    if (current && options[current] && !options[current].disabled) return current;
+    const offered = (id: string | undefined): id is string => !!id && !!options[id] && !options[id].disabled;
+    if (offered(pickedEffort)) return pickedEffort;
     const fallback = item.modelFeatures?.defaultEffortId;
-    return fallback && options[fallback] && !options[fallback].disabled ? fallback : undefined;
+    return offered(fallback) ? fallback : undefined;
   };
   const selectModel = (item: ComposerModelItem) => {
     const effort = effortForModelSwitch(item);
@@ -710,7 +719,7 @@ export function ComposerModelMenu({
                 onEffortChange={detailIsSelected && !onEffortChange ? undefined : effortId => {
                   closeAfterSelection();
                   if (detailIsSelected) onEffortChange?.(effortId);
-                  else onModelChange?.(detailItem.id, effortId);
+                  else onModelChange?.(detailItem.id, effortId, true);
                 }} />
           </HoverCard>
         )}

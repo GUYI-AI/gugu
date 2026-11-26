@@ -1,5 +1,5 @@
 {
   "repository": "GUYI-AI/gugu-supabase",
   "ref": "35baf6a587257acdee2b3c534697c2578a89d170",
-  "status": "Backend #422 merged on dev: a document's content type comes from its name, and a name without a text suffix is refused; retains #413."
+  "status": "Backend #422 merged on dev: a document's content type comes from its name, and a name without a text suffix is refused; retains #421 (agent presence carries model_name) and #413."
 }

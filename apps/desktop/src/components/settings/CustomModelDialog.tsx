@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { CONTEXT_TIERS, contextTierChoice } from '@gugu/session-core/models/context-threshold';
 import {
-  CUSTOM_MODEL_EFFORT_LEVELS, CUSTOM_MODEL_KEY_CHANNEL, FAST_PROTOCOLS, customModelAcceptsImages, customModelCatalogLevels, customModelRouteSchema,
+  CONVERSION_PREFERENCE, CUSTOM_MODEL_EFFORT_LEVELS, CUSTOM_MODEL_KEY_CHANNEL, FAST_PROTOCOLS, customModelAcceptsImages, customModelCatalogLevels, customModelRouteSchema,
   customModelThinks, modelProtocolSchema, normalizeModelBaseUrl, proposedDefaultEffort,
   type CustomModelConnection, type CustomModelEffortLevel, type CustomModelEntry, type CustomModelMeta, type CustomModelRoute, type ModelProtocol,
 } from '@gugu/session-core/models/custom-model';
@@ -19,7 +20,9 @@ import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { openExternalLinkInBrowser } from '@renderer/lib/open-web-link';
 import { errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
-import { useConnectionModelList, probeModelList, type ConnectionModelSource } from '@renderer/features/settings/subscriptions/ConnectionModelPicker';
+import { useConnectionModelList, probeModelList, type ConnectionModelSource, type ModelList } from '@renderer/features/settings/subscriptions/ConnectionModelPicker';
+import type { CustomModelProtocolProbe } from '@gugu/session-core/workspace-server/agent-config';
+import type { SessionMessageLookupKey } from '@renderer/localization/messages';
 import { connectionProbeMessageKey } from '@renderer/features/settings/subscriptions/connection-probe-messages';
 import { customModelEffortCatalog, customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { modelProviderIcon } from '@renderer/features/sessions/session-config/model-provider-icon';
@@ -32,6 +35,9 @@ import { Check, ChevronDownIcon, Eye, EyeOff, Sparkles, X } from '@/lib/icons';
 import { IconButton } from '@/components/ui/IconButton';
 import { SettingsNote } from './SettingsPrimitives';
 import './ModelSettings.css';
+import { rendererLogger } from '../../lib/log';
+
+const log = rendererLogger('settings/custom-model');
 
 /** What the dialog's advanced configuration holds; `customProtocol` shows the connection's protocol routes. */
 type Advanced = Required<Pick<CustomModelEntry, 'toolCall' | 'image' | 'thinking' | 'thinkingOnly' | 'thinkingOptional' | 'fast'>> & {
@@ -67,9 +73,56 @@ function advancedOf(entry: CustomModelEntry | undefined, routes: readonly Custom
 
 const INPUT_LIMITS = [['32K', 32_768], ['64K', 65_536], ['128K', 131_072], ['256K', 262_144]] as const;
 const OUTPUT_LIMITS = [['8K', 8_192], ['16K', 16_384], ['32K', 32_768], ['64K', 65_536]] as const;
+const CONTEXT_LIMITS = CONTEXT_TIERS.map(value => [formatTokenLimit(value), value] as const);
+
+/** A token count as people say it (300K, 1M, 8K for 8192); never a raw seven-digit number in the field. */
+function formatTokenLimit(value: number | undefined): string {
+  if (value === undefined) return '';
+  if (value % 1_000_000 === 0) return `${value / 1_000_000}M`;
+  if (value % 1_000 === 0) return `${value / 1_000}K`;
+  if (value % 1_024 === 0) return `${value / 1_024}K`;
+  return String(value);
+}
+
+/** What a typed limit means: digits, optionally with K (thousand) or M (million). Empty is the provider default. */
+function parseTokenLimit(text: string): number | undefined | null {
+  if (!text.trim()) return undefined;
+  const match = /^(\d+(?:\.\d+)?)\s*([km]?)$/i.exec(text.trim());
+  const value = match ? Math.round(Number(match[1]) * ({ k: 1_000, m: 1_000_000 }[match[2]!.toLowerCase()] ?? 1)) : NaN;
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
 const CUSTOM_PROVIDER = 'custom';
 
 type ConnectionTest = { kind: 'idle' } | { kind: 'testing' } | { kind: 'ok' } | { kind: 'failed'; message: string };
+
+/** How long saving waits for its own check of the address; past it the connection is saved unverified (owner 2026-11-27). */
+const SAVE_CHECK_MS = 6_000;
+/** How long saving waits for the settings process to answer at all before saying it did not, instead of turning forever. */
+const SAVE_ANSWER_MS = 20_000;
+const LATE = Symbol('late');
+function within<T>(work: Promise<T>, ms: number): Promise<T | typeof LATE> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<typeof LATE>((resolve) => { timer = setTimeout(() => resolve(LATE), ms); });
+  return Promise.race([work, late]).finally(() => clearTimeout(timer));
+}
+
+type UnlistedReason = Extract<ModelList, { kind: 'unlisted' }>['reason'];
+/** Why a check that found no protocol carrying the model came back empty: the address's own word first. */
+function uncheckedReason(probe: CustomModelProtocolProbe): 'model-not-found' | 'answered' | Exclude<UnlistedReason, 'no-list'> {
+  if (probe.unserved?.length) return 'model-not-found';
+  if (probe.refused?.length || probe.failures.some(({ reason }) => reason === 'unauthorized')) return 'unauthorized';
+  const reading = probeModelList(probe);
+  // It answered (listed its models, or answered without a list) and still refused every request for this model.
+  return reading.kind === 'unlisted' && reading.reason !== 'no-list' ? reading.reason : 'answered';
+}
+
+/** The settings process's own (English) refusals a save can meet, each with the copy that says what to do next. */
+const SAVE_REFUSALS: readonly (readonly [string, SessionMessageLookupKey])[] = [
+  ['Add a new connection to change this API address', 'customModels.saveRefused.addressInUse'],
+  ['The custom model no longer exists', 'customModels.saveRefused.gone'],
+  ['An API key is required on this device', 'customModels.saveRefused.keyMissing'],
+  ['API key is unavailable on this device', 'customModels.saveRefused.keyMissing'],
+];
 
 export function CustomModelDialog({ machine, connection, modelId, group = providerPresets.find(preset => preset.id === connection?.preset)?.group ?? 'custom',
   initialAccount, initialRoute, onClose }: {
@@ -78,7 +131,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
   modelId?: string;
   initialAccount?: 'claude' | 'codex' | 'antigravity'; initialRoute?: Omit<CustomModelRoute, 'id'>; onClose: () => void;
 }) {
-  const { translate } = useSessionMessages();
+  const { translate, locale } = useSessionMessages();
   const initialPreset = group === 'custom' ? undefined : providerPresets.find(preset => preset.group === group);
   const accountPreset = initialAccount === 'antigravity' ? 'antigravity-subscription' : initialAccount === 'codex' ? 'chatgpt-subscription' : 'claude-subscription';
   const [presetId, setPresetId] = useState(connection ? connection.preset ?? CUSTOM_PROVIDER : group === 'coding-plan' ? accountPreset : initialPreset?.id ?? CUSTOM_PROVIDER);
@@ -119,9 +172,14 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     return initialRoute && existing.length < 100 ? [{ ...initialRoute, id: crypto.randomUUID() }, ...existing] : existing;
   });
   const [advanced, setAdvanced] = useState<Advanced>(() => advancedOf(editedModel, routes));
-  const [limits, setLimits] = useState({ contextWindow: editedModel?.contextWindow, maxOutput: editedModel?.maxOutput });
-  const [contextLengths, setContextLengths] = useState(editedModel?.contextLengths?.join(', ') ?? '');
-  const [defaultContextLength, setDefaultContextLength] = useState<number | undefined>(editedModel?.defaultContextLength);
+  // A window read from Codex's config.toml (model_context_window) is this model's max context until the person changes it.
+  const fromCodexConfig = Boolean(connection?.discovered?.source.startsWith('codex') && editedModel?.contextWindow && !editedModel.contextLengths?.length);
+  // 「最大上下文」 stands for the lengths the menu offers; a record saved with a list shows its largest (owner 11-27 02:38).
+  const savedMaxContext = editedModel?.contextLengths?.length ? Math.max(...editedModel.contextLengths) : fromCodexConfig ? editedModel?.contextWindow : undefined;
+  const [limits, setLimits] = useState({ contextWindow: editedModel?.contextWindow, maxOutput: editedModel?.maxOutput, maxContext: savedMaxContext });
+  const [limitText, setLimitText] = useState({
+    contextWindow: formatTokenLimit(editedModel?.contextWindow), maxOutput: formatTokenLimit(editedModel?.maxOutput), maxContext: formatTokenLimit(savedMaxContext),
+  });
   const [test, setTest] = useState<ConnectionTest>({ kind: 'idle' });
   const [busy, setBusy] = useState<'save' | null>(null);
   const [accountCreating, setAccountCreating] = useState(false);
@@ -129,7 +187,8 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
   let normalized: CustomModelMeta['endpoints'] | null = null;
   let addressProblem = '';
   try { normalized = endpoints.map((endpoint) => ({ ...endpoint, baseUrl: normalizeModelBaseUrl(endpoint.baseUrl) })); }
-  catch (error) { addressProblem = errorText(error); }
+  // The address's own rule is worded in English by the shared parser; said here in the person's language.
+  catch { addressProblem = translate('customModels.addressInvalid'); }
   // A custom address, whether its key is typed here or held by the connection: the host recognizes which protocols it
   // speaks while it reads the models, and saving keeps what it found.
   const address = !preset && normalized?.[0] ? normalized[0].baseUrl : null;
@@ -151,6 +210,11 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     return endpoint?.baseUrl === normalized?.[0]?.baseUrl ? translate('customModels.sameApiAddress') : endpoint?.baseUrl;
   };
   const protocolLabel = (protocol: ModelProtocol) => translate(`customModels.${protocol}`);
+  // Routing is automatic (owner 2026-11-27 03:17): the person sees one line of what the address takes, most preferred first.
+  const recognized = address && probed.length ? translate('customModels.recognized', {
+    protocols: new Intl.ListFormat(locale, { style: 'narrow', type: 'conjunction' }).format([...new Set(probed.map(({ protocol }) => protocol))]
+      .sort((a, b) => CONVERSION_PREFERENCE.indexOf(a) - CONVERSION_PREFERENCE.indexOf(b)).map(protocolLabel)),
+  }) : '';
   const effortLabel = (level: CustomModelEffortLevel | null) => translate(level ? `customModels.effort.${level}` : 'customModels.effortAuto');
   const updateRoute = (id: string, patch: Partial<CustomModelRoute>) => setRoutes(current =>
     current.map(route => route.id === id ? { ...route, ...patch } : route));
@@ -222,8 +286,9 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
         if (!probe.success) throw new Error(errorText(probe.error));
         const reading = probeModelList(probe.data);
         const reason = reading.kind === 'unlisted' ? reading.reason : 'unreachable';
-        setTest(probe.data.models.length || probe.data.endpoints.length ? { kind: 'ok' }
-          : { kind: 'failed', message: translate(connectionProbeMessageKey(reason, Boolean(preset))) });
+        setTest(model && !probe.data.endpoints.length && probe.data.unserved?.length ? { kind: 'failed', message: translate('customModels.modelNotServed', { model }) }
+          : probe.data.models.length || probe.data.endpoints.length ? { kind: 'ok' }
+            : { kind: 'failed', message: translate(connectionProbeMessageKey(reason, Boolean(preset))) });
         return;
       }
       const result = await client.testCustomModel({ ...keySource, endpoints: normalized, ...named });
@@ -232,7 +297,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
         kind: 'failed',
         message: translate(!typedKey && result.data.reason === 'unauthorized' ? 'customModels.heldKeyRefused' : connectionProbeMessageKey(result.data.reason, Boolean(preset))),
       });
-    } catch (error) { setTest({ kind: 'failed', message: errorText(error) }); }
+    } catch (error) { setTest({ kind: 'failed', message: refusalText(errorText(error)) ?? errorText(error) }); }
   };
   const chooseProvider = (id: string) => {
     setPresetId(id); setRoutes([]); setTest({ kind: 'idle' });
@@ -247,26 +312,28 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     if (!model) { setFailure(translate('subscriptions.connections.modelsRequired')); return; }
     setBusy('save');
     try {
-      const client = await getAgentConfigRuntimeClient(machine);
+      const client = await within(getAgentConfigRuntimeClient(machine), SAVE_ANSWER_MS);
+      if (client === LATE) throw new Error(translate('customModels.saveNoAnswer'));
       let saved = normalized;
       let unverified: boolean | undefined;
+      /** Why the connection is saved unverified: kept with it for diagnosis, never shown (owner 2026-11-27: a chat that fails says so). */
+      let unverifiedReason: NonNullable<CustomModelMeta['unverifiedReason']> | undefined;
       if (address && keySource) {
         // What the background check found; an address with no model list is checked again with the model named here.
         saved = list.kind === 'listed' || list.kind === 'unlisted' ? list.endpoints ?? [] : [];
         if (!saved.length) {
-          const probe = await client.detectCustomModelProtocols({ ...keySource, baseUrl: address, modelId: model });
-          if (!probe.success) throw new Error(errorText(probe.error));
-          saved = probe.data.endpoints;
+          // Whatever this check finds, the connection is saved and the dialog closes as on any save, with nothing marked or prompted
+          // (owner 2026-11-27: "an error means something is wrong, but it must not stop the person saving"; "can't it just not mark
+          // it?"): a chat with a model that does not work says so itself. A check slower than SAVE_CHECK_MS is not waited for. The format is not asked:
+          // the first path that answered, refusing the key (401/403) or the model, exists, so it is that one, else OpenAI Chat at
+          // the address as typed. The connection stays unverified until a save the address answers.
+          const probe = await within(client.detectCustomModelProtocols({ ...keySource, baseUrl: address, modelId: model }), SAVE_CHECK_MS).catch(() => null);
+          const found = probe && probe !== LATE && probe.success ? probe.data : null;
+          saved = found?.endpoints ?? [];
           if (!saved.length) {
-            const reading = probeModelList(probe.data);
-            const reason = reading.kind === 'unlisted' ? reading.reason : 'unreachable';
-            // The person typed this key; a refusal does not stop the save or drop the key (owner 2026-11-26). The format is not
-            // asked: the first path that answered 401/403 exists, so it is that one, else OpenAI Chat at the address as typed.
-            // The connection stays unverified until a save the address answers. An address that cannot be reached still stops here,
-            // said once, where a test of the connection says it: it replaces the background reading of the same address.
-            if (reason !== 'unauthorized') { setTest({ kind: 'failed', message: translate(connectionProbeMessageKey(reason, Boolean(preset))) }); return; }
-            saved = [probe.data.refused?.[0] ?? { protocol: 'openai-chat-completions', baseUrl: address }];
+            saved = [found?.unserved?.[0] ?? found?.refused?.[0] ?? { protocol: 'openai-chat-completions', baseUrl: address }];
             unverified = true;
+            unverifiedReason = { reason: found ? uncheckedReason(found) : 'unchecked', modelId: model };
           }
         }
         unverified ??= false;
@@ -283,46 +350,71 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
       const { customProtocol: _shown, efforts, defaultEffort, ...declared } = advanced;
       declared.fast = declared.fast && fastCarried(saved);
       const stored = ({ effortCatalog: _catalog, ...rest }: CustomModelEntry) => rest;
-      const lengths = contextLengths.trim() ? [...new Set(contextLengths.split(',').map(value => Number(value.trim())))] : undefined;
-      if (lengths && (!defaultContextLength || !lengths.includes(defaultContextLength) ||
-        lengths.some(value => !Number.isSafeInteger(value) || value <= 0 || (limits.contextWindow != null && value > limits.contextWindow)))) {
-        throw new Error(translate('customModels.contextLengthsInvalid'));
-      }
+      if (Object.values(limitText).some(text => parseTokenLimit(text) === null)) throw new Error(translate('customModels.limitInvalid'));
+      // The menu offers 300K / 600K / 900K under the window plus the window itself, 300K first (owner 11-27 02:35).
+      const { maxContext } = limits;
+      if (maxContext && limits.contextWindow && maxContext > limits.contextWindow) throw new Error(translate('customModels.maxContextOverInput'));
+      const context = maxContext ? contextTierChoice(maxContext) : undefined;
       const entry = {
         ...(editedModel && stored(editedModel)), ...declared, id: model,
         efforts: advanced.thinking ? efforts : undefined,
         defaultEffort: advanced.thinking ? defaultEffort ?? undefined : undefined,
-        contextWindow: limits.contextWindow ?? (lengths ? Math.max(...lengths) : undefined), maxOutput: limits.maxOutput,
-        contextLengths: lengths, defaultContextLength: lengths ? defaultContextLength : undefined,
+        contextWindow: limits.contextWindow ?? maxContext, maxOutput: limits.maxOutput,
+        contextLengths: context?.contextLengths, defaultContextLength: context?.defaultContextLength,
       };
       // The edited model keeps its place; the connection's other models are saved as they are.
       const models = (connection?.models ?? []).flatMap(item => item.id === editedModel?.id ? [entry] : item.id === model ? [] : [stored(item)]);
-      const result = await client.saveCustomModel({
+      const saving = client.saveCustomModel({
         ...(connection ? { id: connection.id } : {}),
         name: connection?.name || preset?.name || new URL(saved[0]!.baseUrl).host,
         preset: preset?.id ?? null, endpoints: saved,
         routes: savedRoutes,
         harnessProtocols: connection?.harnessProtocols,
         ...(unverified === undefined ? {} : { unverified }),
+        ...(unverifiedReason ? { unverifiedReason } : {}),
         ...(typedKey ? { apiKey: typedKey } : {}),
         models: editedModel ? models : [entry, ...models],
       });
-      if (!result.success) throw new Error(errorText(result.error));
-      await customModels.refresh(machine);
+      const result = await within(saving, SAVE_ANSWER_MS);
+      if (result === LATE) {
+        // A slow settings process may still store it after this says it did not answer: the list rereads when it does.
+        void saving.then((late) => { if (late.success) void customModels.refresh(machine); }, () => undefined);
+        throw new Error(translate('customModels.saveNoAnswer'));
+      }
+      if (!result.success) throw new Error(saveRefusal(errorText(result.error)));
+      // Saved: a list that is slow to reread does not hold the dialog open (it rereads on its own).
+      await within(customModels.refresh(machine), SAVE_ANSWER_MS).catch(() => undefined);
       onClose();
     } catch (error) { setFailure(errorText(error)); }
     finally { setBusy(null); }
   };
-  const limitField = (key: 'contextWindow' | 'maxOutput', presets: typeof INPUT_LIMITS | typeof OUTPUT_LIMITS) => {
-    const label = translate(key === 'contextWindow' ? 'customModels.inputLimit' : 'customModels.outputLimit');
+  /** The settings process words its refusals in English: each one this dialog can meet is said here with what to do next. */
+  const refusalText = (text: string) => {
+    const key = SAVE_REFUSALS.find(([english]) => text.includes(english))?.[1];
+    return key ? translate(key) : null;
+  };
+  /** A refusal this dialog has no words for goes to the log; the person is told only that it was not saved. */
+  const saveRefusal = (text: string) => {
+    const known = refusalText(text);
+    if (!known) log.warn({ detail: text }, 'custom model save refused');
+    return known ?? translate('customModels.saveFailed');
+  };
+  const limitField = (key: 'contextWindow' | 'maxOutput' | 'maxContext', presets: readonly (readonly [string, number])[], hint?: string) => {
+    const label = translate(key === 'contextWindow' ? 'customModels.inputLimit' : key === 'maxOutput' ? 'customModels.outputLimit' : 'customModels.maxContext');
+    const choose = (text: string, value: number | undefined | null) => {
+      setLimitText(current => ({ ...current, [key]: text }));
+      setLimits(current => ({ ...current, [key]: value ?? undefined }));
+    };
     return <label className="gg-model-field">
       <span className="gg-model-field-label">{label}</span>
-      <Input type="number" min="1" step="1" inputMode="numeric" data-testid={`custom-model-${key}`} placeholder={translate('customModels.limitDefault')} value={limits[key] ?? ''}
-        onChange={(event) => setLimits(current => ({ ...current, [key]: event.target.value ? Number(event.target.value) : undefined }))} />
+      <Input type="text" inputMode="numeric" spellCheck={false} data-testid={`custom-model-${key}`} placeholder={translate('customModels.limitDefault')} value={limitText[key]}
+        aria-invalid={parseTokenLimit(limitText[key]) === null ? true : undefined}
+        onChange={(event) => choose(event.target.value, parseTokenLimit(event.target.value))} />
       <span className="gg-model-limit-presets">
         {presets.map(([text, value]) => <Button key={text} type="button" size="sm" variant="ghost" aria-pressed={limits[key] === value}
-          onClick={() => setLimits(current => ({ ...current, [key]: value }))}>{text}</Button>)}
+          onClick={() => choose(text, value)}>{text}</Button>)}
       </span>
+      {hint && <span className="gg-model-hint">{hint}</span>}
     </label>;
   };
   // Unchecking Custom protocol drops the routes this connection already has when it saves: said under the box, not asked in a modal.
@@ -370,7 +462,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
           </Combobox>
         </div>
         {accountProvider ? accountAgent ? <SubscriptionConnections key={accountProvider} agent={accountAgent} machine={machine} modelAccount={{ onClose, onBusyChange: setAccountCreating }} /> : agentsError ? <SettingsNote tone="danger" role="alert">{errorText(agentsError)} <Button size="sm" variant="outline" onClick={retryOf(agentsReading)}>{translate('common.retry')}</Button></SettingsNote> : agents ? <SettingsNote tone="danger">{translate('customModels.accountUnavailable')}</SettingsNote> : <Unknown className="h-9 w-full" /> : <form id={formId} className="gg-model-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-          {!preset && <label className="gg-model-field"><span className="gg-model-field-label">{translate('customModels.address')}</span><Input data-testid="custom-model-address-0" type="url" required spellCheck={false} placeholder={translate('customModels.addressPlaceholder')} value={endpoints[0]?.baseUrl ?? ''} onChange={(event) => setAddress(event.target.value)} /></label>}
+          {!preset && <label className="gg-model-field"><span className="gg-model-field-label">{translate('customModels.address')}</span><Input data-testid="custom-model-address-0" type="url" required spellCheck={false} placeholder={translate('customModels.addressPlaceholder')} value={endpoints[0]?.baseUrl ?? ''} onChange={(event) => setAddress(event.target.value)} />{recognized && <span className="gg-model-hint" data-testid="custom-model-recognized">{recognized}</span>}</label>}
           <div className="gg-model-field">
             <label className="gg-model-field-label" htmlFor="custom-model-key">API Key</label>
             <div className="gg-model-key-row">
@@ -470,19 +562,14 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
               {limitField('maxOutput', OUTPUT_LIMITS)}
             </div>
             <div className="gg-model-limits">
-              <label className="gg-model-field"><span className="gg-model-field-label">{translate('customModels.contextLengths')}</span>
-                <Input data-testid="custom-model-context-lengths" value={contextLengths} onChange={event => setContextLengths(event.target.value)} />
-              </label>
-              <label className="gg-model-field"><span className="gg-model-field-label">{translate('customModels.defaultContextLength')}</span>
-                <Input data-testid="custom-model-default-context-length" type="number" min={1} step={1} value={defaultContextLength ?? ''}
-                  onChange={event => setDefaultContextLength(event.target.value ? Number(event.target.value) : undefined)} />
-              </label>
+              {limitField('maxContext', CONTEXT_LIMITS, fromCodexConfig && limits.maxContext === editedModel?.contextWindow ? translate('customModels.contextFromCodex') : undefined)}
             </div>
           </div>
-          {failure && <p className="subscription-error" role="alert">{failure}</p>}
         </form>}
       </DialogContentArea>
       {!accountProvider && <div className="gg-model-dialog-footer">
+        {/* Beside the button that was pressed: a long form (thinking levels, context lengths) puts its bottom out of view. */}
+        {failure && <p className="subscription-error gg-model-dialog-failure" role="alert" data-testid="custom-model-save-failure">{failure}</p>}
         <Button type="button" variant="outline" disabled={!!busy} onClick={onClose}>{translate('common.cancel')}</Button>
         <Button type="submit" form={formId} disabled={!!busy} data-testid="custom-model-save">{translate(busy === 'save' ? 'subscriptions.connections.saving' : 'common.save')}</Button>
       </div>}

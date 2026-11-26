@@ -867,6 +867,7 @@ export default {
     "copyFailed": "复制失败，请手动选择文本复制",
     "forwarded": "↪ 转发",
     "forwardedFrom": "↪ 引自：{{line}}",
+    "targetingSeparator": "、",
     "me": "我",
     "read": "已读",
     "readCount": "已读 {{read}}",

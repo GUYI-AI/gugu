@@ -248,7 +248,8 @@ export interface ChatComposerProps {
   selectedModel?: string;
   /** The model options are not read yet: the model trigger holds the name's place (see ComposerModelMenu). */
   modelUnknown?: boolean;
-  onModelChange?: (modelId: string, effortId?: string) => void;
+  /** `effortPicked`: the person picked `effortId` themselves while switching (gugu-dev#1579), not carried over. */
+  onModelChange?: (modelId: string, effortId?: string, effortPicked?: boolean) => void;
   effortOptionsForModel?: (modelId: string) => Record<string, ComposerEffortOption> | null;
   /** 宿主要把模型面板打开:每变一次开一次(见 `ComposerModelMenu.openRequest`)。 */
   modelMenuOpenRequest?: number;
@@ -278,6 +279,8 @@ export interface ChatComposerProps {
    * unset state still says what will happen, rather than leaving the user to guess.
    */
   defaultEffort?: string;
+  /** The level the person picked by hand; only it follows a model switch (see `ComposerModelMenu`). */
+  pickedEffort?: string;
   /** Undefined hides Fast; supported hosts own the accepted per-session value. */
   fastMode?: boolean;
   onFastModeChange?: (enabled: boolean) => void;
@@ -467,6 +470,7 @@ export function ChatComposer({
   selectedEffort,
   onEffortChange,
   defaultEffort,
+  pickedEffort,
   fastMode,
   onFastModeChange,
   renderFastModeHint,
@@ -859,6 +863,7 @@ export function ChatComposer({
                 selectedEffort={selectedEffort}
                 onEffortChange={onEffortChange}
                 defaultEffort={defaultEffort}
+                pickedEffort={pickedEffort}
                 fastMode={fastMode}
                 onFastModeChange={onFastModeChange}
                 renderFastModeHint={phoneActions ? undefined : renderFastModeHint}
