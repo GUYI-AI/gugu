@@ -5,7 +5,15 @@ import { rendererLogger } from './log'
 
 const cacheLog = rendererLogger('im/local-cache')
 
-const DB_NAME = 'gugu.localSync.v1'
+// @@@fresh-database (#3967) - the cache lives in `gugu.localSync.v2`: the same stores without secondary indexes.
+// `gugu.localSync.v1` (schema history below) carried an `accountId` index that Chromium never cleans: every deleted row
+// leaves its index entry (#3956; 1.3M / 191 MB on one install). Removing it in place costs ~90 s (Chromium deletes an
+// index entry by entry, undo-logged); deleting a whole database is deferred and takes milliseconds. So the live rows
+// are copied into a new database and the old one is deleted only after the copy read back identical.
+const DB_NAME = 'gugu.localSync.v2'
+const DB_VERSION = 1
+const MIGRATION_STORE = 'migration'
+const LEGACY_DB_NAME = 'gugu.localSync.v1'
 // v4(#7290):消息行多了指向字节的列(file_item_id / file_version / file_blob_id)。老客户端存下的行没有这几列,
 // 新客户端照它们画会把新式附件当成「文件已删除」(安卓从旧包升上来实测,2026-10-17)。
 // ⇒ 升级时丢掉缓存的消息窗口和从它们推出来的东西:`view`(消息窗口视图、账号修订记录)与 `sync_state`(修订游标 ——
@@ -14,7 +22,7 @@ const DB_NAME = 'gugu.localSync.v1'
 // v5:消息搬进独立的消息存储(localMessageStore,和桌面 SQLite 同一份契约)。这里的 message / stream 两张表和消息窗口、
 //   到达认领、清空历史三类视图行都删掉;它们是缓存,新存储从空开始,按页和修订重新长出来。
 // v6 adds an owner retirement tombstone. Ordinary cache clears never remove it.
-const SCHEMA_VERSION = 6
+const LEGACY_SCHEMA_VERSION = 6
 const RETIRED_ACCOUNTS = 'retired_accounts'
 const LEGACY_CHAT_LIST_PREFIX = 'gugu.chatListCache.v2:'
 
@@ -58,9 +66,120 @@ const KEY_PATHS: Record<ImStoreName, string[]> = {
 }
 
 export async function openLocalSyncDb(indexedDb: IDBFactory = window.indexedDB): Promise<LocalImDbAdapter> {
-  const handle = createIndexedDbHandle(() => openDatabase(indexedDb))
+  const handle = createIndexedDbHandle(() => openCurrentDatabase(indexedDb))
   await handle.get()
   return createIndexedDbAdapter(handle)
+}
+
+type StoreRows = Record<string, unknown[]>
+type MigrationState = 'copied' | 'verified' | 'done'
+const COPIED_STORES = [...IM_STORE_NAMES, RETIRED_ACCOUNTS]
+
+/**
+ * @@@fresh-database: open `gugu.localSync.v2`, copying `gugu.localSync.v1` into it first if it does not exist yet.
+ * Crash-safe at every step: the copy is written by the transaction that creates the new database (it exists complete
+ * or not at all), the old database stays the source of truth until the copy read back identical (`verified`), and
+ * only then is it deleted (`done`). A copy that does not verify is dropped and the old database keeps serving.
+ */
+async function openCurrentDatabase(factory: IDBFactory): Promise<IDBDatabase> {
+  let source: StoreRows | null = null
+  let current = await openFreshDatabase(factory, null)
+  if (!current) {
+    source = await readLegacyRows(factory)
+    current = await openFreshDatabase(factory, source)
+    if (!current) throw new Error('Local IM database creation was aborted')
+  }
+  let state = await readMigrationState(current)
+  if (state?.state === 'copied') {
+    source ??= await readLegacyRows(factory)
+    const copy = await readRows(current)
+    // Another window may have verified this copy and started writing to it since we read the state.
+    if (!sameRows(copy, source) && (await readMigrationState(current))?.state === 'copied') {
+      cacheLog.error({ counts: rowCounts(copy), expected: rowCounts(source) }, 'local IM cache copy did not read back identical; keeping the previous database')
+      current.close()
+      await deleteDatabase(factory, DB_NAME)
+      return openLegacyDatabase(factory)
+    }
+    await writeMigrationState(current, 'verified')
+    state = { state: 'verified' }
+  }
+  if (state?.state === 'verified' && await deleteDatabase(factory, LEGACY_DB_NAME)) await writeMigrationState(current, 'done')
+  return current
+}
+
+/** Opens the current database; creates it from `rows` (null: refuse to create, so the rows can be read first). */
+function openFreshDatabase(factory: IDBFactory, rows: StoreRows | null): Promise<IDBDatabase | null> {
+  return new Promise((resolve, reject) => {
+    const request = factory.open(DB_NAME, DB_VERSION)
+    let refused = false
+    request.onupgradeneeded = (event) => {
+      const transaction = request.transaction!
+      if ((event as IDBVersionChangeEvent).oldVersion !== 0) {
+        transaction.abort()
+        return
+      }
+      if (!rows) {
+        refused = true
+        transaction.abort()
+        return
+      }
+      const db = request.result
+      db.createObjectStore(RETIRED_ACCOUNTS, { keyPath: 'accountId' })
+      db.createObjectStore(MIGRATION_STORE, { keyPath: 'key' })
+      for (const name of IM_STORE_NAMES) db.createObjectStore(name, { keyPath: KEY_PATHS[name] })
+      for (const name of COPIED_STORES) for (const row of rows[name] ?? []) transaction.objectStore(name).put(row)
+      transaction.objectStore(MIGRATION_STORE).put({ key: 'legacy', state: 'copied' satisfies MigrationState })
+    }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = (event) => {
+      if (!refused) { reject(request.error ?? new Error('Failed to open local IM database')); return }
+      event.preventDefault()
+      resolve(null)
+    }
+    request.onblocked = () => reject(new Error('Local IM database upgrade is blocked by another open client'))
+  })
+}
+
+/** Every row of the previous database (opening it runs its own schema upgrades first). Reads stores, never indexes. */
+async function readLegacyRows(factory: IDBFactory): Promise<StoreRows> {
+  const legacy = await openLegacyDatabase(factory)
+  try { return await readRows(legacy) } finally { legacy.close() }
+}
+
+async function readRows(db: IDBDatabase): Promise<StoreRows> {
+  const transaction = db.transaction(COPIED_STORES, 'readonly')
+  const done = transactionDone(transaction)
+  const entries = await Promise.all(COPIED_STORES.map(async name => [name, await requestResult<unknown[]>(transaction.objectStore(name).getAll())] as const))
+  await done
+  return Object.fromEntries(entries)
+}
+
+function sameRows(left: StoreRows, right: StoreRows): boolean {
+  return COPIED_STORES.every(name => JSON.stringify(left[name] ?? []) === JSON.stringify(right[name] ?? []))
+}
+
+function rowCounts(rows: StoreRows): Record<string, number> {
+  return Object.fromEntries(COPIED_STORES.map(name => [name, rows[name]?.length ?? 0]))
+}
+
+function readMigrationState(db: IDBDatabase): Promise<{ state: MigrationState } | undefined> {
+  return requestResult(db.transaction(MIGRATION_STORE, 'readonly').objectStore(MIGRATION_STORE).get('legacy'))
+}
+
+async function writeMigrationState(db: IDBDatabase, state: MigrationState): Promise<void> {
+  const transaction = db.transaction(MIGRATION_STORE, 'readwrite')
+  transaction.objectStore(MIGRATION_STORE).put({ key: 'legacy', state })
+  await transactionDone(transaction)
+}
+
+/** true once deleted; false when another connection blocks it (retried at the next open) or it failed. */
+function deleteDatabase(factory: IDBFactory, name: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const request = factory.deleteDatabase(name)
+    request.onsuccess = () => resolve(true)
+    request.onerror = () => { cacheLog.error({ name, error: request.error }, 'local IM database delete failed'); resolve(false) }
+    request.onblocked = () => { cacheLog.warn({ name }, 'local IM database delete is blocked by another connection; retrying at the next open'); resolve(false) }
+  })
 }
 
 export function createMemoryLocalSyncDb(): LocalImDbAdapter {
@@ -170,9 +289,9 @@ function applyMemoryOperations(stores: MemoryStores, operations: readonly LocalI
   }
 }
 
-function openDatabase(indexedDb: IDBFactory): Promise<IDBDatabase> {
+function openLegacyDatabase(indexedDb: IDBFactory): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDb.open(DB_NAME, SCHEMA_VERSION)
+    const request = indexedDb.open(LEGACY_DB_NAME, LEGACY_SCHEMA_VERSION)
     let migrationError: Error | null = null
     request.onupgradeneeded = (event) => {
       const db = request.result
@@ -214,8 +333,7 @@ function openDatabase(indexedDb: IDBFactory): Promise<IDBDatabase> {
 function createNormalizedStores(db: IDBDatabase): void {
   for (const name of IM_STORE_NAMES) {
     if (db.objectStoreNames.contains(name)) continue
-    // Nothing reads these indexes any more (@@@account-key-range); dropping them is #3967 — Chromium deletes
-    // an index entry by entry inside the upgrade (90 s for 1.3M entries), so it needs its own migration.
+    // Legacy schema only: it is copied into the index-free current database and deleted (@@@fresh-database).
     const store = db.createObjectStore(name, { keyPath: KEY_PATHS[name] })
     store.createIndex('accountId', 'accountId')
     if (name === 'membership') store.createIndex('accountChat', ['accountId', 'chatId'])

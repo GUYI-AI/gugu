@@ -8,7 +8,7 @@ const deferred = () => { let resolve!: () => void; const promise = new Promise<v
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 async function rawRows(factory: IDBFactory, owner: string) {
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    const request = factory.open('gugu.localSync.v1'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
+    const request = factory.open('gugu.localSync.v2'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
   })
   try {
     const transaction = db.transaction(IM_STORE_NAMES, 'readonly')
