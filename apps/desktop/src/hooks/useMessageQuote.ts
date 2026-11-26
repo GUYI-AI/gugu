@@ -28,16 +28,17 @@ export function useMessageQuote(chatId: string | null, senderNameOf: (id: string
   }, [chatId, setDraftQuote])
   const onQuote = useCallback((msg: MessageItem, selection?: QuoteSelection) => {
     setQuote(() => {
-      const textSelection = msg.content_type === 'text' ? selection : undefined
-      // An attachment quotes its file (the preview draws an image's thumbnail), never a bare label.
-      const attachment = msg.content_type === 'attachment' && !parseVoiceAttachmentContent(msg.content) ? parseAttachmentContent(msg.content, msg) ?? undefined : undefined
+      // Words picked are the excerpt, whatever else the message holds (a picture's caption too); the whole message
+      // quotes as it shows: an attachment its file (the preview draws an image's thumbnail), never a bare label.
+      const attachment = !selection && msg.content_type === 'attachment' && !parseVoiceAttachmentContent(msg.content) ? parseAttachmentContent(msg.content, msg) ?? undefined : undefined
       return {
         messageId: msg.id, source: msg, senderName: latest.current.senderNameOf(msg.sender_user_id), attachment,
-        // Only an explicit text selection is an excerpt. Attachment/card labels are presentation, not excerpts.
-        originalContent: textSelection?.originalContent,
-        content: msg.content_type === 'widget' ? parseWidgetMessage(msg.content)?.text ?? '[Widget]'
+        // Only an explicit selection is an excerpt. Attachment/card labels are presentation, not excerpts.
+        originalContent: selection?.originalContent,
+        content: selection ? msg.content ?? ''
+          : msg.content_type === 'widget' ? parseWidgetMessage(msg.content)?.text ?? '[Widget]'
           : attachment ? attachment.fileName
-          : !textSelection && latest.current.previewTextOf ? latest.current.previewTextOf(msg)
+          : latest.current.previewTextOf ? latest.current.previewTextOf(msg)
           : msg.content_type === 'attachment' ? latest.current.attachmentLabel
           : msg.content_type === 'card' ? composerCardLine(msg.content ?? '') : msg.content ?? '',
       }

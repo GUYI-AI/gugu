@@ -7,6 +7,7 @@ import { ChatStoreProvider } from '@/store/chatContext'
 import { i18n } from '@/i18n'
 import { SelectionLineLayer } from '@renderer/features/sessions/annotations/selection-line'
 import { sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
+import { attachmentEnvelope } from '@gugu/core/shared/ui/attachmentModels'
 import { chat, chatStore, createReactHarness, displayIdentity, message, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/i18n/registerMessagingCatalog'
@@ -85,4 +86,26 @@ it('comments on part of a message at the selection, into the chat\'s draft', asy
   expect(draft().items[0]).toMatchObject({ kind: 'message', messageId: 'm1', authorId: 'ada', text: 'Run the gates', annotation: 'Which gates?' })
   expect(document.querySelector('[data-selection-line]')).toBeNull()
   await until('the tray counts it', () => harness.container.querySelector('[data-composer-annotations]')?.textContent?.includes('1 条评论') ?? false)
+})
+
+// A picture sent with words under it (图在上、字在下): picking some of the words is the same menu as a text message's,
+// and 引用 drafts the words picked as the excerpt, not the picture's file name.
+it('offers 复制 · 引用 · 评论 on the words under a picture, and quotes only them', async () => {
+  harness = createReactHarness()
+  harness.container.style.height = '640px'
+  const picture = message({ id: 'p1', chat_id: 'comment-group', sender_user_id: 'ada', seq: 1, content_type: 'attachment',
+    content: attachmentEnvelope('chart.png', 1234, 'image/png', 'The pro tier needs a second look') } as never)
+  await renderWithAppProviders(harness, <div style={{ height: 640, display: 'flex', flexDirection: 'column' }}><ChatAreaPanel /></div>, {
+    auth: { id: 'me' },
+    chat: { activeChat: group, activeChatId: 'comment-group', identitiesById: { ada: displayIdentity('ada', { display_name: 'Ada' }) }, messages: [picture] } as never,
+  })
+  await until('the caption is drawn', () => harness.container.querySelector('[data-msg-id="p1"]')?.textContent?.includes('second look') ?? false)
+  const bubble = harness.container.querySelector<HTMLElement>('[data-msg-id="p1"]')!
+  const box = select(bubble, 'pro tier')
+  await act(async () => { (document.elementFromPoint(box.left + 2, box.top + box.height / 2) ?? bubble).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: box.left + 10, clientY: box.bottom + 4 })) })
+  await until('the message menu', () => !!document.querySelector('[data-testid="message-action-menu"]'))
+  expect([...document.querySelectorAll('[role="menuitem"]')].map((row) => row.textContent?.trim())).toEqual(['复制', '引用', '评论'])
+  await act(async () => { await userEvent.click([...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((row) => row.textContent?.trim() === '引用')!) })
+  await until('the reply bar quotes the words', () => harness.container.querySelector('[data-chat-composer-host]')?.textContent?.includes('pro tier') ?? false)
+  expect(harness.container.querySelector('[data-chat-composer-host]')?.textContent).not.toContain('chart.png')
 })

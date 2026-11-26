@@ -166,13 +166,15 @@ export const MessageBubble = memo(function MessageBubble({
       document.removeEventListener(UI_EVENTS.closeContextMenus, closeFromSharedEvent as EventListener)
     }
   }, [showMenu, showMoreMenu, showEmojiPicker])
+  // Words a person can pick: a text message's, or a picture's caption under it. One menu for both (复制 · 引用 · 评论).
+  const hasWords = msg.content_type === 'text' || !!sendCaption(album ?? [msg])
   const messageActions = (close: () => void) => ({
     isRetracted: !!msg.retracted_at, content: copyText, hasHoverBar: !compactMobile, hasSelection: !compactMobile && !!menuSelection, onClose: close,
     onReply: () => { onQuote(msg); close() },
     onReact: (emoji: string) => { onReaction(msg.id, emoji); close() },
-    ...(msg.content_type === 'text' ? selectionActions(menuSelection, menuSelectionAt.current, () => onQuote({ ...msg, content: menuSelection }, { originalContent: msg.content }), commentOn, close) : {}),
+    ...(hasWords ? selectionActions(menuSelection, menuSelectionAt.current, () => onQuote({ ...msg, content: menuSelection }, { originalContent: msg.content }), commentOn, close) : {}),
     onCopy: (content = menuSelection || undefined) => { void handleCopyText(content); close() },
-    onSelectText: compactMobile && (msg.content_type === 'text' || !!sendCaption(album ?? [msg])) && phone.source ? () => { phone.setSelecting(true); close() } : undefined,
+    onSelectText: compactMobile && hasWords && phone.source ? () => { phone.setSelecting(true); close() } : undefined,
     onCopyLink: menuLink ? () => { void handleCopyText(menuLink.href); close() } : undefined, onOpenLink: menuLink ? () => { menuLink.click(); close() } : undefined,
     onForward: () => { onForward(msg); close() }, onKeep: keepAction({ id: msg.id, mine: msg.is_mine, live: !!mediaAttachment && mediaAttachment.source.kind !== 'gone' }, close, toast, t),
     onDownload: mediaAttachment && mediaAttachment.source.kind !== 'gone' ? () => { void (album ? downloadSendFiles(album) : downloadAttachment(mediaAttachment.source, mediaAttachment.fileName)).catch((error) => toast(t('chatArea.downloadFailed'), 'error', safeFailureLine(String((error as Error)?.message ?? error)))); close() } : undefined,
@@ -400,7 +402,7 @@ export const MessageBubble = memo(function MessageBubble({
       {compactMobile
         ? phone.mounted && !phone.selecting && <MsgMoreMenu lift={{ open: showMenu, bubble: bubbleRef, touchY: menuPos.y, mine: msg.is_mine }} {...messageActions(() => setShowMenu(false))} />
         : showMenu && <MsgMoreMenu x={menuPos.x} y={menuPos.y} {...messageActions(() => setShowMenu(false))} />}
-      {phone.selecting && phone.source && <PhoneTextSelection source={phone.source} onDone={() => phone.setSelecting(false)} onComment={msg.content_type === 'text' ? (words) => commentOn(bubbleRef.current!.getBoundingClientRect(), words) : undefined} />}
+      {phone.selecting && phone.source && <PhoneTextSelection source={phone.source} onDone={() => phone.setSelecting(false)} onComment={hasWords ? (words) => commentOn(bubbleRef.current!.getBoundingClientRect(), words) : undefined} />}
 
     </MessageHoverRegion>
   )
