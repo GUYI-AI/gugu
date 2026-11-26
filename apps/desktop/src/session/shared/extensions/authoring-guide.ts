@@ -160,7 +160,7 @@ Free:
 - \`showContextMenu({ x, y, items: [{ id, label, enabled?, checked?, danger?, title?, person?, fold?, alone?, hotkey?, items? }, { type: "separator" }] })\` (API 18/38/62, page) → id | null. \`fold\`: under More; \`alone\`: its label in place of a one-row submenu.
 - \`setTabTitle(title)\` → title (max 48); file tabs use it as a tooltip. Back/forward stay local.
 - \`setTabBadge(badge)\` → a count (99+ max, <=0 none), a string (a dot) or \`null\`.
-- \`openBrowserTab(url, { external?: boolean })\` → http(s) only: a tab in the page's chat/session; \`external: true\` opens the system browser. Outside a chat/session, or on a phone: the system browser.
+- \`openBrowserTab(url, { external?: boolean })\` → http(s): chat/session tab; \`external: true\`, no conversation or phone → system browser.
 - \`reportError(message)\` → shown on your tab and in the App error log (\`app_check\`). Never fail silently.
 - \`sendToBackground(message)\` → your background page (none: rejects); host stamps \`from\`.
 - \`onBackgroundMessage(fn)\` → paint the background's broadcasts.
@@ -500,9 +500,8 @@ md.render(element, f.text, { density: 'comfortable', frontmatter: true, file: f.
 \`density\`: \`'compact'\` (the default, a chat's rhythm) or \`'comfortable'\` (a document). \`frontmatter: true\` shows a
 file's leading \`---\` YAML block as code instead of reading it as text. \`sourceLines: true\` marks each block with the
 lines it was written on (\`data-line="3-5"\`), to find a line's block. \`trust: 'chat'\` (the default) is for others'
-words: raw HTML stays text; \`'document'\` only for text your App wrote. Links: \`#…\` in place,
-http(s) a browser tab (Cmd/Ctrl-click: the system browser), gugu resources through \`openLink\` (API 13, no capability), relative files beside \`file\`
-through \`gugu.files.openWith\` (needs \`files:read\`). Failures call \`reportError\`. Never put others' text through \`innerHTML\`.
+words: raw HTML stays text; \`'document'\` only for text your App wrote. Links: \`#…\` here, http(s) a tab (Cmd/Ctrl: system browser), Gugu resources via \`openLink\` (free),
+relative files beside \`file\` via \`gugu.files.openWith\` (needs \`files:read\`). Errors call \`reportError\`. Never put others' text through \`innerHTML\`.
 Images: a chat file's (\`gugu-file://\`, a path beside \`file\`) are drawn, web ones stay links; one pasted
 into \`bind.codemirror\` uploads beside it.
 
