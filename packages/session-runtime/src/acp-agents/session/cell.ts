@@ -53,7 +53,7 @@ import {
 } from '@gugu/session-core/acp';
 import type { Result } from '@gugu/session-shared';
 import { errorDetail, ok, toSerializedError } from '@gugu/session-shared';
-import { invokesCommand } from '@gugu/session-core/acp/commands';
+import { GOAL_TOKENS_FLAG, goalAcceptsTokenBudget, invokesCommand, parseGoalCommand } from '@gugu/session-core/acp/commands';
 import { nativePromptMeta } from '@gugu/session-core/acp/native-prompt';
 import { inlinePromptParts } from './inline-images';
 import { annotationPromptText } from '@gugu/session-core/acp/client';
@@ -1975,6 +1975,13 @@ export class SessionCell {
     },
   ): Promise<Result<SessionPromptResult, AcpSendPromptError>> {
     if (this.closeRequested || this.promptEchoes.admissionClosed) return acpErr.sessionBusy('Session is closing; resume it after teardown');
+    // `/goal --tokens` goes only to an agent whose own /goal takes a budget; elsewhere the flag
+    // would silently become part of the goal text, so the person is told instead.
+    const goal = prompt.origin !== 'communication' && prompt.text !== undefined
+      && invokesCommand(prompt.text, this.config.availableCommands) ? parseGoalCommand(prompt.text) : null;
+    if (goal?.kind === 'set' && goal.tokenBudget !== null && !goalAcceptsTokenBudget(this.config.availableCommands)) {
+      return acpErr.invalidState(`This agent's /goal takes only a goal condition; it has no token budget (${GOAL_TOKENS_FLAG}).`);
+    }
     if (!opts?.fromQueue) {
       prompt = { ...prompt, queueTiming: opts?.steerIfBusy && prompt.origin === 'communication'
         ? 'next-tool-call' : undefined };
