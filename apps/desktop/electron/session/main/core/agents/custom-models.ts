@@ -426,6 +426,8 @@ export function saveCustomModel(input: SaveCustomModel): Promise<CustomModelConn
       models, routes: append && prior
         ? [...new Map([...(prior.routes ?? []), ...(input.routes ?? [])].map(route => [route.id, route])).values()]
         : input.routes ?? prior?.routes, harnessProtocols: input.harnessProtocols ?? prior?.harnessProtocols,
+      // A save that does not say (switching a model on or off, keeping a key) keeps what the last check found.
+      unverified: (input.unverified ?? prior?.unverified) || undefined,
       disabledModels: disabledModels?.filter(entry => !models.some(model => model.id === entry.id)) });
     const discovery = prior?.discovery;
     await registry.upsertAccount({ providerId: namespace, accountId: id, ...(key ? { secret: key } : {}), meta: {

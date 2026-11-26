@@ -567,3 +567,74 @@ it('owner 11-24: own models say the plan as sold, the vendor while the tier is u
   expect(ownModelTag('claude', { plan: { payer: 'custom-endpoint', endpoint: 'relay.example.com' } })).toBe('example');
   expect(ownModelTag('pi', { credentialKind: 'subscription' })).toBeUndefined();
 });
+// owner 2026-11-26 20:12: an address that refuses the key can still be added; the person picks the format and the first session checks the key.
+const refusedProbe = (): CustomModelProtocolProbe => ({ endpoints: [], models: [], failures: [{ step: 'models', reason: 'unauthorized' }] });
+async function fillRefused() {
+  await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test/v1');
+  await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-refused');
+  await userEvent.fill(page.getByTestId('custom-model-name'), 'relay/model');
+}
+it('a refused key can be added anyway as the format the person picks, saved as unverified', async () => {
+  setLocalePreference('zh-CN');
+  state.probe = refusedProbe();
+  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+  await fillRefused();
+  await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent('该地址拒绝了此 Key。');
+  await expect.element(page.getByTestId('custom-model-add-anyway-protocol')).toHaveTextContent('OpenAI Chat');
+  // Save is still refused; the dialog brings the way out into view instead of leaving the error at the bottom.
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await until('the add-anyway button takes focus', () => document.activeElement === page.getByTestId('custom-model-add-anyway-button').element());
+  expect(state.saved).toBeNull();
+  await userEvent.click(page.getByTestId('custom-model-add-anyway-protocol'));
+  await userEvent.click(page.getByRole('option', { name: 'Anthropic 接口', exact: true }));
+  await userEvent.click(page.getByTestId('custom-model-add-anyway-button'));
+  await until('the form saved', () => state.saved !== null);
+  expect(state.saved).toMatchObject({ endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://relay.test/v1' }], unverified: true, apiKey: 'sk-refused', models: [{ id: 'relay/model' }] });
+});
+it('Test connection that the address refuses offers adding anyway; other failures do not', async () => {
+  state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason: 'timeout' }] };
+  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+  await fillRefused();
+  await userEvent.click(page.getByTestId('custom-model-test'));
+  await expect.element(page.getByTestId('custom-model-test-result')).toHaveTextContent('The connection timed out.');
+  expect(page.getByTestId('custom-model-add-anyway').query()).toBeNull();
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await expect.element(page.getByRole('alert').last()).toHaveTextContent('The connection timed out.');
+  expect(page.getByTestId('custom-model-add-anyway').query()).toBeNull();
+  state.probe = refusedProbe();
+  await userEvent.click(page.getByTestId('custom-model-test'));
+  await expect.element(page.getByTestId('custom-model-test-result')).toHaveTextContent('This address refused the key.');
+  await expect.element(page.getByTestId('custom-model-add-anyway-button')).toHaveTextContent('Add anyway');
+});
+it('a save the address answers clears the unverified mark, and the list says which keys are unverified', async () => {
+  state.probe = { endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }], models: [], failures: [] };
+  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+  await fillRefused();
+  await until('the address is probed', () => state.probes.length > 0);
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await until('the form saved', () => state.saved !== null);
+  expect(state.saved?.unverified).toBe(false);
+  root.unmount(); root = createRoot(host);
+  state.rows = [{ ...record(), keySaved: true, unverified: true, models: [{ id: 'model' }] }];
+  render(<Sheet ariaLabel="Settings" zIndex="var(--z-settings)" onClose={() => {}}><CustomModelsGroup /></Sheet>);
+  await expect.element(page.getByText('Key not verified')).toBeVisible();
+});
+for (const theme of ['light', 'dark'] as const) {
+  it(`captures adding a refused key anyway in the ${theme} theme`, async () => {
+    await page.viewport(1100, 860);
+    setLocalePreference('zh-CN');
+    document.documentElement.dataset.theme = theme;
+    host.className = `gugu-skin em${theme}`;
+    try {
+      state.probe = refusedProbe();
+      document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      render(<UiPortalContainerProvider value={host}><CustomModelDialog machine={null} group="custom" onClose={() => {}} /></UiPortalContainerProvider>);
+      await fillRefused();
+      await expect.element(page.getByTestId('custom-model-add-anyway')).toBeVisible();
+      await shot(`${theme}-add-anyway`);
+      await userEvent.click(page.getByTestId('custom-model-add-anyway-protocol'));
+      await until('the format menu lists its options', () => document.querySelectorAll('[role=option]').length === 3);
+      await shot(`${theme}-add-anyway-formats`);
+    } finally { document.documentElement.dataset.theme = 'light'; }
+  });
+}

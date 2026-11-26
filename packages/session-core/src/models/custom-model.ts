@@ -109,6 +109,11 @@ export const customModelMetaSchema = z.object({
     .refine((routes) => new Set(routes.map(({ id }) => id)).size === routes.length, 'Route IDs must be unique').optional(),
   /** The protocol the person picked for a harness (harness id → protocol); a harness not named here takes `matchCustomModel`'s order. */
   harnessProtocols: z.record(z.string(), modelProtocolSchema).optional(),
+  /**
+   * The address refused the key when this was saved and the person added it anyway with a protocol of their choosing
+   * ("Add anyway"). The first real request tells whether the key works; a later save that the address answers clears it.
+   */
+  unverified: z.boolean().optional(),
   removed: z.boolean().optional(),
 });
 export type CustomModelMeta = z.infer<typeof customModelMetaSchema>;
