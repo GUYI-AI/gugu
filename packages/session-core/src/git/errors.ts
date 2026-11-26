@@ -247,6 +247,7 @@ export function classifyPullError(error: unknown): PullError {
     message.includes('network is unreachable') ||
     message.includes('connection refused') ||
     message.includes('connection timed out') ||
+    message.includes('could not resolve proxy') ||
     message.includes('unable to connect')
   ) {
     return { type: 'network_error', message: commandError.message };

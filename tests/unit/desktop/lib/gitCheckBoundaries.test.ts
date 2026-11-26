@@ -50,3 +50,8 @@ it('reports proxy DNS errors during push as network failures', () => {
   const message = 'fatal: Could not resolve proxy: proxy.test'
   expect(classifyPushError(new Error(message))).toEqual({ type: 'network_error', message })
 })
+
+it('reports proxy DNS errors during pull as network failures', () => {
+  const message = 'fatal: Could not resolve proxy: proxy.test'
+  expect(classifyPullError(new Error(message))).toEqual({ type: 'network_error', message })
+})
