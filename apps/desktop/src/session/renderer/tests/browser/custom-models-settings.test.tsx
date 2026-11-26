@@ -616,7 +616,7 @@ for (const reason of ['timeout', 'unreachable'] as const) {
     render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
     await fillRefused();
     await userEvent.click(page.getByTestId('custom-model-save'));
-    await expect.element(page.getByRole('alert').last()).toHaveTextContent(reason === 'timeout' ? 'The connection timed out.' : 'Cannot reach this address.');
+    await expect.element(page.getByRole('alert')).toHaveTextContent(reason === 'timeout' ? 'The connection timed out.' : 'Cannot reach this address.');
     expect(state.saved).toBeNull();
   });
 }
