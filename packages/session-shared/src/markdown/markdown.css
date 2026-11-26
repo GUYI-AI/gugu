@@ -264,7 +264,9 @@
 .gg-md .katex-display > .katex:has(> .katex-html > .tag) { flex-grow: 1; }
 .gg-md .katex-display > .katex > .katex-html:has(> .tag) { display: flex; align-items: baseline; }
 .gg-md .katex-display > .katex > .katex-html:has(> .tag)::before { content: ''; flex: 1 1 0; }
-.gg-md .katex-display > .katex > .katex-html:has(> .tag) > .tag { position: static; flex: 1 1 0; padding-inline-start: 1em; text-align: right; }
+@supports selector(:has(a)) {
+  .gg-md .katex-display > .katex > .katex-html > .tag { position: static; flex: 1 1 0; padding-inline-start: 1em; text-align: right; }
+}
 /* An inline formula is one unit: it moves to the next line whole, and one wider than the line scrolls inside it
    rather than running out of the bubble. A grid scroll box keeps its content's baseline (an inline-block one would
    sit on its bottom edge). The padding, given back by the margin, leaves room for italic and accent ink that KaTeX
