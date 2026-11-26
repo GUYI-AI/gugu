@@ -13,6 +13,7 @@ const fakePayload: AgentPresencePayload = {
   runtimeKind: null,
   runtimeLabel: null,
   agentType: 'claude-code',
+  modelName: null,
   recentActions: [],
   lastActionAt: null,
   lastInteractedAt: null,
