@@ -44,6 +44,10 @@ const BOTTOM_FADE_MASK = 'linear-gradient(to bottom, black calc(100% - 1.5rem), 
  * on every name: that restyled the whole list each frame.
  */
 function followNamesMask(scroll: HTMLElement, progress: number, railLayout: boolean) {
+  // The rows rise through the fold by what the top row's gap shrinks (listFoldShift y). The scroll box rises with them:
+  // its clip edge is its own top, so rows moved up inside it lost their top pixels (the first row's avatar) until the rail landed.
+  const shift = listFoldShift(progress, railLayout);
+  scroll.style.transform = shift.y > 0 ? `translateY(${-shift.y}px)` : '';
   const text = sidebarRailTextOpacity(progress);
   if (text >= 1) {
     scroll.style.removeProperty('mask-image');
@@ -52,7 +56,7 @@ function followNamesMask(scroll: HTMLElement, progress: number, railLayout: bool
   }
   // The names move left with the rows through the fold (listFoldShift): the edge goes with them, or the first pixels of
   // every name sit left of it at full opacity until the rail lands.
-  const edge = (railLayout ? RAIL_NAMES_START_PX : NAMES_START_PX) - listFoldShift(progress, railLayout).x;
+  const edge = (railLayout ? RAIL_NAMES_START_PX : NAMES_START_PX) - shift.x;
   // The names' opacity in 255ths: the 8-bit alpha an rgb() literal painted, so the fade's pixels are unchanged.
   scroll.style.setProperty('mask-image', `linear-gradient(to right, black ${edge}px, color-mix(in srgb, black ${(Math.round(text * 255) / 2.55).toFixed(3)}%, transparent) ${edge}px), ${BOTTOM_FADE_MASK}`);
   scroll.style.setProperty('mask-composite', 'intersect');

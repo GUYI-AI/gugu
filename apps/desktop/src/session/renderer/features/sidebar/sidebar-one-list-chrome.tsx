@@ -176,10 +176,11 @@ export function listFoldShift(progress: number, railLayout: boolean): { x: numbe
   return { x: (LIST_GUTTER_OPEN_PX - LIST_GUTTER_RAIL_PX) * rest, y: (TOP_ROW_GAP_OPEN_PX - TOP_ROW_GAP_RAIL_PX) * rest };
 }
 
-/** The list's rows, moved by listFoldShift. */
+/** The list's rows, moved left by listFoldShift (inside the gutter). Their rise is the scroll box's (left-sidebar's
+ *  followNamesMask), so they never cross its top edge, which clips. */
 export function followListOffset(element: HTMLElement, progress: number, railLayout: boolean) {
   const shift = listFoldShift(progress, railLayout);
-  element.style.transform = shift.x > 0 || shift.y > 0 ? `translate(${-shift.x}px, ${-shift.y}px)` : '';
+  element.style.transform = shift.x > 0 ? `translateX(${-shift.x}px)` : '';
 }
 
 /**
