@@ -79,6 +79,7 @@ import { AgentConversationView as ChatTranscript, AgentConversationComposer as C
 import { useSessionChatLayout } from '@renderer/lib/chat/use-session-chat-layout';
 import type { ChatCommands, ChatView } from '@renderer/lib/chat/chat-transcript';
 import { AgentIcon } from '@renderer/lib/components/agent-icon';
+import { openShellSettings } from '@renderer/lib/open-shell-settings';
 import {
   agentGroupLabel,
   sortAgentsByAvailability,
@@ -1854,6 +1855,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         const [action] = reasonActions(reason, {
           switchModel: () => setModelMenuRequest((value) => value + 1),
           joinMembership: openMembershipPage,
+          openModelSettings: () => openShellSettings('model'),
         }, translate);
         const modelName = guguReasonCopy(reason).action === 'join-membership' ? membershipLock?.modelName : null;
         return { text: guguReasonText(reason, translate, modelName), ...(action ? { action } : {}) };

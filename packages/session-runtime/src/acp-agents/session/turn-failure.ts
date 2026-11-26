@@ -1,4 +1,4 @@
-import { isSignInFailure, isCodexRefreshTokenRevoked, upstreamSaid, type AdapterExit, type SessionFailure, type TranscriptTurnOutcome } from '@gugu/session-core/acp';
+import { isKeyRefusal, isSignInFailure, isCodexRefreshTokenRevoked, upstreamSaid, type AdapterExit, type SessionFailure, type TranscriptTurnOutcome } from '@gugu/session-core/acp';
 import { guguReasonInText } from '@gugu/session-core/session-record/contract';
 import { errorDetail, type SerializedError } from '@gugu/session-shared';
 import { redactSecrets } from '@gugu/session-shared/logger';
@@ -24,6 +24,8 @@ export type TurnFailureFact =
       cause: SerializedError;
       /** 凭据由宿主提供(平台票或用户自己的 key):被鉴权拒说的是那份凭据,❌ 标成这家的登录失效(#6264)。 */
       hostCredentials?: boolean;
+      /** #3939 The credential is a key the person typed for a custom model (one kind of `hostCredentials`). */
+      customModelKey?: boolean;
       /**
        * 宿主先要求关掉了这条会话。有的家在 `session/close` 里自己把在飞的 prompt 答成 `cancelled`(claude),
        * 有的家不答,连接随宿主拆掉,prompt 以「线断了」被拒(codex)。两者是同一件事:人把它停了。
@@ -161,6 +163,11 @@ export function classifyTurnFailure(fact: TurnFailureFact): ClassifiedTurnFailur
       // 这一段会上屏、也会随转录落盘,而 provider 完全可能把 auth 头或 key 回显在
       // `message` / `data` 里(评审抓到:那一侧有闸,这一侧当时没有)。
       const detail = redactSecrets(errorDetail(fact.cause) || fact.cause.name.trim());
+      // #3939 The address refused the key the person typed: Gugu says so and offers the place to change it. The provider's
+      // sentence stays in the detail. A refusal is final; a later process exit does not reword it.
+      if (fact.customModelKey && isKeyRefusal(fact.cause)) {
+        return { outcome: { kind: 'error', reason: 'prompt_failed', guguReason: 'key-rejected', ...(detail ? { detail } : {}) }, provisional: false };
+      }
       // 这家在这台机器上的登录不能用了(#6264):同一个 reason,多一格让界面说「登录已失效 · 重新登录」,
       // 并让宿主把这家标成「登录已失效」。判据见 `isSignInFailure`。
       const signInRequired = !fact.hostCredentials && isSignInFailure(fact.cause);

@@ -29,6 +29,7 @@ import { codexReasoningText } from '../../../../packages/core/src/shared/reasoni
 import { isRenderableImage, mimeTypeFromName } from '../../../../packages/core/src/shared/imageMime.mjs'
 import { codexFilePatches } from '../../../../packages/session-core/src/acp/transport/codex-file-patches.ts'
 import { codexMcpCall } from '../../../../packages/session-core/src/acp/transport/codex-mcp-call.ts'
+import { isCodexKeyRefusal, withCodexHttpStatus } from '../../../../packages/session-core/src/acp/transport/codex-http-status.ts'
 import { createCodexSubagents } from './codex-subagents.mjs'
 import { CODEX_AUTONOMY_BY_MODE, CODEX_PERMISSION_MODES } from '../../../../packages/session-plugins/src/agents/impl/codex/permission-modes.ts'
 import { redactAll } from '../../../../packages/session-shared/src/logger/redact.ts'
@@ -1404,6 +1405,19 @@ function onAppNotification(message) {
   // app-server also publishes spawned agents' events. Only this thread owns the ACP session;
   // mixing child deltas here fragments messages/thinking and can overwrite the parent's state.
   if (params.threadId && params.threadId !== sessionId) return
+  if (method === 'error' && params.willRetry === true && isCodexKeyRefusal(params.error)
+    && activeCycle && (!params.turnId || String(params.turnId) === activeCycle.turnId)) {
+    // #3939 The address refused the key: another attempt sends the same key there again. End the turn on the first refusal;
+    // it settles as this refusal, not as a stop (see turnOutcome).
+    if (!activeCycle.keyRefusal) {
+      activeCycle.keyRefusal = params.error
+      const turnId = activeCycle.turnId
+      void cancelTurn(turnId).catch((error) => {
+        process.stderr.write(`gugu codex-acp: could not stop turn ${turnId} after its key was refused: ${redactAll(String(error?.message ?? error))}\n`)
+      })
+    }
+    return
+  }
   if (method === 'error' && params.willRetry === true) {
     // Codex owns both the retry count and cause. Preserve its warning through the existing
     // ACP notice path; final errors still settle the prompt via turn/completed below.
@@ -1656,6 +1670,15 @@ function turnOutcome(turn) {
   const status = String(turn?.status ?? 'completed')
   const failure = toolOutcomesByTurn.get(String(turn?.id ?? ''))?.failure
   const _meta = historyCanRevert ? { guguRevert: { before: String(turn.id) } } : undefined
+  // The bridge stopped this turn because the address refused the key (#3939): it failed, nobody cancelled it.
+  const keyRefusal = activeCycle?.turnId === String(turn?.id ?? '') ? activeCycle.keyRefusal : undefined
+  if (status === 'interrupted' && keyRefusal) {
+    // A retry notice's `message` is Codex's own "Reconnecting... 1/5"; the refusal itself is in `additionalDetails`.
+    const said = typeof keyRefusal.additionalDetails === 'string' && keyRefusal.additionalDetails.trim()
+      ? keyRefusal.additionalDetails : String(keyRefusal.message ?? 'local Codex turn failed')
+    return { stopReason: 'error', ...(_meta ? { _meta } : {}), error: { code: -32603, message: said,
+      data: withCodexHttpStatus({ message: said, codexErrorInfo: keyRefusal.codexErrorInfo }) } }
+  }
   if (status === 'interrupted') return { stopReason: 'cancelled', ...(_meta ? { _meta } : {}) }
   if (status === 'completed' && !failure) return { stopReason: 'end_turn', ...(_meta ? { _meta } : {}) }
   // A failed turn is the one a person most needs to step back from: a refused turn stays in the context and
@@ -1664,7 +1687,7 @@ function turnOutcome(turn) {
     message: status === 'failed' ? String(turn?.error?.message ?? 'local Codex turn failed')
       : failure ? `local Codex turn had a failed Gugu tool call: ${failure.tool} (${failure.itemId}): ${failure.details}`
       : `unexpected local Codex turn status: ${status}`,
-    data: turn?.error ?? failure ?? null } }
+    data: turn?.error ? withCodexHttpStatus(turn.error) : failure ?? null } }
 }
 
 function activeTurnIdFromThread(value) {

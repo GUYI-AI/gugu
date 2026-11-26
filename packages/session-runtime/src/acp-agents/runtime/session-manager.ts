@@ -2391,6 +2391,7 @@ export class SessionManager implements InboundRouter {
       acpSessionId,
       billingRoute: input.platformModel ? 'platform' : input.billingRoute ?? 'unknown',
       ...(usesHostCredentials(input) ? { hostCredentials: true } : {}),
+      ...(input.runContext.customModel ? { customModelKey: true } : {}),
       ...(provider?.capabilities.acp.liveSettings
         ? { liveSettings: provider.capabilities.acp.liveSettings }
         : {}),

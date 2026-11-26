@@ -82,3 +82,18 @@ export function isSignInFailure(cause: SerializedError): boolean {
   // 到不了这里;平铺出来的状态码照认。
   return record.httpStatusCode === 401;
 }
+
+/**
+ * #3939 Whether the address refused the key this turn carried (HTTP 401/403). It only means something for a key the person typed
+ * (a custom model): there is no sign-in to this harness to renew, only the key to change. The signals are structured, as in
+ * `isSignInFailure`: the ACP auth code, Claude's SDK error kind, or the HTTP status that Gugu's Codex bridge lifts to
+ * `data.httpStatusCode` (`withCodexHttpStatus`).
+ */
+export function isKeyRefusal(cause: SerializedError): boolean {
+  if (isAcpAuthRequired(cause)) return true;
+  const data = cause.data;
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+  const record = data as Record<string, unknown>;
+  if (record.httpStatusCode === 401 || record.httpStatusCode === 403) return true;
+  return record.errorKind === 'authentication_failed';
+}
