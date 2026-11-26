@@ -21,12 +21,15 @@ import type { RenderCtx } from '@session-chat/core/define';
 import type { Accessor } from 'solid-js';
 
 /**
- * Returns a reactive accessor that resolves to `ctx.clipHeight()` while a
- * UnitRow tween is in flight, or `fullHeight()` at rest. Wire this to the
- * bordered root element height so the bottom border tracks the animated edge.
+ * Returns a reactive accessor that resolves to `fullHeight()`, cut to `ctx.clipHeight()` while a UnitRow tween is in
+ * flight. Wire this to the bordered root element height so the bottom border tracks the animated edge.
+ *
+ * The clip is the whole row's content height, and a row can hold more than the card (a sender line, the destination
+ * under a sent message): the card only follows the edge down to its own height, never grows past it. Grown to the
+ * row's height, a sent message drew its destination below the clip, cut in half, for the tween's 200 ms.
  */
 export function clipTrackedHeight(ctx: RenderCtx, fullHeight: Accessor<number>): Accessor<number> {
-  return () => ctx.clipHeight?.() ?? fullHeight();
+  return () => Math.min(ctx.clipHeight?.() ?? Infinity, fullHeight());
 }
 
 /**
