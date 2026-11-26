@@ -229,7 +229,7 @@ it('the OpenCode writer and process receive the upstream model ID from the store
 async function claudeOnCompatibleConnection() {
   const connection = await saveCustomModel({ name: 'Compatible', apiKey: 'fixture-upstream-key', preset: null,
     endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://compatible.example/v1' }],
-    models: [{ id: 'claude-sonnet-5' }, { id: 'reviewer-v1' }],
+    models: [{ id: 'claude-sonnet-5' }, { id: 'claude-haiku-5-5' }, { id: 'glm-5' }],
   });
   state.fixture!.sqlite.exec("INSERT INTO projects (id,name,path) VALUES ('project','Project','/repo')");
   state.fixture!.sqlite.prepare('INSERT INTO sessions (id,project_id,provider,runtime,config) VALUES (?,?,?,?,?)')
@@ -243,13 +243,13 @@ async function claudeSessionSettings() {
 
 it.each(['default', 'same'] as const)('delivers the global reviewer through the same API connection (%s)', async selection => {
   const connection = await claudeOnCompatibleConnection();
-  if (selection === 'same') await appSettingsService.update('autoReviewModel', { kind: 'custom', connectionId: connection.id, modelId: 'reviewer-v1' });
-  const reviewer = selection === 'same' ? 'reviewer-v1' : 'claude-sonnet-5';
+  if (selection === 'same') await appSettingsService.update('autoReviewModel', { kind: 'custom', connectionId: connection.id, modelId: 'claude-haiku-5-5' });
+  const reviewer = selection === 'same' ? 'claude-haiku-5-5' : 'claude-sonnet-5';
   const spawn = await acpSpawn('claude');
   expect(spawn.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe(reviewer);
   expect(spawn.env.ANTHROPIC_MODEL).toBe('claude-sonnet-5');
   expect(spawn.autoReviewAllowed).toBe(true);
-  expect(spawn.autoReviewer).toEqual({ label: selection === 'same' ? 'reviewer-v1 (Compatible)' : reviewer, kind: 'connection' });
+  expect(spawn.autoReviewer).toEqual({ label: selection === 'same' ? 'claude-haiku-5-5 (Compatible)' : reviewer, kind: 'connection' });
   const settings = await claudeSessionSettings();
   expect(settings.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe(reviewer);
   expect(settings.env.ANTHROPIC_MODEL).toBe('claude-sonnet-5');
@@ -258,11 +258,12 @@ it.each(['default', 'same'] as const)('delivers the global reviewer through the 
   expect(JSON.stringify(spawn)).not.toContain('fixture-upstream-key');
 });
 
-it.each(['missing', 'unlisted'] as const)('turns Auto mode off when the picked reviewer is gone (%s), never reviewing with the main model', async change => {
+// unreviewable: GLM on an Anthropic-format connection, whose verdict the CLI cannot parse.
+it.each(['missing', 'unlisted', 'unreviewable'] as const)('turns Auto mode off when the picked reviewer is gone or cannot review (%s), never reviewing with the main model', async change => {
   const connection = await claudeOnCompatibleConnection();
   await appSettingsService.update('autoReviewModel', {
     kind: 'custom', connectionId: change === 'missing' ? '00000000-0000-4000-8000-000000000001' : connection.id,
-    modelId: change === 'unlisted' ? 'no-longer-listed' : 'reviewer-v1',
+    modelId: change === 'unlisted' ? 'no-longer-listed' : change === 'unreviewable' ? 'glm-5' : 'claude-haiku-5-5',
   });
   const spawn = await acpSpawn('claude');
   expect(spawn.autoReviewAllowed).toBe(false);

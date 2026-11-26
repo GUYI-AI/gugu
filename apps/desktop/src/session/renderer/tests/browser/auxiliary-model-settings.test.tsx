@@ -49,13 +49,14 @@ const idA = '481825a8-60b9-4c83-8d1b-f104e3db0269';
 const idB = '48937c18-1219-460e-9f40-e08d70de94a5';
 function record(id: string, label: string): CustomModelConnection {
   return { id, name: label, credentialRef: 'ref', keySaved: true, preset: null,
-    endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://provider.test' }], models: [{ id: 'same-model', label }] };
+    endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://provider.test' }], models: [{ id: 'claude-sonnet-4-6', label }] };
 }
 beforeEach(() => {
   queryClient.clear(); setLocalePreference('en-US'); state.selection = null; state.writes = []; state.failSave = false; state.holdModels = null; state.catalog = [];
   state.rows = [record(idA, 'Reviewer A'), record(idB, 'Reviewer B'),
     { ...record('no-key', 'Missing key'), keySaved: false },
-    { ...record('codex', 'OpenAI only'), endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://provider.test/v1' }] }];
+    { ...record('codex', 'OpenAI only'), endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://provider.test/v1' }] },
+    { ...record('glm', 'GLM relay'), models: [{ id: 'glm-5', label: 'GLM-5' }, { id: 'deepseek-v3.2', label: 'DeepSeek V3.2' }] }];
   host = document.createElement('div'); host.className = 'gugu-skin emlight'; document.body.append(host); root = createRoot(host);
 
 });
@@ -75,11 +76,13 @@ it('saves a global connection/model identity and the recommended default, withou
   await expect.element(page.getByRole('option', { name: 'Reviewer A Reviewer A', exact: true })).toBeVisible();
   expect(page.getByRole('option', { name: 'Missing key Missing key', exact: true }).query()).toBeNull();
   expect(page.getByRole('option', { name: 'OpenAI only OpenAI only', exact: true }).query()).toBeNull();
+  // GLM and DeepSeek on an Anthropic-format connection cannot review: the CLI cannot parse their verdict.
+  for (const name of ['GLM-5 GLM relay', 'DeepSeek V3.2 GLM relay']) expect(page.getByRole('option', { name, exact: true }).query()).toBeNull();
   await userEvent.click(page.getByRole('option', { name: 'Reviewer A Reviewer A', exact: true }));
   await until('first identity persisted', () => selectedConnection() === idA);
   await choose('Reviewer B Reviewer B');
   await until('second identity persisted', () => selectedConnection() === idB);
-  expect(state.selection).toEqual({ kind: 'custom', connectionId: idB, modelId: 'same-model' });
+  expect(state.selection).toEqual({ kind: 'custom', connectionId: idB, modelId: 'claude-sonnet-4-6' });
   await choose('Default (recommended)');
   await until('default persisted', () => state.selection === null);
   expect(state.writes.map(write => write.key)).toEqual(['autoReviewModel', 'autoReviewModel', 'autoReviewModel']);
@@ -98,7 +101,7 @@ it('keeps a vanished reviewer visible and says Auto mode is off, without silentl
   await until('selection persisted', () => selectedConnection() === idA);
   state.rows = [];
   await customModels.refresh(null);
-  await expect.element(page.getByTestId('auto-review-model')).toHaveTextContent('same-model');
+  await expect.element(page.getByTestId('auto-review-model')).toHaveTextContent('claude-sonnet-4-6');
   expect(host.textContent).toContain('The review model you chose is unavailable, so Auto mode is off.');
   expect(host.textContent).not.toContain('the default is used');
   expect(selectedConnection()).toBe(idA);
