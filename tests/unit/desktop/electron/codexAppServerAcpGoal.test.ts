@@ -31,12 +31,15 @@ rl.on('line', (line) => {
     const p = m.params
     goal = { threadId: thread, objective: p.objective ?? goal.objective, status: p.status ?? goal.status,
       tokenBudget: 'tokenBudget' in p ? p.tokenBudget : (goal ? goal.tokenBudget : null), tokensUsed: 0, timeUsedSeconds: 0, createdAt: 1, updatedAt: 1 }
-    out({ id: m.id, result: { goal } })
+    const answer = { id: m.id, result: { goal } }
+    // LATE_SET: codex's notifications reach the adapter before the answer to the set request.
+    if (!process.env.LATE_SET) out(answer)
     out({ method: 'thread/goal/updated', params: { threadId: thread, turnId: null, goal } })
     if (goal.tokenBudget) {
       goal = { ...goal, status: 'budgetLimited', tokensUsed: goal.tokenBudget + 5 }
       out({ method: 'thread/goal/updated', params: { threadId: thread, turnId: 't1', goal } })
     }
+    if (process.env.LATE_SET) out(answer)
     return
   }
   if (m.method === 'thread/goal/get') return out({ id: m.id, result: { goal } })
@@ -127,9 +130,21 @@ describe('Codex ACP /goal is codex thread goal', () => {
     expect(receipt).toEqual({ messageId: expect.stringMatching(/^goal:/) })
     expect(rig.goalWire()).toEqual([{ method: 'thread/goal/set', params: {
       threadId: 'th-goal', origin: 'user', objective: 'ship the fix', status: 'active', tokenBudget: 200_000 } }])
+    // The receipt follows the set answer's own notice; the budget notice is the last one codex sends. Both are in.
     await awaitFact('budget notice', () => rig.notices().find((title) => title?.startsWith('Goal stopped, token budget reached')))
     expect(rig.notices()).toEqual(['Goal active: 0 / 200,000 tokens', 'Goal stopped, token budget reached: 200,005 / 200,000 tokens'])
     expect(rig.updates.find((update) => update.sessionUpdate === 'user_message')?.content).toEqual(prompt('/goal --tokens 200k ship the fix'))
+  })
+
+  it('does not show the set answer\'s older state after a newer one that arrived first', async () => {
+    const rig = start({ LATE_SET: '1' })
+    const sessionId = await openSession(rig)
+    await rig.reply(rig.send('session/prompt', { sessionId, prompt: prompt('/goal --tokens 200k ship the fix') }), 'receipt')
+    // The receipt is sent only after the late answer was handled, so every notice is already in.
+    expect(rig.notices()).toEqual(['Goal active: 0 / 200,000 tokens', 'Goal stopped, token budget reached: 200,005 / 200,000 tokens'])
+    const shown = await rig.reply(rig.send('session/prompt', { sessionId, prompt: prompt('/goal') }), 'show')
+    expect(shown).toEqual({ messageId: expect.stringMatching(/^goal:/) })
+    expect(rig.notices().at(-1)).toBe('Goal stopped, token budget reached: 200,005 / 200,000 tokens')
   })
 
   it('leaves the budget to codex when none is typed, and clears the goal on codex', async () => {
