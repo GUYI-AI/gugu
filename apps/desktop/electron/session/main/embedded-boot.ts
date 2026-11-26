@@ -387,7 +387,7 @@ import {
 } from '@shared/core/sessions/sessionEvents'
 import { log } from '@main/lib/logger'
 import { events } from '@main/lib/events'
-import { installSessionLife, sessionLife } from '@main/core/sessions/session-life'
+import { beginSessionLifeHostQuit, installSessionLife, sessionLife } from '@main/core/sessions/session-life'
 import { hydrateLife, shouldStartOnHydrate } from '@gugu/core/local/session-life/step'
 import { admitCreationTurns, bindIdentityThenCreate, claimIdentityCreation } from '@main/core/sessions/session-life-creation'
 import { unbindSessionAgent } from '@main/core/sessionpage/sessionpage-session-agent'
@@ -857,6 +857,8 @@ let disposeEmdashModulePromise: Promise<void> | null = null
 let stopDatabaseMaintenance: (() => Promise<void>) | undefined
 
 async function disposeEmdashModuleOnce(): Promise<void> {
+  // #3884 Before anything below takes away what an engine needs (the headless host has no earlier quit intent).
+  beginSessionLifeHostQuit()
   stopTaskTurnSearch()
   stopSessionIndexBackfill()
   const failures: unknown[] = []
