@@ -21,6 +21,7 @@ import { RefreshFailed } from '@/components/ui/RefreshFailed'
 import { useReplica } from '@/lib/replica'
 import { LOCAL_SETTINGS_HOST_KEY, appSettingsModel } from '@/session/renderer/features/settings/app-settings-client'
 import { readInterface, takeLegacyInterface, writeInterface } from '@/lib/viewStateTable'
+import { isImeComposing } from '@/lib/ime'
 
 export type CreatedProject = { chatId: string | null; deviceId: string; localProjectId: string; name: string; createdAt: string }
 
@@ -166,7 +167,7 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
             value={name}
             autoFocus={active}
             onChange={(event) => { setName(event.target.value); setError(null) }}
-            onKeyDown={(event) => { if (event.key === 'Enter') void create() }}
+            onKeyDown={(event) => { if (event.key === 'Enter' && !isImeComposing(event)) void create() }}
           />
         </div>
         <div className="gg-partners-navrows">

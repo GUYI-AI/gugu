@@ -23,6 +23,7 @@ import {
   splitCompletionDraft,
 } from './remoteFolderPath'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
+import { isImeComposing } from '@/lib/ime'
 
 const LIST_DIRECTORY_TIMEOUT_MS = 20_000
 const COMPLETION_DEBOUNCE_MS = 150
@@ -312,7 +313,7 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
             value={pathDraft}
             onChange={(event) => setPathDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing || event.keyCode === 229) return
+              if (isImeComposing(event)) return
               if (event.key === 'Enter') {
                 event.preventDefault()
                 event.stopPropagation()
@@ -494,6 +495,7 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
                 disabled={newFolder.busy}
                 onChange={(event) => setNewFolder({ ...newFolder, name: event.target.value, error: null })}
                 onKeyDown={(event) => {
+                  if (isImeComposing(event)) return
                   if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); void submitNewFolder() }
                   else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setNewFolder(null) }
                 }}

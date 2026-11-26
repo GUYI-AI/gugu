@@ -1,7 +1,7 @@
 import type { GuguMcpContext } from '../acp-engine-utils'
 import { passwordNativeMcpIdentity } from '../mcp/password-native-identity'
 import type { PasswordApproval, PasswordSaveRequest } from '@gugu/core/shared/passwordBetaProtocol'
-import { postPasswordRequest } from './beta-messages'
+import { openPasswordRequest } from './beta-messages'
 import type { SaveProposal } from './beta-save'
 import { httpsOrigin } from './schema'
 import { PASSWORD_AGENT_RPC, releasedSchema, serverDeliveryKey, type RemoteCaller, type RemoteOp } from './server-delivery'
@@ -31,7 +31,7 @@ const unavailable = () => new Error('password_server_unavailable')
 
 /**
  * The password tools on a Gugu server (「本机送」, server-delivery.ts): the same Agent surface as on a desktop, each step
- * answered by the account's desktop that keeps the vault. The card is posted from the Agent's own session here; the
+ * answered by the account's desktop that keeps the vault. The request is opened in the Agent's own session here; the
  * outcome is polled from the desktop and told to that session like a local one.
  */
 export function createServerPasswordAgent(host: ServerPasswordHost) {
@@ -96,7 +96,7 @@ export function createServerPasswordAgent(host: ServerPasswordHost) {
       const { device, result } = await vault<{ requestId: string; status: string; view: PasswordApproval }>({ op: 'request', caller: who, credentialId: input.credentialId, origin })
       logins.set(result.requestId, { desktop: device, caller: who, url: input.url, origin, selection, status: result.status })
       if (result.status === 'pending') {
-        await postPasswordRequest(context, result.view)
+        await openPasswordRequest(result.view)
         watch(() => ask<{ status: string }>(device, { op: 'status', caller: who, requestId: result.requestId }), ({ status }) => {
           const login = logins.get(result.requestId)
           if (login) login.status = status
@@ -132,7 +132,7 @@ export function createServerPasswordAgent(host: ServerPasswordHost) {
       if (result.status !== 'pending' || !result.requestId || !result.view) return { status: result.status, ...(result.credentialId ? { credentialId: result.credentialId } : {}) }
       const requestId = result.requestId
       saves.set(requestId, { desktop: device, caller: who })
-      await postPasswordRequest(context, result.view)
+      await openPasswordRequest({ ...result.view, ...(input.hint ? { hint: input.hint } : {}), ...(input.help ? { help: input.help } : {}) })
       watch(() => ask<{ status: string; credentialId?: string }>(device, { op: 'saveStatus', caller: who, requestId }),
         ({ status, credentialId }) => { void host.deliverSave(who.sessionId, requestId, status, credentialId).catch(() => {}) })
       return { requestId, status: 'pending' }

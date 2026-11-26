@@ -586,7 +586,7 @@ describe('AgentConfigRuntime', () => {
         command: '/bin/sh',
         args: ['-c', 'wrap', '/opt/managed/fake-tui'],
       });
-      expect(buildLoginCommand).toHaveBeenCalledWith({ cli: '/opt/managed/fake-tui' }, 'tui-login');
+      expect(buildLoginCommand).toHaveBeenCalledWith(expect.objectContaining({ cli: '/opt/managed/fake-tui', env: expect.any(Object) }), 'tui-login');
       // 主程序那一趟没把伴随程序那一趟顶掉
       expect(ptySpawner.processes[0]?.killed).toBe(false);
       expect(runtime.install.getAuth('claude', 'claude-tui').login?.methodId).toBe('tui-login');

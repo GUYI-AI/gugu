@@ -29,7 +29,7 @@ import {
   blockMinExtent,
   type MentionDrop,
 } from './screen-layout-actions';
-import { BlockGrip } from './block-grip';
+import { BlockGrip, CloseSplitBlock } from './block-grip';
 import { ChatPartSlot, ChatSlot } from '@renderer/lib/chat-slot';
 import { ChatTabMenuItems, chatTabHasActions } from '@renderer/features/chats/chat-tab-menu-items';
 import { ChatPanes, ChatTabChip } from '@renderer/features/chats/chat-tabs/chat-panes';
@@ -169,7 +169,7 @@ const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: st
       blockId={blockId}
       leading={<BlockGrip blockId={blockId} content={{ kind: 'chat', chatId, title: '' }} label={translate('screen.gripApp')} />}
       reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
-      actionsSlot={<TabBarActionRow>{actions}</TabBarActionRow>}
+      actionsSlot={<TabBarActionRow>{actions}<CloseSplitBlock blockId={blockId} /></TabBarActionRow>}
       chip={({ tab, host }) => (
         <ChatTabChip
           tab={tab}

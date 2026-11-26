@@ -36,7 +36,7 @@ const MODEL_GROUPS = [
   { id: 'custom', testId: 'settings-custom-models', addId: 'custom-model-add', title: 'customModels.title', add: 'customModels.add' },
 ] as const;
 type ModelGroup = (typeof MODEL_GROUPS)[number]['id'];
-type NewModel = { group: 'coding-plan' | 'api'; account?: 'claude' | 'codex' };
+type NewModel = { group: 'coding-plan' | 'api'; account?: 'claude' | 'codex' | 'antigravity' };
 const groupOf = (connection: CustomModelConnection): ModelGroup => providerPresets.some(preset => preset.id === connection.preset && preset.group === 'coding-plan') ? 'coding-plan' : 'custom';
 
 type AddRequest = { addRequested?: boolean; onAddClose?: () => void; providedModels?: ReactNode };
@@ -63,8 +63,8 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
   const connectionGroups = groupByApiUrl(valueOf(reading) ?? []);
   const conflicts = new Map(connectionGroups.filter(([, connections]) => connections.length > 1));
   const agents = valueOf(useAgents());
-  const accountAgents = agents?.filter(agent => agent.id === 'claude' || agent.id === 'codex') ?? [];
-  const planAgents = agents?.filter(agent => agent.id !== 'claude' && agent.id !== 'codex' &&
+  const accountAgents = agents?.filter(agent => agent.id === 'claude' || agent.id === 'codex' || agent.id === 'antigravity') ?? [];
+  const planAgents = agents?.filter(agent => agent.id !== 'claude' && agent.id !== 'codex' && agent.id !== 'antigravity' &&
     agent.capabilities.subscription && agent.reading === 'installed') ?? [];
   const [userEdit, setEditing] = useState<CustomModelConnection | NewModel | null>(null);
   const [editingModel, setEditingModel] = useState<string | undefined>(undefined);

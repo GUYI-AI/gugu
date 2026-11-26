@@ -179,6 +179,7 @@ function HtmlBlockView(props: { node: Measured<HtmlLeafLayout> }) {
       commands().onOpenFile?.({ path: kind.path, itemId: props.node.layout.id, source: 'prose-link', ...(kind.at ? { at: kind.at } : {}) });
       return;
     }
+    if (commands().onOpenWebLink?.(href, event)) return;
     window.open(href, '_blank', 'noopener,noreferrer');
   };
 

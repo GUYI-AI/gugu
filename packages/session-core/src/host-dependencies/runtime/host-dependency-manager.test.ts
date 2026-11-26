@@ -214,6 +214,52 @@ const unknownDetector: InstallMethodDetector = {
   invalidate: () => {},
 };
 
+describe('Windows installer registrations', () => {
+  const registered = 'C:\\工具 Bundle\\Example\\resources\\cli.cjs';
+  const defaultPath = 'C:\\Users\\test\\Programs\\Example\\resources\\cli.cjs';
+  const declaredDefault = '%LOCALAPPDATA%\\Programs\\Example\\resources\\cli.cjs';
+  const commandOnPath = 'C:\\bin\\example.cmd';
+  const dependency: DependencyDescriptor = {
+    id: 'example',
+    name: 'Example',
+    category: 'agent',
+    commands: ['example'],
+    skipVersionProbe: true,
+    knownPaths: {
+      windows: [{ registryKey: 'example-installer', relativePath: 'resources\\cli.cjs' }, declaredDefault],
+    },
+  };
+
+  it.each([
+    { pathHit: commandOnPath, registryHit: registered, defaultHit: null, expected: commandOnPath },
+    { pathHit: null, registryHit: registered, defaultHit: null, expected: registered },
+    { pathHit: null, registryHit: null, defaultHit: defaultPath, expected: defaultPath },
+    { pathHit: null, registryHit: defaultPath.toUpperCase(), defaultHit: defaultPath, expected: defaultPath.toUpperCase() },
+    { pathHit: null, registryHit: null, defaultHit: null, expected: null },
+  ])('reports $expected in both the status and installation list', async ({ pathHit, registryHit, defaultHit, expected }) => {
+    const ctx = makeCtx(async () => { throw new Error('discovery must not execute the CLI'); });
+    ctx.findWindowsCommandPaths = vi.fn(async (command) => {
+      const hit = command === 'example' ? pathHit : command === declaredDefault ? defaultHit : null;
+      return hit ? [hit] : [];
+    });
+    ctx.findWindowsRegisteredPaths = vi.fn(async () => registryHit ? [registryHit] : []);
+    const manager = new HostDependencyManager(ctx, {
+      platform: 'windows',
+      dependencies: [dependency],
+      installMethodDetector: unknownDetector,
+    });
+
+    const state = await manager.probe('example', { waitForInstallations: true });
+
+    expect(state).toMatchObject({ path: expected, status: expected ? 'available' : 'missing' });
+    expect(manager.getHostDependency('example')?.installations.map((installation) => installation.realpath))
+      .toEqual(expected ? [expected] : []);
+    if (pathHit) expect(ctx.findWindowsRegisteredPaths).not.toHaveBeenCalled();
+    else expect(ctx.findWindowsRegisteredPaths).toHaveBeenCalledWith('example-installer', 'resources\\cli.cjs', undefined);
+    expect(ctx.exec).not.toHaveBeenCalled();
+  });
+});
+
 /**
  * A detector stub that returns npm confirmed provenance.
  * Used for tests verifying npm-confirmed manageable installs.

@@ -1,0 +1,8 @@
+{
+  "apps/desktop/src/lib/chat.ts": 289,
+  "apps/desktop/src/store/chat.tsx": 576,
+  "apps/desktop/src/components/ChatAreaPanel.tsx": 291,
+  "apps/desktop/src/components/ContactsPanel.tsx": 436,
+  "apps/desktop/src/components/chat/GroupMembersSection.tsx": 152,
+  "apps/desktop/src/components/chat/MessageBubble.tsx": 196
+}

@@ -146,6 +146,8 @@ export const EXTENSION_PICK_DISPATCH_TARGET_METHOD = 'extensions.pickDispatchTar
  * The window checks the account and the assistant itself; the page sees only the outcome.
  */
 export const EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD = 'extensions.confirmResourceRemoval';
+/** API 65 `gugu.credentials.choose`: the host's dialog to pick or save the App's credential for a website, in this window. */
+export const EXTENSION_CHOOSE_CREDENTIAL_METHOD = 'extensions.chooseCredential';
 export const EXTENSION_TRANSCRIBE_VOICE_NOTE_METHOD = 'extensions.transcribeVoiceNote';
 export const EXTENSION_EXPORT_VOICE_NOTE_METHOD = 'extensions.exportVoiceNote';
 /** `folder`: its last name; `voice-note`: its title (null: untitled). For a voice note, its id, to stop this window's job first. */

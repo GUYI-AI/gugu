@@ -921,6 +921,15 @@ export const extensionsController = createRPCController({
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },
 
+  /** API 64 dialog's 「保存」: a new credential into the vault, picked for the App on that website. The value goes no further. */
+  saveAppCredential: async (args: { extensionId: string; site: string; name: string; value: string }) => {
+    try {
+      const { appCredentials } = await import('./app-credentials-instance');
+      await appCredentials.saveAndPick(args.extensionId, args.site, { name: args.name, value: args.value });
+      return { success: true as const };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
   unreadBindingChoices: async (args: { extensionId: string; name: string }) => {
     try {
       const { unreadBindingChoices } = await import('./app-unread-bindings');

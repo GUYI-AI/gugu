@@ -36,6 +36,8 @@ vi.mock('@/lib/sshLinkChannel', () => ({
   answerSshSignInPrompt: vi.fn(), requestSshServerUpgrade: vi.fn(), signInSshMachine: vi.fn(), sshReinstallCommand: vi.fn(),
 }))
 import { SshLinkSignIn } from '@/components/SshLinkSignIn'
+import { reportedSshUpdate } from '@/lib/sshLinkOnline'
+import { persistentNotices } from '@/lib/notices'
 import { NoticeHost } from '@/components/NoticeHost'
 import { requestSshServerUpgrade } from '@/lib/sshLinkChannel'
 
@@ -183,4 +185,31 @@ it('a background link that needs sign-in shows nothing; a sign-in started elsewh
   })
   expect(document.querySelector('[data-testid=ssh-link-sign-in] input[type=password]')).not.toBeNull()
   expect(document.body.textContent).toContain('Remote')
+})
+
+it('defers one machine to the bell and immediately shows the other', async () => {
+  const first = server(undefined, true)
+  const second = { ...first, device_id: 'remote-b', label: 'Second server' }
+  state.devices = [first, second]
+  await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
+  const original = document.querySelector('[data-notice-key]')!.getAttribute('data-notice-key')
+  expect(persistentNotices.read().filter(item => !item.deferred)).toHaveLength(2)
+  await clickElement(document.querySelector<HTMLElement>('[data-notice-close]')!)
+  const next = document.querySelector('[data-notice-key]')!.getAttribute('data-notice-key')
+  expect(next).not.toBe(original)
+  expect(persistentNotices.read().map(item => [item.key, item.deferred])).toEqual(expect.arrayContaining([[original, true], [next, false]]))
+})
+
+it('shows reported update progress for a pending mismatch and keeps real transport errors', () => {
+  const host = server(undefined, true)
+  expect(reportedSshUpdate(host, 'confirmationRequired')).toBe('waitingIdle')
+  host.capabilities.server_update!.state = 'downloading'
+  expect(reportedSshUpdate(host, 'outdated')).toBe('updating')
+  expect(reportedSshUpdate(host, 'hostKeyChanged')).toBe('hostKeyChanged')
+  host.capabilities.server_update!.state = 'failed'
+  expect(reportedSshUpdate(host, 'outdated')).toBe('updateFailed')
+  host.capabilities.server_update = undefined
+  host.capabilities.remote_protocol = 20
+  host.capabilities.server_update_outcome = { kind: 'switched', request: 1 }
+  expect(reportedSshUpdate(host, 'confirmationRequired')).toBeNull()
 })

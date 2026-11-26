@@ -45,6 +45,7 @@ export { nativeConfigRoot };
 import { nativeCodexAuthEnvironment, readNativeCodexOAuth } from './codex-native-auth-source';
 import { reconcileCodexNativeReference } from './codex-native-auth-migration';
 import { CODEX_NATIVE_AUTH_ROOT, codexOAuthIdentity } from '@gugu/core/local/codex-native-auth.mjs';
+import { ANTIGRAVITY_ACCOUNT_ENV, antigravitySignInSaved, ensureAntigravityVault } from './antigravity-auth-slot';
 
 /** Subscription selection and credential routing for installed harnesses. */
 
@@ -64,7 +65,7 @@ function vendorKeyOf(providerId: string) {
 
 /** 这一家能不能有连接 —— 只有主进程这一处判。 */
 export function harnessHasConnections(providerId: string): boolean {
-  return isAccountProvider(providerId) || vendorKeyOf(providerId) !== undefined;
+  return providerId === 'antigravity' || isAccountProvider(providerId) || vendorKeyOf(providerId) !== undefined;
 }
 
 function supported(providerId: string): void {
@@ -98,7 +99,10 @@ export async function listHarnessConnections(providerId: string): Promise<Harnes
   if (providerId === 'codex') await reconcileNativeCodex();
   return (await registry.listAccounts(namespace(providerId)))
     .filter((row) => !row.meta?.harnessConnection?.removed && (row.meta?.harnessConnection?.kind !== 'api-key' || row.meta.credentialSource === 'vendor-key'))
-    .map(connectionView);
+    .map(row => {
+      const view = connectionView(row);
+      return providerId === 'antigravity' && view.id === 'native' ? { ...view, kind: 'account' as const } : view;
+    });
 }
 
 export async function createHarnessConnection(input: CreateHarnessConnection): Promise<HarnessConnection> {
@@ -111,6 +115,7 @@ export async function createHarnessConnection(input: CreateHarnessConnection): P
     if (input.providerId === 'codex') await ensureCodexVault(vaultRoot('codex', id));
     else await ensureClaudeVault(vaultRoot('claude', id));
   }
+  if (input.providerId === 'antigravity') await ensureAntigravityVault(antigravityVaultRoot(id), antigravityManagedRoot());
   await registry.upsertAccount({
     providerId: namespace(input.providerId), accountId: id,
     ...(vendor ? { secret: input.apiKey } : {}),
@@ -148,7 +153,7 @@ async function applyHarnessSelection(
   nativeEnv: Record<string, string | undefined> | undefined,
 ): Promise<void> {
   const target = await registry.getAccount(namespace(providerId), connectionId);
-  if (!target || target.meta?.harnessConnection?.removed) throw new Error('Connection no longer exists');
+  if (!target || target.meta?.harnessConnection?.removed && !(providerId === 'antigravity' && connectionId === 'native')) throw new Error('Connection no longer exists');
   if (providerId === 'claude' && target.meta?.harnessConnection?.kind !== 'api-key') {
     await activateClaudeAccount(claudeSlotPaths(nativeEnv), await accountConnectionIds(providerId), connectionId, await defaultConnectionId(providerId));
   }
@@ -169,7 +174,11 @@ export async function assertHarnessConnectionSelectable(
   supported(providerId);
   await ensureNative(providerId);
   const target = await registry.getAccount(namespace(providerId), connectionId);
-  if (!target || target.meta?.harnessConnection?.removed) throw new Error('Connection no longer exists');
+  if (!target || target.meta?.harnessConnection?.removed && !(providerId === 'antigravity' && connectionId === 'native')) throw new Error('Connection no longer exists');
+  if (providerId === 'antigravity') {
+    if (connectionId === 'native' || await antigravitySignInSaved(antigravityVaultRoot(connectionId))) return;
+    throw new Error('The selected Antigravity account has no saved sign-in; sign in to it again');
+  }
   if (target.meta?.credentialSource === 'vendor-key' || !isAccountProvider(providerId)) return;
   if (providerId === 'codex') {
     // Returning to the native connection is also how the user returns to a signed-out state.
@@ -196,7 +205,7 @@ export async function removeHarnessConnection(
   options: { nativeEnv?: Record<string, string | undefined> } = {}
 ): Promise<void> {
   supported(providerId);
-  if (connectionId === 'native') throw new Error('The existing CLI configuration cannot be removed');
+  if (connectionId === 'native' && providerId !== 'antigravity') throw new Error('The existing CLI configuration cannot be removed');
   const target = await registry.getAccount(namespace(providerId), connectionId);
   if (!target || target.meta?.harnessConnection?.removed) throw new Error('Connection no longer exists');
   if (target.isDefault) await selectHarnessConnection(providerId, 'native', options);
@@ -322,6 +331,17 @@ export async function resolveHarnessConnection(
   providerId: string,
   input: HarnessConnectionInput = {},
 ): Promise<Partial<AgentRunContext>> {
+  if (providerId === 'antigravity') {
+    await ensureNative(providerId);
+    const id = (!input.sessionId ? input.connectionId : undefined) ?? await registry.getDefaultAccountId(namespace(providerId)) ?? 'native';
+    const row = await registry.getAccount(namespace(providerId), id);
+    if (!row || row.meta?.harnessConnection?.removed && (id !== 'native' || input.forLogin)) throw new Error('The Antigravity account is unavailable');
+    if (id === 'native' && !row.meta?.harnessConnection?.removed) return { connectionId: id };
+    const root = antigravityVaultRoot(id === 'native' ? 'signed-out' : id);
+    await ensureAntigravityVault(root, antigravityManagedRoot());
+    return { connectionId: id, credentialHome: join(root, '..'), configRootEnv: { GEMINI_HOME: root },
+      credentialEnv: { ...ANTIGRAVITY_ACCOUNT_ENV }, unsetEnv: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'] };
+  }
   if (!isAccountProvider(providerId)) {
     const vendor = vendorKeyOf(providerId);
     if (!vendor) return {};
@@ -406,9 +426,20 @@ export async function sessionHarnessConnectionId(sessionId: string | undefined):
   const custom = customModelRefFromOption(row.config?.model);
   if (custom) return custom.connectionId;
   // Subscription sessions follow the current default; custom-model sessions are handled above.
+  if (row.provider === 'antigravity') return await registry.getDefaultAccountId(namespace(row.provider)) ?? 'native';
   if (row.provider === 'codex' || row.provider === 'claude') return defaultConnectionId(row.provider);
   if (row.provider && vendorKeyOf(row.provider)) return (await registry.getDefaultAccountId(namespace(row.provider))) ?? 'native';
   return 'native';
+}
+
+function antigravityVaultRoot(id: string): string {
+  return join(app.getPath('userData'), 'harness-connections', 'antigravity', id, '.gemini');
+}
+
+function antigravityManagedRoot(): string {
+  const bundle = pluginRegistry.get('antigravity')!.capabilities.sessionBundle!;
+  return resolveAgentHome({ providerId: 'antigravity', injectionMode: bundle.injectionMode, configRoot: bundle.configRoot,
+    guguHome: process.env.GUGU_HOME ?? '', osHomeDir: homedir(), sourceEnv: process.env })!.configRoot;
 }
 
 type RestoredTerminal = {

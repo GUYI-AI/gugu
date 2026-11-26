@@ -221,7 +221,7 @@ function describeMachine(probe: ProbeResult, currentUserId: string | null): Serv
   }
 }
 
-export async function runSshInstall(target: SshTarget, run: InstallRun, deps: SshInstallDeps): Promise<ServerSshInstallState> {
+export async function runSshInstall(target: SshTarget, run: InstallRun, deps: SshInstallDeps): Promise<ServerSshInstallState & { awaitingConfirmation?: true }> {
   const timeouts = { ...DEFAULT_TIMEOUTS, ...deps.timeouts }
   const upgradeOnly = deps.mode === 'upgrade'
   const scriptArgs = buildSshArgs(target, { controlPath: deps.controlPath, persist: deps.controlPersist, batch: upgradeOnly })
@@ -376,7 +376,13 @@ export async function runSshInstall(target: SshTarget, run: InstallRun, deps: Ss
     }
 
     // A version signal is not consent to restart work through the fallback installer.
-    if (upgradeOnly && !deps.now) throw new StepFailure('serverTooOld', oneLineInstallCommand(deps.downloadBase, deps.channel, found.fetcher === 'wget' ? 'wget' : 'curl'))
+    if (upgradeOnly && !deps.now) {
+      if (found.protocolCheck === 'unknownCommand') {
+        throw new StepFailure('serverTooOld', oneLineInstallCommand(deps.downloadBase, deps.channel, found.fetcher === 'wget' ? 'wget' : 'curl'))
+      }
+      run.update(draft => { draft.finished = true })
+      return { ...run.snapshot(), awaitingConfirmation: true }
+    }
 
     // ③ 下载:已经装过、这台桌面跟它说得上话 ⇒ 不重装。重装会立刻改 current 指针,绕过「空闲时才切版本」(behavior 第 5 条),
     //    版本交给那台机器自己的后台升级。

@@ -221,6 +221,15 @@ type LinkHandlers = { onMessage(message: unknown): void; onClosed(reason: SshLin
 const handlersByDevice = new Map<string, LinkHandlers>()
 let eventsWired = false
 
+// A repeated protocol mismatch is a link observation. The updater owns the outcome of the attempt.
+function recordLinkProblem(deviceId: string, reason: SshLinkFailure): void {
+  if (reason === 'outdated' || reason === 'updating') {
+    const latest = linkProblems.get().get(deviceId)
+    if (latest === 'waitingIdle' || latest === 'confirmationRequired' || latest === 'updateFailed' || latest === 'updating') return
+  }
+  patch(linkProblems, deviceId, reason)
+}
+
 function wireEvents(electron: ElectronBridge): void {
   if (eventsWired) return
   eventsWired = true
@@ -233,7 +242,7 @@ function wireEvents(electron: ElectronBridge): void {
     const event = data as SshLinkClosedEvent | null
     if (!event || typeof event.deviceId !== 'string') return
     // 远程隧道上的那条:原因由远程隧道自己报(subscribeTunnelState),❌ 冒成远程 SSH 的「要先登录」卡片。
-    if (event.via !== 'tunnel') patch(linkProblems, event.deviceId, event.reason)
+    if (event.via !== 'tunnel') recordLinkProblem(event.deviceId, event.reason)
     handlersByDevice.get(event.deviceId)?.onClosed(event.reason)
   })
 }
@@ -254,7 +263,7 @@ export function openSshLink(deviceId: string, handlers: LinkHandlers): SshLinkHa
     (result) => {
       if (!result || !result.ok) {
         const reason = result && !result.ok ? result.reason : 'unreachable'
-        if (!(result && !result.ok && result.via === 'tunnel')) patch(linkProblems, deviceId, reason)
+        if (!(result && !result.ok && result.via === 'tunnel')) recordLinkProblem(deviceId, reason)
         if (result && !result.ok && result.controlOnly) return
         throw new SshLinkError(reason, deviceId)
       }
@@ -297,7 +306,7 @@ export async function signInSshMachine(deviceId: string): Promise<SshLinkOpenRes
     patch(linkProblems, deviceId, undefined)
     for (const listener of [...signedInListeners]) listener(deviceId)
   } else {
-    patch(linkProblems, deviceId, result.reason)
+    recordLinkProblem(deviceId, result.reason)
   }
   return result
 }
@@ -323,7 +332,7 @@ export function subscribeSshUpgradeEvents(listener: (event: SshUpgradeEvent) => 
 }
 
 
-/** 主进程报来的一步:在升 → 「正在更新」;升好 → 清掉问题并当场重连(与刚登上同一条路);没升成 → 停在「版本太旧」。 */
+/** 主进程报来的一步:在升 → 「正在更新」;升好 → 清掉问题并当场重连(与刚登上同一条路);只有升级失败事件才记为 updateFailed。 */
 export function applyUpgradeEvent(event: SshUpgradeEvent | null): void {
   if (!event || typeof event.deviceId !== 'string') return
   const { deviceId } = event
@@ -333,16 +342,16 @@ export function applyUpgradeEvent(event: SshUpgradeEvent | null): void {
   if (event.phase === 'updating') {
     patch(upgrades, deviceId, typeof event.percent === 'number' ? event.percent : null)
     patch(linkProblems, deviceId, 'updating')
-  } else if (event.phase === 'waitingIdle') {
+  } else if (event.phase === 'waitingIdle' || event.phase === 'confirmationRequired') {
     patch(upgrades, deviceId, undefined)
-    patch(linkProblems, deviceId, 'waitingIdle')
+    patch(linkProblems, deviceId, event.phase)
   } else if (event.phase === 'desktopTooOld' || event.phase === 'unconfirmed') {
     // 连接本身没毛病;「请更新这台电脑上的咕咕」由那台机器报的协议窗口说(serverMachineNotices)。
     patch(upgrades, deviceId, undefined)
     patch(linkProblems, deviceId, undefined)
   } else {
     patch(upgrades, deviceId, undefined)
-    patch(linkProblems, deviceId, event.phase === 'done' ? undefined : 'outdated')
+    patch(linkProblems, deviceId, event.phase === 'done' ? undefined : 'updateFailed')
     if (event.phase === 'done') for (const listener of [...signedInListeners]) listener(deviceId)
   }
 }
@@ -377,9 +386,8 @@ export async function requestSshServerUpgrade(deviceId: string, options?: {
   } catch {
     started = false
   }
-  // 没在升(刚失败过、还在冷却):说「版本太旧、更新没成功」,❌ 让它落回「重连中」。
-  // desktopTooOld:「这台电脑太旧」那一问 —— 没发起(冷却中)不改连接状况,连接本身没毛病。
-  if (isSshMachine(deviceId) && (started || !options?.desktopTooOld)) patch(linkProblems, deviceId, started ? 'updating' : 'outdated')
+  // The main process emits upgradeState when work starts. A declined or coalesced request
+  // has no new outcome and must not overwrite an event received before this reply.
   return started
 }
 

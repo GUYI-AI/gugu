@@ -10,6 +10,7 @@ import {
   EXTENSION_INSTALL_CONSENT_METHOD,
   EXTENSION_PICK_DISPATCH_TARGET_METHOD,
   EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD,
+  EXTENSION_CHOOSE_CREDENTIAL_METHOD,
   EXTENSION_EXPORT_VOICE_NOTE_METHOD,
   INSTALL_CONSENT_HUMAN_WINDOW_MS,
 } from '../src/session/shared/extensions/host-actions'
@@ -46,6 +47,7 @@ const HUMAN_DECISION_TIMEOUT_MS = new Map<string, number>([
   // #50 The assistant page's own question before a delete, and its save dialog: as long as the person takes.
   [EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],
   [EXTENSION_EXPORT_VOICE_NOTE_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],
+  [EXTENSION_CHOOSE_CREDENTIAL_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],
 ])
 
 const pendingByDomain = new Map<RendererCommandDomain, Map<string, PendingRendererCommand>>(
