@@ -32,7 +32,6 @@ import { createElement, useEffect, useRef } from 'react';
 export type ChatTranscriptProps = Pick<
   ChatViewOptions,
   | 'stickToBottom'
-  | 'pinUserMessages'
   | 'composer'
   | 'class'
   | 'contentClass'
@@ -76,7 +75,6 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
       parent: ref.current,
       composer: p.composer,
       stickToBottom: p.stickToBottom,
-      pinUserMessages: p.pinUserMessages,
       class: p.class,
       contentClass: p.contentClass,
       commands: p.commands ?? {},

@@ -2,16 +2,14 @@ import { readQuestionAnswerDelivery } from '@gugu/session-core/session-record/qu
 import type { ChatMessage } from '@session-chat/model';
 
 type MessagePresentation =
-  | { kind: 'question-answer'; reading: NonNullable<ChatMessage['questionAnswer']>; pinSummary: false }
-  | { kind: 'body'; reading: undefined; pinSummary: true };
+  | { kind: 'question-answer'; reading: NonNullable<ChatMessage['questionAnswer']> }
+  | { kind: 'body'; reading: undefined };
 
-/** The row presenter and pin collector share this dispatch, for both raw records and normalized units. */
+/** The row presenter's dispatch, for both raw records and normalized units. */
 export function messagePresentation(item: ChatMessage): MessagePresentation {
   const reading = item.questionAnswer ?? (item.role === 'user' ? readQuestionAnswerDelivery(item.text) : undefined);
-  // This compact status row has no text bubble for a summary to repeat or hide behind.
-  if (reading) return { kind: 'question-answer', reading, pinSummary: false };
-  // Preserve existing body summaries, including the attachment-name summary of a bare attachment row.
-  return { kind: 'body', reading: undefined, pinSummary: true };
+  if (reading) return { kind: 'question-answer', reading };
+  return { kind: 'body', reading: undefined };
 }
 
 export function messageQuestionAnswer(item: ChatMessage): ChatMessage['questionAnswer'] {

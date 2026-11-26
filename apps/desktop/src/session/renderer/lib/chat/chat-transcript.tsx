@@ -57,7 +57,6 @@ const writeClipboardText = (text: string) => platform.writeClipboardText(text);
 export type ChatTranscriptProps = Pick<
   ChatViewOptions,
   | 'stickToBottom'
-  | 'pinUserMessages'
   | 'composer'
   | 'composerPlacement'
   | 'contentOverlay'
@@ -179,7 +178,6 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
         composerPlacement: p.composerPlacement,
         contentOverlay: p.contentOverlay,
         stickToBottom: p.stickToBottom,
-        pinUserMessages: p.pinUserMessages,
         class: p.class,
         contentClass: p.contentClass,
         commands: { onCopyError, onTooltipMount, onInputSendFailureMount, onMessageBodyMount, ...p.commands,
@@ -211,10 +209,6 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
     };
      
   }, []);
-
-  useLayoutEffect(() => {
-    viewRef.current?.setPinUserMessages(!!props.pinUserMessages);
-  }, [props.pinUserMessages]);
 
   useLayoutEffect(() => {
     viewRef.current?.setShown(shown);
