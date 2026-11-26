@@ -996,6 +996,19 @@ let sessionpageAgentRehydration: Promise<void> = new Promise<void>((resolve, rej
 })
 void sessionpageAgentRehydration.catch(() => undefined)
 let isQuitting = false
+/**
+ * #3884 退出意图一立(按下安装更新、退出),会话就不再起新引擎:停机随后就关咕咕 MCP 端口和运行时,这时起的引擎握手撞上
+ * 关掉的端口,重启后那条会话显示「无法启动」(11-26 升级时两条定时任务的会话就是这样)。正在起的转成等下一个宿主登录再起,
+ * 排着的输入原样留给它。
+ */
+function noteQuitIntent(): void {
+  isQuitting = true
+  try {
+    emdashBridge?.beginSessionLifeHostQuit()
+  } catch (error) {
+    createLogger('shutdown').warn({ err: error }, 'session starts could not be held for the quit')
+  }
+}
 
 function getSessionpageLocalDelivery(): SessionpageLocalDeliveryRouter {
   // spec session-injection「认领者是注册表」:targets 来自注册表(内核角色由 owner-registry 登记,
@@ -3390,9 +3403,7 @@ const squirrelHandoff = createSquirrelHandoff({
 
 // 顺序、看门狗、重复按下这三件事在 ./update-quit 里,连同 #5793 的根因一起写在那个文件的头注释。
 const updateQuit = createUpdateQuit({
-  markQuitIntent: () => {
-    isQuitting = true
-  },
+  markQuitIntent: noteQuitIntent,
   // NSIS shows installation progress and relaunches the app when installation finishes.
   handOff: () => {
     emitUpdateStatus({ success: true, status: 'installing', updateInfo: updaterState.current.updateInfo })
@@ -3565,6 +3576,7 @@ app.on('before-quit', createRuntimeBeforeQuitHandler({
   getHost: () => deviceRuntimeHost,
   setQuitting: (value) => {
     isQuitting = value
+    if (value) noteQuitIntent()
     if (value) projectionDeviceRuntime.invalidate()
     // @@@5793 停机已经开始,看门狗的使命结束 —— 别在停机中途再捅一次 app.quit()。
     if (value) updateQuit.noteShutdownStarted()

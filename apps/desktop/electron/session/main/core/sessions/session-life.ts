@@ -123,8 +123,28 @@ export class SessionLife {
   private tail: Promise<void> | null = null;
   /** v3.1 #7: from leave's first interrupt until the epoch advances, nothing may start a run. */
   private leaving = false;
+  /** #3884: the host process is quitting; see beginHostQuit. Never reset: the process is ending. */
+  private quitting = false;
 
   constructor(private readonly ports: SessionLifePorts) {}
+
+  /**
+   * #3884 The host is quitting (an update install or a quit) and is about to close the MCP endpoints and the runtime an
+   * engine needs. From here on nothing starts. A start in flight is stopped the way a sign-out of the current owner stops
+   * it: its rows stay queued and the next host starts it when the same owner signs in (enter → signed-in). Otherwise the
+   * engine fails its handshake on an endpoint the quit just closed, and after the restart the session says it could not
+   * start. Ready sessions are left to the host's own teardown.
+   */
+  beginHostQuit(): void {
+    if (this.quitting) return;
+    this.quitting = true;
+    for (const [sessionId, entry] of this.entries) if (entry.life.kind === 'starting') this.holdForNextHost(sessionId);
+  }
+
+  private holdForNextHost(sessionId: string): void {
+    const ownerUserId = this.account;
+    if (ownerUserId !== null) this.send(sessionId, { k: 'interrupt', reason: 'sign-out', ownerUserId });
+  }
 
   /** A host-owned input keeps its original signed-in epoch across asynchronous preparation and routing. */
   inputOwnerFence(ownerUserId: string): () => void {
@@ -311,7 +331,8 @@ export class SessionLife {
   }
 
   private deliver(sessionId: string, seq: Seq): void {
-    const refused = this.account === null ? 'no account is signed in' : this.leaving ? 'sign-out is in progress' : null;
+    const refused = this.account === null ? 'no account is signed in' : this.leaving ? 'sign-out is in progress'
+      : this.quitting ? 'the app is quitting' : null;
     if (refused) {
       // The row stays queued; a later sign-in of its owner or an explicit start consumes it.
       this.ports.failed(sessionId, new Error(`Delivery of pending ${seq} held: ${refused}`));
@@ -324,12 +345,13 @@ export class SessionLife {
   start(sessionId: string, origin: 'user-open' | 'retry' | 'reconfigure' = 'user-open'): void {
     if (this.account === null) throw new Error('Sign in before starting this session');
     if (this.leaving) throw new Error('Sign-out is in progress; this session cannot start now');
+    if (this.quitting) throw new Error('The app is quitting; this session starts after the restart');
     this.send(sessionId, { k: 'start', origin });
   }
 
   /** The backend is back: every session a start failure left holding rows starts again; `before` runs first for each. */
   startAfterOutage(before: (sessionId: string) => void): readonly string[] {
-    if (this.account === null || this.leaving) return [];
+    if (this.account === null || this.leaving || this.quitting) return [];
     const started: string[] = [];
     for (const [sessionId, entry] of this.entries) {
       if (!shouldStartAfterOutage(entry.life, this.ports.store(sessionId).pending(sessionId))) continue;
@@ -352,6 +374,8 @@ export class SessionLife {
     // The scheduler may bootstrap before the host restores its account or finishes hydration.
     // This is pending initialization, not a terminal sign-out or a recovery reservation.
     if (!this.authSettled || this.tail !== null) return { state: 'waiting' };
+    // #3884 The row stays queued for the next host, so this is no reason to spend a reservation or give up.
+    if (this.quitting) return { state: 'waiting' };
     const entry = this.entry(sessionId);
     const life = entry.life;
     if (life.kind === 'starting' || life.kind === 'stopping' || life.kind === 'ready') return { state: 'waiting' };
@@ -645,6 +669,9 @@ export class SessionLife {
       case 'run-stage': {
         if (!run || !same(run.gen, effect.gen)) throw new Error('Stage has no matching lifecycle lease');
         if (run.abort.signal.aborted) return;
+        // #3884 A start that begins during the quit (a settle with rows waiting, an engine exit during the teardown) runs
+        // no stage: it holds for the next host like the starts beginHostQuit stopped.
+        if (this.quitting) { this.holdForNextHost(sessionId); return; }
         let out: StageResult;
         try {
           const aborted = await untilAborted(runStage(run, effect), run.abort.signal,
@@ -756,6 +783,10 @@ export function installSessionLife(ports: SessionLifePorts): SessionLife {
 export function sessionLife(): SessionLife {
   if (!installed) throw new Error('Session lifecycle owner is not installed');
   return installed;
+}
+/** #3884 The host calls this the moment it means to quit; a host that never installed the owner has nothing to hold. */
+export function beginSessionLifeHostQuit(): void {
+  installed?.beginHostQuit();
 }
 
 function stageOf(entry: Pick<Entry, 'life' | 'since'>): LifeView['stage'] {
