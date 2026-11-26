@@ -481,7 +481,7 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
     const { resourceWindow } = await import('@renderer/features/assistant/voice-notes/app-resource-window');
     return resourceWindow().confirmRemoval(params as ResourceRemovalAsk);
   },
-  /** API 64 `gugu.credentials.choose`: the host's dialog in this window; answers once it closes (main reads the pick). */
+  /** API 65 `gugu.credentials.choose`: the host's dialog in this window; answers once it closes (main reads the pick). */
   [EXTENSION_CHOOSE_CREDENTIAL_METHOD]: async (params: unknown) => {
     const { showModal } = await import('@renderer/lib/modal/modal-provider');
     return new Promise<boolean>((resolve) => showModal('appCredentialModal', {

@@ -28,7 +28,7 @@ function setup(over: Partial<AppCredentialDeps> = {}) {
 }
 
 describe('App credentials (API 61)', () => {
-  it('choose (API 64): asks in the window that draws the page with the App\'s words, then says whether one is chosen', async () => {
+  it('choose (API 65): asks in the window that draws the page with the App\'s words, then says whether one is chosen', async () => {
     const { credentials, deps } = setup({ saved: async () => [], connectorDefault: async () => null });
     const words = { hint: 'A fine-grained token', help: 'https://github.com/settings/personal-access-tokens/new' };
     await expect(credentials.choose('pr', 'GitHub PR', { site: 'github.com', ...words }, { embedderId: 7 })).resolves.toEqual({ chosen: false });

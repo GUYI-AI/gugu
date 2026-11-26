@@ -11,7 +11,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { appCredentialStates } from './app-credential-rows';
 
 /**
- * API 64 `gugu.credentials.choose(site)`: the person's own place to give an App a credential, opened from the App's page.
+ * API 65 `gugu.credentials.choose(site)`: the person's own place to give an App a credential, opened from the App's page.
  * One of their saved ones for that website, or a new one saved here (as Settings › Passwords would) and picked for the
  * App; the App's declaration says what to save and where to make it. The value goes to the vault and nowhere else.
  */
