@@ -145,7 +145,7 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
     const canSignIn = shown.reason === 'signInRequired' || shown.reason === 'hostKeyChanged'
     const reinstall = shown.reason === 'updateFailed' ? sshReinstallCommand(shown.deviceId) : null
 
-    // 关闭钮:在提问就是取消这次提问;在连就只收起「连接中」(有提问来会再出现);其余 = 这台这种原因不再出现(waitingIdle 即「稍后」)。
+    // Clearing this notice in the inbox cancels its outstanding prompt. The deck close button only defers the notice.
     const close = () => {
       if (activePrompt) answerSshSignInPrompt({ deviceId: shown.deviceId, promptId: activePrompt.id, value: null })
       else if (signingIn) setSigningIn(false)

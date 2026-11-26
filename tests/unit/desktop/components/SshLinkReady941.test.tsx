@@ -249,11 +249,14 @@ it('lets the visible recovery panel answer the pending SSH question and returns 
     await act(async () => state.onPrompt?.({ deviceId: 'remote', prompt: { id: 'pw', kind: 'password', message: 'Password:', subject: 'remote' } }))
     expect(panel.querySelector('input[type=password]')).not.toBeNull()
     expect(document.querySelector('[data-testid=notice-deck]')).toBeNull()
+    await clickElement(panel.querySelector<HTMLButtonElement>('[data-testid=ssh-prompt-cancel]')!)
+    expect(answerSshSignInPrompt).toHaveBeenCalledWith({ deviceId: 'remote', promptId: 'pw', value: null })
+    await act(async () => state.onPrompt?.({ deviceId: 'remote', prompt: { id: 'pw2', kind: 'password', message: 'Password:', subject: 'remote' } }))
     await act(async () => close())
     expect(panel.querySelector('input')).toBeNull()
     const deck = document.querySelector('[data-testid=notice-deck]')!
     expect(deck.querySelector('input[type=password]')).not.toBeNull()
-    await clickElement(deck.querySelector<HTMLButtonElement>('[data-notice-close]')!)
-    expect(answerSshSignInPrompt).toHaveBeenCalledWith({ deviceId: 'remote', promptId: 'pw', value: null })
+    await clickElement(deck.querySelector<HTMLButtonElement>('[data-testid=ssh-prompt-cancel]')!)
+    expect(answerSshSignInPrompt).toHaveBeenCalledWith({ deviceId: 'remote', promptId: 'pw2', value: null })
   } finally { close(); panel.remove() }
 })
