@@ -8,6 +8,7 @@ import { accountGoogleAvailable, cancelAccountGoogle, createAccountLinking } fro
 import { userVisibleAuthError } from '../../lib/authErrors'
 import { Button } from '../ui/Button'
 import { SettingsGroup, SettingsNote, SettingsRow } from './SettingsPrimitives'
+import { SettingsSelect } from './SettingsSelect'
 import { RefreshFailed } from '../ui/RefreshFailed'
 
 type Action = 'email' | 'link' | 'unlink'
@@ -140,10 +141,10 @@ export function AccountLoginMethods({ userId, onEmailChanged }: { userId: string
       </div>} />}
       {stage === 'email-code' && <SettingsRow layout="field" title={<label htmlFor="account-email-code">{t('loginMethods.code')}</label>} description={t('loginMethods.confirmEmailNote', { email })} control={<div className="flex w-full flex-col gap-2">
         <label htmlFor="account-code-source">{t('loginMethods.codeSource')}</label>
-        <select id="account-code-source" className="gg-settings-select" value={confirmation} onChange={event => { setConfirmation(event.target.value as 'new' | 'current'); setCode('') }}>
+        <SettingsSelect id="account-code-source" value={confirmation} onChange={event => { setConfirmation(event.target.value as 'new' | 'current'); setCode('') }}>
           <option value="new">{t('loginMethods.newEmailSource', { email })}</option>
           <option value="current">{t('loginMethods.currentEmailSource', { email: methods.email })}</option>
-        </select>
+        </SettingsSelect>
         <input id="account-email-code" className="gg-settings-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} />
         {button(t('loginMethods.confirmEmail'), () => { void run(async controller => {
           const result = await controller.confirmEmail(email, code, confirmation === 'new' ? email : methods.email)
