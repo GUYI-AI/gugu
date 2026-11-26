@@ -120,6 +120,10 @@ export const INTENTIONALLY_SHARED_CHORDS: ReadonlyArray<{
     keys: ['session.projectHome', 'session.backToList'],
     why: 'Disjoint by focus layer: a keypress is either in the composer or in the nav layer.',
   },
+  ...([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map((n) => ({
+    keys: [`session.tab${n}`, `chat.select${n}`] as const,
+    why: 'The focused pane with tabs answers first; the conversation list only when no pane with tabs has the focus.',
+  })),
 ];
 
 /** Whether these two shortcuts are allowed to answer to the same chord. */

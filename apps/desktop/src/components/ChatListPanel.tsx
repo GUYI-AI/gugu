@@ -60,7 +60,9 @@ import { visibleConversationRows } from '@gugu/core/shared/ui/chatModels'
 import type { AgentDisplayStatus, ChatItem, NotificationLevel } from '@gugu/core/shared/types/chat'
 import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
 import { rendererLogger } from '../lib/log'
-import { chatListShortcutFor, nextChatId } from './chat-list-keyboard-nav'
+import { nextChatId } from './chat-list-keyboard-nav'
+import { useCommandProvider } from '@renderer/lib/commands/use-command-provider'
+import { deepActiveElement } from '@renderer/features/sidebar/session-navigation-focus'
 import { useUnavailableProjects } from '@/lib/projectRecovery'
 import { ProjectRecoverySubtitle } from './projects/ProjectRecoverySubtitle'
 
@@ -905,54 +907,37 @@ export function ChatListPanel({
   // ⌘↑/⌘↓ walk the list that is on screen: the IM page's on 消息; with the desktop sidebar as one list (#2548) the task
   // page's copy, whose rows are the sidebar's conversations (the task page's own key chain then holds none of them).
   const walksListKeys = inSidebar ? agentHomes !== null && tasksShown : chatsShown
-  useEffect(() => {
-    if (!walksListKeys) return
-    const handleGlobalShortcut = (event: KeyboardEvent) => {
-      // Read when the key comes: the list does not re-render each time the bell opens or closes.
-      if (event.defaultPrevented || readSidebarNotificationsOpen()) return
-      if (
-        event.composedPath().some(
-          (node) =>
-            node instanceof HTMLElement &&
-            node.closest('[role="dialog"], [role="menu"], [role="listbox"], [data-slot="popover-content"], [data-slot="popover-popup"], [data-slot="sheet-content"]'),
-        )
-      ) return
-
-      const shortcut = chatListShortcutFor(event)
-      if (!shortcut) return
-
-      const path = event.composedPath()
-      // #2548 on the task page the one list's rows are walked from its composer too, as its old task rows were.
-      const composerSelector = `[data-testid="${AUTOMATION_TEST_IDS.chatComposer}"]${inSidebar ? ', [data-testid="prompt-editor"]' : ''}`
-      const insideChatComposer = path.some(
-        (node) =>
-          node instanceof HTMLElement &&
-          (node.matches(composerSelector) || node.closest(composerSelector)),
-      )
-      const insideOtherTextControl = path.some(
-        (node) =>
-          node instanceof HTMLElement &&
-          (node.matches('input, textarea, [contenteditable="true"], [role="textbox"]') ||
-            node.closest('input, textarea, [contenteditable="true"], [role="textbox"]')),
-      )
-      if (insideOtherTextControl && !insideChatComposer) return
-
-      event.preventDefault()
-
-      const targetId =
-        shortcut.kind === 'select'
-          ? visibleChatIds[shortcut.index] ?? null
-          : nextChatId(visibleChatIds, selectedChatId, shortcut.direction)
-      const target = targetId ? chats.find((chat) => chat.id === targetId) : undefined
-      if (!target) return
-      const focusTarget = insideChatComposer ? 'composer' : 'sidebar'
-      selectChat(target, focusTarget)
-      if (focusTarget === 'sidebar') focusChatRow(targetId)
-    }
-
-    window.addEventListener('keydown', handleGlobalShortcut)
-    return () => window.removeEventListener('keydown', handleGlobalShortcut)
-  }, [selectedChatId, walksListKeys, inSidebar, chats, selectChat, visibleChatIds, focusChatRow])
+  // The keys are commands (session.next/previous, chat.select1–9) answered by the one dispatcher; this list is their
+  // handler while it is the one on screen. A key the list has nothing to do with right now returns false and passes on.
+  const walkTo = (pick: (ids: readonly string[]) => string | null): boolean => {
+    if (readSidebarNotificationsOpen()) return false
+    const focused = deepActiveElement()
+    const path = focused instanceof HTMLElement ? focused : null
+    if (path?.closest('[role="dialog"], [role="menu"], [role="listbox"], [data-slot="popover-content"], [data-slot="popover-popup"], [data-slot="sheet-content"]')) return false
+    // #2548 on the task page the one list's rows are walked from its composer too, as its old task rows were.
+    const composerSelector = `[data-testid="${AUTOMATION_TEST_IDS.chatComposer}"]${inSidebar ? ', [data-testid="prompt-editor"]' : ''}`
+    const insideChatComposer = !!path?.closest(composerSelector)
+    if (!insideChatComposer && path?.closest('input, textarea, [contenteditable="true"], [role="textbox"]')) return false
+    const targetId = pick(visibleChatIds)
+    const target = targetId ? chats.find((chat) => chat.id === targetId) : undefined
+    if (!target) return true
+    const focusTarget = insideChatComposer ? 'composer' : 'sidebar'
+    selectChat(target, focusTarget)
+    if (focusTarget === 'sidebar') focusChatRow(targetId)
+    return true
+  }
+  useCommandProvider({
+    scopeId: 'session',
+    surface: 'shell',
+    isActive: () => walksListKeys,
+    getCommands: () => [
+      { id: 'session.next', hideFromPalette: true, execute: () => walkTo((ids) => nextChatId(ids, selectedChatId, 1)) },
+      { id: 'session.previous', hideFromPalette: true, execute: () => walkTo((ids) => nextChatId(ids, selectedChatId, -1)) },
+      ...([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map((n) => ({
+        id: `chat.select${n}` as const, hideFromPalette: true, execute: () => walkTo((ids) => ids[n - 1] ?? null),
+      })),
+    ],
+  })
 
   // #2548 ⌃X⌃X on the task page archives the open task, then opens the row after the lit one as ⌘↓ does (the one before it
   // at the end); false = no other row, and the task page goes to New task (sidebarChatsBridge.installOneListNeighbour).
