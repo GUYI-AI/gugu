@@ -9,7 +9,7 @@ import { revealSessionpage } from '@/hooks/useSessionpageReveal';
 import { requestShellChatAction } from '@/lib/sidebarChatsBridge';
 import { rpc } from '@renderer/lib/ipc';
 import { keyEventWindow } from './keyboard-dispatcher';
-import { aModalIsOpen, dismissOpenModal } from '@renderer/features/sidebar/session-keyboard-nav-listener';
+import { aModalIsOpen, dismissOpenModal } from '@renderer/lib/modal/modal-open';
 import { commandRegistry } from './registry';
 import type { AppCommand, CommandProvider } from './types';
 

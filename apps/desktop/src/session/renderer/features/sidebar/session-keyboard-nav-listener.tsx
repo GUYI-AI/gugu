@@ -5,6 +5,7 @@ import { detectPlatform } from '@tanstack/react-hotkeys';
 import { useEffect, useMemo } from 'react';
 import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { modalStore } from '@renderer/lib/modal/modal-store';
+import { hasOpenModalDialog } from '@renderer/lib/modal/modal-open';
 import { setTerminalKeyboardExitHandler } from '@renderer/lib/pty/terminal-keyboard-exit';
 import { caretAtStartOf } from './caret-at-start';
 import { focusSessionComposer, sessionKeyboardNav } from './session-keyboard-nav';
@@ -55,32 +56,7 @@ function hasKeyboardOwningOverlay(event: KeyboardEvent): boolean {
   );
 }
 
-/**
- * A modal dialog open anywhere in the document owns the keyboard, wherever focus happens to be.
- * `hasKeyboardOwningOverlay` only sees the event's own path, and `modalStore` only knows the task
- * page's own modals — the gugu shell's modals (the settings Sheet, the image preview) live outside
- * both. When focus falls to <body> behind such a modal (e.g. a menu inside it closes and its trigger
- * is gone), the path carries no dialog, so a printable key used to count as "nav" and was handed to
- * the composer behind the modal: 2026-09-24 an `ssh …` typed into settings → 设备 started a real
- * session. The shell marks every modal with aria-modal (ui/Sheet, ImagePreviewProvider).
- */
-export function hasOpenModalDialog(doc: Document = document): boolean {
-  return doc.querySelector('[aria-modal="true"]') !== null;
-}
-
-/** A modal of the task page or of the shell is up: it owns the keyboard wherever the focus is. */
-export function aModalIsOpen(): boolean {
-  return modalStore.isOpen || hasOpenModalDialog();
-}
-
-/**
- * Close the modal that is up the way its own Escape does (each modal already listens for it), so ⌘W over a sheet
- * closes the sheet — not the tab or the window behind it.
- */
-export function dismissOpenModal(): void {
-  const target = deepActiveElement() ?? document.body;
-  target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, composed: true, cancelable: true }));
-}
+export { hasOpenModalDialog } from '@renderer/lib/modal/modal-open';
 
 /**
  * Which of the three rule sets applies to this event, or null for "not ours".

@@ -7,7 +7,7 @@ import { commandRegistry } from '@renderer/lib/commands/registry';
 import type { CommandProvider } from '@renderer/lib/commands/types';
 import { setEmbedVisible } from '@renderer/lib/portal-container';
 import { useTabShortcuts } from '@renderer/features/tabs/hooks/useTabShortcuts';
-import { dismissOpenModal } from '@renderer/features/sidebar/session-keyboard-nav-listener';
+import { dismissOpenModal } from '@renderer/lib/modal/modal-open';
 
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } });
 
@@ -150,6 +150,9 @@ describe('⌘W over a modal', () => {
     sheet.remove();
     expect(commandRegistry.dispatch('session.tabClose')).toBe(true);
     expect(close).toHaveBeenCalledOnce();
+    // a pane with no tab left has nothing to do with ⌘W: the key goes on to the next answer (the window)
+    close.mockReturnValue(false);
+    expect(commandRegistry.dispatch('session.tabClose')).toBe(false);
     await act(async () => paneRoot.unmount());
   });
 
