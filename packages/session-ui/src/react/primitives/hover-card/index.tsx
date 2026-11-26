@@ -100,6 +100,7 @@ export function useHoverCard({
   const closeTimer = useRef<number | null>(null);
   const popup = useRef<HTMLElement | null>(null);
   const popupRef = useCallback((element: HTMLElement | null) => { popup.current = element; }, []);
+  const rowPointer = useRef<{ key: string; x: number; y: number } | null>(null);
   const aim = useRef<{ x: number; y: number; edge: number; top: number; bottom: number; until: number } | null>(null);
   const deferred = useRef<number | null>(null);
   const clearAim = useCallback(() => {
@@ -165,17 +166,19 @@ export function useHoverCard({
     (key: string, onActivate?: (element: HTMLElement) => void): HoverCardRowProps => {
       const enter = (event: React.MouseEvent<HTMLElement>) => {
         const element = event.currentTarget;
+        const { clientX: x, clientY: y } = event;
         const activate = () => {
+          rowPointer.current = { key, x, y };
           clearAim();
           onActivate?.(element);
           handleRowEnter(key);
         };
         const triangle = aim.current;
         if (triangle && Date.now() < triangle.until) {
-          const ratio = (event.clientX - triangle.x) / (triangle.edge - triangle.x);
+          const ratio = (x - triangle.x) / (triangle.edge - triangle.x);
           const lower = triangle.y + (triangle.top - triangle.y) * ratio;
           const upper = triangle.y + (triangle.bottom - triangle.y) * ratio;
-          if (ratio > 0 && ratio <= 1 && event.clientY >= lower && event.clientY <= upper) {
+          if (ratio > 0 && ratio <= 1 && y >= lower && y <= upper) {
             if (deferred.current !== null) window.clearTimeout(deferred.current);
             deferred.current = window.setTimeout(activate, triangle.until - Date.now());
             clearCloseTimer();
@@ -186,14 +189,19 @@ export function useHoverCard({
       };
       return {
         onMouseEnter: enter,
-        onMouseMove: (event) => { if (deferred.current !== null) enter(event); },
-        onMouseLeave: (event) => {
+        onMouseMove: (event) => {
+          if (deferred.current !== null) enter(event);
+          else rowPointer.current = { key, x: event.clientX, y: event.clientY };
+        },
+        onMouseLeave: () => {
           clearOpenTimer();
           if (deferred.current !== null) { window.clearTimeout(deferred.current); deferred.current = null; }
-          if (safeTriangle && openRef.current && activeKey === key && popup.current) {
+          const point = rowPointer.current;
+          if (safeTriangle && openRef.current && activeKey === key && point?.key === key && popup.current) {
             const box = popup.current.getBoundingClientRect();
-            const edge = event.clientX <= box.left ? box.left : box.right;
-            aim.current = { x: event.clientX, y: event.clientY, edge, top: box.top - 4, bottom: box.bottom + 4, until: Date.now() + closeDelay };
+            const edge = point.x <= box.left ? box.left : box.right;
+            // Mouseleave reports the new coordinates, which can already be over a neighboring row.
+            aim.current = { x: point.x, y: point.y, edge, top: box.top - 4, bottom: box.bottom + 4, until: Date.now() + closeDelay };
           }
           scheduleClose();
         },
@@ -249,6 +257,7 @@ export interface HoverCardProps {
   children: React.ReactNode;
   side?: 'top' | 'bottom' | 'left' | 'right';
   align?: 'start' | 'center' | 'end';
+  collisionAvoidance?: React.ComponentProps<typeof Popover.Content>['collisionAvoidance'];
   sideOffset?: number;
   className?: string;
   initialFocus?: boolean;
@@ -270,6 +279,7 @@ export function HoverCard({
   children,
   side = 'right',
   align = 'start',
+  collisionAvoidance,
   sideOffset = 8,
   className,
   initialFocus = false,
@@ -298,6 +308,7 @@ export function HoverCard({
         anchor={anchor}
         side={side}
         align={align}
+        collisionAvoidance={collisionAvoidance}
         sideOffset={sideOffset}
         className={className ?? hoverCardDefault}
         onMouseEnter={popupHoverProps.onMouseEnter}

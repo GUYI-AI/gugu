@@ -154,6 +154,7 @@ import {
   effortSourceFor,
   localizeEffortOptions,
   platformEffortFacts,
+  resolveComposerTargetEfforts,
   resolveEffortCatalog,
 } from '@renderer/features/sessions/session-config/effort-options';
 import {
@@ -396,7 +397,7 @@ const ComposerForStore = observer(function ComposerForStore({
   // the settlements this page's feed already holds.
   const hostSession = sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId);
   const runningCustomModel = hostSession?.data.customModel;
-  const customReading = useReplica(customModels, runningCustomModel ? [machineRegistry.machineOf(store.projectId) ?? null] : null);
+  const customReading = useReplica(customModels, [machineRegistry.machineOf(store.projectId) ?? null]);
   const customFeatures = runningCustomModel && customReading.state === 'value'
     ? customReading.value.find((record) => record.id === runningCustomModel.connectionId)?.models.find(({ id }) => id === runningCustomModel.modelId)
     : undefined;
@@ -823,7 +824,7 @@ const ComposerForStore = observer(function ComposerForStore({
       const value = effortId === '' && resetEffortId && settable?.[resetEffortId]
         ? resetEffortId
         : effortId;
-      void store.setEffort(value).then((outcome) => {
+      return store.setEffort(value).then((outcome) => {
         if (outcome?.kind !== 'restart-required') return;
         reportUnwiredRestart('effort', outcome.requestedValue);
       });
@@ -961,26 +962,27 @@ const ComposerForStore = observer(function ComposerForStore({
   );
   const merged = useComposerModelOptions(ownTier, platformCatalog.models, providerId, runningPlatformModel);
 
+  const planForOption = useCallback((id: string) => planModelSwitch({
+    selection: composerModelSelection(id),
+    advertised: advertisedModels,
+    catalog: platformCatalog.models,
+    runningOn,
+    runningCustomModel,
+    currentModel: store.model,
+    liveSetting: providerCapabilities?.acp.liveSettings?.model,
+  }), [advertisedModels, platformCatalog.models, runningOn, runningCustomModel, store.model, providerCapabilities]);
+
   const lockedForTurn = store.modelLockedForTurn(providerCapabilities?.acp.liveSettings?.model);
   const sessionModelOptions = useMemo(() => {
     // 能力声明还没到 ⇒ 还答不出「哪些能当场换」:❌ 不拿「未声明」去判(那会把整张菜单暂时置灰)。
     if ((!merged && !retiredModel && !runningCustomModel) || !providerCapabilities) return null;
-    const catalog = platformCatalog.models;
     const selectedOption = composerSelectedOptionId({ platformModel: runningPlatformModel, model: store.model, customModel: runningCustomModel });
     const options = Object.fromEntries(
       Object.entries(merged ?? {}).map(([id, option]) => {
         if (option.disabled) return [id, option];
         // 四态见 @@@session-options-disabled。hot / reload 都是"能选",
         // unavailable / unsupported 才置灰 —— ❌ 别按 `platform:` 前缀判,那会把能重开换成的也灰掉。
-        const plan = planModelSwitch({
-          selection: composerModelSelection(id),
-          advertised: advertisedModels,
-          catalog,
-          runningOn,
-          runningCustomModel,
-          currentModel: store.model,
-          liveSetting: providerCapabilities?.acp.liveSettings?.model,
-        });
+        const plan = planForOption(id);
         // A hot switch this provider refuses during a turn: say so on the row, rather than offer one that can only fail.
         if (plan.kind === 'hot' && lockedForTurn && id !== selectedOption) {
           return [id, { ...option, disabled: true, disabledReason: translate('composer.modelBusy') }];
@@ -1015,19 +1017,27 @@ const ComposerForStore = observer(function ComposerForStore({
       };
     }
     return options;
-  }, [
-    merged,
-    retiredModel,
-    advertisedModels,
-    platformCatalog.models,
-    runningOn,
-    runningCustomModel,
-    runningPlatformModel,
-    providerCapabilities,
-    lockedForTurn,
-    store.model,
-    translate,
-  ]);
+  }, [merged, retiredModel, planForOption, runningCustomModel, runningPlatformModel,
+    providerCapabilities, lockedForTurn, store.model, translate]);
+
+  const effortOptionsForModel = (optionId: string) => {
+    const plan = planForOption(optionId);
+    if (plan.kind !== 'hot' && plan.kind !== 'reload') return null;
+    const setting = providerCapabilities?.acp.liveSettings?.effort;
+    if (plan.kind === 'hot' && (setting?.channel === 'unsupported' || setting?.reloadRequired)) return null;
+    const selection = composerModelSelection(optionId);
+    const resolved = resolveComposerTargetEfforts({
+      state: harnessCatalog.state,
+      effortCapability: providerCapabilities?.effort,
+      staticModelsCapability: providerCapabilities?.models,
+      model: selection.source === 'own' ? selection.modelId : null,
+      platformModel: selection.source === 'platform' ? selection.modelId : null,
+      platformModels: platformCatalog.models,
+      customModels: customReading.state === 'value' ? customReading.value : undefined,
+      leg: 'acp',
+    });
+    return localizeEffortOptions(resolved?.options ?? null, translate);
+  };
 
   // ⚠️ 这一整段必须在 `platformCatalog` / `sessionModelOptions` **之后**:下面的 handler 把
   //    `platformCatalog` 列进 deps,而 deps 是渲染时求值的 —— 放到它前面会当场 TDZ 炸掉
@@ -1105,8 +1115,13 @@ const ComposerForStore = observer(function ComposerForStore({
    * 而用户看到的是「点了没反应」。三态分开之后,能换的当场换、要重开的先问一句、
    * 到不了的直接说 —— 每一种都有下一步。
    */
+  const writingModel = useRef(false);
   const handleModelChange = useCallback(
-    (optionId: string) => {
+    (optionId: string, effort?: string) => {
+      if (writingModel.current) {
+        toast({ title: translate('composer.modelBusy') });
+        return;
+      }
       // 与 `sessionModelOptions` 同一个前提:能力声明没到,菜单本来就没摆出来。
       if (!providerCapabilities) return;
       if (
@@ -1122,18 +1137,11 @@ const ComposerForStore = observer(function ComposerForStore({
           value: selection.modelId,
           label: known?.displayName ?? sessionModelOptions?.[optionId]?.name ?? runtimeModelId(selection.modelId) ?? '',
           source: selection.source,
+          effort,
         });
         return;
       }
-      const plan = planModelSwitch({
-        selection: composerModelSelection(optionId),
-        advertised: advertisedModels,
-        catalog: platformCatalog.models,
-        runningOn,
-        runningCustomModel,
-        currentModel: store.model,
-        liveSetting: providerCapabilities?.acp.liveSettings?.model,
-      });
+      const plan = planForOption(optionId);
       if (plan.kind === 'hot') {
         // ⚠️ 下发 `wireValue`,❌ 不是 `modelId`:平台模型在 opencode 上寻址成
         // `gugu-platform/<id>`,递裸 id 会被它当未知模型拒掉(owner 2026-09-13 实测:
@@ -1149,6 +1157,7 @@ const ComposerForStore = observer(function ComposerForStore({
         const catalogName = platformCatalog.models
           .find((entry) => entry.id === plan.modelId)?.displayName;
         const source = selection.source === 'platform' ? 'platform' : 'own';
+        writingModel.current = true;
         void store.setModel(plan.wireValue).then(async (outcome) => {
           if (outcome?.kind === 'restart-required') {
             setPendingReload({
@@ -1156,6 +1165,7 @@ const ComposerForStore = observer(function ComposerForStore({
               value: plan.modelId,
               label: catalogName ?? runtimeModelId(plan.modelId) ?? '',
               source,
+              effort,
             });
             return;
           }
@@ -1166,7 +1176,11 @@ const ComposerForStore = observer(function ComposerForStore({
             platformCatalog.refresh();
             return;
           }
-          if (store.isTransient) { setInputFailure(null); return; }
+          if (store.isTransient) {
+            if (effort !== undefined) await handleEffortChange(effort);
+            setInputFailure(null);
+            return;
+          }
           // 记的是活会话**确认在跑的**那个(`effectiveValue`),不是我们请求的那个 —— provider 可能把别名规范成另一条。
           // 平台模型的生效值是它自己的寻址形式(`gugu-platform/<id>`),翻回规范 id;翻不出就是我们请求的那条(copilot 这类不回读的家)。
           const recorded = source === 'platform'
@@ -1186,9 +1200,10 @@ const ComposerForStore = observer(function ComposerForStore({
             reportInputFailure(translate('chat.modelSwitchNotRecordedTitle', { target: catalogName ?? plan.modelId }), error instanceof Error ? error.message : String(error));
             return;
           }
+          if (effort !== undefined) await handleEffortChange(effort);
           setInputFailure(null);
           platformCatalog.refresh();
-        });
+        }).finally(() => { writingModel.current = false; });
         return;
       }
       if (plan.kind === 'unavailable') {
@@ -1208,9 +1223,10 @@ const ComposerForStore = observer(function ComposerForStore({
         value: plan.modelId,
         label: plan.displayName,
         source: plan.source === 'platform' ? 'platform' : 'own',
+        effort,
       });
     },
-    [store, advertisedModels, platformCatalog.models, runningOn, runningCustomModel, sessionModelOptions, providerCapabilities, reportInputFailure, translate, providerId, switchBeforeFirstStart]
+    [store, planForOption, platformCatalog, sessionModelOptions, providerCapabilities, reportInputFailure, translate, providerId, switchBeforeFirstStart, handleEffortChange]
   );
 
   /**
@@ -1509,6 +1525,7 @@ const ComposerForStore = observer(function ComposerForStore({
           customModel: runningCustomModel,
         })}
         onModelChange={handleModelChange}
+        effortOptionsForModel={effortOptionsForModel}
         modelMenuOpenRequest={modelMenuRequest}
         modelSettingNotice={modelSettingNotice}
         modelMenuNotice={lockedForTurn ? translate('composer.modelBusy') : modelPreparationNotice}
@@ -1520,7 +1537,13 @@ const ComposerForStore = observer(function ComposerForStore({
         effortOptions={localizeEffortOptions(sessionEffortOptions, translate)}
         selectedEffort={store.effort ?? undefined}
         defaultEffort={detachedDefaultEffort}
-        onEffortChange={handleEffortChange}
+        onEffortChange={effortId => {
+          if (writingModel.current) {
+            toast({ title: translate('composer.modelBusy') });
+            return;
+          }
+          void handleEffortChange(effortId);
+        }}
         fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup,
           ...(runningCustomModel ? { customSupported: customFast, recorded: hostSession?.data.fastMode } : {}) })}
         onFastModeChange={(enabled) => { void (runningCustomModel ? store.setCustomFastMode(enabled) : store.setFastMode(enabled)); }}

@@ -29,8 +29,8 @@ function parseContextThreshold(text: string, minimum: number, maximum: number): 
 }
 
 export function ContextThresholdMenu({
-  threshold, label, hover = false,
-}: { threshold: ContextThreshold; label: ReactNode; hover?: boolean }) {
+  threshold, label, hover = false, onCommit,
+}: { threshold: ContextThreshold; label: ReactNode; hover?: boolean; onCommit?: () => void }) {
   const { translate } = useMessages();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
@@ -46,6 +46,7 @@ export function ContextThresholdMenu({
     try {
       await threshold.set(value === maximum ? null : value);
       setOpen(false);
+      onCommit?.();
     } catch {
       setError('save');
     } finally {
@@ -63,6 +64,11 @@ export function ContextThresholdMenu({
       if (next) { setText(''); setError(null); }
     }}>
       <Popover.Trigger openOnHover={hover} delay={100} closeDelay={300}
+        onKeyDown={event => {
+          if (!hover || event.key !== 'ArrowRight' || open) return;
+          event.preventDefault();
+          event.currentTarget.click();
+        }}
         disabled={!threshold.set} className={styles.contextThresholdTrigger}>
         {label}<ChevronRight size={14} aria-hidden />
       </Popover.Trigger>
@@ -80,8 +86,9 @@ export function ContextThresholdMenu({
             if (value === null) setError('input');
             else void commit(value);
           }} />}
-        {error === 'input' && <div role="alert" className={styles.contextThresholdError}>
-          {translate('composer.contextThresholdRange', { minimum: formatTokenCount(minimum), maximum: formatTokenCount(maximum) })}
+        {error && <div role="alert" className={styles.contextThresholdError}>
+          {error === 'save' ? translate('taskError.settingFailedRetry')
+            : translate('composer.contextThresholdRange', { minimum: formatTokenCount(minimum), maximum: formatTokenCount(maximum) })}
         </div>}
         {options.map(value => (
           <button type="button" key={value} disabled={saving} className={styles.contextThresholdOption}

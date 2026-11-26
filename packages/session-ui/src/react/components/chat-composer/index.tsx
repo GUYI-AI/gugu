@@ -249,7 +249,8 @@ export interface ChatComposerProps {
   selectedModel?: string;
   /** The model options are not read yet: the model trigger holds the name's place (see ComposerModelMenu). */
   modelUnknown?: boolean;
-  onModelChange?: (modelId: string) => void;
+  onModelChange?: (modelId: string, effortId?: string) => void;
+  effortOptionsForModel?: (modelId: string) => Record<string, ComposerEffortOption> | null;
   /** 宿主要把模型面板打开:每变一次开一次(见 `ComposerModelMenu.openRequest`)。 */
   modelMenuOpenRequest?: number;
   /** Failure/recovery copy stays inside the model setting; other settings remain usable. */
@@ -452,6 +453,7 @@ export function ChatComposer({
   modelOptions,
   selectedModel,
   onModelChange,
+  effortOptionsForModel,
   modelMenuOpenRequest,
   modelSettingNotice,
   modelUnknown,
@@ -842,6 +844,7 @@ export function ChatComposer({
                 selectedModel={selectedModel}
                 modelUnknown={modelUnknown}
                 onModelChange={onModelChange}
+                effortOptionsForModel={effortOptionsForModel}
                 openRequest={modelMenuOpenRequest}
                 settingNotice={modelSettingNotice}
                 menuNotice={modelMenuNotice}
