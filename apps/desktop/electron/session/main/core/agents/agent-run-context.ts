@@ -41,6 +41,8 @@ export async function resolveLocalAgentRunContext(
     connectionId?: string;
     sessionId?: string;
     sourceSessionId?: string;
+    /** The session's folder (a session start passes it): a Claude connection session's reviewer reads the project and local settings there. */
+    cwd?: string;
     forLogin?: boolean;
     /**
      * 只有真会话启动传(#6394):这一家配对的 ACP 桥接还在下载就等它,并经回调把这一步报进启动进度。
@@ -93,7 +95,8 @@ export async function resolveLocalAgentRunContext(
         }));
   if (options.sessionId) {
     const { resolveCustomModelRunContext } = await import('./custom-model-run-context');
-    const custom = await resolveCustomModelRunContext(providerId, options.sessionId, options.sourceSessionId, options.role === 'acp');
+    const custom = await resolveCustomModelRunContext(providerId, options.sessionId, options.sourceSessionId, options.role === 'acp',
+      { env: { ...env, ...configRootEnv }, ...(options.cwd ? { cwd: options.cwd } : {}) });
     Object.assign(connection, custom, { unsetEnv: [...(connection.unsetEnv ?? []), ...(custom.unsetEnv ?? [])] });
   }
   if (providerId === 'claude' && options.sessionId && !connection.customModel) {

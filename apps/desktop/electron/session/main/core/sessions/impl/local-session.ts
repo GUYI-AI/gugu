@@ -391,6 +391,7 @@ export class LocalSessionProvider implements SessionProvider {
       const runContext = await resolveLocalAgentRunContext(session.providerId, {
         sessionId: session.id,
         sourceSessionId: session.forkedFrom?.sessionId,
+        cwd: this.sessionPath,
         // 终端腿的程序 —— 被伴随程序认领时就是它(#6335,Antigravity 的 `agy`)。
         role: 'tui',
         shellProfile: this.shellProfile,
