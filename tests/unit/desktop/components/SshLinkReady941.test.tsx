@@ -212,4 +212,8 @@ it('shows reported update progress for a pending mismatch and keeps real transpo
   host.capabilities.remote_protocol = 20
   host.capabilities.server_update_outcome = { kind: 'switched', request: 1 }
   expect(reportedSshUpdate(host, 'confirmationRequired')).toBeNull()
+  // This device still accepts SSH retries, but its last cloud update has gone stale.
+  host.status = 'offline'
+  expect(host.is_online).toBe(true)
+  expect(reportedSshUpdate(host, 'confirmationRequired')).toBe('confirmationRequired')
 })

@@ -205,6 +205,7 @@ export function MachinePicker({
     : machines.length === 0
       ? translate('task.deviceNone')
       : translate('task.deviceSelect');
+  const offlineLabel = selected?.sshAttention ? translate(`remoteHost.ssh.${selected.sshAttention}`) : translate('machinePicker.offline');
   const selectedOffline = selected !== null && !machineAcceptsWork(selected);
   // 与同类触发器同一个图标尺寸:托盘 12px(项目选择器),页标题旁 14px(项目顶栏的名字下拉)。
   const iconSize = compact ? 'size-3' : 'size-3.5';
@@ -226,7 +227,7 @@ export function MachinePicker({
               <span className="min-w-0 max-w-[160px] truncate">{selected.label}</span>
               {selectedOffline ? (
                 <span data-slot="machine-offline" className="shrink-0 text-foreground-passive">
-                  {selected?.sshAttention ? translate(`remoteHost.ssh.${selected.sshAttention}`) : translate('machinePicker.offline')}
+                  {offlineLabel}
                 </span>
               ) : null}
             </span>
@@ -277,7 +278,7 @@ export function MachinePicker({
             </span>
             {selectedOffline && !stateInHeading ? (
               <span data-slot="machine-offline" className="shrink-0 text-foreground-passive">
-                {translate('machinePicker.offline')}
+                {offlineLabel}
               </span>
             ) : null}
             <ChevronDown aria-hidden="true" className={cn('shrink-0', iconSize)} />

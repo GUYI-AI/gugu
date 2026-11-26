@@ -141,6 +141,7 @@ export function machineMeta(
   if (machine.sshAttention) return translate(`remoteHost.ssh.${machine.sshAttention}`);
   if (machine.needsSignIn) return translate('machinePicker.needsSignIn');
   if (machine.outdated === 'updating') return translate('machinePicker.updating');
+  if (machine.outdated === 'failed') return translate('machinePicker.updateFailed');
   if (machine.outdated) return translate('machinePicker.tooOld');
   if (machine.cloudComputer === 'asleep') return translate('machinePicker.asleep');
   if (machine.cloudComputer === 'waking') return translate('machinePicker.waking');

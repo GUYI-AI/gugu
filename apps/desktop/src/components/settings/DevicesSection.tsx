@@ -166,7 +166,7 @@ export function DevicesSection({
       setArchiveOpen(true)
       return
     }
-    const row = document.querySelector<HTMLElement>(`[data-device-id="${CSS.escape(recoveryTarget)}"][role="listitem"]`)
+    const row = document.getElementById(`settings-device-row-${recoveryTarget}`)
     if (row) {
       row.focus()
       deviceRecoveryTarget.set(null)
@@ -499,7 +499,7 @@ function DeviceRow({
   // 「改名」同「添加一台机器」:点了它这颗「⋯」随即卸掉、改名框自己接焦点,菜单关上时❌ 再归还焦点(理由见 AddServerRow)。
   const renamingRef = useRef(false)
   const sshAddress = model.connection.via === 'ssh' ? model.connection.address : null
-  const lastSeen = device.is_online ? null : formatRelativeTime(device.last_seen_at, { mode: 'elapsed', dateAfterDays: 30 })
+  const lastSeen = device.is_online && sshLink !== 'checking' ? null : formatRelativeTime(device.last_seen_at, { mode: 'elapsed', dateAfterDays: 30 })
   // 「登录已失效」「那台机器上已退出登录」替掉「上次在线」:机器是离线的,但真正的原因是这个,下一步是重新登录。
   const link = sshLink === undefined || sshLink === 'unknown' || sshLink === 'checking' ? null : sshLinkFacts(true, reportedSshUpdate(device, sshLink), device.is_online).sshLink ?? null
   // 点了「重试」、那台机器的心跳还没报回新状态之前:先说「正在更新」;报回来(不再是这一次失败)就让位给它。
@@ -555,6 +555,7 @@ function DeviceRow({
   return (
     <div
       role="listitem"
+      id={`settings-device-row-${device.device_id}`}
       tabIndex={-1}
       data-testid={AUTOMATION_TEST_IDS.settingsDeviceRow}
       data-device-id={device.device_id}
@@ -763,7 +764,7 @@ function DeviceRow({
               >
                 {t('devices.menu.rename')}
               </MenuItem>
-              {model.kind !== 'this' && model.kind !== 'cloud' && acceptsWork && canOpenNewSessionOnDevice() && (
+              {model.kind !== 'this' && model.kind !== 'cloud' && acceptsWork && !link && canOpenNewSessionOnDevice() && (
                 <MenuItem data-testid="settings-device-new-session" icon={<SquarePen size={16} />} onClick={() => openNewSessionOnDevice(device.device_id)}>
                   {t('devices.addServer.newTask')}
                 </MenuItem>

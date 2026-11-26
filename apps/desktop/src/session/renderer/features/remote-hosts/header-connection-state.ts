@@ -1,6 +1,4 @@
-// The page header's three connection states (shared with the phone: components/connection) read off the desktop's
-// richer per-machine state (hostConnectionState). Only the link is said here; sign-in and version problems are not a
-// connection state and keep their own outlet (the scope notice / chat row), so the header shows nothing for them.
+// Shared header glyphs: SSH surfaces add the observed cause and recovery action beside the glyph.
 import type { ConnectionState } from '@/components/connection/connectionState';
 import { isSshAttention, type HostConnectionState } from './connection-status';
 

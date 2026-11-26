@@ -595,9 +595,17 @@ describe('SSH observations across the device list, task and notice', () => {
     }
   );
 
+  it('assigns service and identity failures to the shared device notice', async () => {
+    const { sshLinkNoticeReason } = await import('@/lib/sshLinkNotice');
+    expect(sshLinkNoticeReason('hostKeyChanged')).toBe('hostKeyChanged');
+    expect(sshLinkNoticeReason('notRunning')).toBe('notRunning');
+    expect(sshLinkNoticeReason('signInRequired')).toBeNull();
+    expect(sshLinkNoticeReason('disconnected')).toBeNull();
+  });
+
   it('keeps identity verification ahead of an update heartbeat and distinguishes an unread directory', () => {
     const caps = { app_version: '1', server_update: { state: 'ready' as const, version: '2' } };
-    expect(reportedSshUpdate({ is_online: true, capabilities: { terminals: [], runtimes: [], host_runtime_capability: 0, ...caps } }, 'hostKeyChanged')).toBe('hostKeyChanged');
+    expect(reportedSshUpdate({ status: 'online', capabilities: { terminals: [], runtimes: [], host_runtime_capability: 0, ...caps } }, 'hostKeyChanged')).toBe('hostKeyChanged');
     expect(remoteLinkFacts('box', null, null, false)).toEqual({ isOnline: false, linkUnknown: true });
   });
 });

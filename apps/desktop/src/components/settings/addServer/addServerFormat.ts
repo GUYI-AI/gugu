@@ -45,7 +45,7 @@ function shellQuote(value: string): string {
 
 /** 指纹变了时,删掉旧记录的那条命令。 */
 export function knownHostsRemoveCommand(host: string, location?: string): string | null {
-  if (!/^(?!-)[a-zA-Z0-9._:%\[\]-]+$/.test(host)) return null
+  if (!/^(?!-)[a-zA-Z0-9._:%[\]-]+$/.test(host)) return null
   const remove = `ssh-keygen -R ${shellQuote(host)}`
   if (!location) return remove
   const file = /^(.+):[1-9]\d*$/.exec(location)?.[1]

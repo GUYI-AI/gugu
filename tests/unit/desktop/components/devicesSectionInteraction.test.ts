@@ -4,6 +4,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { notifyManager as readModelNotify } from '@tanstack/react-query'
 import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
+import { deviceRecoveryTarget, openDeviceRecovery } from '@/lib/deviceActionsIntent'
+import { UI_EVENTS } from '@/lib/uiEvents'
 import { DevicesSection } from '@/components/settings/DevicesSection'
 import { signInSshMachine } from '@/lib/sshLinkChannel'
 import type { SshLinkOpenResult } from '@/lib/sshLink'
@@ -84,6 +86,21 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 describe('DevicesSection interaction', () => {
+  it('opens recovery for the requested endpoint when a different configuration is currently shown', async () => {
+    const value = store({ devices: [
+      device({ device_id: 'online-peer', machine_id: 'shared' }),
+      device({ device_id: 'missing-link', machine_id: 'shared', is_online: false, status: 'offline' }),
+    ] })
+    await act(async () => { root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection))) })
+    expect(container.querySelector('[data-device-id="online-peer"]')).not.toBeNull()
+    const receive = vi.fn((event: Event) => deviceRecoveryTarget.set((event as CustomEvent).detail.deviceId))
+    window.addEventListener(UI_EVENTS.openSettings, receive, { once: true })
+    await act(async () => openDeviceRecovery('missing-link'))
+    expect(receive.mock.calls[0]?.[0]).toHaveProperty('detail', { section: 'devices', deviceId: 'missing-link' })
+    expect(document.activeElement?.getAttribute('data-device-id')).toBe('missing-link')
+    expect(deviceRecoveryTarget.get()).toBeNull()
+  })
+
   it('reports a repeated SSH host key refusal in the device row and clears it after a successful retry', async () => {
     const deviceId = 'rotated-host'
     const refused: SshLinkOpenResult = { ok: false, reason: 'hostKeyChanged', hostKey: { host: 'box', fingerprint: 'SHA256:newKey', location: '/test/known_hosts:17' } }
