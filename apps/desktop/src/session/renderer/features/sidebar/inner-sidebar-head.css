@@ -84,13 +84,12 @@
   padding-block: var(--spacing-sm);
 }
 /* The line is the column's right edge, wherever that edge is drawn: through a fold the column's contents stay where they are and
-   its edge closes over them (panel-track.ts `exit: 'clip'`, @@@inner-fold-motion), so the line sits --panel-clip in from the
-   content's end, on the drawn edge, and does not fade with the modules. */
-[data-region='inner-sidebar'] [data-inner-module-stack]::after {
-  content: '';
+   its edge closes over them (panel-track.ts `exit: 'clip'`), and the layout sets this element's `right` to stay on the drawn
+   edge (inner-fold-paint.ts @@@inner-fold-motion). It does not fade with the modules. */
+[data-region='inner-sidebar'] [data-inner-line] {
   position: absolute;
   inset-block: 0;
-  right: var(--panel-clip, 0px);
+  right: 0;
   width: 1px;
   background: var(--border-color);
   pointer-events: none;

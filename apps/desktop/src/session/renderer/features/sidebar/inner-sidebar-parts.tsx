@@ -8,6 +8,7 @@ import { TITLEBAR_ACTION_SLOT_GAP_PX, TITLEBAR_ACTION_SLOT_WIDTH_PX } from '@/li
 import { Button as TabStripButton } from '@renderer/lib/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { INNER_FOLD_FADES, INNER_FOLD_LINE } from '@renderer/lib/layout/inner-fold-paint';
 import { cn } from '@renderer/utils/utils';
 import { setInnerSidebarFolded } from './inner-sidebar-fold';
 import {
@@ -28,11 +29,13 @@ export type InnerModule = { id: string; node: ReactNode };
 export function InnerModuleStack({ modules, open = null }: { modules: readonly InnerModule[]; open?: string | null }) {
   const shown = open ? modules.filter((module) => module.id === open) : modules;
   return (
-    // The stack draws the column's line (::after, inner-sidebar-head.css @@@inner-modules); its modules scroll and fade inside it.
+    // The stack holds the column's line (inner-sidebar-head.css @@@inner-modules); its modules scroll and fade inside it. Through
+    // a fold the layout moves the line and fades the modules (inner-fold-paint.ts).
     <div className="relative flex min-h-0 flex-col" data-inner-module-stack="">
-      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto" data-region="inner-sidebar-scroll" data-inner-fades="">
+      <div className={cn('min-h-0 flex-1 overflow-x-hidden overflow-y-auto', INNER_FOLD_FADES)} data-region="inner-sidebar-scroll">
         {shown.map((module) => <Fragment key={module.id}>{module.node}</Fragment>)}
       </div>
+      <span aria-hidden className={INNER_FOLD_LINE} data-inner-line="" />
     </div>
   );
 }
@@ -77,7 +80,7 @@ export function InnerHeadRowLayout({
 }) {
   const reserve = 8 + HEAD_BUTTON_PX * trailingButtons + HEAD_BUTTON_GAP_PX * Math.max(0, trailingButtons - 1);
   return (
-    <SidebarMenu className={cn("flex h-10 shrink-0 items-center [-webkit-app-region:drag]", createAction && "gg-inner-head-double")} data-inner-fades="">
+    <SidebarMenu className={cn("flex h-10 shrink-0 items-center [-webkit-app-region:drag]", createAction && "gg-inner-head-double", INNER_FOLD_FADES)}>
       <div
         className="group/head relative w-full"
         style={{ '--head-reserve': `${reserve}px` } as CSSProperties}

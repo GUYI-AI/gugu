@@ -130,12 +130,12 @@ for (const theme of ['light', 'dark'] as const) {
     expect(style.boxShadow, 'no lift: not a floating card').toBe('none');
     expect(style.borderRadius).toBe('0px');
     expect(style.backgroundColor).toBe('rgba(0, 0, 0, 0)');
-    // The one line: the existing border colour, 1px on the stack's right end, its whole height (the stack's ::after, so it can
-    // ride the column's drawn edge through a fold and not fade with the modules).
+    // The one line: the existing border colour, 1px on the stack's right end, its whole height (its own element, so it can ride
+    // the column's drawn edge through a fold and not fade with the modules).
     const probe = document.createElement('div');
     probe.style.color = 'var(--border-color)';
     stack.parentElement!.append(probe);
-    const line = getComputedStyle(stack, '::after');
+    const line = getComputedStyle(stack.querySelector('[data-inner-line]')!);
     expect(line.backgroundColor).toBe(getComputedStyle(probe).color);
     probe.remove();
     expect([line.position, line.width, line.right, line.top, line.bottom]).toEqual(['absolute', '1px', '0px', '0px', '0px']);
@@ -177,8 +177,9 @@ for (const theme of ['light', 'dark'] as const) {
     const place = harness.container.querySelector<HTMLElement>('[data-panel-slot="inner"]')!;
     const surface = harness.container.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
     const head = harness.container.querySelector<HTMLElement>('[data-test-head]')!;
-    const stack = harness.container.querySelector<HTMLElement>('[data-inner-module-stack]')!;
-    const fades = harness.container.querySelector<HTMLElement>('[data-inner-fades]')!;
+    const fades = harness.container.querySelector<HTMLElement>('[data-region="inner-sidebar-scroll"]')!;
+    const line = harness.container.querySelector<HTMLElement>('[data-inner-line]')!;
+    const shell = harness.container.querySelector<HTMLElement>('[data-workspace-shell]')!;
     const open = place.getBoundingClientRect().width;
     expect(open, 'the column is open').toBeGreaterThan(150);
     const headLeft = head.getBoundingClientRect().left;
@@ -186,16 +187,16 @@ for (const theme of ['light', 'dark'] as const) {
     type Frame = { drawn: number; headLeft: number; lineRight: number; placeRight: number; marked: boolean; opacity: number; leaked: string };
     const read = (): Frame => {
       const box = place.getBoundingClientRect();
-      const line = getComputedStyle(stack, '::after');
       return {
         drawn: box.width,
         headLeft: head.getBoundingClientRect().left,
-        lineRight: stack.getBoundingClientRect().right - parseFloat(line.right),
+        lineRight: line.getBoundingClientRect().right,
         placeRight: box.right,
         marked: surface.hasAttribute('data-inner-column'),
         opacity: Number(getComputedStyle(fades).opacity),
-        // What drives the fade is on the column only: an inherited variable above it would restyle the whole page every frame.
-        leaked: getComputedStyle(surface).getPropertyValue('--panel-open') + getComputedStyle(surface).getPropertyValue('--inner-open'),
+        // Nothing per frame goes through an inherited variable (each would restyle every element under it): the shell and the
+        // column's content carry no custom properties of their own while it moves.
+        leaked: [shell, place.querySelector<HTMLElement>('[data-region="inner-sidebar"]')!.parentElement!].map((node) => [...node.style].filter((name) => name.startsWith('--')).join()).join(''),
       };
     };
     const frames: Frame[] = [];
@@ -216,7 +217,7 @@ for (const theme of ['light', 'dark'] as const) {
       expect(frame.lineRight, 'the line is on the drawn edge').toBeCloseTo(frame.placeRight, 0);
       expect(frame.marked, 'the card gives up its left corners until the column is gone').toBe(true);
       expect(frame.opacity, 'faded out over the first half').toBeCloseTo(Math.max(0, Math.min(1, (2 * frame.drawn) / open - 1)), 1);
-      expect(frame.leaked, 'no per-frame variable reaches the conversation').toBe('');
+      expect(frame.leaked, 'no per-frame inherited variable').toBe('');
     }
     expect(frames.at(-1)!.marked, 'landed: the card has its corners back').toBe(false);
 

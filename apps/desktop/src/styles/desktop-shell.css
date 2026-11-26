@@ -84,12 +84,8 @@
 /* @@@inner-fold-motion (owner 11-26) — folding, the column narrows from its right edge: its card face is clipped at the drawn
  * edge, the line rides that edge (inner-sidebar-head.css), and the head and modules stay where they are and fade out over the
  * first half; the restore lane's expand button and the room the tab strip leaves it come in over the second half. Unfolding
- * is the same in reverse. `--panel-open` is the column's drawn share (1 open … 0 folded), written each frame on the column's
- * own content (panel-track.ts `exit: 'clip'`), so a frame restyles only the column; the lane and the strip get their share on
- * themselves (workspace-layout.tsx). */
-.gugu-skin [data-workspace-shell] > [data-panel-slot='inner'] [data-inner-fades] {
-  opacity: clamp(0, calc(2 * var(--panel-open, 1) - 1), 1);
-}
+ * is the same in reverse. All of it is written each frame on the few elements that move (workspace-layout.tsx,
+ * inner-fold-paint.ts), ❌ through an inherited variable: a frame restyles those elements only. */
 
 /* The curved content surface owns this boundary. Full-height list borders otherwise
  * continue above and below it, producing the spurs visible at both rounded corners.
