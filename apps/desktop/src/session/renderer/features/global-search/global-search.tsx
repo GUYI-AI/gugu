@@ -25,6 +25,7 @@ import { EVERYWHERE, forgetSearches, recentSearches, rememberSearch, updateSearc
 import { firstMessageOn, instant, SEARCH_LIMIT, useGlobalSearch, type SearchHit } from './use-global-search'
 import { sessionAgentBindings } from '../sessions/stores/session-agent-bindings'
 import { openGroup, openPerson, useNameMatches } from '../command-palette/palette-chats'
+import { isImeComposing } from '@/lib/ime'
 
 const ResultAvatar = observer(function ResultAvatar({ hit, name }: { hit: SearchHit; name: string }) {
   const system = hit.kind === 'message' && hit.sender === null
@@ -196,7 +197,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
           onCompositionEnd={(event) => { setComposition(null); updateSearchSession({ text: event.currentTarget.value, selectedId: null }) }}
           onChange={(event) => { if (composition === null) updateSearchSession({ text: event.target.value, selectedId: null }); else setComposition(event.target.value) }}
           onKeyDown={(event) => {
-            if (composition !== null || event.nativeEvent.isComposing || event.keyCode === 229) return
+            if (composition !== null || isImeComposing(event)) return
             if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); move(event.key === 'ArrowDown' ? 1 : -1) }
             else if (event.key === 'Enter') { event.preventDefault(); if (selected) open(selected) }
             else if (event.key === 'Tab') { event.preventDefault(); cycleFacet(event.shiftKey ? -1 : 1) }

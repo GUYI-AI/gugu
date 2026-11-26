@@ -12,6 +12,7 @@ import { Sheet } from '@/components/ui/Sheet'
 import { confirmArchive } from '@/session/renderer/features/sessions/archive-session-flow'
 import { sessionMenu, type SessionMenuAction } from '@/session/shared/session-menu'
 import { MenuTableItems } from '@/components/MenuTableItems'
+import { isImeComposing } from '@/lib/ime'
 
 const PHONE_MENU_ACTIONS: ReadonlySet<SessionMenuAction> = new Set(['pin', 'rename', 'archive'])
 import { DropdownMenu, MenuItem, MenuSeparator } from '@/components/ui/Menu'
@@ -119,7 +120,7 @@ export function SessionActions({
               maxLength={120}
               data-testid="agent-watch-session-rename-input"
               onChange={(e: { target: { value: string } }) => setDraftTitle(e.target.value)}
-              onKeyDown={(e: { key: string }) => { if (e.key === 'Enter' && draftTitle.trim()) rename() }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !isImeComposing(e) && draftTitle.trim()) rename() }}
             />
           </Field.Root>
           <Button variant="primary" size="lg" className="gg-aw-actions-item" disabled={busy || !draftTitle.trim() || draftTitle.trim() === renaming.session.title} data-testid="agent-watch-session-rename-save" onClick={rename}>

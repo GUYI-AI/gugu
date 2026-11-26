@@ -5,6 +5,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../ui/Button'
+import { isImeComposing } from '@/lib/ime'
 
 export function DeviceRenameField({ label, onSave, onCancel }: { label: string; onSave: (next: string) => void; onCancel: () => void }) {
   const { t } = useTranslation('settings')
@@ -16,6 +17,7 @@ export function DeviceRenameField({ label, onSave, onCancel }: { label: string; 
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
+          if (isImeComposing(e)) return
           if (e.key === 'Enter') onSave(draft)
           if (e.key === 'Escape') onCancel()
         }}
