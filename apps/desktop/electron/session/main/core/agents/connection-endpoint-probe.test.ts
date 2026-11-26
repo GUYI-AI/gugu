@@ -4,7 +4,7 @@ import { connect, type Socket } from 'node:net';
 import { getGlobalDispatcher } from 'undici';
 import { connectionModelListSchema, customModelProtocolProbeSchema } from '@gugu/session-core/workspace-server/agent-config';
 import { detectModelProtocol } from '@gugu/session-core/models/custom-model';
-import { listEndpointModels, probeEndpointProtocols, verifyEndpointModel } from './connection-endpoint-probe';
+import { PROBE_OUTPUT_TOKENS, listEndpointModels, probeEndpointProtocols, verifyEndpointModel } from './connection-endpoint-probe';
 
 const target = { endpoint: 'https://provider.test/v1', apiKey: 'dummy-key', protocol: 'openai-chat-completions' as const, env: {} };
 const cleanups: (() => Promise<void>)[] = [];
@@ -214,4 +214,27 @@ it.each([
   const everywhere: typeof fetch = vi.fn(async () => new Response('{}', { status: 401 }));
   const result = await probeEndpointProtocols({ baseUrl, apiKey: 'dummy-key', env: {}, modelId: 'model', hint: detectModelProtocol(baseUrl) }, everywhere);
   expect(result.refused?.[0]).toEqual(first);
+});
+
+// #1552: a relay serving Chat through OpenAI Responses passed the Chat probe's max_tokens 1 on as max_output_tokens and was
+// refused (Responses requires at least 16), so the address was saved without the protocol it does answer.
+it('asks every generating probe for at least the 16 output tokens OpenAI Responses accepts', async () => {
+  const bodies: { path: string; body: Record<string, unknown> }[] = [];
+  const recording: typeof fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (init?.body) bodies.push({ path: new URL(url).pathname, body: JSON.parse(String(init.body)) });
+    return new Response('{}', { status: 404 });
+  });
+  await probeEndpointProtocols({ baseUrl: 'https://relay.test/v1', apiKey: 'dummy-key', env: {}, modelId: 'model' }, recording);
+  for (const protocol of ['openai-chat-completions', 'openai-responses', 'anthropic-messages', 'gemini-generate-content'] as const) {
+    await verifyEndpointModel({ endpoint: 'https://relay.test/v1', apiKey: 'dummy-key', protocol, env: {} }, 'model', recording);
+  }
+  const limits = bodies.flatMap(({ path, body }) => {
+    const generation = body.generationConfig as { maxOutputTokens?: number } | undefined;
+    const limit = body.max_tokens ?? body.max_completion_tokens ?? body.max_output_tokens ?? generation?.maxOutputTokens;
+    return limit === undefined ? [] : [[path, limit]];
+  });
+  expect(PROBE_OUTPUT_TOKENS).toBeGreaterThanOrEqual(16);
+  expect(new Set(limits.map(([path]) => String(path).replace(/^\/v1(beta)?/, '')))).toEqual(new Set(['/chat/completions', '/responses', '/messages', '/models/model:generateContent']));
+  expect(limits.every(([, limit]) => limit === PROBE_OUTPUT_TOKENS)).toBe(true);
 });

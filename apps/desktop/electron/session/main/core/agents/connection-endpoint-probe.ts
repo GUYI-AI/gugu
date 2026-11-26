@@ -58,6 +58,12 @@ export async function listEndpointModels(
   return result.ok ? result.value : { kind: 'unlisted', reason: result.reason };
 }
 
+/**
+ * The output limit every generating probe asks for. OpenAI Responses refuses fewer than 16, and relays that serve Chat
+ * through Responses pass a Chat `max_tokens` on as `max_output_tokens`, so a smaller limit reads as a refused protocol.
+ */
+export const PROBE_OUTPUT_TOKENS = 16;
+
 /** Try a tiny request only after the person asks to test a named model. */
 export async function verifyEndpointModel(input: Endpoint, modelId: string, fetchImpl?: Fetch): Promise<ConnectionModelList> {
   const { root, headers } = endpointRequest(input);
@@ -65,8 +71,8 @@ export async function verifyEndpointModel(input: Endpoint, modelId: string, fetc
   const messages = [{ role: 'user', content: 'OK' }];
   const probes = {
     'anthropic-messages': { path: '/messages/count_tokens', payload: { model: modelId, messages } },
-    'openai-responses': { path: '/responses', payload: { model: modelId, input: 'OK', max_output_tokens: 16, store: false } },
-    'openai-chat-completions': { path: '/chat/completions', payload: { model: modelId, messages, max_completion_tokens: 1 } },
+    'openai-responses': { path: '/responses', payload: { model: modelId, input: 'OK', max_output_tokens: PROBE_OUTPUT_TOKENS, store: false } },
+    'openai-chat-completions': { path: '/chat/completions', payload: { model: modelId, messages, max_completion_tokens: PROBE_OUTPUT_TOKENS } },
     'gemini-generate-content': {
       path: `/models/${encodeURIComponent(modelId.replace(/^models\//, ''))}:countTokens`,
       payload: { contents: [{ parts: [{ text: 'OK' }] }] },
@@ -89,12 +95,12 @@ async function sendMinimal(fetchImpl: Fetch | undefined, input: Endpoint, modelI
   headers.set('content-type', 'application/json');
   const messages = [{ role: 'user', content: 'OK' }];
   const probes: Partial<Record<ModelProtocol, { path: string; payload: unknown }>> = {
-    'anthropic-messages': { path: '/messages', payload: { model: modelId, max_tokens: 1, messages } },
-    'openai-chat-completions': { path: '/chat/completions', payload: { model: modelId, messages, max_tokens: 1 } },
-    'openai-responses': { path: '/responses', payload: { model: modelId, input: 'OK', max_output_tokens: 16, store: false } },
+    'anthropic-messages': { path: '/messages', payload: { model: modelId, max_tokens: PROBE_OUTPUT_TOKENS, messages } },
+    'openai-chat-completions': { path: '/chat/completions', payload: { model: modelId, messages, max_tokens: PROBE_OUTPUT_TOKENS } },
+    'openai-responses': { path: '/responses', payload: { model: modelId, input: 'OK', max_output_tokens: PROBE_OUTPUT_TOKENS, store: false } },
     'gemini-generate-content': {
       path: `/models/${encodeURIComponent(modelId.replace(/^models\//, ''))}:generateContent`,
-      payload: { contents: [{ role: 'user', parts: [{ text: 'OK' }] }], generationConfig: { maxOutputTokens: 1 } },
+      payload: { contents: [{ role: 'user', parts: [{ text: 'OK' }] }], generationConfig: { maxOutputTokens: PROBE_OUTPUT_TOKENS } },
     },
   };
   const probe = probes[input.protocol];
