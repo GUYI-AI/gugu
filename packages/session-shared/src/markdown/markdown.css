@@ -257,6 +257,14 @@
   padding: 0.2em 0;
 }
 .gg-md .katex-display > .katex { margin-inline: auto; }
+/* KaTeX sets a `\tag` number absolute at the right of the formula, so it adds no width: in the centred formula, and
+   in a bubble sized to its content, it lands on the formula's last glyphs. In flow instead: the formula fills the line,
+   a spacer and the number (kept 1em clear) share the room beside it equally, so the formula stays centred while it
+   can, and a bubble grows to hold both. Without `:has()` (WebView before 105) KaTeX's own placement stays. */
+.gg-md .katex-display > .katex:has(> .katex-html > .tag) { flex-grow: 1; }
+.gg-md .katex-display > .katex > .katex-html:has(> .tag) { display: flex; align-items: baseline; }
+.gg-md .katex-display > .katex > .katex-html:has(> .tag)::before { content: ''; flex: 1 1 0; }
+.gg-md .katex-display > .katex > .katex-html:has(> .tag) > .tag { position: static; flex: 1 1 0; padding-inline-start: 1em; text-align: right; }
 /* An inline formula is one unit: it moves to the next line whole, and one wider than the line scrolls inside it
    rather than running out of the bubble. A grid scroll box keeps its content's baseline (an inline-block one would
    sit on its bottom edge). The padding, given back by the margin, leaves room for italic and accent ink that KaTeX

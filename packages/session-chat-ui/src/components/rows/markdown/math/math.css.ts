@@ -51,6 +51,17 @@ globalStyle(`${mathContent} .katex-display`, {
   margin: 0,
 });
 
+/**
+ * KaTeX sets a `\tag` number at the right of the positioned `.katex` /
+ * `.katex-html`, which here are only as wide as the formula: the number would
+ * sit on the formula's last glyphs. Set against the block instead (`mathBlock`
+ * is positioned), as KaTeX's own full-width line would. The number is absolute,
+ * so the measured box is unchanged.
+ */
+globalStyle(`${mathContent} .katex-display > .katex, ${mathContent} .katex-display > .katex > .katex-html`, {
+  position: 'static',
+});
+
 /** Failed formulas keep the source visible instead of vanishing. */
 export const mathError = style({
   fontFamily: vars.fontMono,
