@@ -17,3 +17,7 @@ it('preserves private-use text even when escapes need placeholders', () => {
   expect(markdownPlainText('\uE0000\uE000 **bold**')).toBe('\uE0000\uE000 bold')
   expect(markdownPlainText('\uE0000\uE000 \\*x\\*')).toBe('\uE0000\uE000 *x*')
 })
+
+it('excludes fenced code with CR-only line endings', () => {
+  expect(markdownPlainText('before\r'+String.fromCharCode(96).repeat(3)+'\rhidden\r'+String.fromCharCode(96).repeat(3)+'\rafter')).toBe('before after')
+})

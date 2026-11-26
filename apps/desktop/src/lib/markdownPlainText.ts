@@ -9,7 +9,7 @@ const INLINE_CODE = /((`+)(?!`)[^\n]*?\2(?!`))/
  * leftover markers outside code are dropped too, not just matched pairs.
  */
 export function markdownPlainText(text: string): string {
-  return withoutFencedBlocks(text)
+  return withoutFencedBlocks(text.replace(/\r\n?/g, '\n'))
     .split(INLINE_CODE)
     .filter((_, index) => index % 3 !== 2)
     .map((part, index) => (index % 2 === 1 ? part : plainSegment(part)))
