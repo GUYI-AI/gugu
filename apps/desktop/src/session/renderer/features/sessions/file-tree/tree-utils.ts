@@ -11,7 +11,7 @@ export interface NestedFileNode {
 
 export function normalizeFileTreePath(path: string): string {
   const normalized = path.replace(/\\/g, '/').replace(/\/+/g, '/');
-  if (normalized === '/') return normalized;
+  if (normalized === '/' || /^[A-Za-z]:\/$/.test(normalized)) return normalized;
   return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
 }
 

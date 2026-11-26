@@ -1,4 +1,4 @@
-const WINDOWS_RESERVED_DEVICE_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+const WINDOWS_RESERVED_DEVICE_NAME = /^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/i;
 
 export function basenameFromAnyPath(input: string): string {
   const trimmed = input.trim().replace(/[\\/]+$/g, '');
@@ -14,7 +14,7 @@ export function basenameFromAnyPath(input: string): string {
 export function safePathSegment(input: string, fallback = 'project'): string {
   const segment = basenameFromAnyPath(input)
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, '-')
-    .trim();
+    .trim().replace(/[. ]+$/, '');
   if (
     !segment ||
     segment === '.' ||
@@ -28,5 +28,5 @@ export function safePathSegment(input: string, fallback = 'project'): string {
 
 /** 只管显示:常见的主目录前缀写成 ~(悬停的 title 仍是完整路径)。 */
 export function shortHome(path: string): string {
-  return path.replace(/^(?:\/Users\/[^/]+|\/home\/[^/]+|\/root|[A-Za-z]:\\Users\\[^\\]+)(?=[/\\]|$)/, '~');
+  return path.replace(/^(?:\/Users\/[^/]+|\/home\/[^/]+|\/root|[A-Za-z]:[/\\]Users[/\\][^/\\]+)(?=[/\\]|$)/, '~');
 }
