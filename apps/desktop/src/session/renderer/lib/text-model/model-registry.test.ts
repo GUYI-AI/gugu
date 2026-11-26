@@ -63,6 +63,37 @@ vi.mock('@renderer/lib/ipc', () => ({
 }));
 
 describe('TextModelRegistry', () => {
+  it.each(['disk', 'git'] as const)('shares one %s model across concurrent registration', async type => {
+    vi.useFakeTimers();
+    try {
+      const registry = new TextModelRegistry();
+      const inputs = ['project', 'workspace', '/ws', 'shared.txt', 'plaintext', type] as const;
+      const [first, second] = await Promise.all([registry.registerModel(...inputs), registry.registerModel(...inputs)]);
+      expect(first).toBe(second);
+      const modelUri = type === 'disk' ? registry.toDiskUri(first) : registry.toGitUri(first, HEAD_REF);
+      const shared = registry.getModelByUri(modelUri);
+      registry.unregisterModel(modelUri);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(registry.getModelByUri(modelUri)).toBe(shared);
+      registry.unregisterModel(modelUri);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(registry.getModelByUri(modelUri)).toBeUndefined();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('retains the explicitly confirmed read limit on later disk changes', async () => {
+    const registry = new TextModelRegistry();
+    const totalSize = EDITOR_CONFIRM_FILE_BYTES + 1;
+    fileMocks.readFile.mockImplementationOnce(async () => ({ success: true, data: { content: 'first', binary: false, truncated: false, totalSize } }));
+    const uri = await registry.registerModel('project', 'workspace', '/ws', 'large.txt', 'plaintext', 'disk', HEAD_REF, EDITOR_HARD_MAX_FILE_BYTES);
+    await registry.registerModel('project', 'workspace', '/ws', 'large.txt', 'plaintext', 'buffer');
+    fileMocks.readFile.mockImplementationOnce(async (...args: unknown[]) => ({ success: true, data: {
+      content: Number(args[3]) >= totalSize ? 'changed' : '', truncated: Number(args[3]) < totalSize, totalSize,
+    } }));
+    await registry.invalidateModel(registry.toDiskUri(uri));
+    expect(registry.getValue(uri)).toBe('changed');
+    expect(registry.modelStatus.get(registry.toDiskUri(uri))).toBe('ready');
+  });
   afterEach(() => { vi.useRealTimers(); });
   beforeEach(() => {
     rpcState.indexContent = 'base';
