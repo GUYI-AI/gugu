@@ -1175,6 +1175,7 @@ function renderList() {
   const expired = picked.filter(fileUnavailable)
   const grid = viewOf(state.kind) === 'grid'
   list.classList.toggle('as-grid', grid)
+  list.closest('aside.files')?.classList.toggle('grid-view', grid)
   const item = (entry) => (grid && !isFolder(entry) ? gridItem(entry, now) : listItem(entry, now))
   const rows = []
   if (!grid && (folders.length || files.length)) rows.push(tableHead())
@@ -1554,6 +1555,7 @@ function renderFolderChoice() {
   const t = state.t
   const list = $('file-list')
   list.classList.remove('as-grid')
+  list.closest('aside.files')?.classList.remove('grid-view')
   $('files-empty').hidden = true
   list.replaceChildren(...chatFolders().map((folder) => {
     const li = Object.assign(document.createElement('li'), { className: 'file' })
