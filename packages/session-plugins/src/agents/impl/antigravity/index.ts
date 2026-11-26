@@ -5,6 +5,7 @@ import {
   type CommandContext,
   type SessionBundleDescriptor,
 } from '@gugu/session-core/agents/plugins';
+import { ANTIGRAVITY_AUTH_CONNECTIONS } from '../../connection-capabilities';
 import { buildStandardCommand, miseDependency } from '@gugu/session-core/agents/plugins/helpers';
 import { resolveSessionPermissionMode } from '@gugu/session-core/acp';
 import { createNativeAcpBehavior } from '../../helpers/acp-stdio';
@@ -86,8 +87,12 @@ export const ANTIGRAVITY_CLI_COMPANION = {
  * `agy` 这一个进程上,登录写进的就是终端会话会读的托管根,钥匙串经影子 home 的软链落进用户的登录钥匙串。
  * `ctx.cli` 是宿主按 `tui` 解析的那一份(`authProgramRole`),与终端会话跑的是同一个二进制。
  */
-function buildAntigravityCliLoginCommand(ctx: { cli: string }): { command: string; args: string[] } {
-  return { command: '/bin/sh', args: ['-c', ANTIGRAVITY_LAUNCH_SCRIPT, ctx.cli] };
+function buildAntigravityCliLoginCommand(ctx: { cli: string; env?: Record<string, string> }): { command: string; args: string[] } {
+  const root = ctx.env?.GEMINI_HOME?.trim();
+  if (!root) throw new Error('Antigravity login requires the selected account’s GEMINI_HOME');
+  const args = ['acp', '--login', '--gemini-dir', root];
+  return process.platform === 'win32' ? { command: ctx.cli, args }
+    : { command: '/bin/sh', args: ['-c', ANTIGRAVITY_LAUNCH_SCRIPT, ctx.cli, ...args] };
 }
 
 /**
@@ -231,6 +236,7 @@ export const plugin = definePlugin(
      */
     auth: {
       kind: 'supported',
+      connections: ANTIGRAVITY_AUTH_CONNECTIONS,
       methods: [
         {
           kind: 'acp-authenticate',
@@ -242,28 +248,22 @@ export const plugin = definePlugin(
       ],
       /**
        * 终端腿的 `agy` 自己的登录(#6335)—— 与聊天面板那个程序**不共享**登录,所以单独一份入口与状态。
-       * `cli-login`、不带参数:`agy` 没有登录子命令,裸起它就是登录首屏(./auth.ts)。
+       * `agy acp --login` 登录到所选账号的配置根(./auth.ts)。此命令不需要开启终端会话腿。
        * 同样只摆 Google 账号 —— 它的「Use a Google Cloud project」与 API key 模式是它自己的兼容性,
        * 状态照实读(API key 模式判为已登录),❌ 不为它们造入口。
-       * Windows 的聊天也用 agy，但不用 POSIX 影子 home 启动器。它的 ACP 握手自报 oauth-personal。
+       * Windows 的聊天也用 agy，但不用 POSIX 影子 home 启动器。
        */
       programs: {
         [ANTIGRAVITY_CLI_PROGRAM]: {
           methods: [
-            ANTIGRAVITY_SESSION_TUI_ENABLED
-              ? {
-                  kind: 'cli-login' as const,
-                  id: ANTIGRAVITY_CLI_LOGIN_METHOD_ID,
-                  name: 'Google 账号',
-                  args: [],
-                  description: 'Starts agy; its own sign-in screen opens Google sign-in in your browser.',
-                }
-              : {
-                  kind: 'acp-authenticate' as const,
-                  id: ANTIGRAVITY_CLI_LOGIN_METHOD_ID,
-                  name: 'Google 账号',
-                  methodId: ANTIGRAVITY_OAUTH_PERSONAL,
-                },
+            {
+              kind: 'cli-login' as const,
+              id: ANTIGRAVITY_CLI_LOGIN_METHOD_ID,
+              name: 'Google 账号',
+              args: ['acp', '--login'],
+              headlessArgs: ['acp', '--login'],
+              description: 'Signs in to the selected Antigravity CLI account.',
+            },
           ],
         },
       },
@@ -408,6 +408,7 @@ export const provider = registerPluginBehavior(plugin, {
       [ANTIGRAVITY_CLI_PROGRAM]: {
         checkStatus: (ctx) => antigravityCliAuthStatus(ctx),
         buildLoginCommand: (ctx) => buildAntigravityCliLoginCommand(ctx),
+        buildHeadlessLoginCommand: (ctx) => buildAntigravityCliLoginCommand(ctx),
       },
     },
   },

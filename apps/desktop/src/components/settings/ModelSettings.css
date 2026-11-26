@@ -158,6 +158,7 @@
 .gg-model-page .gg-model-subscription-usage-state { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; }
 .gg-model-page .gg-model-subscription-row .gg-settings-row-title { width: 100%; }
 .gg-model-page .gg-model-subscription-row .gg-model-name { min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; justify-content: flex-start; }
+.gg-model-page [data-subscription-model^='antigravity:'] .gg-model-name { max-width: min(100%, 160px); }
 .gg-model-page .gg-model-subscription-row .gg-model-name svg { flex-shrink: 0; }
 .gg-model-page .gg-model-subscription-row .gg-settings-row-title > input { width: 100%; max-width: 160px; }
 .gg-model-page .gg-model-subscription-usage .gg-model-quota-window { display: grid; grid-template-columns: repeat(3, max-content); align-items: center; gap: 8px; }

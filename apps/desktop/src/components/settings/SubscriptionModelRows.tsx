@@ -24,7 +24,7 @@ export function SubscriptionModelRows({ agent, machine, connections, busy, onSig
   const { translate } = useSessionMessages();
   const subscriptions = connections;
   if (subscriptions?.length === 0 && !error) return null;
-  return <CodingPlanGroup id={agent.id === 'codex' ? 'chatgpt-subscription' : 'claude-subscription'} name={subscriptionPlans[agent.id]?.vendor ?? agent.name} icon={<AppIcon id={agent.id} size={20} />}>
+  return <CodingPlanGroup id={agent.id === 'codex' ? 'chatgpt-subscription' : `${agent.id}-subscription`} name={subscriptionPlans[agent.id]?.vendor ?? agent.name} icon={<AppIcon id={agent.id} size={20} />}>
     {notice}
     {error && <SettingsRow description={<SettingsNote tone="danger" role="alert">{error}</SettingsNote>} control={<Button size="sm" variant="outline" onClick={onRetry}>{translate('common.retry')}</Button>} />}
     {!error && !connections && <SettingsRow control={<Unknown className="h-4 w-32" />} />}
@@ -40,12 +40,12 @@ function SubscriptionModelRow({ agent, machine, connection, busy, onSignIn, onRe
   const { auth } = useAgentAuthStatus(agent.id, undefined, { machine, probe: false });
   const status = connection.current && auth?.status.kind === 'unauthenticated' && auth.status.reason === 'expired' ? auth.status : details?.status;
   const expired = status?.kind === 'unauthenticated' && status.reason === 'expired';
-  const source = translate(agent.id === 'claude' ? 'customModels.claudeAccount' : 'customModels.codexAccount');
+  const source = agent.id === 'antigravity' ? agent.name : translate(agent.id === 'claude' ? 'customModels.claudeAccount' : 'customModels.codexAccount');
   const plan = details?.plan?.plan;
-  const brand = agent.id === 'claude' ? 'Claude' : 'ChatGPT';
-  const name = connection.name || (connection.kind === 'native' ? translate('subscriptions.connections.existing') : plan ? plan.toLowerCase().includes(brand.toLowerCase()) ? plan : `${brand} ${plan}` : source);
+  const brand = agent.id === 'antigravity' ? 'Antigravity' : agent.id === 'claude' ? 'Claude' : 'ChatGPT';
+  const name = connection.name || (agent.id === 'antigravity' ? status?.kind === 'authenticated' && status.account || plan || source : connection.kind === 'native' ? translate('subscriptions.connections.existing') : plan ? plan.toLowerCase().includes(brand.toLowerCase()) ? plan : `${brand} ${plan}` : source);
   const subscription = status?.kind === 'authenticated' && details?.plan?.payer !== 'api-key' && details?.plan?.payer !== 'custom-endpoint';
-  const provider = agent.id === 'claude' ? 'claude' : 'codex';
+  const provider = agent.id === 'antigravity' ? 'antigravity' : agent.id === 'claude' ? 'claude' : 'codex';
   // The quota column shows the quota; without one it shows the account's state and its sign-in instead.
   const quota = useQuotaWindows(machine, provider, connection.id, subscription).windows.length > 0;
   const state = status?.kind === 'unauthenticated'
@@ -69,7 +69,7 @@ function SubscriptionModelRow({ agent, machine, connection, busy, onSignIn, onRe
       {quota && signIn}
       <div className="gg-model-subscription-state">
       <div className="gg-model-subscription-status">
-        {(multiple || connection.kind === 'native') && (connection.current
+        {(multiple || connection.kind === 'native' || agent.id === 'antigravity') && (connection.current
           ? <span className="text-xs text-foreground-muted" data-testid={`model-current-${connection.id}`}>{translate('subscriptions.connections.current')}</span>
           : <Button size="sm" variant="outline" disabled={busy} data-testid={`model-switch-${connection.id}`} onClick={() => onSelect(connection.id)}>{translate('subscriptions.connections.switchAction')}</Button>)}
       </div>

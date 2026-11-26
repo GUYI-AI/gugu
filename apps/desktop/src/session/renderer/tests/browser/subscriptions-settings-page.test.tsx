@@ -48,6 +48,10 @@ vi.mock('@renderer/lib/ipc', async (importOriginal) => {
       ...(control.others ? [KIMI, PI] : []),
       ...(control.detectedPlan ? [{ id: 'copilot', name: 'Copilot', reading: 'installed', status: 'available', capabilities: { ...CLAUDE.capabilities, subscription: true } }] : []),
       ...(control.keyed ? [QWEN, KIRO, MIMO] : []),
+      ...(control.antigravity ? [{ id: 'antigravity', name: 'Antigravity', reading: 'installed', status: 'available', capabilities: {
+        subscription: true, auth: { kind: 'supported', connections: { kind: 'managed' }, methods: [{ kind: 'acp-authenticate', id: 'google', name: 'Google', methodId: 'oauth-personal' }],
+          programs: { 'antigravity-cli': { methods: [{ kind: 'cli-login', id: 'google', name: 'Google', args: ['acp', '--login'], headlessArgs: ['acp', '--login'] }] } } },
+      } }] : []),
     ].map(agent => ({
       installOptions: [],
       ...agent,
@@ -110,12 +114,13 @@ const control = vi.hoisted(() => ({
   oldHost: false,
   closeHold: null as Promise<void> | null,
   progressListeners: new Set<(data: { providerId: string; closed: number; total: number }) => void>(),
-  usageByConnection: {} as Record<string, { windowMinutes: number; usedPercent: number }[]>,
+  usageByConnection: {} as Record<string, { windowMinutes: number; usedPercent: number; group?: string; resetsAt?: number }[]>,
   connectionsError: false,
   keyed: false,
   /** 这几家各有各的连接(缺席的家共用 `connections`,与之前一样)。 */
   connectionsByProvider: {} as Record<string, HarnessConnection[]>,
   detectedPlan: false,
+  antigravity: false,
   nativePayer: undefined as 'api-key' | 'custom-endpoint' | undefined,
 }));
 
@@ -148,7 +153,7 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
     listConnections: async ({ providerId }: { providerId?: string } = {}) => control.connectionsError
       ? { success: false, error: { message: 'Connections offline' } }
       : { success: true, data: [...connectionsOf(providerId)] },
-    refreshAuthStatus: async () => ({ success: true, data: control.signedOut ? { kind: 'unauthenticated', ...(control.expired ? { reason: 'expired' } : {}) } : { kind: 'authenticated', account: 'me@example.test', ...(control.origin ? { credentialSource: control.origin } : {}) } }),
+    refreshAuthStatus: async ({ providerId }: { providerId: string }) => ({ success: true, data: control.signedOut ? { kind: 'unauthenticated', ...(control.expired ? { reason: 'expired' } : {}) } : { kind: 'authenticated', account: 'me@example.test', ...(providerId === 'antigravity' ? { credentialKind: 'subscription' } : {}), ...(control.origin ? { credentialSource: control.origin } : {}) } }),
     createConnection: async (input: Record<string, unknown>) => {
       control.created = input;
       const connection: HarnessConnection = input.kind === 'account'
@@ -192,7 +197,7 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
       if (providerId === 'copilot') return { success: true, data: { payer: 'subscription', plan: 'Copilot Pro' } };
       if (connectionId === 'native' && control.nativePayer) return { success: true, data: { payer: control.nativePayer } };
       if (control.hold) await control.hold;
-      return { success: true, data: control.signedOut ? { payer: 'not-signed-in' } : { payer: 'subscription', plan: 'Claude Max 20x' } };
+      return { success: true, data: control.signedOut ? { payer: 'not-signed-in' } : { payer: 'subscription', plan: providerId === 'antigravity' ? 'Google AI Pro' : 'Claude Max 20x' } };
     },
     readSubscriptionUsage: async ({ connectionId, force }: { connectionId?: string; force?: boolean }) => {
       if (force && connectionId) control.forcedUsage.push(connectionId);
@@ -247,6 +252,7 @@ beforeEach(() => {
   control.origin = undefined;
   control.nativePayer = undefined;
   control.detectedPlan = false;
+  control.antigravity = false;
   control.selected = '';
   control.codex = false;
   control.agentHomes = [];
@@ -803,6 +809,68 @@ it.each(['claude', 'codex'].flatMap(provider => [{ provider, expired: true }, { 
 function ModelsFixture() {
   return <QueryClientProvider client={queryClient}><SessionLocalizationProvider><UiPortalContainerProvider value={layer}><CustomModelsGroup /></UiPortalContainerProvider></SessionLocalizationProvider></QueryClientProvider>;
 }
+
+it('manages Antigravity accounts with their own sign-in program, switching and removal', async () => {
+  control.antigravity = true;
+  control.connectionsByProvider.antigravity = [
+    { id: 'google-a', kind: 'account', name: 'Google A', current: true },
+    { id: 'google-b', kind: 'account', name: 'Google B', current: false },
+  ];
+  root.render(<ModelsFixture />);
+  await until('both Google accounts are on the model page', () => host.querySelectorAll('[data-subscription-model^="antigravity:"]').length === 2);
+  expect(host.querySelectorAll('[data-coding-provider="antigravity-subscription"]')).toHaveLength(1);
+  expect(host.querySelector('[data-coding-provider="antigravity"]')).toBeNull();
+  await userEvent.click(page.getByTestId('model-sign-in-google-a'));
+  expect(modalStore.activeModalArgs).toMatchObject({ providerId: 'antigravity', connectionId: 'google-a', steps: [{ program: 'antigravity-cli', methodId: 'google' }] });
+  modalStore.closeModal();
+  await userEvent.click(page.getByTestId('model-switch-google-b'));
+  await until('Google B becomes current', () => !!host.querySelector('[data-subscription-model="antigravity:google-b"] [data-testid="model-current-google-b"]'));
+  await userEvent.click(page.getByTestId('model-remove-google-a'));
+  await until('Google A is removed', () => !host.querySelector('[data-subscription-model="antigravity:google-a"]'));
+  expect(control.removed).toEqual(['google-a']);
+  expect(thrown).toEqual([]);
+});
+
+it('shows the Antigravity group while its first plan read is pending', async () => {
+  control.antigravity = true;
+  let release!: () => void;
+  control.hold = new Promise<void>(resolve => { release = resolve });
+  root.render(<ModelsFixture />);
+  await until('Antigravity is visible before the vendor plan resolves', () => !!host.querySelector('[data-coding-provider="antigravity-subscription"]'));
+  await until('the signed-in Google account is visible without waiting for its tier', () => !!host.querySelector('[data-subscription-model="antigravity:native"]'));
+  expect(host.querySelector('[data-subscription-model="antigravity:native"] [data-testid="model-current-native"]')?.textContent).toBeTruthy();
+  release();
+  control.hold = null;
+  await until('the account row arrives', () => !!host.querySelector('[data-subscription-model="antigravity:native"]'));
+});
+
+it('keeps Antigravity compact and shows all quota groups and windows on hover', async () => {
+  await setLocalePreference('zh-CN');
+  control.antigravity = true;
+  control.connectionsByProvider.antigravity = [{ id: 'google-a', kind: 'account', name: 'a-very-long-google-account-name@example.test', current: true }];
+  control.usageByConnection['google-a'] = [
+    { group: 'Gemini Models', windowMinutes: 300, usedPercent: 0.3 },
+    { group: 'Gemini Models', windowMinutes: 10_080, usedPercent: 0.1 },
+    { group: 'Claude and GPT models', windowMinutes: 300, usedPercent: 0 },
+    { group: 'Claude and GPT models', windowMinutes: 10_080, usedPercent: 0 },
+  ];
+  root.render(<div className="gg-pane gg-settings-detail"><div className="gg-settings-page gg-model-page"><ModelsFixture /></div></div>);
+  await until('Antigravity has a single weekly meter', () => host.querySelectorAll('[data-subscription-model="antigravity:google-a"] [role="meter"]').length === 1);
+  const row = host.querySelector<HTMLElement>('[data-subscription-model="antigravity:google-a"]')!;
+  expect(row.querySelector('[data-window-minutes="300"]')).toBeNull();
+  expect(row.querySelector('[data-window-minutes="10080"]')?.textContent).toContain('99.9%');
+  expect(row.querySelector('[data-testid="model-current-google-a"]')?.textContent).toBe('使用中');
+  const name = row.querySelector<HTMLElement>('.gg-model-name')!;
+  expect(name.getAttribute('title')).toBe('a-very-long-google-account-name@example.test');
+  expect(name.getBoundingClientRect().width).toBeLessThanOrEqual(160);
+  await userEvent.hover(row);
+  await until('all original Google quota windows appear in the tooltip', () => document.querySelectorAll('.gg-model-quota-popup [role="meter"]').length === 4);
+  const popup = document.querySelector('.gg-model-quota-popup')!;
+  expect(popup.textContent).toContain('me@example.test');
+  expect(popup.textContent).toContain('Gemini Models');
+  expect(popup.textContent).toContain('Claude and GPT models');
+  expect(thrown).toEqual([]);
+});
 
 // 640: the settings card at any common window size (600px rows: sign-in wraps above current/switch and delete).
 // 1100: a card wide enough for one line.
