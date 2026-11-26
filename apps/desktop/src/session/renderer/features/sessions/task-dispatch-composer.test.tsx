@@ -97,7 +97,7 @@ describe('TaskDispatchComposer copy', () => {
     await act(async () => root.render(<TaskDispatchComposer chatId="group-1" chatName="产品讨论群" joinChat />));
     expect(placeholder()).toBe('新智能体要做什么？');
     expect(chip()?.textContent).toBe('加入：产品讨论群');
-    expect(verbTag()).toContain('新智能体');
+    expect(verbTag()).toContain('新建智能体');
   });
 
   it('in a chat it cannot join (a DM): the same question, no group chip', async () => {

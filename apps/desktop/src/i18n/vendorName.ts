@@ -18,6 +18,8 @@ const ENGLISH_NAMES: Readonly<Record<string, string>> = {
   '智谱 GLM Coding Plan': 'Zhipu GLM Coding Plan',
   '智谱开放平台': 'Zhipu Open Platform',
   '火山方舟 Coding Plan': 'Volcengine Ark Coding Plan',
+  // coding-plan vendors as their model tags say them (session-core models/provider-presets.ts `vendor`)
+  '火山方舟': 'Volcengine Ark',
   'Kimi 开放平台': 'Kimi Open Platform',
   '硅基流动': 'SiliconFlow',
   // subscription plans (session-plugins agents/impl/{qwen,mimocode}/subscription.ts)

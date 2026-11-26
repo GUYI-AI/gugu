@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
 
 describe('native reply after a file input', () => {
-  it.each([390, 1280])('positions a native reply below its pinned input at width %i, including remount', async width => {
+  it.each([390, 1280])('positions a native reply below its input at width %i, including remount', async width => {
     const context = createChatContext({ locale: () => 'en-US', layout: { agentConversation: true, preset: 'double', userGutter: 0 },
       mentionProvider: { resolve: token => ({ id: token, label: token, kind: 'file' }) } });
     const state = createChatState(context);
@@ -27,7 +27,7 @@ describe('native reply after a file input', () => {
     }))]);
     const host = document.body.appendChild(document.createElement('div'));
     host.style.cssText = `position:fixed;top:${width === 390 ? 118 : 45}px;left:0;width:${width}px;height:650px`;
-    const mount = () => createChatView({ context, state, parent: host, pinUserMessages: true, stickToBottom: false });
+    const mount = () => createChatView({ context, state, parent: host, stickToBottom: false });
     let view = mount();
     try {
       for (let pass = 0; pass < 2; pass++) {
@@ -45,7 +45,7 @@ describe('native reply after a file input', () => {
         expect(head().getBoundingClientRect().top - lane.getBoundingClientRect().top,
           'the virtualizer reserved the full input height').toBeGreaterThanOrEqual(input().getBoundingClientRect().height - 1);
         expect(input().getBoundingClientRect().bottom,
-          'the source jump must reserve the pinned input above its native reply header').toBeLessThanOrEqual(head().getBoundingClientRect().top + 1);
+          'the source jump must reserve the input above its native reply header').toBeLessThanOrEqual(head().getBoundingClientRect().top + 1);
         if (pass === 0) { view.dispose(); view = mount(); }
       }
     } finally {

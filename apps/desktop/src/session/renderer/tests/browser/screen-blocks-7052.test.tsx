@@ -1,6 +1,7 @@
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { page } from 'vitest/browser';
+import { publishChatSummaries } from '@/lib/chatSummariesBridge';
 import { ScreenFrame, screenDropHandlers } from '@renderer/app/screen-frame';
 import { BlockGrip, blockReturnDropTarget } from '@renderer/app/block-grip';
 import { blockDropPreview, navigateToGroupRoot, resolveBlockDrop, setBlockDropPreview } from '@renderer/app/screen-layout-actions';
@@ -217,6 +218,36 @@ describe('一屏几块的骨架 (#7052)', () => {
     navigateToGroupRoot('chat-root');
     await until('one block again', () => blockWidths().length === 1);
     expect(screenLayout.order.map((id) => screenLayout.blocks.get(id))).toEqual([{ kind: 'chat', chatId: 'chat-root' }]);
+  });
+
+  it.each(['topic', 'group'])('removes just the chosen %s from a topic and parent group split', async closed => {
+    publishChatSummaries([
+      { id: 'group', kind: 'group', name: 'Group', unread_count: 0 },
+      { id: 'topic', kind: 'topic', source_chat_id: 'group', name: 'Topic', unread_count: 0 },
+    ]);
+    onTestFinished(() => publishChatSummaries([]));
+    screenLayout.show({ kind: 'chat', chatId: 'topic' });
+    root!.render(<WorkspaceLayoutContextProvider><ScreenFrame /></WorkspaceLayoutContextProvider>);
+    screenLayout.showBeside({ kind: 'chat', chatId: 'group' });
+    await until('both conversations visible', () => blockWidths().length === 2);
+    const blockId = (chatId: string) => screenLayout.order.find(id => {
+      const block = screenLayout.blocks.get(id);
+      return block?.kind === 'chat' && block.chatId === chatId;
+    })!;
+    const button = (id: string) => document.querySelector<HTMLButtonElement>(
+      `[data-screen-block="${id}"] button:is([aria-label="取消并排"],[aria-label="Remove from split view"])`
+    );
+    const keep = blockId(closed === 'topic' ? 'group' : 'topic');
+    await until('a close action on each side', () => screenLayout.order.every(id => !!button(id)));
+    const closing = button(blockId(closed))!;
+    const title = closing.closest('[data-screen-block]')!.querySelector<HTMLElement>('[data-chat-workspace-title]')!;
+    await page.elementLocator(title).hover();
+    await until('only the hovered header reveals its close action', () =>
+      getComputedStyle(closing).opacity === '1' && getComputedStyle(button(keep)!).opacity === '0'
+    );
+    await page.elementLocator(closing).click();
+    await until('the survivor fills the screen', () => screenLayout.order.length === 1 && !button(keep));
+    expect(screenLayout.order).toEqual([keep]);
   });
 
   // 只有一块时是「一格的组」,不重挂:从群里点 agent 的名字,参与者在右边分出一块,同一组从 1 格变 2 格

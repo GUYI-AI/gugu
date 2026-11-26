@@ -4,7 +4,7 @@ import { localizePermissionModeOptions } from '../acp/permission-mode-options';
 import { classifyProviderPermissionMode, type ProviderPermissionModeMap } from '@gugu/session-core/acp/client';
 import type { SessionOptionGroup } from '@gugu/session-core/session-record/contract';
 import { withAutoReviewHint, type ReviewCostSource } from '../acp/auto-review-permission-hint';
-import { customModelAcceptsImages, customModelEfforts, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
+import { customModelAcceptsImages, customModelDefaultEffort, customModelEfforts, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica } from '@/lib/replica';
 import { customModels } from './custom-models';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
@@ -85,9 +85,8 @@ import {
 } from './harness-model-field';
 import { useCodexPreparationNotice } from '@renderer/lib/stores/use-codex-preparation-notice';
 import { useHarnessModelOptions } from './use-harness-model-options';
-import { agentOffersFastMode, draftFastMode } from './fast-mode';
-import { renderFastModeHint } from './fast-mode-hint';
-import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
+import { agentOffersFastMode, customModelFastSupported, draftFastMode, fastTokenMultiplier } from './fast-mode';
+import { fastModeHint } from './fast-mode-hint';
 import { useHarnessModelCatalog, forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { useTargetModelCatalog } from '@renderer/lib/stores/use-target-model-catalog';
 import { useLibraryHost } from '@renderer/features/library/library-host';
@@ -133,7 +132,8 @@ import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-s
 import { useComposerFileUploads, type TaskAttachmentTarget } from '@renderer/features/sessions/acp/use-composer-file-uploads';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
 import { guguReasonInText } from '@gugu/session-core/session-record/contract';
-import type { ComposerDraft, SubmittedComposerDraft } from '../composer-drafts';
+import type { ComposerDraft, DraftContextSelection, SubmittedComposerDraft } from '../composer-drafts';
+import type { SessionContextChoice } from '@shared/core/sessions/session-config';
 import {
   guguCatalogNotice,
   usePlatformModelCatalog,
@@ -194,7 +194,7 @@ export type InitialSessionState = {
    */
   model: string | null;
   acceptsImageAttachments?: boolean;
-  setModel: (model: string | null) => void;
+  setModel: (model: string | null, effort?: string) => void;
   /**
    * 「咕咕提供的模型」目录;取不到就是空数组 —— 分组缺席而 harness 模型照常。
    * Chat UI 开关与这份目录无关:两种会话类型都能选平台模型。
@@ -248,13 +248,14 @@ export type InitialSessionState = {
    * 配了平台模型也一样。
    */
   platformModel: string | null;
-  setPlatformModel: (modelId: string | null) => void;
+  setPlatformModel: (modelId: string | null, effort?: string) => void;
   /**
    * Reasoning-effort levels the *selected model* accepts, or null when it takes none
    * (codex gpt-5.3-codex-spark, Claude Code haiku) — the composer then hides the control
    * rather than offering a level the CLI would reject.
    */
   effortOptions: Record<string, ComposerEffortOption> | null;
+  effortOptionsForModel: (optionId: string) => Record<string, ComposerEffortOption> | null;
   /** Selected effort id, or null when nothing is armed (the CLI then resolves it itself). */
   effort: string | null;
   setEffort: (effort: string | null) => void;
@@ -263,6 +264,11 @@ export type InitialSessionState = {
   autoReviewCostSource?: ReviewCostSource;
   fastMode?: boolean;
   setFastMode?: (enabled: boolean) => void;
+  contextChoice?: SessionContextChoice;
+  setContextChoice?: (choice: SessionContextChoice) => void;
+  clearSubmittedContextChoice?: () => void;
+  /** Fast's published token multiple for this draft (`fastTokenMultiplier`); undefined = billed higher, no multiple. */
+  fastTokenMultiplier?: number;
   /** What the CLI would pick on its own for this model — shown in the 「默认」 row. */
   defaultEffort: string | null;
   /** Persist the complete launch configuration only after a session has actually been created. */
@@ -462,7 +468,7 @@ export function resolvePlatformModel(
   return null;
 }
 
-import { localizeEffortOptions } from './effort-options';
+import { resolveComposerTargetEfforts, localizeEffortOptions } from './effort-options';
 import { useContextThresholds } from './use-context-thresholds';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 export { resolveInitialEffort } from '@shared/core/agents/create-efforts';
@@ -502,6 +508,8 @@ export function useInitialSessionState(
   const terminalEnabled = terminalShown(useTerminalEnabled());
   // #2569 a draft handed over from another box (the sample project's first message) opens with what was picked there.
   const handed = draft?.handoff?.picked;
+  const [localContextSelection, setLocalContextSelection] = useState<DraftContextSelection>();
+  const contextSelection = draft ? draft.contextSelection : localContextSelection;
   const [sessionViewOverride, setSessionViewOverride] = useState<SessionView | null>(() => handed?.sessionView ?? null);
   const sessionViewPreference = sessionViewOverride ?? DEFAULT_SESSION_VIEW;
   // #6264 远端创建框:只经云端连着的机器只有聊天界面那条腿(终端画面走不了云端消息通道),
@@ -1120,6 +1128,8 @@ export function useInitialSessionState(
   const selectedCustom = customModelRefFromOption(customSelection);
   const customConnection = selectedCustom && customReading.state === 'value' ? customReading.value.find(record => record.id === selectedCustom.connectionId) : undefined;
   const customFeatures = customConnection?.models.find(({ id }) => id === selectedCustom?.modelId);
+  const customFastSupported = selectedCustom
+    ? customModelFastSupported(customConnection, selectedCustom.modelId ?? undefined, agents?.find((agent) => agent.id === providerId)) : undefined;
   const runtimeModel = runtimeModelId(model) ?? null;
   const targetFastCatalog = useTargetModelCatalog(
     !selectedCustom && !unattended && !platformModel && agentOffersFastMode(capabilities) ? providerId : null,
@@ -1128,16 +1138,28 @@ export function useInitialSessionState(
   );
   // 活目录 → 插件声明 → 静态表三级合成,与手机新建页共用同一个 resolveCreateEfforts(shared),
   // ❌ 别在这里再展开一遍那三步 —— 两处各写一份就会漂。
-  const customEfforts = selectedCustom ? customModelEfforts(customFeatures, capabilities?.effort) : null;
-  const modelEfforts = selectedCustom && !customEfforts ? null : resolveCreateEfforts({
+  const effortsFor = (targetModel: string | null, targetPlatform: string | null) => resolveComposerTargetEfforts({
     state: harnessCatalogState,
     effortCapability: capabilities?.effort,
-    staticModelsCapability: staticModelsCapability,
-    model: runtimeModel,
-    platformModel: customEfforts ? { reasoningEfforts: customEfforts } : platformEffortFacts(platformModel, platformCatalog.models),
+    staticModelsCapability,
+    model: targetModel,
+    platformModel: targetPlatform,
+    platformModels: platformCatalog.models,
+    customModels: customReading.state === 'value' ? customReading.value : undefined,
     leg: sessionpageSurface,
   });
+  const modelEfforts = effortsFor(model, platformModel);
+  const customEfforts = selectedCustom ? customModelEfforts(customFeatures, capabilities?.effort) : null;
+  const writeEffort = (targetModel: string | null, targetPlatform: string | null, nextEffort: string | null) => {
+    const key = effortKeyOf(providerId, targetModel, targetPlatform);
+    if (!key) return;
+    // null is an explicit reset; absence alone may inherit a remembered choice.
+    setEffortOverrides(current => ({ ...current, [key]: nextEffort || null }));
+  };
   const effortKey = effortKeyOf(providerId, model, platformModel);
+  // A custom model whose levels the person set starts on the default they chose; "Automatic" starts on none.
+  const customDefaultEffort = selectedCustom && customFeatures?.efforts
+    ? customModelDefaultEffort(customFeatures, customEfforts) ?? null : undefined;
   const effort = resolveInitialEffort(
     selectedCustom || platformModel || runtimeModel ? modelEfforts : null,
     effortKey
@@ -1150,8 +1172,8 @@ export function useInitialSessionState(
         (lastStartedConfiguration.model ?? null) === model &&
         (lastStartedConfiguration.platformModel ?? null) === platformModel
           ? lastStartedConfiguration.effort
-          : undefined))
-      : undefined
+          : customDefaultEffort))
+      : customDefaultEffort
   );
   const { auth: reviewAuth } = useAgentAuthStatus(!platformModel && !selectedCustom ? providerId : null, undefined, { machine });
   const autoReviewCostSource: ReviewCostSource = platformModel ? 'platform' : selectedCustom ? 'api-key'
@@ -1259,11 +1281,12 @@ export function useInitialSessionState(
     issueContextEditorOpen,
     setIssueContextEditorOpen,
     model,
-    setModel: (nextModel) => {
+    setModel: (nextModel, nextEffort) => {
       setFastModeDraft(false);
       if (!providerId) return;
       // 选 harness 模型同时就是「这条会话不上平台」的表态,agent 级默认值不再回来顶掉它。
       setPlatformModelOverrides((current) => ({ ...current, [providerId]: null }));
+      if (nextEffort !== undefined) writeEffort(nextModel, null, nextEffort);
       setModelOverrides((current) => {
         if (!nextModel) {
           const next = { ...current };
@@ -1275,6 +1298,18 @@ export function useInitialSessionState(
     },
     platformModels: platformCatalog.models,
     platformModel,
+    contextChoice: contextSelection?.provider === providerId
+      && contextSelection.choice.model === composerSelectedOptionId({ platformModel, model })
+      ? contextSelection.choice : undefined,
+    setContextChoice: (choice) => {
+      const selection = { provider: providerId, choice };
+      if (draft) draft.setContextSelection(selection);
+      else setLocalContextSelection(selection);
+    },
+    clearSubmittedContextChoice: contextSelection && (() => {
+      if (draft) draft.clearSubmittedContextSelection(contextSelection);
+      else setLocalContextSelection(current => current === contextSelection ? undefined : current);
+    }),
     platformNotice,
     // 只有过一会儿可能自己好的原因值得重试;其余原因是配置事实,重试也不会变。
     retryPlatformCatalog: platformCatalogNotice?.retryable ? platformCatalog.retry : undefined,
@@ -1286,25 +1321,30 @@ export function useInitialSessionState(
     harnessSignIn,
     connectionPanel: connections.panel,
     harnessModelUnlock,
-    setPlatformModel: (nextModel) => {
+    setPlatformModel: (nextModel, nextEffort) => {
       setFastModeDraft(false);
       if (!providerId) return;
       setPlatformModelOverrides((current) => ({ ...current, [providerId]: nextModel }));
+      if (nextEffort !== undefined) writeEffort(null, nextModel, nextEffort);
     },
     // 档名走词表 —— 插件那份是硬编码中文,原样摆出来英文壳里就漏中文(见 effort-options.ts)。
     effortOptions: localizeEffortOptions(modelEfforts?.options ?? null, translate),
+    effortOptionsForModel: (optionId) => {
+      const selection = composerModelSelection(optionId);
+      const resolved = selection.source === 'platform'
+        ? effortsFor(null, selection.modelId)
+        : effortsFor(selection.modelId, null);
+      return localizeEffortOptions(resolved?.options ?? null, translate);
+    },
     effort,
     permissionOptions,
     permissionModeMap,
     autoReviewCostSource,
-    fastMode: unattended || selectedCustom ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, catalog: targetFastCatalog ?? harnessCatalogState }),
+    fastMode: unattended ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, customSupported: customFastSupported, catalog: targetFastCatalog ?? harnessCatalogState }),
     setFastMode: setFastModeDraft,
+    fastTokenMultiplier: fastTokenMultiplier(capabilities, customFastSupported !== undefined),
     defaultEffort: modelEfforts?.defaultId ?? null,
-    setEffort: (nextEffort) => {
-      if (!effortKey) return;
-      // null is an explicit reset; absence alone may inherit a remembered choice.
-      setEffortOverrides((current) => ({ ...current, [effortKey]: nextEffort || null }));
-    },
+    setEffort: nextEffort => writeEffort(model, platformModel, nextEffort),
     rememberStartedConfiguration: async () => {
       if (!providerId) return;
       // 真启动过的那一家同样算「用户选的」(除非它是出厂偏好猜出来的),同步进上面那一格,
@@ -1436,10 +1476,9 @@ export function InitialSessionField({
   // owner:平台额度这件事在 UI 上的核心标志,就是 composer 的模型下拉里多出咕咕提供的模型。
   // 它们与用户自己那档并列在同一个下拉里(不是另开一个选择器),每条自带积分标注。
   //
-  // 分类两级(owner 2026-09-05,照 assistant-ui 那版):**一级是厂商**(组头 / 过滤药丸 /
-  // 行内 logo 都按它),**二级**才是「你的 {厂商} 模型」/「咕咕提供的模型 · 按积分计费」,
-  // 挂在组头厂商名后面。二级那句由这里翻好再递进去 —— `platform-model-options` 自己不碰 i18n
-  // (它同时被黑盒 e2e 引用);图标同理由这里给成品节点,那个模块也够不到 React。
+  // 一张平的清单(owner 11-25):咕咕的模型不带标签,用户自己配的行带标签(Coding Plan 写家名、按量 key 写域名)。
+  // 翻译与图标由装配那边给成品 —— `platform-model-options` 自己不碰 i18n(它同时被黑盒 e2e 引用),
+  // 也够不到 React。
   // 装配在 `useComposerModelOptions` 里(@@@composer-model-assembly),两个入口共用一份。
   const modelOptions = useComposerModelOptions(
     harnessModelOptions,
@@ -1629,7 +1668,14 @@ export function InitialSessionField({
   // 掉进 composer 的文件都变成**附件 chip**(#5269,owner 2026-09-08:「你应该把他当作附件处理」)。
   // ❌ 不往正文里插一条路径 pill —— 那是把传输方式摆到用户脸上。
   const remoteMachine = state.machine;
-  const contextThresholds = useContextThresholds(state.provider, remoteMachine);
+  const contextThresholds = useContextThresholds(state.provider, remoteMachine, state.contextChoice, state.setContextChoice && (async (choice, effort) => {
+    const selection = composerModelSelection(choice.model);
+    if (choice.model !== composerSelectedOptionId(state)) {
+      if (selection.source === 'platform') state.setPlatformModel(selection.modelId, effort);
+      else state.setModel(selection.modelId || null, effort);
+    }
+    state.setContextChoice?.(choice);
+  }));
   const handleFiles = useCallback((files: File[]) => {
     const accepted = state.acceptsImageAttachments === false ? files.filter((file) => !file.type.startsWith('image/')) : files;
     if (accepted.length < files.length) toast({ title: translate('customModels.imagesUnsupported'), variant: 'destructive' });
@@ -1778,11 +1824,12 @@ export function InitialSessionField({
           // **本页自己的**两套 state。❌ 别把 state 也合过去:那两套决定 spawn 走哪条路,
           // 会话页只有一个活会话,合起来只能靠 surface flag 在里面分叉。
           selectedModel={composerSelectedOptionId(state)}
-          onModelChange={(optionId) => {
+          onModelChange={(optionId, effortId) => {
             const selection = composerModelSelection(optionId);
-            if (selection.source === 'platform') state.setPlatformModel(selection.modelId);
-            else state.setModel(selection.modelId || null);
+            if (selection.source === 'platform') state.setPlatformModel(selection.modelId, effortId);
+            else state.setModel(selection.modelId || null, effortId);
           }}
+          effortOptionsForModel={state.effortOptionsForModel}
           // 一个模型都拿不到时,「模型」那一行改放一枚「登录解锁 X」的标签,点了开登录终端。
           // ❌ 不靠左边工具栏那句「需要先登录」代劳:它离模型控件隔了半个底排,
           //    人在模型那里找不到任何交代(owner 2026-08-26 实测)。
@@ -1796,7 +1843,7 @@ export function InitialSessionField({
           onEffortChange={(effortId) => state.setEffort(effortId || null)}
           fastMode={state.fastMode}
           onFastModeChange={state.setFastMode}
-          renderFastModeHint={renderFastModeHint}
+          renderFastModeHint={fastModeHint(state.fastTokenMultiplier)}
           defaultEffort={state.defaultEffort ?? undefined}
           permissionModeOptions={withAutoReviewHint(permissionModeOptions, state.provider, state.autoReviewCostSource ?? 'unknown')}
           selectedPermissionMode={permissionModeOptions ? state.permissionMode : undefined}
@@ -1812,8 +1859,8 @@ export function InitialSessionField({
           onDataDropped={onDataDropped}
           attachments={state.attachments}
           onAttachmentsChange={enableAttachments ? state.setAttachments : undefined}
-          onViewAttachment={(att) => {
-            if (!openComposerImage(att)) setAttachmentViewer(att);
+          onViewAttachment={(att, cell) => {
+            if (!openComposerImage(att, cell)) setAttachmentViewer(att);
           }}
           toolbarExtra={toolbarExtra}
           className={textareaClassName}

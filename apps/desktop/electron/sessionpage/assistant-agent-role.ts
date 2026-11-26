@@ -1,24 +1,25 @@
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
+import { ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC, pickAssistant } from '@gugu/core/shared/assistantProvision';
 
-/** The owner-checked provision role, never a display name or a directory-name guess. */
-export async function isPersonalAssistantAgent(auth: { userId: string; accessToken: string }, agentId: string): Promise<boolean> {
+/** The agent the owner's assistant App is bound to, never a display name or a directory-name guess. */
+async function boundAssistantId(auth: { accessToken: string }): Promise<string | null> {
   const client = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${auth.accessToken}` } });
-  const { data, error } = await client.from('agent_provisions').select('agent_user_id').eq('owner_user_id', auth.userId)
-    .eq('agent_user_id', agentId).eq('member_key', 'assistant').limit(1).abortSignal(AbortSignal.timeout(2000));
+  const { data, error } = await client.rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS).abortSignal(AbortSignal.timeout(2000));
   if (error) throw new Error('ASSISTANT_ROLE_UNAVAILABLE');
-  return Boolean(data?.length);
+  try { return pickAssistant(data)?.agentId ?? null; } catch { throw new Error('ASSISTANT_ROLE_UNAVAILABLE'); }
 }
 
-/** Resolve restored local bindings by the same canonical role, including directories outside app-owned paths. */
+export async function isPersonalAssistantAgent(auth: { userId: string; accessToken: string }, agentId: string): Promise<boolean> {
+  return (await boundAssistantId(auth)) === agentId;
+}
+
+/** Resolve restored local bindings by the same binding, including directories outside app-owned paths. */
 export async function personalAssistantSessionBindings(
   auth: { userId: string; accessToken: string },
   roster: readonly { gugu_user_id?: string | null; cache?: Record<string, unknown> | null }[],
 ): Promise<{ assistantId: string; sessionId: string }[]> {
-  const client = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${auth.accessToken}` } });
-  const { data, error } = await client.from('agent_provisions').select('agent_user_id').eq('owner_user_id', auth.userId)
-    .eq('member_key', 'assistant').limit(1000).abortSignal(AbortSignal.timeout(2000));
-  if (error) throw new Error('ASSISTANT_ROLE_UNAVAILABLE');
-  const ids = new Set((data ?? []).map(row => row.agent_user_id).filter((id): id is string => typeof id === 'string'));
+  const bound = await boundAssistantId(auth);
+  const ids = new Set(bound ? [bound] : []);
   const found = new Set<string>();
   return roster.flatMap(record => {
     const id = record.gugu_user_id, sessionId = record.cache?.emdash_session_id;

@@ -5,7 +5,7 @@ import { page, userEvent } from 'vitest/browser'
 import { FileTextContent } from '@/components/preview/FileTextContent'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import { ChatStoreProvider } from '@/store/chatContext'
-import { FileSelectionLayer } from '@renderer/features/sessions/annotations/file-selection-overlay'
+import { SelectionLineLayer } from '@renderer/features/sessions/annotations/selection-line'
 import { chatStore } from '../../../../../../../tests/support/testHarness'
 import '@gugu/session-ui/styles/global'
 import '@gugu/session-ui/theme/theme.css'
@@ -60,7 +60,7 @@ it('sends a source selection with the person\'s line into the conversation, the 
   root = createRoot(host)
   await act(async () => {
     root.render(<ChatStoreProvider value={chatStore({ sendMessageToChat })}><FileTextContent kind="text" content={'same line\nselected words\nselected words'}
-      selectable={{ conversation: { kind: 'chat', chatId }, file: { name: 'pricing.txt', target: path }, cite: vi.fn(), sends: true }} /><FileSelectionLayer /></ChatStoreProvider>)
+      selectable={{ conversation: { kind: 'chat', chatId }, file: { name: 'pricing.txt', target: path }, cite: vi.fn(), sends: true }} /><SelectionLineLayer /></ChatStoreProvider>)
   })
   const range = document.createRange()
   const selected = host.querySelector('[data-file-line="3"]')!.firstChild!

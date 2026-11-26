@@ -1,5 +1,6 @@
 /** @jsxImportSource solid-js */
 import { useCommands } from '@session-chat/components/contexts/CommandsContext';
+import { StreamContext, createStreamAnimation } from '@session-chat/components/contexts/StreamContext';
 import { useTurnState } from '@session-chat/components/contexts/TurnStateContext';
 import { BlockStackView } from '@session-chat/components/primitives/BlockStackView';
 import { clipTrackedHeight, isCardAnimating } from '@session-chat/components/primitives/card-clip';
@@ -11,7 +12,7 @@ import { blockPlainText } from '@session-chat/core/markdown/plain-text';
 import { pxTokens } from '@session-chat/styles/px-tokens';
 import { vars as themeVars } from '@session-chat/styles/theme.css';
 import { assignInlineVars } from '@vanilla-extract/dynamic';
-import { fileRowStyle } from '@gugu/session-shared/file-row';
+import { fileRowBox, fileRowStyle } from '@gugu/session-shared/file-row';
 import '@gugu/session-shared/file-row.css';
 import { For, Show, createEffect, createMemo, createResource, createSignal, onCleanup, type JSX } from 'solid-js';
 import type { ChatAttachment, ChatMessage } from '@session-chat/model';
@@ -99,6 +100,10 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
   // One parse path for layout and copy text: a full parse drops the streaming record, so every
   // chunk would re-parse the reply and remount its settled blocks (and lose a selection in them).
   const parse = (ctx: MeasureCtx) => (props.data.streaming ? ctx.caches.parseBlocksStreaming : ctx.caches.parseBlocks)(props.data.id, props.data.text);
+
+  // An agent reply drawn in this card streams as it does in AssistantRender: its new text fades in, its code highlights
+  // as each block settles. Read once at mount, as there: a row mounted for a committed message never animates.
+  const streamAnimation = createStreamAnimation(() => props.data.text, () => props.data.streaming === true, () => mCtx()?.caches.settledBlockCount(props.data.id) ?? 0);
 
   /** What the agent sent to people is drawn by the host's MessageBody in slots (`SentMessageBodies`), not as text here. */
   const sent = createMemo(() => {
@@ -209,7 +214,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
           }}
         >
           <For each={props.data.attachments}>
-            {(att) => att.kind === 'annotation' ? <AnnotationChip attachment={att} /> : <AttachmentChip attachment={att} itemId={props.data.id} />}
+            {(att) => att.kind === 'annotation' ? <AnnotationChip attachment={att} /> : <AttachmentChip attachment={att} itemId={props.data.id} available={availableWidth()} />}
           </For>
         </div>
       </Show>
@@ -242,7 +247,9 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
       <div class={srOnly} role="note" aria-label={plainText()} />
       <div ref={setTextRoot} data-conversation-text={props.conversation ? props.data.id : undefined}
         style={destination() ? { height: `${Math.max(0, cardH() - 2 * vars().userCardPadY - 2 * vars().cardBorder)}px`, overflow: 'hidden' } : undefined}>
-        <Show when={stack()}>{(s) => <BlockStackView node={s()} />}</Show>
+        <StreamContext.Provider value={props.data.streaming ? streamAnimation : null}>
+          <Show when={stack()}>{(s) => <BlockStackView node={s()} />}</Show>
+        </StreamContext.Provider>
         <Show when={props.data.sentMessages?.length && sent() ? props.data.sentMessages : null}>{messages =>
           <SentMessageBodies messages={messages()} ctx={mCtx} width={innerWidth()} />}</Show>
       </div>
@@ -308,13 +315,15 @@ function AnnotationChip(props: { attachment: ChatAttachment }) {
 }
 
 /**
- * 一枚附件 = 一条文件行(`@gugu/session-shared/file-row`):文件是图标 + 名字 + 扩展名,图片是同高的缩略图。
+ * 一枚附件 = 一条文件行(`@gugu/session-shared/file-row`):文件是图标 + 名字 + 扩展名;图片是一张图,
+ * 像群聊气泡那样按原图比例画(框是 `fileRowBox`,量高读的同一个),不知道宽高的图完整放进定高的框。
  * 点开是同一个回调,宿主按 kind 分岔(图 → 看图、文件 → 用它该用的方式打开)。
  */
-function AttachmentChip(props: { attachment: ChatAttachment; itemId: string }) {
+function AttachmentChip(props: { attachment: ChatAttachment; itemId: string; available: number }) {
   const commands = useCommands();
   const translate = useChatTranslator();
   const isImage = () => props.attachment.kind !== 'file';
+  const box = () => fileRowBox({ kind: 'image', size: props.attachment.imageDimensions }, props.available);
   const [resolvedDataUrl] = createResource(
     () => (!isImage() || props.attachment.dataUrl ? null : props.attachment.id),
     async () => commands().resolveAttachment?.(props.attachment) ?? null
@@ -328,7 +337,9 @@ function AttachmentChip(props: { attachment: ChatAttachment; itemId: string }) {
       type="button"
       data-attachment-chip
       data-kind={isImage() ? 'image' : 'file'}
+      data-fit={isImage() && !props.attachment.imageDimensions ? 'contain' : undefined}
       class="gg-file-row"
+      style={isImage() ? { width: `${box().width}px`, height: `${box().height}px` } : undefined}
       // 名字长了会截断,全名放这儿。
       title={props.attachment.name}
       // 附件名是原始数据(用户自己的文件名),只被这句话包住,❌ 不进 catalog。
@@ -338,7 +349,12 @@ function AttachmentChip(props: { attachment: ChatAttachment; itemId: string }) {
       )}
       onClick={(e) => {
         e.stopPropagation();
-        if (props.attachment.href) { commands().onOpenLink?.(props.attachment.href); return; }
+        if (props.attachment.href) {
+          const picture = isImage() ? e.currentTarget.querySelector('img') : null;
+          if (picture) commands().onDrawnPictureLink?.(props.attachment.href, picture);
+          commands().onOpenLink?.(props.attachment.href);
+          return;
+        }
         commands().onViewAttachment?.({
           attachment: { ...props.attachment, ...(dataUrl() ? { dataUrl: dataUrl() } : {}) },
           itemId: props.itemId,

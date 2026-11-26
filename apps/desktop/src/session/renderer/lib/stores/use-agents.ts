@@ -19,9 +19,9 @@ export function useManagementAgents(): Reading<AgentPayload[]> {
   return useHostReplica(managementAgents, []);
 }
 
-/** One agent's metadata on this computer. */
-export function useAgent(id: string): Reading<AgentPayload | null> {
-  return useReplica(agentMetadata, [null, id]);
+/** One agent's metadata on this computer; no id reads nothing. */
+export function useAgent(id: string | null | undefined): Reading<AgentPayload | null> {
+  return useReplica(agentMetadata, id ? [null, id] : null);
 }
 
 /** Until its own answer lands, the library list's row stands in (the detail opens at once). */

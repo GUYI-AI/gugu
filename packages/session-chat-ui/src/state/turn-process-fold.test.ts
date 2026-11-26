@@ -1,3 +1,5 @@
+import { buildSystemNoticeEnvelope, mergeDeliveryEnvelopes } from '@gugu/core/local/agent/deliveryEnvelope';
+import { tellAgentItWasRenamed } from '../../../../apps/desktop/electron/sessionpage/agent-rename-notice';
 import { unit } from '@session-chat/core/units';
 import type { ItemSegmenter, SegmentCtx, SegmentItem } from '@session-chat/core/units';
 import { defaultChatTranslator } from '@session-chat/localization';
@@ -21,6 +23,7 @@ const SEGMENTERS: Record<string, ItemSegmenter> = Object.fromEntries(
     'thinking',
     'execute',
     'execute-tool-call',
+    'mcp-tool-call',
     'subagent-done-tool-call',
     'turn-outcome',
     'turn-process',
@@ -105,6 +108,33 @@ const tailOf = (plan: { segments: { tail: ChatItem[] }[] }) =>
 
 const DONE: TranscriptTurn['outcome'] = { kind: 'done' };
 const FULL = turn('t1', [user('u1'), thinking('th1'), tool('c1'), reply('a-mid', 'partial'), tool('c2'), reply('a1')], DONE);
+
+describe('agent rename notice', () => {
+  it.each([true, false])('omits the internal delivery from the conversation (live=%s)', async active => {
+    const displayName = '项目助理';
+    const delivered: string[] = [];
+    await expect(tellAgentItWasRenamed({
+      injectForAgent: async (agentId, message) => {
+        expect(agentId).toBe('agent-id');
+        delivered.push(message.text);
+        return 'accepted';
+      },
+    }, { agentUserId: 'agent-id', displayName })).resolves.toBe('accepted');
+    expect(delivered).toHaveLength(1);
+    const [rename] = delivered as [string];
+    expect(rename).toContain(displayName);
+
+    const visible = buildSystemNoticeEnvelope({ messageId: 'visible', at: '2026-11-26T00:00:00Z', content: 'Visible system notice' });
+    const turns = [turn('rename', [user('rename-input', rename)], active ? undefined : DONE),
+      turn('ordinary', [user('owner-input', 'Your owner renamed you.'), user('batch', mergeDeliveryEnvelopes([rename, visible]))], active ? undefined : DONE)];
+    const messages = flattenTier(turns, ctxWith({ active, agentConversation: true }), SEGMENTERS)
+      .filter(unit => unit.kind === 'message').map(unit => unit.data as ChatMessage);
+    expect(messages.map(item => item.id)).toEqual(['owner-input', 'batch']);
+    expect(messages[0]?.text).toBe('Your owner renamed you.');
+    expect(messages[1]?.text).toContain('Visible system notice');
+    expect(messages[1]?.text).not.toContain(displayName);
+  });
+});
 
 describe('planTurnFold (#4874)', () => {
   it('splits a done turn into prompt / process / final reply', () => {
@@ -1005,6 +1035,20 @@ describe('agent conversation segment process', () => {
       { stepCount: 1, label: 'Ran 1 shell command' }, { stepCount: 1, label: 'Ran 1 shell command' },
     ]);
     expect(ids(units).filter(id => ['p1', 'mid', 'p2', 'final'].includes(id))).toEqual(['p1', 'mid', 'p2', 'final']);
+  });
+  it.each([true, false])('folds MCP with commands and thinking in a single summary (live: %s)', active => {
+    const details = (id: string, name: string): ChatItem => ({
+      kind: 'mcp-tool-call', id, seq: 0, toolCallId: id, status: 'done',
+      title: name, server: 'gugu', tool: name,
+    });
+    const record = turn('mcp-run', [
+      user('u'), bash('first'), details('session', 'session_get'), thinking('thought'),
+      details('catalog', 'catalog_list'), bash('last'), ...(active ? [] : [reply('answer')]),
+    ], active ? undefined : DONE);
+    const runs = conversation(record, active, !active).filter(unit => unit.kind === 'tool-run');
+    expect(runs.map(unit => unit.data)).toMatchObject([
+      { stepCount: 5, label: 'Thought 1 time, ran 2 shell commands, called 2 MCP tools' },
+    ]);
   });
   it('keeps the failure outcome visible beside the same readable reply/process structure', () => {
     const record = completed(); record.outcome = { kind: 'error', reason: 'prompt_failed' };

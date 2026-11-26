@@ -59,7 +59,7 @@ import { runNativeInputAction } from '@/lib/nativeInputFailureNotice'
 function useSessionApps(): Reading<Array<{ kind: string; name: string }>> {
   const installed = useInstalledApps(HERE_HOST)
   return useMemo(() => installed.state === 'value'
-    ? { ...installed, value: installed.value.enabledTabContributions.map((entry) => ({ kind: entry.kind, name: entry.title || entry.extensionName })) }
+    ? { ...installed, value: installed.value.enabledTabContributions.map((entry) => ({ kind: entry.kind, name: installed.value.tabTitle(entry.kind) || entry.title || entry.extensionName })) }
     : installed, [installed])
 }
 

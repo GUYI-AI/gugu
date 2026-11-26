@@ -30,6 +30,7 @@ async function withBands(layer: ReactNode) {
   await renderWithAppProviders(harness, createElement(Fragment, null,
     createElement('nav', { 'data-band': 'rail', className: 'window-drag-region', style: { width: 60, height: 400 } }),
     createElement('div', { 'data-band': 'title', className: '[-webkit-app-region:drag]', style: { height: 40 } }),
+    createElement('div', { 'data-band': 'plain', style: { height: 40 } }),
     layer))
   await new Promise((resolve) => requestAnimationFrame(resolve))
 }
@@ -44,7 +45,10 @@ describe('an open popover or menu turns the window drag regions off, so a click 
   ])('%s: open, nothing drags; closed, the rail and the title band drag again', async (_, layer) => {
     await withBands(layer())
     expect(document.querySelector(LAYER)).not.toBeNull()
-    expect([region('[data-band=rail]'), region('[data-band=title]'), region(LAYER)]).toEqual(['no-drag', 'no-drag', 'no-drag'])
+    expect([region('[data-band=rail]'), region('[data-band=title]')]).toEqual(['no-drag', 'no-drag'])
+    expect(region(LAYER)).not.toBe('drag')
+    // Only the drag regions are restyled, ❌ every element under <html> (a whole-page style recalculation per open and close).
+    expect(region('[data-band=plain]')).not.toBe('no-drag')
     harness.cleanup()
     harness = createReactHarness()
     await withBands(null)

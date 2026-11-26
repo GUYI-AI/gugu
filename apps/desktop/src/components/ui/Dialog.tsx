@@ -5,6 +5,7 @@ import { Dialog as DialogPrimitive } from '@base-ui/react/dialog'
 import { cn } from '@/lib/cn'
 import { useUiPortalContainer } from '@gugu/session-ui/react/primitives'
 import { noteOverlayRequest } from '@/lib/localRendererDiagnostics'
+import { useProbedRef } from '@/lib/overlayOcclusion'
 
 type ClassNameProp = { className?: string }
 
@@ -55,10 +56,12 @@ function DialogViewport({
 
 function DialogPopup({
   className,
+  ref,
   ...props
 }: Omit<DialogPrimitive.Popup.Props, 'className'> & ClassNameProp) {
   return (
     <DialogPrimitive.Popup
+      ref={useProbedRef('app-dialog', ref)}
       data-slot="dialog-popup"
       className={cn('gg-dialog-popup', className)}
       {...props}

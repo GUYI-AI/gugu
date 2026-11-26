@@ -45,10 +45,11 @@ public final class GuguTextSelectionPlugin: CAPPlugin, CAPBridgedPlugin {
                 guard scale.isFinite, scale > 0 else { call.reject("Native text selection unavailable"); return }
                 attributed = try rich.attributed(appearance: appearance, scale: scale)
             } catch { call.reject("Invalid rich text selection"); return }
-            let page = NativeTextSelectionController(rich: rich, attributed: attributed, range: range, title: title, closeLabel: closeLabel, appearance: appearance)
+            let page = NativeTextSelectionController(rich: rich, attributed: attributed, range: range, title: title, closeLabel: closeLabel,
+                                                     commentLabel: call.getString("commentLabel"), appearance: appearance)
             page.modalPresentationStyle = .overFullScreen
             page.overrideUserInterfaceStyle = call.getBool("dark") == true ? .dark : .light
-            page.onClose = { [weak self] in self?.finish(id) }
+            page.onClose = { [weak self, weak page] in self?.finish(id, comment: page?.comment) }
             self.active = (id, page, call)
             presenter.present(page, animated: false)
         }
@@ -58,37 +59,46 @@ public final class GuguTextSelectionPlugin: CAPPlugin, CAPBridgedPlugin {
         DispatchQueue.main.async {
             guard let active = self.active, active.id == call.getString("id") else { call.resolve(); return }
             active.controller.dismiss(animated: false) {
-                self.finish(active.id)
+                self.finish(active.id, comment: nil)
                 call.resolve()
             }
         }
     }
 
-    private func finish(_ id: String) {
+    /** Resolves the open call: with the selected words when Comment closed the page. */
+    private func finish(_ id: String, comment: String?) {
         guard let active = active, active.id == id else { return }
         self.active = nil
-        active.call.resolve()
+        if let comment = comment { active.call.resolve(["comment": comment]) } else { active.call.resolve() }
     }
 }
 
-/** UIKit owns selection, draggable endpoints, the editing menu and copying. */
+/** UIKit owns selection, draggable endpoints, the editing menu and copying; Comment, when offered, hands the words back. */
 private final class NativeSelectionTextView: UITextView {
     var onCopy: (() -> Void)?
+    var onComment: (() -> Void)?
     override func copy(_ sender: Any?) { super.copy(sender); onCopy?() }
+    @objc func comment(_ sender: Any?) { onComment?() }
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        action == #selector(comment(_:)) ? onComment != nil : super.canPerformAction(action, withSender: sender)
+    }
 }
 
-private final class NativeTextSelectionController: UIViewController, UIGestureRecognizerDelegate {
+private final class NativeTextSelectionController: UIViewController, UIGestureRecognizerDelegate, UITextViewDelegate {
     private let body: NativeSelectionTextView
     private let storage: NSTextStorage
     private let richLayout: NativeRichLayoutManager
     private let initialAttributed: NSAttributedString
     private let initialRange: NSRange
     private let closeLabel: String
+    private let commentLabel: String?
     private let appearance: [String: Any]
     private var selected = false
     var onClose: (() -> Void)?
+    /** The selected words, once Comment closed the page. */
+    private(set) var comment: String?
 
-    init(rich: NativeRichText, attributed: NSAttributedString, range: NSRange, title: String, closeLabel: String, appearance: [String: Any]) {
+    init(rich: NativeRichText, attributed: NSAttributedString, range: NSRange, title: String, closeLabel: String, commentLabel: String?, appearance: [String: Any]) {
         let storage = NSTextStorage()
         let layout = NativeRichLayoutManager()
         layout.blocks = rich.blocks
@@ -103,6 +113,7 @@ private final class NativeTextSelectionController: UIViewController, UIGestureRe
         initialAttributed = attributed
         initialRange = range
         self.closeLabel = closeLabel
+        self.commentLabel = commentLabel?.isEmpty == false ? commentLabel : nil
         self.appearance = appearance
         super.init(nibName: nil, bundle: nil)
         self.title = title
@@ -122,6 +133,12 @@ private final class NativeTextSelectionController: UIViewController, UIGestureRe
         body.textContainerInset = .zero
         body.textContainer.lineFragmentPadding = 0
         body.onCopy = { [weak self] in _ = self?.closePage() }
+        body.delegate = self
+        if let label = commentLabel {
+            body.onComment = { [weak self] in self?.commentOnSelection() }
+            // iOS 15's menu reads UIMenuController's items; iOS 16's menus ask the delegates below.
+            if #unavailable(iOS 16.0) { UIMenuController.shared.menuItems = [UIMenuItem(title: label, action: #selector(NativeSelectionTextView.comment(_:)))] }
+        }
         body.accessibilityCustomActions = [UIAccessibilityCustomAction(name: closeLabel, target: self, selector: #selector(closePage))]
         body.accessibilityIdentifier = "message-native-text-selection"
         view.addSubview(body)
@@ -152,12 +169,31 @@ private final class NativeTextSelectionController: UIViewController, UIGestureRe
         guard let selection = body.selectedTextRange else { return }
         let rect = body.firstRect(for: selection)
         if #available(iOS 16.0, *) {
-            let menu = UIEditMenuInteraction(delegate: nil)
+            let menu = UIEditMenuInteraction(delegate: self)
             body.addInteraction(menu)
             menu.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: CGPoint(x: rect.midX, y: rect.minY)))
         } else {
             UIMenuController.shared.showMenu(from: body, rect: rect)
         }
+    }
+
+    /** Comment first, ahead of the system's actions, on iOS 16's edit menus (the one opened here and the text view's own): the compact menu shows only its first few. */
+    @available(iOS 16.0, *)
+    fileprivate func withComment(_ suggested: [UIMenuElement]) -> UIMenu {
+        guard let label = commentLabel else { return UIMenu(children: suggested) }
+        return UIMenu(children: [UIAction(title: label) { [weak self] _ in self?.commentOnSelection() }] + suggested)
+    }
+
+    @available(iOS 16.0, *)
+    func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
+        withComment(suggestedActions)
+    }
+
+    private func commentOnSelection() {
+        let range = body.selectedRange
+        guard range.length > 0, let text = body.text else { return }
+        comment = (text as NSString).substring(with: range)
+        _ = closePage()
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
@@ -172,6 +208,14 @@ private final class NativeTextSelectionController: UIViewController, UIGestureRe
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        if #unavailable(iOS 16.0), commentLabel != nil { UIMenuController.shared.menuItems = nil }
         if isBeingDismissed { onClose?() }
+    }
+}
+
+@available(iOS 16.0, *)
+extension NativeTextSelectionController: UIEditMenuInteractionDelegate {
+    func editMenuInteraction(_ interaction: UIEditMenuInteraction, menuFor configuration: UIEditMenuConfiguration, suggestedActions: [UIMenuElement]) -> UIMenu? {
+        withComment(suggestedActions)
     }
 }

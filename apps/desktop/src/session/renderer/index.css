@@ -982,7 +982,9 @@
   --chat-color-scheme: dark;
   --chat-fg-muted: var(--foreground-muted);
   --chat-fg-passive: var(--foreground-passive);
-  --chat-bg: var(--background-secondary-1);
+  /* 对话画在页面那一层(--bg)上,和浅色同一结构:页头也是这一层,两者❌ 差一档(owner 11-26 GitHub 深色页头比对话区深)。
+     从前深色把它抬到 --card,对话区就比自己的页头亮一档。 */
+  --chat-bg: var(--background);
   --chat-bg-1: var(--background-1);
   --chat-bg-2: var(--background-2);
   --chat-bg-3: var(--background-3);
@@ -1137,15 +1139,9 @@
 
   [data-chat-card-head],
   [data-chat-card] {
-    /* The right gap closes as the tools come on or go off the track (chat-workspace-chrome @@@card-head-width). */
-    margin-right: var(--chat-card-right-gap, var(--chat-card-half-gap));
+    /* The right gap closes as the tools come on or go off the track: written on these two (chat-workspace-chrome @@@card-head-width). */
+    margin-right: var(--chat-card-half-gap);
     background: var(--bg);
-  }
-
-  /* The chat drawn in the card is on the card's face: in dark, .emdark lifts --chat-bg to --card, which put a task's
-     chat a shade above its own capsule bar (yangchichi 11-24, dark themes). */
-  [data-chat-card] {
-    --chat-bg: var(--bg);
   }
 
   [data-chat-card-head] {
@@ -1507,10 +1503,20 @@ html[data-gugu-dragging] :is(webview, iframe) {
   opacity: 0;
   transition: opacity var(--dur-fast), background var(--dur-fast), color var(--dur-fast);
 }
-.session-tab-bar[data-grip-shown] .screen-block-grip,
+[data-grip-shown] .screen-block-grip,
 .session-tab-bar:focus-within .screen-block-grip,
 .screen-block-grip:active {
   opacity: 1;
+}
+@media (hover: hover) {
+  .screen-block-close {
+    opacity: 0;
+  }
+  :is(.session-tab-bar, [data-chat-workspace-header]):hover .screen-block-close,
+  [data-grip-shown] .screen-block-close,
+  .screen-block-close:focus-visible:not([data-pointer-focus]) {
+    opacity: 1;
+  }
 }
 .screen-block-grip > i {
   width: 6px;

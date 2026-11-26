@@ -21,6 +21,7 @@ import type { AgentType } from '@gugu/core/agentTypes'
 import { platformWireProtocol } from '@gugu/session-plugins/agents/platform-protocols'
 import { edgeFunctionError } from './edgeFunctionError'
 import { identityDb, dataClient } from './supabase'
+import { modelContextLengths } from "@gugu/session-core/models/context-threshold"
 import { PLATFORM_MODELS_CHANGED_EVENT, parsePlatformCreditMultipliers, parsePlatformReasoningEfforts } from '@/session/shared/core/agents/platform-model'
 import { chatService } from './chat'
 import type { SessionpageSessionCreateModels, SessionpageSessionView } from '@gugu/session-core/session-record/contract'
@@ -42,6 +43,8 @@ export interface PlatformCatalogModel {
   /** Per protocol (`credit_multipliers`): the multiplier the composer shows for the protocol an engine speaks. */
   creditMultipliers?: Partial<Record<ModelAccessProtocol, number>>
   contextWindow?: number | null
+  contextLengths?: readonly number[]
+  defaultContextLength?: number
   /** The reasoning levels this model accepts (#6447); null = the catalog does not say. */
   reasoningEfforts?: string[] | null
 }
@@ -91,6 +94,8 @@ export async function fetchPlatformModelCatalog(): Promise<PlatformCatalogModel[
           creditMultipliers: parsePlatformCreditMultipliers(row.credit_multipliers),
           contextWindow: typeof row.context_window === 'number' ? row.context_window : null,
           reasoningEfforts: parsePlatformReasoningEfforts(row.reasoning_efforts),
+          ...modelContextLengths(row.context_lengths, row.default_context_length,
+            typeof row.context_window === "number" ? row.context_window : null),
         }]
       : []
   })

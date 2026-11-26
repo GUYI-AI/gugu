@@ -10,6 +10,7 @@ import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import { SettingsGroup, SettingsNote, SettingsRow, type SettingsRowProps } from '../SettingsPrimitives'
+import { SettingsSelect } from '../SettingsSelect'
 import { Collapse } from '@/components/ui/Collapse'
 import { AppIcon } from '@renderer/lib/components/app-icon'
 import { AgentIcon } from '@renderer/lib/components/agent-icon'
@@ -234,10 +235,10 @@ export function RemoteImportSources({ machines, selectedMachine, onMachineChange
     <><SettingsGroup title={t('settings.dataImport.deviceTab')} note={t('settings.dataImport.remoteDescription')}>
       <SettingsRow title={t('settings.dataImport.machineList')}
         description={machine.isOnline ? t('settings.dataImport.onlineStatus') : t('settings.dataImport.offlineStatus')}
-        control={<select className="gg-settings-select" aria-label={t('settings.dataImport.machineList')} value={machine.id}
+        control={<SettingsSelect aria-label={t('settings.dataImport.machineList')} value={machine.id}
           onChange={(event) => { setSelected(event.target.value); onMachineChange?.(event.target.value) }}>
           {machines.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
-        </select>} />
+        </SettingsSelect>} />
       <RemoteImportDevice key={machine.id} {...props} machine={machine} />
     </SettingsGroup>
     {machineDetails?.(machine.id)}</>

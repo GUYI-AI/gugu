@@ -130,6 +130,7 @@ const gestureCalls: Record<string, Record<string, unknown>> = {
   openLink: { url: 'gugu://ext/radar/radar' },
   cloudWrite: { name: 'radar_save', args: {} },
   credentialsWrite: { site: 'github.com', method: 'PUT', url: 'https://api.github.com/repos/a/b/pulls/1/merge' },
+  credentialsChoose: { site: 'github.com' },
   pickAgent: {},
   taskMessage: { intent: 'pause' },
   assistantOpen: { name: 'main', screen: 'move' },

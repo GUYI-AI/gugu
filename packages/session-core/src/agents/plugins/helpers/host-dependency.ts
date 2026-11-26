@@ -306,7 +306,7 @@ export function recognisedDependency(opts: {
   versionArgs?: string[];
   /** 解析出路径后不执行它(版本命令有副作用的家)。 */
   skipVersionProbe?: boolean;
-  /** 厂商固定安装位置(CLI 不上 PATH 的家),见 `HostDependencyDescriptor.knownPaths`。 */
+  /** 厂商安装位置(CLI 不上 PATH 的家),见 `HostDependencyDescriptor.knownPaths`。 */
   knownPaths?: HostDependencyDescriptor['knownPaths'];
 }): HostDependencyDescriptor {
   return {

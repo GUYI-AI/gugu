@@ -177,6 +177,8 @@ export async function sessionpagePlatformCatalog(input: {
         // 目录条目本来就带着它(端点 select 了 `context_window`、`model-access.ts` 已解析),
         // 只是一直没往下递 ⇒ 咕咕的模型成了这张下拉里唯一没有能力说明的一档。
         contextWindow: model.contextWindow,
+        contextLengths: model.contextLengths,
+        defaultContextLength: model.defaultContextLength,
         // 推理档同理:目录逐模型下发(#6447),composer 拿它与 harness 的清单取交集。
         reasoningEfforts: model.reasoningEfforts,
         requiresMembership: model.requiresMembership,

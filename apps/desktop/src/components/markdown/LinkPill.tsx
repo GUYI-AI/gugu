@@ -11,7 +11,7 @@ import { quoteSummary } from '../chat/quoteSummary'
 import { GroupFileName } from './GroupFileName'
 import { MentionPill } from './MentionPill'
 import { linkPillTarget } from './linkPills'
-import { conversationLink } from '@gugu/core/shared/ui/guguLink'
+import { conversationLink, groupFileLink } from '@gugu/core/shared/ui/guguLink'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { messagesByIdPrefix } from '../../lib/messageIdPrefix'
 import { followLink } from '../../lib/guguLinks'
@@ -81,10 +81,9 @@ function MessagePrefixPill({ href, onClick: _unresolved, children, rest, account
   const { identitiesById } = useChatStore('identitiesById')
   const reading = useReplica(linkedMessagePrefix, [chatId, prefix])
   const found = reading.state === 'value' ? reading.value : null
-  const open = (messageId: string) => followLink(conversationLink(chatId, messageId))
   if (found?.length === 1) {
     const href = conversationLink(chatId, found[0]!.id)
-    return <ChatPill href={href} onClick={(event) => { event.preventDefault(); open(found[0]!.id) }} rest={rest} accountId={accountId} chatId={chatId} messageId={found[0]!.id}>{children}</ChatPill>
+    return <ChatPill href={href} onClick={(event) => { event.preventDefault(); openMessage(found[0]!) }} rest={rest} accountId={accountId} chatId={chatId} messageId={found[0]!.id}>{children}</ChatPill>
   }
   if (found?.length === 0 || reading.state === 'error') return <span title={t('linkPill.noSuchMessage', { prefix: `msg:${prefix}` })}>{children}</span>
   if (!found) return <>{children}</>
@@ -98,10 +97,19 @@ function MessagePrefixPill({ href, onClick: _unresolved, children, rest, account
         </MentionPill>
       )} />
       <DropdownMenu.Content className="max-w-[360px]">
-        {found.map((row) => <MenuItem key={row.id} onClick={() => open(row.id)}>{messageLabel(row, t, identitiesById[row.sender_user_id ?? '']?.display_name)}</MenuItem>)}
+        {found.map((row) => <MenuItem key={row.id} onClick={() => openMessage(row)}>{messageLabel(row, t, identitiesById[row.sender_user_id ?? '']?.display_name)}</MenuItem>)}
       </DropdownMenu.Content>
     </DropdownMenu.Root>
   )
+}
+
+/**
+ * Opening a message from its pill: a message that is a file opens that file, as its file link would (an image in the
+ * viewer, over the chat), since the pill names it by the file; any other message is gone to in its chat.
+ */
+function openMessage(row: MessageItem): void {
+  if (row.file_item_id) followLink(groupFileLink(row.file_item_id, { version: row.file_version }), { message: row })
+  else followLink(conversationLink(row.chat_id, row.id))
 }
 
 /** A message as a pill names it: `sender: its first words`. */
@@ -119,12 +127,14 @@ function ChatPill({ href, onClick, children, rest, chatId, messageId }: DrawProp
   let icon: ReactNode = MESSAGE_MARK
   let unavailable = false
   let named = false
+  let open = onClick
   if (messageId) {
     // The same checks as opening the link (useLinkNavigation): a live message in that chat.
     const row = message.data && message.data.chat_id === chatId && !message.data.retracted_at ? message.data : null
     unavailable = message.isError || (message.isSuccess && !row)
     named = row !== null
     if (row) label = messageLabel(row, t, row.sender_user_id ? identitiesById[row.sender_user_id]?.display_name : undefined)
+    if (row?.file_item_id) open = (event) => { event.preventDefault(); openMessage(row) }
   } else {
     const listed = chats.find(row => row.id === chatId)
     // A group, a topic, a direct chat with a person or with an agent: the glyph the kind is drawn with, never a face.
@@ -139,7 +149,7 @@ function ChatPill({ href, onClick, children, rest, chatId, messageId }: DrawProp
   // Unavailable: the words already name the kind, so the mark goes. A message read before whose read again failed keeps
   // its name, greyed (❌ drawn as current, ❌ its name dropped).
   if (unavailable) { if (!named) label = t(messageId ? 'linkPill.messageUnavailable' : 'linkPill.chatUnavailable'); icon = null }
-  return <MentionPill href={href} icon={icon} title={unavailable ? t('linkPill.unavailable') : typeof label === 'string' ? label : ''} unavailable={unavailable} onClick={onClick} rest={rest}>{label}</MentionPill>
+  return <MentionPill href={href} icon={icon} title={unavailable ? t('linkPill.unavailable') : typeof label === 'string' ? label : ''} unavailable={unavailable} onClick={open} rest={rest}>{label}</MentionPill>
 }
 
 /**

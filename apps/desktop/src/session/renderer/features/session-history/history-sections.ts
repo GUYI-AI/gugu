@@ -152,3 +152,17 @@ export function buildSections({
 function itemOf(row: Omit<Item, 'ref' | 'online' | 'offline'>): Omit<Item, 'ref' | 'online' | 'offline'> {
   return { updatedAt: row.updatedAt, lastPromptAt: row.lastPromptAt, addedAt: row.addedAt, directory: row.directory, projectName: row.projectName };
 }
+
+/**
+ * 这一次进页已经画出来的节留在原位,新来的节按自己的先后接在最后(owner 2026-11-24「每次点进去都跳」):晚到的那台机器
+ * 带来的节 ❌ 插到上面把已画的往下推;它在已有节里的行原地并进那一节。`drawn` 空 = 还没画过,照 `sections` 自己的先后。
+ */
+export function keepDrawnOrder<T extends { key: string }>(sections: readonly T[], drawn: readonly string[]): T[] {
+  if (drawn.length === 0) return [...sections];
+  const at = new Map(drawn.map((key, index) => [key, index]));
+  const place = (section: T, index: number) => at.get(section.key) ?? drawn.length + index;
+  return sections
+    .map((section, index) => ({ section, place: place(section, index) }))
+    .sort((a, b) => a.place - b.place)
+    .map(({ section }) => section);
+}

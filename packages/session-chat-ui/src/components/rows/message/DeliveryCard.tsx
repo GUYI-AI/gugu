@@ -187,12 +187,6 @@ function bodyPlacement(item: ChatMessage, ctx: MeasureCtx, vars: DeliveryVars): 
   return { headerH, replyH, top: vars.padY + headerH + (replyH ? vars.gap + replyH : 0) + vars.gap };
 }
 
-/** Where a delivery's (first) user-message bubble starts below the top of its row: the pinned summary rests behind it (#2629). */
-export function deliveryBodyTop(item: ChatMessage, ctx: MeasureCtx, vars: DeliveryVars): number {
-  const batch = item.guguDelivery?.segments ?? [];
-  return bodyPlacement(batch.length > 1 ? segmentItem(item, batch[0]!, 0) : item, ctx, vars).top;
-}
-
 function bands(item: ChatMessage, ctx: MeasureCtx, vars: DeliveryVars, messageVars: MessageVars, factsOpen: boolean): Bands {
   const { headerH, replyH, top } = bodyPlacement(item, ctx, vars);
   const bodyH = measureUserMessage(item, ctx, messageVars);

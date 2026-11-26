@@ -28,6 +28,8 @@ import { useRowContextMenu } from '../../hooks/useRowContextMenu'
 import { followLink } from '../../lib/guguLinks'
 import { Hint } from '../ui/Tooltip'
 import { useTranslation } from 'react-i18next'
+import { getEffectiveHotkey, useShortcutOverrides, type CommandId } from '@renderer/lib/hooks/useKeyboardShortcuts'
+import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format'
 import { useToast } from '../toastContext'
 import { useAuth } from '../../store/auth'
 import { formatCredits, useSpendingPower } from '../../lib/billing'
@@ -67,7 +69,7 @@ interface RailItemProps extends Omit<React.ComponentPropsWithRef<'button'>, 'tit
   badge?: number | null
   /** Which entry this is (`tasks` / `chats` / …): its own small move on hover hangs off this (Sidebar.css). */
   rail?: string
-  /** An App that is running: a dot to the left of its icon, as the macOS dock marks one (#7050). */
+  /** An App that is running: a dot below its icon, as the macOS dock marks one (#7050). */
   running?: boolean
   onContextMenu?: (event: React.MouseEvent) => void
   /** Its right-click menu is open: it stays lit like under the pointer, so the menu reads as this one's. */
@@ -90,10 +92,8 @@ function RailItem({
   className,
   ...button
 }: RailItemProps) {
-  // @@@4323 说明文字走产品自己的浮层。原生 title 在这条竖排图标栏上最难受:
-  // 图标只有形状没有文字,而 title 要等操作系统那 ~1s、扫过一排时一个都不弹、触屏上永远不弹。
   return (
-    <Hint label={title}>
+    <Hint label={title} side="top" withArrow>
       <ButtonPrimitive
         {...button}
         type="button"
@@ -254,6 +254,9 @@ const MeButton = observer(function MeButton({ rail, onTabChange, pendingContacts
   const { user } = useAuth()
   const spending = useSpendingPower(user)
   const [open, setOpen] = useState(false)
+  // Key hints read the registry (the user's own binding, or none while it is being read) — never a literal.
+  const keyboard = useShortcutOverrides()
+  const hotkeyText = (id: CommandId) => { const hotkey = getEffectiveHotkey(id, keyboard); return hotkey ? formatHotkeyText(hotkey) : undefined }
   const updates = useReplica(marketUpdates, [LOCAL_HOST])
   const installed = useInstalledApps(LOCAL_HOST)
   const apps = installed.state === 'value' ? installed.value : null
@@ -290,13 +293,13 @@ const MeButton = observer(function MeButton({ rail, onTabChange, pendingContacts
             </Button>
           </div>
           <div className="gg-me-blk">
-            <MeRow icon={<UserRound size={19} />} label={t('shell.contactsMenu')} keyHint="⌘2" badge={pendingContactsCount}
+            <MeRow icon={<UserRound size={19} />} label={t('shell.contactsMenu')} keyHint={hotkeyText('app.goContacts')} badge={pendingContactsCount}
               testId={AUTOMATION_TEST_IDS.sidebarContactsNav} onClick={() => { close(); onTabChange('contacts') }} />
             <MeRow icon={<AppsIcon />} label={t('shell.apps')} keyHint={<ChevronRight size={14} />} badge={updateCount}
               testId={AUTOMATION_TEST_IDS.sidebarAppsNav} onClick={() => { close(); showSessions(); appState.navigation.navigate('apps') }} />
             <MeApps showSessions={showSessions} close={close} />
             <div className="gg-me-sep" />
-            <MeRow icon={<Settings size={19} />} label={t('shell.settings')} keyHint="⌘,"
+            <MeRow icon={<Settings size={19} />} label={t('shell.settings')} keyHint={hotkeyText('app.settings')}
               testId={AUTOMATION_TEST_IDS.sidebarSettingsNav} onClick={() => { close(); onTabChange('settings') }} />
           </div>
         </Popover.Popup>

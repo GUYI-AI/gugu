@@ -315,7 +315,7 @@ describe('inner sidebar', () => {
     expect(head().getAttribute('aria-current')).toBeNull();
     // From one of its agents: back to the main chat, and only that (owner 11-14: the title is the way home, not the info).
     await act(async () => head().click());
-    expect(state.navigateToGroupRoot).toHaveBeenCalledWith('group');
+    expect(state.navigateToGroupRoot).toHaveBeenCalledWith('group', false);
     // With the info shown, the same click still only shows the chat.
     openChat('group');
     state.infoShown = true;
@@ -342,6 +342,15 @@ describe('inner sidebar', () => {
     await act(async () => host.querySelector<HTMLElement>('[data-inner-head="shop-chat"] [data-inner-head-create]')!.click());
     expect(state.prepareProjectTask).toHaveBeenCalledWith('p-shop');
     expect(state.navigateToGroupRoot).toHaveBeenLastCalledWith('shop-chat');
+  });
+
+  it.each(['metaKey', 'ctrlKey'])('opens the parent beside a topic when its name is clicked with %s', async modifier => {
+    publishChatSummaries([{ id: 'group', kind: 'group', name: 'Planning', unread_count: 0 }, { id: 'topic', kind: 'topic', source_chat_id: 'group', name: 'Notes', unread_count: 0 }]);
+    openChat('topic');
+    await render();
+    const head = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-open]')!;
+    await act(async () => { head.dispatchEvent(new MouseEvent('click', { bubbles: true, [modifier]: true })); });
+    expect(state.navigateToGroupRoot).toHaveBeenCalledWith('group', true);
   });
 
   it('All › (the only way to every topic: no 「All N topics」 row under them) expands the topics in place and hides what sits below; the main area stays; ‹ Back brings it back', async () => {

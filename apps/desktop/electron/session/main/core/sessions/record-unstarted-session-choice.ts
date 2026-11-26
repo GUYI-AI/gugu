@@ -1,3 +1,4 @@
+import type { SessionContextChoice } from '@shared/core/sessions/session-config';
 import { eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
@@ -25,6 +26,7 @@ export async function recordUnstartedSessionChoice(input: {
   resetModel?: boolean;
   /** 三态:字符串 = 换成这一档;`null` = 删键、回 harness 默认;缺席 = 不碰。只收终端会话。 */
   effort?: string | null;
+  contextChoice?: SessionContextChoice;
 }): Promise<void> {
   const { sessionId, reason } = input;
   const model = typeof input.model === 'string' && input.model.trim() ? input.model.trim() : null;
@@ -39,7 +41,7 @@ export async function recordUnstartedSessionChoice(input: {
   if (input.runtime === 'acp' && input.effort !== undefined) {
     throw new Error(`session ${sessionId} ACP session takes effort on the live session, not on the record`);
   }
-  if (!model && !input.resetModel && input.effort === undefined) {
+  if (!model && !input.resetModel && input.effort === undefined && !input.contextChoice) {
     throw new Error(`session ${sessionId} has nothing to record (${reason}); start it normally instead`);
   }
 
@@ -53,6 +55,7 @@ export async function recordUnstartedSessionChoice(input: {
     throw new Error(`session ${sessionId} has no config to update (${reason})`);
   }
   const next: Record<string, unknown> = { ...current };
+  if (input.contextChoice) next.contextChoice = input.contextChoice;
   if (model) {
     if (input.modelSource === 'platform') delete next.model;
     else next.model = model;
@@ -77,7 +80,8 @@ export async function recordUnstartedSessionChoice(input: {
   }
 
   // 渲染层通用模式的启动路读的是它手里那份会话(`_startInput` 的 model / effort),不跟上就按旧值起。
-  const changes: { model?: string | null; effort?: string | null } = {};
+  const changes: { model?: string | null; effort?: string | null; contextChoice?: SessionContextChoice } = {};
+  if (input.contextChoice) changes.contextChoice = input.contextChoice;
   if (model || input.resetModel) changes.model = model && input.modelSource === 'own' ? model : null;
   if (input.effort !== undefined) changes.effort = effort;
   if (Object.keys(changes).length > 0) {

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fileBlob, FileReadRevokedError, MissingFileObjectError, shownFileBlob, requireFileRevision, type FileHandle, type FileMetadata, type FileProgress, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { attachmentFileRef, type AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
-import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment, nativeLocalBytes } from './fileAccess'
+import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment, nativeLocalBytes, fileMetadata } from './fileAccess'
 import { onAccountChange, replica } from './replica'
 import { offlineHolder, type OfflineHolder } from './fileHost'
 import { platform } from '../platform'
-import { openImageViewer, registerFullImage, type ImageViewerItem, type Size } from './imageViewer'
+import { openImageViewer, registerFullImage, takeDrawnPicture, type ImageViewerItem, type Size } from './imageViewer'
 import type { ViewBox, ViewedImage } from '@/session/shared/extensions/app-runtime-protocol'
 import { rendererLogger } from './log'
 import { sentFileCopy, sentFileOf } from './sentFileCopies'
@@ -403,7 +403,32 @@ function attachmentImageItem(source: AttachmentSource, fileName: string, origin?
 
 /** Open the shared viewer now; use the bubble's thumbnail cache and verified lazy original. */
 export function openAttachmentImage(source: AttachmentSource, fileName: string, origin?: ImageViewerItem['source']): void {
-  openImageViewer([attachmentImageItem(source, fileName, origin)])
+  const item = attachmentImageItem(source, fileName, origin)
+  if (withDrawnPicture(item)) void openViewerFromClick([item], 0)
+  else openImageViewer([item])
+}
+
+/** A drawn picture noted for this file (`noteDrawnPicture`) stands in for its thumbnail variant: only the original is read after it. */
+const recordSizes = new WeakMap<ImageViewerItem, Promise<Size | null>>()
+function withDrawnPicture(item: ImageViewerItem): boolean {
+  const target = item.resource?.target
+  const drawn = target?.kind === 'file' ? takeDrawnPicture(target.itemId, target.version) : null
+  if (!drawn) return false
+  item.url = drawn.picture.currentSrc || drawn.picture.src
+  item.thumb = drawn.picture
+  delete item.preview
+  if (drawn.size) recordSizes.set(item, drawn.size)
+  return true
+}
+
+/** The file record's size: the picture is laid out as its original from the first frame (@@@thumb-is-not-the-size). */
+export async function recordedSize(itemId: string, version?: number): Promise<Size | null> {
+  const file = await fileMetadata(itemId, version)
+  return file.status === 'ready' && file.revision.width && file.revision.height ? { width: file.revision.width, height: file.revision.height } : null
+}
+function recordedSizeOf(item: ImageViewerItem): Promise<Size | null> {
+  const target = item.resource?.target
+  return recordSizes.get(item) ?? (target?.kind === 'file' ? recordedSize(target.itemId, target.version) : Promise.resolve(null))
 }
 
 /** A mounted bubble lends a retryable original reader and owns the URLs until it unmounts. */
@@ -428,7 +453,9 @@ export const VIEWER_THUMB_WAIT_MS = 120
  * pixels and size; without them it fades in, and they follow.
  */
 export function openAttachmentImages(images: readonly ViewedImage[], index: number, origin?: ImageViewerItem['source'], box?: ViewBox): Promise<void> {
-  return openViewerFromClick(images.map((image) => attachmentImageItem({ kind: 'item', itemId: image.itemId, version: image.version }, image.name, origin)), index, box)
+  const items = images.map((image) => attachmentImageItem({ kind: 'item', itemId: image.itemId, version: image.version }, image.name, origin))
+  if (items[index]) withDrawnPicture(items[index])
+  return openViewerFromClick(items, index, box)
 }
 
 let latestClick = 0
@@ -436,10 +463,10 @@ let latestClick = 0
 /** Images a page showed, opened from the clicked one's picture (`box`, on the window) once its first pixels are here — or soon. */
 export async function openViewerFromClick(items: ImageViewerItem[], index: number, box?: ViewBox): Promise<void> {
   const clicked = items[index]
-  if (!clicked?.preview) throw new Error('The clicked image is not among the images to open')
+  if (!clicked?.preview && !clicked?.thumb) throw new Error('The clicked image is not among the images to open')
   const click = ++latestClick
   if (box) clicked.thumbRect = box
-  const firstFrame = clicked.preview().then(async url => {
+  const firstFrame = !clicked.preview ? recordedSizeOf(clicked).then(size => size && { url: clicked.url, size }).catch(() => null) : clicked.preview().then(async url => {
     if (clicked.size || clicked.full) return { url, size: clicked.size }
     const image = new Image()
     image.src = url

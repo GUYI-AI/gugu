@@ -31,7 +31,7 @@
  *   2. Click "Auto-thrash" to start automatic switching every 80 ms.
  *   3. Let it run for several seconds.
  *   4. Stop thrashing. The currently visible tab must show its full transcript
- *      rows and, if `pinUserMessages` is on, the pinned user-message header.
+ *      rows.
  *   5. Repeat with the "Manual" buttons to verify individual slow switches
  *      also work correctly.
  */
@@ -115,7 +115,6 @@ function FastSwitchHarness(props: { autoThrash?: boolean }) {
       state: stateA,
       parent: container,
       stickToBottom: true,
-      pinUserMessages: true,
       composer: 'none',
     });
     onCleanup(() => view?.dispose());
@@ -161,8 +160,7 @@ function FastSwitchHarness(props: { autoThrash?: boolean }) {
     >
       <div style={{ 'font-size': '13px', color: '#555', 'max-width': '640px' }}>
         <strong>Fast-switch repro.</strong> Switch tabs rapidly (or auto-thrash). After stopping,
-        the active tab must show its full transcript and the pinned user-message header — never a
-        blank viewport or a missing pin.
+        the active tab must show its full transcript — never a blank viewport.
       </div>
 
       {/* Tab bar */}

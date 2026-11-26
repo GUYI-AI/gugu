@@ -320,7 +320,6 @@ function LiveChatPanel({
         composer="slot"
         className={cx(sx({ position: 'absolute', inset: '0' }))}
         stickToBottom
-        pinUserMessages
         padTop={PAD_TOP}
         onReady={handleReady}
         onAtBottomChange={setAtBottom}

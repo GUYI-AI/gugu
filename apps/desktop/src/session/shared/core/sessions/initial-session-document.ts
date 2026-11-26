@@ -1,6 +1,7 @@
 import type { GuguPermissionMode } from '@gugu/session-core/acp/client';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import type { NewSessionConfig } from './new-session-config';
+import type { SessionContextChoice } from './session-config';
 import { sessionRuntimeOfView, type SessionView } from './sessions';
 
 export type InitialSessionDocument = NonNullable<NewSessionConfig['initialSession']>;
@@ -24,6 +25,7 @@ export type InitialSessionInput = {
   model: string | null;
   effort: string | null;
   fastMode?: boolean;
+  contextChoice?: SessionContextChoice;
   /**
    * 三态(口径见 SessionPlatformModel):`undefined` = 这条路径没有 composer 决策(回落 agent 级);
    * `null` = 明确选了 harness 自家;对象 = 咕咕平台模型。
@@ -58,6 +60,7 @@ export function buildInitialSessionDocument(
     model: input.model ?? undefined,
     effort: input.effort ?? undefined,
     ...(input.fastMode !== undefined ? { fastMode: input.fastMode } : {}),
+    ...(input.contextChoice ? { contextChoice: input.contextChoice } : {}),
     // 三态:决策过就**一定**带上字段 —— 选 harness 也要显式 null。少了这个 null,主进程分不清
     // 「明确要 BYOK」和「这条路径根本没有 composer」。
     ...(input.platformModel !== undefined ? { platformModel: input.platformModel } : {}),

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, windowsSystemProgram } from '@gugu/core/local/childProcess';
-import { parseRegExportValue } from '@main/utils/windows-env';
+import { parseRegExportValue } from '@gugu/core/local/windowsRegistry';
 
 function windowsExecutableExtensions(env: NodeJS.ProcessEnv): string[] {
   const pathExt = env.PATHEXT || '.COM;.EXE;.BAT;.CMD';

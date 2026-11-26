@@ -11,7 +11,7 @@ type LayerProps = {
   authorityRevision: number
   chatId: string | null
   currentUserId: string | null
-  isGroupChat: boolean
+  isRoomChat: boolean
   groupEditControlsFor: (profile: MemberProfileCardModel) => MemberProfileEditControls | undefined
   onOpenUserChat?: (target: MemberProfileChatTarget) => void
   onWhisper: (target: MemberProfileChatTarget) => void
@@ -26,7 +26,7 @@ export function MessageMemberProfileLayer(props: LayerProps) {
 }
 
 /** The card a message avatar opened, refreshed from the roster and scoped to the topic it was opened in. */
-function MessageMemberProfileCard({ opened, card, memberProfiles, authorityRevision, chatId, currentUserId, isGroupChat, groupEditControlsFor, onOpenUserChat, onWhisper }: LayerProps & { opened: ActiveMemberProfile }) {
+function MessageMemberProfileCard({ opened, card, memberProfiles, authorityRevision, chatId, currentUserId, isRoomChat, groupEditControlsFor, onOpenUserChat, onWhisper }: LayerProps & { opened: ActiveMemberProfile }) {
   const latest = memberProfiles[opened.member.id]
   const profile = latest ? { ...opened, member: latest } : opened
   const mainChat = useActiveChatIdentity()
@@ -47,7 +47,7 @@ function MessageMemberProfileCard({ opened, card, memberProfiles, authorityRevis
         card.close()
         onOpenUserChat(target)
       } : undefined}
-      onWhisper={isGroupChat ? (target) => {
+      onWhisper={isRoomChat ? (target) => {
         card.close()
         onWhisper(target)
       } : undefined}

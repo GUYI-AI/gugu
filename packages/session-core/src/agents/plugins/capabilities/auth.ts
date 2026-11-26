@@ -164,9 +164,11 @@ export type IAgentProgramAuthBehavior = {
    * 伴随程序就是伴随程序那一份),❌ 不是主程序的。
    */
   buildLoginCommand?(
-    ctx: { cli: string },
+    ctx: { cli: string; env?: Record<string, string> },
     methodId: string
   ): { command: string; args: string[] } | null;
+  /** Opt-in override for a CLI whose headless sign-in also needs its selected config root. */
+  buildHeadlessLoginCommand?: IAgentProgramAuthBehavior['buildLoginCommand'];
 };
 
 export type IAgentAuthBehavior = IAgentProgramAuthBehavior & {

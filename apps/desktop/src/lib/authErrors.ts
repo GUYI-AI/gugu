@@ -25,6 +25,16 @@ function authErrorLike(error: unknown): AuthErrorLike {
   return error as AuthErrorLike
 }
 
+function otpRejected(code: string, message: string): boolean {
+  return code === 'otp_expired' || /token.*(expired|invalid)/i.test(message) || /(?:expired|invalid).*token/i.test(message)
+}
+
+/** GoTrue answers a mistyped code and an expired one with the same error, so callers that know the code is still fresh can say "check the digits". */
+export function isOtpRejectedError(error: unknown): boolean {
+  const detail = authErrorLike(error)
+  return otpRejected(detail.code?.trim().toLowerCase() ?? '', detail.message?.trim() ?? '')
+}
+
 export function userVisibleAuthError(
   error: unknown,
   operation?: 'sendOtp',
@@ -48,13 +58,7 @@ export function userVisibleAuthError(
     return authCopy('networkFailed')
   }
 
-  if (
-    code === 'otp_expired' ||
-    /token.*(expired|invalid)/i.test(message) ||
-    /(?:expired|invalid).*token/i.test(message)
-  ) {
-    return authCopy('otpInvalid')
-  }
+  if (otpRejected(code, message)) return authCopy('otpInvalid')
 
   if (code === 'over_email_send_rate_limit' || /rate limit|too many requests/i.test(message)) {
     return authCopy('rateLimited')

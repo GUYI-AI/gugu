@@ -7,14 +7,13 @@ import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import './PhoneThinkingOptions.css'
 
-type Props = Pick<ChatComposerProps, 'effortOptions' | 'selectedEffort' | 'defaultEffort' | 'onEffortChange' | 'fastMode' | 'onFastModeChange'> & { disabled?: boolean; fastModePending?: boolean; onOpenEffort?: () => void; onDefaultEffort?: () => void }
+type Props = Pick<ChatComposerProps, 'effortOptions' | 'selectedEffort' | 'defaultEffort' | 'onEffortChange' | 'fastMode' | 'onFastModeChange'> & { disabled?: boolean; fastModePending?: boolean; onOpenEffort?: () => void }
 
 /** The root shows a summary; the child page keeps native reasoning IDs and capability-backed Fast. */
 export function PhoneThinkingOptions({ effortOptions, selectedEffort, defaultEffort, onEffortChange,
-  fastMode, onFastModeChange, fastModePending, disabled, onOpenEffort, onDefaultEffort }: Props) {
+  fastMode, onFastModeChange, fastModePending, disabled, onOpenEffort }: Props) {
   const { t } = useTranslation('mobileCreateControls')
-  const { t: tm } = useTranslation('main')
-  const items = Object.entries(effortOptions ?? {})
+  const items = Object.entries(effortOptions ?? {}).filter(([id]) => id.toLowerCase() !== 'default')
   const effective = items.some(([id]) => id === selectedEffort) ? selectedEffort
     : items.some(([id]) => id === defaultEffort) ? defaultEffort : undefined
   if (!items.length && fastMode === undefined) return null
@@ -23,20 +22,14 @@ export function PhoneThinkingOptions({ effortOptions, selectedEffort, defaultEff
     {items.length > 0 && onOpenEffort ? <Button variant="ghost" className="gg-phone-composer-choice"
       data-testid="agent-watch-create-options-drill" data-dimension="effort" disabled={disabled} onClick={onOpenEffort}>
       <span>{t('effort')}</span><span className="gg-phone-composer-choice-description gg-phone-composer-summary-value">
-        {effective ? effortOptions?.[effective]?.name : tm('agentWatch.create.modelDefault')}
+        {effective ? effortOptions?.[effective]?.name : undefined}
       </span><ChevronRight />
     </Button> : items.length > 0 && <div role="radiogroup" aria-label={t('effort')} className="gg-phone-thinking-levels">
-      {onDefaultEffort && <Button variant="ghost" size="option" role="radio" aria-checked={selectedEffort === undefined}
-        className="gg-aw-choice gg-phone-thinking-choice" disabled={disabled} data-option-id="" onClick={onDefaultEffort}>
-        <span className="gg-aw-choice-radio" data-on={selectedEffort === undefined ? 'true' : undefined}>{selectedEffort === undefined && <Check />}</span>
-        <span className="gg-aw-choice-body"><span className="gg-aw-choice-label">{tm('agentWatch.create.modelDefault')}</span>
-          <span className="gg-aw-choice-desc">{tm('agentWatch.create.effortDefaultHint')}</span></span>
-      </Button>}
-      {items.map(([id, option]) => <Button key={id} variant="ghost" size="option" role="radio" aria-checked={(!onDefaultEffort || selectedEffort !== undefined) && id === effective}
+      {items.map(([id, option]) => <Button key={id} variant="ghost" size="option" role="radio" aria-checked={id === effective}
         className="gg-aw-choice gg-phone-thinking-choice" disabled={disabled || option.disabled || !onEffortChange}
         title={option.disabledReason ?? option.description} data-option-id={id}
         onClick={() => { if (id !== effective) onEffortChange?.(id) }}>
-        <span className="gg-aw-choice-radio" data-on={(!onDefaultEffort || selectedEffort !== undefined) && id === effective ? 'true' : undefined}>{(!onDefaultEffort || selectedEffort !== undefined) && id === effective && <Check />}</span>
+        <span className="gg-aw-choice-radio" data-on={id === effective ? 'true' : undefined}>{id === effective && <Check />}</span>
         <span className="gg-aw-choice-body"><span className="gg-aw-choice-label">{option.name}</span>
           {option.description && <span className="gg-aw-choice-desc">{option.description}</span>}</span>
       </Button>)}

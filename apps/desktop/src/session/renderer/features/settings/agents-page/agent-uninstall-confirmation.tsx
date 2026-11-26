@@ -13,7 +13,7 @@ export function useAgentUninstallConfirmation() {
 
   const confirmation = request && (
     <Dialog open onOpenChange={(open) => { if (!open) cancel(); }}>
-      <DialogContent className="z-[51] rounded-2xl bg-background sm:max-w-[480px]" data-testid="agent-uninstall-confirmation">
+      <DialogContent className="rounded-2xl bg-background sm:max-w-[480px]" data-testid="agent-uninstall-confirmation">
         <DialogHeader className="pb-4" showCloseButton={false}>
           <DialogTitle className="text-base font-semibold">
             {translate('extensions.uninstallConfirmTitle', { name: request.name })}

@@ -35,7 +35,7 @@ export type { SessionLiveReply } from './live-reply';
  * person answers it wherever they follow that session, and the first answer settles it (`respond`). `kind` says how a
  * surface draws it; `payload` is that kind's own.
  */
-export const ASK_SOURCES = ['harness-permission', 'harness-question', 'agent-question', 'app-install', 'device-capability'] as const;
+export const ASK_SOURCES = ['harness-permission', 'harness-question', 'agent-question', 'app-install', 'device-capability', 'password'] as const;
 export type AskSource = (typeof ASK_SOURCES)[number];
 export type AskOrigin = { source: AskSource; payload?: unknown };
 
@@ -246,6 +246,8 @@ export interface SessionRecordSource {
   resumePoint?(budget?: RecordArchiveBudget): Promise<SessionRecordResume | null>;
   /** 立刻把尾读追到文件尾,读完(行已交给 onEntries)才返回。不支持的源没有这个口。 */
   catchUp?(): Promise<void>;
+  /** The record is not written yet: the source gave no entries and reads it once `catchUp` finds it. */
+  awaiting?(): boolean;
   getLineage?(): readonly RecordLineageNode[] | null;
   stop(): void;
   /**
@@ -1053,6 +1055,8 @@ export type GuguCatalogReason =
   | 'model-unavailable'
   | 'team-monthly-cap-reached'
   | 'team-credits-exhausted'
+  /** #3939 The address of a custom model refused the key the person typed (401/403): change the key in Settings → Models. */
+  | 'key-rejected'
   /** 认不出的串(老版本宿主送来的原文):与 `service-unavailable` 同一句,❌ 原样显示。 */
   | 'unknown';
 
@@ -1076,7 +1080,7 @@ const GUGU_CATALOG_REASONS = new Set<GuguCatalogReason>([
   'not-routable', 'no-identity-chat', 'no-identity-terminal', 'runtime-not-connected', 'host-not-ready',
   'none-for-agent', 'signed-out', 'service-unavailable', 'unreachable', 'membership-required', 'model-unavailable',
   'conversion-add-provider-timeout', 'conversion-switch-provider-timeout', 'conversion-listen-timeout', 'conversion-start-failed',
-  'team-monthly-cap-reached', 'team-credits-exhausted',
+  'team-monthly-cap-reached', 'team-credits-exhausted', 'key-rejected',
 ]);
 
 /** 读一格 `catalogError` / `guguReason`:null = 没有要说的;其余一定落在某个码上。 */
@@ -1262,7 +1266,7 @@ export type SessionpageOpenedFileChunk = { size: number; etag: string; data: str
 export const OPENED_FILE_MAX_BYTES = 20 * 1024 * 1024;
 
 export type SessionpageSessionSubscribeRequest = {
-  /** Local Codex reader: establish the file-event barrier before its initial snapshot. */
+  /** The first push is the whole snapshot: the reader subscribes without reading one first. */
   recordEvents?: true;
   conversationId: string;
   subscriptionId: string;
@@ -1349,10 +1353,11 @@ export type SessionpageSessionEvent = {
   result: TimelineAfterResult;
 };
 
-/** Control events for the local Codex record readiness subscription. */
+/** A subscription's record can no longer be followed: the subscription is over, with why. */
 export type SessionpageRecordStatusEvent = {
   subscriptionId: string;
-} & ({ waiting: true; error?: never } | { waiting?: never; error: { code: string; message: string } });
+  error: { code: string; message: string };
+};
 
 /**
  * 整台机器的会话列表推送(事件 `session-list:push`,topic = subscriptionId)。

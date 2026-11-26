@@ -1,5 +1,6 @@
 import { messageItemFromRow, MESSAGES_VIEW_SELECT, type RawMessageRow } from '@gugu/core/cloud/messageItem';
 import type { MessageItem } from '@gugu/core/shared/types/chat';
+import { ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC } from '@gugu/core/shared/assistantProvision';
 import { chatDb, identityDb } from '@/lib/supabase';
 import { getRendererSession } from '@/lib/sessionPublication';
 import { currentAuthSessionSignal } from '@/lib/authSessionLoss';
@@ -31,12 +32,11 @@ async function identify(rows: readonly DmRow[], scope: LegacyDmScope): Promise<L
   const peerIds = rows.flatMap(row => row.members.map(member => member.user_id)).filter(id => id !== scope.ownerUserId);
   const [identities, markers] = await Promise.all([
     readDisplayIdentities(peerIds, signal),
-    identityDb.from('agent_provisions').select('agent_user_id').eq('owner_user_id', scope.ownerUserId)
-      .eq('member_key', 'assistant').abortSignal(signal),
+    identityDb.rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS).abortSignal(signal),
   ]);
   if (markers.error) throw new Error(markers.error.message);
   ownerSignal(scope.ownerUserId);
-  const assistants = new Set((markers.data ?? []).map(row => row.agent_user_id));
+  const assistants = new Set(((markers.data ?? []) as { agent_user_id: string }[]).map(row => row.agent_user_id));
   return rows.flatMap(row => {
     const members = [...new Set(row.members.map(member => member.user_id))];
     if (!members.includes(scope.ownerUserId) || members.length > 2) return [];

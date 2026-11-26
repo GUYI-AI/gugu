@@ -36,13 +36,14 @@ import { chatLineCalls, chatLineNews } from '@/lib/chatLineUnread'
 import { AvatarUnread } from './AvatarUnread'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestBridge'
+import { showChatOnPhone } from '@/session/renderer/app/screen-layout-actions'
 import { isOwnedAgentPeer, openOwnedAgentEntry, useOwnedAgentEntries } from '../lib/ownedAgentConversation'
 import { useHeldOrder, usePointerHold } from '../lib/heldOrder'
 import { isOneListProjectLine, ONE_LIST_AVATAR_PX, oneListAgentRows, oneListShows, placeProjectLines, sidebarPinnedRows, useAgentHomes, useOneListProjectLines, type OneListProjectLine } from '../lib/sidebarOneList'
 import { usePublishOneListAgentRows } from '../lib/innerSidebarBridge'
 import { mobileListDiagnostics } from '@/mobile/mobileListDiagnostics'
 import { readShellSlots } from '../lib/shellSlots'
-import { installOneListNeighbour, oneListProjectSlotKey, subscribeShellChatActions, takeShellChatAction, useSidebarChatView, useSidebarNotificationsOpen, useSidebarPinnedAgents, type ShellChatDialog } from '../lib/sidebarChatsBridge'
+import { installOneListNeighbour, oneListProjectSlotKey, subscribeShellChatActions, takeShellChatAction, readSidebarNotificationsOpen, useSidebarChatView, useSidebarNotificationsOpen, useSidebarPinnedAgents, type ShellChatDialog } from '../lib/sidebarChatsBridge'
 import { NotificationSlot } from './needsYou/NotificationSlot'
 import { RETAINED_SURFACE_HIDDEN_STYLE } from '../lib/retainedSurface'
 import { blockKey, joinRows, type JoinedGroup, type SidebarJoin } from '../lib/sidebarJoinedGroups'
@@ -59,7 +60,9 @@ import { visibleConversationRows } from '@gugu/core/shared/ui/chatModels'
 import type { AgentDisplayStatus, ChatItem, NotificationLevel } from '@gugu/core/shared/types/chat'
 import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
 import { rendererLogger } from '../lib/log'
-import { chatListShortcutFor, nextChatId } from './chat-list-keyboard-nav'
+import { nextChatId } from './chat-list-keyboard-nav'
+import { useCommandProvider } from '@renderer/lib/commands/use-command-provider'
+import { deepActiveElement } from '@renderer/features/sidebar/session-navigation-focus'
 import { useUnavailableProjects } from '@/lib/projectRecovery'
 import { ProjectRecoverySubtitle } from './projects/ProjectRecoverySubtitle'
 
@@ -122,7 +125,7 @@ const SIDEBAR_LIST_STYLE: React.CSSProperties = { padding: '0 0 8px' }
 const SIDEBAR_ENTRY_ESTIMATE = 58
 
 /** A mounted sidebar line, placed by the line window. */
-const lineStyle = (top: number): React.CSSProperties => ({ position: 'absolute', top, left: 0, width: '100%' })
+const lineStyle = (top: number): React.CSSProperties => ({ position: 'absolute', top, left: 0, width: '100%', transitionProperty: 'none' })
 /** The chat a sidebar line stands for: a conversation's own, a project line's group chat (#2548). */
 const chatIdOf = (chat: ChatItem) => chat.id
 const lineChatId = (row: ChatItem | OneListProjectLine) => (isOneListProjectLine(row) ? row.projectChatId : row.id)
@@ -561,7 +564,6 @@ export function ChatListPanel({
   onNewProject,
 }: ChatListPanelProps) {
   const inSidebar = placement === 'sidebar'
-  const notificationsOpen = useSidebarNotificationsOpen()
   // The IM page's list (web / phone) is on screen when the shell shows 消息; the task page's sidebar copy never is.
   const chatsShown = useShellTabIs('chats')
   const tasksShown = useShellTabIs('tasks')
@@ -825,7 +827,9 @@ export function ChatListPanel({
     scrollMargin: windowMargin,
     enabled: inSidebar,
   })
-  const windowStyle: React.CSSProperties = { height: lineWindow.getTotalSize(), position: 'relative' }
+  // Reduced-motion CSS supplies a duration even to elements with no declared transition. Keep the spacer height
+  // and row offsets in the same paint so a newly inserted row cannot overlap an old row or the sidebar tail.
+  const windowStyle: React.CSSProperties = { height: lineWindow.getTotalSize(), position: 'relative', transitionProperty: 'none' }
   // A project line (OneListProjectSlot) is measured once the task page has drawn its row, before that frame is painted.
   const measureDrawnLine = useStableHandler((slot: HTMLElement) => {
     flushSync(() => lineWindow.measureElement(slot.parentElement))
@@ -857,9 +861,10 @@ export function ChatListPanel({
       })
       return
     }
-    // A phone's list covers the chat it reopens, so a tap there is an opening (#6530), not a jump inside a chat on screen.
+    // A phone's list covers the chat it reopens, so a tap there is an opening (#6530), not a jump inside a chat on screen;
+    // a group's row reopens the topic standing under it, as on the desktop screen (showChatOnPhone).
     if (chat.unread_locator || mobile) {
-      void (mobile ? openUnreadChat(chat.id, false) : openUnreadChat(chat.id)).catch((error) => {
+      void (mobile ? openUnreadChat(showChatOnPhone(chat.id, true), false) : openUnreadChat(chat.id)).catch((error) => {
         chatListLog.error({ error: String(error) }, 'unread locator open failed')
       })
     } else {
@@ -902,53 +907,37 @@ export function ChatListPanel({
   // ⌘↑/⌘↓ walk the list that is on screen: the IM page's on 消息; with the desktop sidebar as one list (#2548) the task
   // page's copy, whose rows are the sidebar's conversations (the task page's own key chain then holds none of them).
   const walksListKeys = inSidebar ? agentHomes !== null && tasksShown : chatsShown
-  useEffect(() => {
-    if (!walksListKeys || notificationsOpen) return
-    const handleGlobalShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return
-      if (
-        event.composedPath().some(
-          (node) =>
-            node instanceof HTMLElement &&
-            node.closest('[role="dialog"], [role="menu"], [role="listbox"], [data-slot="popover-content"], [data-slot="popover-popup"], [data-slot="sheet-content"]'),
-        )
-      ) return
-
-      const shortcut = chatListShortcutFor(event)
-      if (!shortcut) return
-
-      const path = event.composedPath()
-      // #2548 on the task page the one list's rows are walked from its composer too, as its old task rows were.
-      const composerSelector = `[data-testid="${AUTOMATION_TEST_IDS.chatComposer}"]${inSidebar ? ', [data-testid="prompt-editor"]' : ''}`
-      const insideChatComposer = path.some(
-        (node) =>
-          node instanceof HTMLElement &&
-          (node.matches(composerSelector) || node.closest(composerSelector)),
-      )
-      const insideOtherTextControl = path.some(
-        (node) =>
-          node instanceof HTMLElement &&
-          (node.matches('input, textarea, [contenteditable="true"], [role="textbox"]') ||
-            node.closest('input, textarea, [contenteditable="true"], [role="textbox"]')),
-      )
-      if (insideOtherTextControl && !insideChatComposer) return
-
-      event.preventDefault()
-
-      const targetId =
-        shortcut.kind === 'select'
-          ? visibleChatIds[shortcut.index] ?? null
-          : nextChatId(visibleChatIds, selectedChatId, shortcut.direction)
-      const target = targetId ? chats.find((chat) => chat.id === targetId) : undefined
-      if (!target) return
-      const focusTarget = insideChatComposer ? 'composer' : 'sidebar'
-      selectChat(target, focusTarget)
-      if (focusTarget === 'sidebar') focusChatRow(targetId)
-    }
-
-    window.addEventListener('keydown', handleGlobalShortcut)
-    return () => window.removeEventListener('keydown', handleGlobalShortcut)
-  }, [selectedChatId, walksListKeys, inSidebar, chats, selectChat, visibleChatIds, notificationsOpen, focusChatRow])
+  // The keys are commands (session.next/previous, chat.select1–9) answered by the one dispatcher; this list is their
+  // handler while it is the one on screen. A key the list has nothing to do with right now returns false and passes on.
+  const walkTo = (pick: (ids: readonly string[]) => string | null): boolean => {
+    if (readSidebarNotificationsOpen()) return false
+    const focused = deepActiveElement()
+    const path = focused instanceof HTMLElement ? focused : null
+    if (path?.closest('[role="dialog"], [role="menu"], [role="listbox"], [data-slot="popover-content"], [data-slot="popover-popup"], [data-slot="sheet-content"]')) return false
+    // #2548 on the task page the one list's rows are walked from its composer too, as its old task rows were.
+    const composerSelector = `[data-testid="${AUTOMATION_TEST_IDS.chatComposer}"]${inSidebar ? ', [data-testid="prompt-editor"]' : ''}`
+    const insideChatComposer = !!path?.closest(composerSelector)
+    if (!insideChatComposer && path?.closest('input, textarea, [contenteditable="true"], [role="textbox"]')) return false
+    const targetId = pick(visibleChatIds)
+    const target = targetId ? chats.find((chat) => chat.id === targetId) : undefined
+    if (!target) return true
+    const focusTarget = insideChatComposer ? 'composer' : 'sidebar'
+    selectChat(target, focusTarget)
+    if (focusTarget === 'sidebar') focusChatRow(targetId)
+    return true
+  }
+  useCommandProvider({
+    scopeId: 'session',
+    surface: 'shell',
+    isActive: () => walksListKeys,
+    getCommands: () => [
+      { id: 'session.next', hideFromPalette: true, execute: () => walkTo((ids) => nextChatId(ids, selectedChatId, 1)) },
+      { id: 'session.previous', hideFromPalette: true, execute: () => walkTo((ids) => nextChatId(ids, selectedChatId, -1)) },
+      ...([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map((n) => ({
+        id: `chat.select${n}` as const, hideFromPalette: true, execute: () => walkTo((ids) => ids[n - 1] ?? null),
+      })),
+    ],
+  })
 
   // #2548 ⌃X⌃X on the task page archives the open task, then opens the row after the lit one as ⌘↓ does (the one before it
   // at the end); false = no other row, and the task page goes to New task (sidebarChatsBridge.installOneListNeighbour).
@@ -1130,7 +1119,7 @@ export function ChatListPanel({
       />
 
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <div data-notification-original-list="" className="flex min-h-0 flex-1 flex-col" style={notificationsOpen ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
+        <NotificationListSwap active={chatsShown && !hidden}>
           {!mobile && (
             <SearchField
               ref={searchInputRef}
@@ -1144,11 +1133,24 @@ export function ChatListPanel({
             />
           )}
           {list}
-        </div>
-        <NotificationSlot part="list" active={notificationsOpen && chatsShown && !hidden} />
+        </NotificationListSwap>
       </div>
       {dialogs}
 
     </Pane>
   )
+}
+
+/**
+ * The bell's list takes the conversation list's place while it is open. Only this part reads the bell: opening or closing
+ * it re-renders these two slots, never the whole list (its children are the list's elements, passed through unchanged).
+ */
+function NotificationListSwap({ active, children }: { active: boolean; children: ReactNode }) {
+  const open = useSidebarNotificationsOpen()
+  return <>
+    <div data-notification-original-list="" className="flex min-h-0 flex-1 flex-col" style={open ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
+      {children}
+    </div>
+    <NotificationSlot part="list" active={open && active} />
+  </>
 }

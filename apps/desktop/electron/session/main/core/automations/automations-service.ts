@@ -1,9 +1,10 @@
-import { and, asc, count, desc, eq, ne, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, isNull, ne, sql, type SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
 import { archiveSession } from '@main/core/sessions/archiveSession';
 import { sessionEvents } from '@main/core/sessions/session-events';
 import { projectEvents } from '@main/core/projects/project-events';
 import { db } from '@main/db/client';
-import { automationRuns, sessions } from '@main/db/schema';
+import { automationRuns, automations, sessions } from '@main/db/schema';
 import { events } from '@main/lib/events';
 import { HookCore, type Hookable } from '@main/lib/hookable';
 import { log } from '@main/lib/logger';
@@ -12,7 +13,7 @@ import type {
   CreateAutomationParams,
   UpdateAutomationSettingsPatch,
 } from '@shared/core/automations/automation';
-import type { AutomationRun } from '@shared/core/automations/automation-run';
+import type { AutomationRun, AutomationRunHeads } from '@shared/core/automations/automation-run';
 import {
   automationChangedChannel,
   automationRunChangedChannel,
@@ -40,6 +41,8 @@ import {
 import { markRunSkipped } from './run-transitions';
 import { mapAutomationRunRowToAutomationRun } from './utils';
 import { applySessionAdmissionChanges } from '../sessions/session-admission-preparation';
+
+const headRun = alias(automationRuns, 'head_run');
 
 export type AutomationsServiceHooks = {
   'automation:created': (automation: Automation) => void | Promise<void>;
@@ -238,6 +241,33 @@ export class AutomationsService implements Hookable<AutomationsServiceHooks> {
       .orderBy(asc(automationRuns.scheduledAt))
       .limit(1);
     return rows[0] ? mapAutomationRunRowToAutomationRun(rows[0].run, rows[0].sessionId) : null;
+  }
+
+  /**
+   * Read latest and next runs for a machine in one RPC. Each uses the same filters and ordering as the per-row RPC.
+   * ❌ 每行各问两次:几百行就是几百次往返,每次还各扫一遍 sessions(automation_run_id 没有索引)。
+   */
+  async listRunHeads(): Promise<AutomationRunHeads> {
+    const heads: AutomationRunHeads = {};
+    const read = (which: SQL | undefined, order: SQL) =>
+      db
+        .select({ run: automationRuns, sessionId: sessions.id })
+        .from(automations)
+        .innerJoin(
+          automationRuns,
+          eq(automationRuns.id, sql`(${db.select({ id: headRun.id }).from(headRun)
+            .where(and(eq(headRun.automationId, automations.id), which)).orderBy(order).limit(1)})`)
+        )
+        .leftJoin(sessions, eq(sessions.automationRunId, automationRuns.id))
+        .where(isNull(automations.deletedAt))
+        .all();
+    for (const { run, sessionId } of read(ne(headRun.status, 'scheduled'), desc(headRun.startedAt))) {
+      heads[run.automationId] = { latest: mapAutomationRunRowToAutomationRun(run, sessionId), next: null };
+    }
+    for (const { run, sessionId } of read(eq(headRun.status, 'scheduled'), asc(headRun.scheduledAt))) {
+      heads[run.automationId] = { latest: heads[run.automationId]?.latest ?? null, next: mapAutomationRunRowToAutomationRun(run, sessionId) };
+    }
+    return heads;
   }
 
   async runAutomation(id: string): Promise<AutomationRun> {

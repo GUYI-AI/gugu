@@ -1,5 +1,6 @@
 import { createContext, useContext, type ReactNode, type MutableRefObject } from 'react'
 import type { PromptEditorRef } from '@gugu/session-ui/react/components'
+import type { DraftAttachmentReplace } from '../chat/useDraftAttachmentPreview'
 
 /**
  * 官方 `thread.aui.tsx` 里给宿主留的两个插槽。
@@ -23,7 +24,7 @@ import type { PromptEditorRef } from '@gugu/session-ui/react/components'
  */
 export type ComposerStop = { onStop: () => void; stopping: boolean }
 
-type Slots = { editorApiRef?: MutableRefObject<PromptEditorRef | null>; inline: ReactNode; above: ReactNode; inputHeader: ReactNode; tail: ReactNode; placeholder: string | null; stop: ComposerStop | null; attachmentPlacement: 'menu' | 'input' }
+type Slots = { editorApiRef?: MutableRefObject<PromptEditorRef | null>; inline: ReactNode; above: ReactNode; inputHeader: ReactNode; tail: ReactNode; placeholder: string | null; stop: ComposerStop | null; attachmentPlacement: 'menu' | 'input'; replaceAttachment?: DraftAttachmentReplace }
 
 const ComposerSlotsContext = createContext<Slots>({ inline: null, above: null, inputHeader: null, tail: null, placeholder: null, stop: null, attachmentPlacement: 'menu' })
 
@@ -36,7 +37,8 @@ export function ComposerExtrasProvider({
   placeholder = null,
   stop = null,
   editorApiRef,
-  attachmentPlacement = 'menu'
+  attachmentPlacement = 'menu',
+  replaceAttachment,
 }: {
   children: ReactNode
   editorApiRef?: MutableRefObject<PromptEditorRef | null>
@@ -64,9 +66,10 @@ export function ComposerExtrasProvider({
   stop?: ComposerStop | null
   /** Creation stages local files in the same input action as an existing task. */
   attachmentPlacement?: 'menu' | 'input'
+  replaceAttachment?: DraftAttachmentReplace
 }) {
   return (
-    <ComposerSlotsContext.Provider value={{ inline: extras, above, inputHeader, tail, placeholder, stop, attachmentPlacement, editorApiRef }}>
+    <ComposerSlotsContext.Provider value={{ inline: extras, above, inputHeader, tail, placeholder, stop, attachmentPlacement, editorApiRef, replaceAttachment }}>
       {children}
     </ComposerSlotsContext.Provider>
   )
@@ -106,3 +109,4 @@ export function ThreadTailExtras() {
 }
 
 export function useComposerEditorRef() { return useContext(ComposerSlotsContext).editorApiRef }
+export function useComposerAttachmentReplace() { return useContext(ComposerSlotsContext).replaceAttachment }

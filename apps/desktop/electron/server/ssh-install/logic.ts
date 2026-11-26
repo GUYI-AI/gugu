@@ -801,10 +801,11 @@ export function classifySshFailure(stderr: string): ServerSshInstallFailureReaso
  * 指纹变了时,ssh 的报错里写着要删的是哪条记录、对方现在的新指纹。
  * 「Offending ECDSA key in /x/known_hosts:3」「… for [host]:2222 has changed」「The fingerprint … is\nSHA256:…」。
  */
-export function changedHostKey(stderr: string, fallbackHost: string): { host: string; fingerprint: string | null } {
+export function changedHostKey(stderr: string, fallbackHost: string) {
   const host = stderr.match(/(?:key for|Host key for) (\S+) has changed/i)?.[1] ?? fallbackHost
   const fingerprint = stderr.match(/(SHA256:[A-Za-z0-9+/=]+)/)?.[1] ?? null
-  return { host, fingerprint }
+  const location = stderr.match(/^Offending [^\r\n]+? key in ([^\r\n]+:\d+)\r?$/m)?.[1]
+  return { host, fingerprint, ...(location ? { location } : {}) }
 }
 
 /** known_hosts 里这台机器的写法:非 22 端口是 `[主机]:端口`(`ssh-keygen -R` 要的就是这一串)。 */

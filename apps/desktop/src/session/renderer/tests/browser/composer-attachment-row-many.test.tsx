@@ -57,7 +57,7 @@ describe('real mobile composer attachment grid', () => {
         expect(inputTop).toBeCloseTo(singleRowTop + (count > 5 ? first.height + 8 : 0), 1)
         const last = chips.at(-1)!
         await act(async () => last.click())
-        expect(viewed).toHaveBeenLastCalledWith(file(count - 1))
+        expect(viewed).toHaveBeenLastCalledWith(file(count - 1), last)
         await act(async () => last.querySelector<HTMLButtonElement>('button')!.click())
         expect(changed.mock.calls.at(-1)![0]).toHaveLength(count - 1)
         expect(viewed.mock.calls.at(-1)![0].id).toBe(`a${count - 1}`)

@@ -18,6 +18,7 @@ interface PhoneDataPlugin {
   smsGet(args: { id: string }): Promise<unknown>
   mediaList(args: Record<string, unknown>): Promise<unknown>
   mediaRead(args: Record<string, unknown>): Promise<unknown>
+  recentPhotoThumbnail(args: { id: string }): Promise<{ jpeg?: string }>
 }
 export const nativePhoneData = registerPlugin<PhoneDataPlugin>('GuguPhoneData')
 

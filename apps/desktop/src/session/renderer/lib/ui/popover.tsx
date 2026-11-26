@@ -5,6 +5,7 @@ import * as React from 'react';
 import { useUiPopupZIndex, useUiPortalContainer, OpenLayer } from '@gugu/session-ui/react/primitives';
 import { cn } from '@renderer/utils/utils';
 import { noteOverlayRequest } from '@/lib/localRendererDiagnostics';
+import { useProbedRef } from '@/lib/overlayOcclusion';
 
 function Popover({ onOpenChange, ...props }: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} onOpenChange={(next, details) => {
@@ -23,6 +24,7 @@ function PopoverContent({
   side = 'bottom',
   sideOffset = 4,
   anchor,
+  ref,
   ...props
 }: PopoverPrimitive.Popup.Props &
   Pick<
@@ -38,13 +40,14 @@ function PopoverContent({
         side={side}
         sideOffset={sideOffset}
         anchor={anchor}
-        className="isolate z-50"
+        className="isolate z-[var(--z-popover)]"
       >
         <OpenLayer />
         <PopoverPrimitive.Popup
+          ref={useProbedRef('session-popover', ref)}
           data-slot="popover-content"
           className={cn(
-            'z-50 flex origin-(--transform-origin) overflow-hidden flex-col gap-4 rounded-surface bg-background-quaternary p-4 text-sm text-foreground shadow-lift outline-hidden duration-[var(--dur-fast)] data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
+            'flex origin-(--transform-origin) overflow-hidden flex-col gap-4 rounded-surface bg-background-quaternary p-4 text-sm text-foreground shadow-lift outline-hidden duration-[var(--dur-fast)] data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
             className
           )}
           {...props}

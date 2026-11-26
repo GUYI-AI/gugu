@@ -13,7 +13,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CodeBlock, Streamdown, type CustomRendererProps, type PluginConfig } from 'streamdown'
+import { CodeBlock, defaultComponents, Streamdown, type CustomRendererProps, type PluginConfig } from 'streamdown'
 import 'katex/dist/katex.min.css'
 import '@gugu/session-shared/markdown.css'
 import {
@@ -23,6 +23,8 @@ import {
   normalizeMarkdownSourceWithLines,
   type MarkdownDialectOptions,
   type MarkdownTrust,
+  hookLinkIconFallback,
+  rehypeLinkIcons,
 } from '@gugu/session-shared/markdown/dialect'
 import { readEffectiveHostTheme, subscribeToHostTheme } from '@renderer/lib/theme/host-theme'
 import { MermaidDiagram } from '@renderer/lib/ui/mermaid-diagram'
@@ -33,6 +35,7 @@ import { markdownCodeHighlighter } from './codeHighlight'
 import { PlatformCodeBlock } from './PlatformCodeBlock'
 import { PlatformCopyButton } from './PlatformCopyButton'
 import { PlatformTable } from './PlatformTable'
+import { MarkdownStreamingContext } from './markdownStreaming'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { FILE_PILL_CLASS, hookFilePillCopy, rehypeGroupFilePills } from './filePills'
 import { LINK_PILL_CLASS, linkPillTarget, rehypeLinkPills } from './linkPills'
@@ -47,6 +50,7 @@ import { followLink } from '../../lib/guguLinks'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { rehypeSourceLines } from './sourceLines'
 import type { PluggableList } from 'unified'
+import { useOpenWebLink, type WebLinkClick } from '@/hooks/useOpenWebLink'
 
 export type MarkdownDensity = 'compact' | 'comfortable'
 
@@ -63,8 +67,8 @@ export interface MarkdownProps {
   mentionMarker?: string
   /** Drawn on an accent-coloured surface (your own bubble): links take the text colour. */
   onAccent?: boolean
-  /** Return true when the click was handled here; otherwise the link opens in the system browser. */
-  onOpenLink?: (href: string) => boolean
+  /** Claim a link before the default web-link policy (pane, or system browser with Cmd/Ctrl). */
+  onOpenLink?: (href: string, click: WebLinkClick) => boolean
   /** The message it is drawn in: a file link opens its waiting tab in that message's chat. */
   message?: MessageItem
   /** `document` trust: draws an image (a workspace-relative source must be resolved by the host). */
@@ -77,6 +81,7 @@ export interface MarkdownProps {
 }
 
 const DensityContext = createContext<MarkdownDensity>('compact')
+const DefaultImage = defaultComponents.img
 const EXTERNAL_LINK = /^(https?:|mailto:|tel:)/i
 
 /** A link's words when they are plain text (no emphasis, code or image inside); null otherwise. */
@@ -126,6 +131,12 @@ const PLUGINS: PluginConfig = {
   ],
 }
 
+/**
+ * The stream animation (markdownStreaming.ts): ArcMD's 180 ms opacity on cubic-bezier(0.33, 0, 0.67, 1), staggered a
+ * word at a time like the transcript's (a span per letter breaks kerning); markdown.css stills it under reduced motion.
+ */
+const STREAM_ANIMATION = { animation: 'fadeIn', duration: 180, easing: 'cubic-bezier(0.33, 0, 0.67, 1)', sep: 'word', stagger: 18 } as const
+
 // Plugin arrays keep their identity per dialect option set, so a re-render never re-creates the processor.
 const pluginCache = new Map<string, { remark: ReturnType<typeof markdownRemarkPlugins>; rehype: ReturnType<typeof markdownRehypePlugins> }>()
 function pluginsFor(options: MarkdownDialectOptions) {
@@ -133,7 +144,7 @@ function pluginsFor(options: MarkdownDialectOptions) {
   let entry = pluginCache.get(key)
   if (!entry) {
     // Link pills are a chat bubble's: documents and previews keep their links as written.
-    entry = { remark: markdownRemarkPlugins(options), rehype: markdownRehypePlugins(options, options.trust === 'chat' ? [rehypeGroupFilePills, rehypeLinkPills] : [rehypeGroupFilePills]) }
+    entry = { remark: markdownRemarkPlugins(options), rehype: markdownRehypePlugins(options, options.trust === 'chat' ? [rehypeGroupFilePills, rehypeLinkPills, rehypeLinkIcons] : [rehypeGroupFilePills]) }
     pluginCache.set(key, entry)
   }
   return entry
@@ -179,6 +190,9 @@ export const Markdown = memo(function Markdown({
   // that changes the element mapping is part of the key below.
   const openLinkRef = useRef(onOpenLink)
   openLinkRef.current = onOpenLink
+  const openWebLink = useOpenWebLink()
+  const openWebLinkRef = useRef(openWebLink)
+  openWebLinkRef.current = openWebLink
   const messageRef = useRef(message)
   messageRef.current = message
   const renderImageRef = useRef(renderImage)
@@ -189,7 +203,9 @@ export const Markdown = memo(function Markdown({
   const tRef = useRef(t)
   tRef.current = t
   useEffect(() => hookFilePillCopy(), [])
+  useEffect(() => hookLinkIconFallback(), [])
 
+  const streaming = useContext(MarkdownStreamingContext)
   const plugins = pluginsFor({ trust, hardBreaks, frontmatter, messageChat })
   const source = useMemo(() => normalizeMarkdownSource(displayAgentReferences(content)), [content])
   const sourcePlugins = useMemo<PluggableList>(() => sourceLines ? [...plugins.rehype, [rehypeSourceLines, { source, lineOf: normalizeMarkdownSourceWithLines(displayAgentReferences(content)).lineOf }]] : plugins.rehype, [content, plugins, source, sourceLines])
@@ -219,9 +235,9 @@ export const Markdown = memo(function Markdown({
             </a>
           )
         }
-        const onClick = (event: { preventDefault(): void }) => {
+        const onClick = (event: WebLinkClick & { preventDefault(): void }) => {
           // A link the host did not claim goes to the system browser only if it is a web, mail or phone link.
-          if ((href && ((messageRef.current ? followLink(href, { message: messageRef.current }) : followLink(href)) || openLinkRef.current?.(href))) || !EXTERNAL_LINK.test(href ?? '')) event.preventDefault()
+          if ((href && ((messageRef.current ? followLink(href, { message: messageRef.current }) : followLink(href)) || openLinkRef.current?.(href, event) || openWebLinkRef.current(href, event))) || !EXTERNAL_LINK.test(href ?? '')) event.preventDefault()
         }
         const groupFile = href ? parseGroupFileLink(href) : null
         const classes = typeof rest.className === 'string' ? rest.className.split(/\s+/) : []
@@ -252,12 +268,12 @@ export const Markdown = memo(function Markdown({
         }
         return plain
       },
-      ...(hasImageRenderer
-        ? {
-            img: ({ src, alt }: { src?: string; alt?: string }) =>
-              renderImageRef.current?.({ src: typeof src === 'string' ? src : undefined, alt: alt ?? '' }),
-          }
-        : {}),
+      img: ({ src, alt, node, ...rest }: ComponentPropsWithoutRef<'img'> & { node?: { properties?: { dataLinkIcon?: unknown } } }) => {
+        // A link's site icon (link-icons.ts) is a bare image in the link's words, never a picture with controls.
+        if (node?.properties?.dataLinkIcon !== undefined) return <img {...rest} src={src} alt="" />
+        if (hasImageRenderer) return renderImageRef.current?.({ src: typeof src === 'string' ? src : undefined, alt: alt ?? '' })
+        return <DefaultImage {...rest} node={node as never} src={src} alt={alt} />
+      },
     }),
     [mentionMarker, hasImageRenderer, copyCode, phoneTable]
   )
@@ -267,8 +283,10 @@ export const Markdown = memo(function Markdown({
     <DensityContext.Provider value={density}>
       <Streamdown
         key={`${trust}|${hardBreaks}|${frontmatter}|${mentionMarker ?? ''}|${hasImageRenderer}|${copyCode}|${phoneTable}|${sourceLines}|${messageChat ?? ''}`}
-        mode="static"
-        parseIncompleteMarkdown={false}
+        mode={streaming ? 'streaming' : 'static'}
+        parseIncompleteMarkdown={streaming}
+        isAnimating={streaming}
+        animated={streaming ? STREAM_ANIMATION : false}
         lineNumbers={false}
         controls={trust === 'document' ? { code: { copy: false, download: false } } : false}
         linkSafety={{ enabled: false }}

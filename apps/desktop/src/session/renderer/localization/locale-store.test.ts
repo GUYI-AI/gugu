@@ -262,7 +262,14 @@ describe('task locale resources', () => {
       };
       visit(source);
     }
-    expect([...keys].sort()).toEqual(Object.keys(enUSAnnotationMessages).sort());
+    expect([...keys].sort()).toEqual([...new Set(Object.keys(enUSAnnotationMessages).map((key) => key.replace(pluralSuffix, '')))].sort());
+  });
+
+  it.each([['en-US', '1 comment', '2 comments'], ['zh-CN', '1 条评论', '2 条评论']] as const)('counts one comment and two in %s', async (locale, one, two) => {
+    registerSessionLocaleResources();
+    await i18n.changeLanguage(locale);
+    expect(translateSessionMessage('annotations.count', { count: 1 })).toBe(one);
+    expect(translateSessionMessage('annotations.count', { count: 2 })).toBe(two);
   });
 
   it('keeps every tabs catalog key connected to production code', () => {

@@ -2,7 +2,7 @@ import { dbPayload } from '@gugu/core/cloud/supabase'
 import type { Session, User } from '@supabase/supabase-js'
 import { dataClient, identityDb, supabase } from './supabase'
 import { consumePendingReferrer } from './referral'
-import { userVisibleAuthError } from './authErrors'
+import { isOtpRejectedError, userVisibleAuthError } from './authErrors'
 import { rendererLogger } from './log'
 import { i18n } from '@/i18n'
 import { readDisplayIdentities } from './identityReadAdapter'
@@ -28,6 +28,8 @@ export interface AuthResult {
   userId?: string
   session?: Session
   error?: string
+  /** verifyLoginOtp only: the server refused the code itself (wrong or expired — GoTrue does not say which). */
+  otpRejected?: boolean
 }
 
 export type LoginOtpResult = AuthResult & { status?: number; code?: string; retryAfterSeconds?: number; reason?: 'signup_consent_required' }
@@ -116,7 +118,7 @@ export const authService = {
   async verifyLoginOtp(email: string, token: string): Promise<AuthResult> {
     try {
       const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' })
-      if (error) return { success: false, error: userVisibleAuthError(error) }
+      if (error) return { success: false, error: userVisibleAuthError(error), otpRejected: isOtpRejectedError(error) }
       if (!data.session) return { success: false, error: i18n.t('auth.verifyFailed', { ns: 'main' }) }
       return { success: true, userId: data.user?.id, session: data.session }
     } catch (error) {
@@ -148,7 +150,8 @@ export const authService = {
     // 别的客户端在下一次读身份之前手里还是旧 URL。
     const ext = file.name.split('.').pop() ?? 'jpg'
     const path = `${userId}.${crypto.randomUUID()}.${ext}`
-    const { error: uploadError } = await dataClient.storage.from('avatars').upload(path, file)
+    // 新 key 的字节永不再变:让客户端缓存一年(与 agent 头像同),重登时直接读本地缓存、不再回源等图。
+    const { error: uploadError } = await dataClient.storage.from('avatars').upload(path, file, { cacheControl: '31536000' })
     if (uploadError) return { success: false, error: uploadError.message }
     const { data: { publicUrl } } = dataClient.storage.from('avatars').getPublicUrl(path)
     const { error: updateError } = await supabase.auth.updateUser({ data: { avatar_url: publicUrl } })

@@ -289,3 +289,16 @@ describe('trusted internal browser sink with synthetic authority', () => {
     expect(settle).toHaveBeenCalledOnce(); expect(settle.mock.calls[0][0].postUseAudit.status).not.toBe('recorded')
   })
 })
+
+describe('the host\'s own use of a credential (an App request, a connector token)', () => {
+  it('sends its password, or its one secret field when it has none; holds none: empty; deleted: null', async () => {
+    const f = await scenario()
+    expect(await f.vault.hostSecret(f.person, f.saved.reference.id)).toBe(f.input.password)
+    const field = (name: string, value: string, secret = true) => ({ id: randomUUID(), name, value, secret })
+    const token = await f.vault.save(f.person, randomUUID(), { origin: 'https://github.com', account: '', password: '', fields: [field('token', 'ghp-synthetic'), field('note', 'x', false)] })
+    expect(await f.vault.hostSecret(f.person, token.reference.id)).toBe('ghp-synthetic')
+    const two = await f.vault.save(f.person, randomUUID(), { origin: 'https://github.com', account: '', password: '', fields: [field('a', '1'), field('b', '2')] })
+    expect(await f.vault.hostSecret(f.person, two.reference.id)).toBe('')
+    expect(await f.vault.hostSecret(f.person, randomUUID())).toBeNull()
+  })
+})

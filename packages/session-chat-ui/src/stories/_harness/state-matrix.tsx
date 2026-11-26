@@ -177,7 +177,7 @@ export function ToolStateMatrix(props: ToolStateMatrixProps) {
             items: [{ ...matrixItem, seq: 0 } as TranscriptTurn['items'][number]],
           },
         ]);
-        return <ChatRoot context={ctx} state={state} stickToBottom pinUserMessages />;
+        return <ChatRoot context={ctx} state={state} stickToBottom />;
       }}
     />
   );
@@ -220,7 +220,7 @@ export function ToolNodeStateMatrix(props: ToolNodeStateMatrixProps) {
             items: [{ ...matrixItem, seq: 0 } as TranscriptTurn['items'][number]],
           },
         ]);
-        return <ChatRoot context={ctx} state={state} stickToBottom pinUserMessages />;
+        return <ChatRoot context={ctx} state={state} stickToBottom />;
       }}
     />
   );
@@ -251,7 +251,7 @@ export function PlanStateMatrix(props: PlanStateMatrixProps) {
             items: [{ ...planRow.item, seq: 0 } as TranscriptTurn['items'][number]],
           },
         ]);
-        return <ChatRoot context={ctx} state={state} stickToBottom pinUserMessages />;
+        return <ChatRoot context={ctx} state={state} stickToBottom />;
       }}
     />
   );

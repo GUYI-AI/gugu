@@ -9,7 +9,7 @@ import type { IGitWorktree } from '@gugu/session-core/git';
 import type { RuntimeManager } from '@main/core/runtime/types';
 import { log } from '@main/lib/logger';
 import type { FileTreeProjector } from '@main/core/files/file-tree/projector';
-import { createWorkspaceUploads, etagOf, inWorkspace, streamFileRange, WorkspaceTransferError, type WorkspaceWriteChunk } from '@main/core/files/workspace-transfer';
+import { createWorkspaceUploads, inWorkspace, streamFileRange, WorkspaceTransferError, type WorkspaceWriteChunk } from '@main/core/files/workspace-transfer';
 import { workingCopyEntry, workingCopyFolder } from './local-files';
 import { canonicalPath, inWorkingCopy, placeUnder, type CanonicalPath } from '@gugu/session-core/files';
 
@@ -209,20 +209,19 @@ export async function readWorkingCopy(place: WorkspacePlace, file: string, offse
   }
 }
 
-/** A working copy's file as one stream over the device link (`openLinkStream` reads it); the gate is `filesRead`'s. */
 /**
  * `files.stream` (`@@@machine-file-stream`): the bytes of one version of a working copy's file, from `offset`, to this
  * account's own desktop over its device link. A file is named the way its reader already names it, with the same gate
  * that reader's call has — only the way the bytes travel differs:
  *  · `ref` (+ `handed`): an App's ref, as `filesRead` takes it (`fileRootOf`, a handed outside file included);
  *  · `place` + `path`: a workspace's file, as `workspace.files.readChunk` takes it (inside that workspace).
- * The version is the one the reader anchored (`etag`, from its own call of no bytes or its first chunk).
+ * The version is the one on disk, said before the bytes (`head`); a reader going on with a version it has names it (`etag`).
  */
 export function createWorkingCopyStreamer(owner: () => Promise<string>, workspaceRoot: (projectId: string, workspaceId: string) => Promise<string>) {
-  return async (payload: unknown, context: { userId: string; write(offset: number, bytes: Uint8Array): Promise<void>; signal: AbortSignal }) => {
+  return async (payload: unknown, context: { userId: string; head(version: { size: number; etag: string }): void; write(offset: number, bytes: Uint8Array): Promise<void>; signal: AbortSignal }) => {
     const request = payload as { ref?: unknown; handed?: unknown; place?: unknown; path?: unknown; offset?: unknown; etag?: unknown; stream?: unknown } | null;
     const keys = request && ('place' in request ? ['place', 'path'] : ['ref', 'handed']);
-    if (!request || Object.keys(request).some((key) => ![...keys!, 'offset', 'etag', 'stream'].includes(key)) || typeof request.etag !== 'string' || typeof request.offset !== 'number') {
+    if (!request || Object.keys(request).some((key) => ![...keys!, 'offset', 'etag', 'stream'].includes(key)) || (request.etag !== undefined && typeof request.etag !== 'string') || typeof request.offset !== 'number') {
       throw new AppFileError('invalid', 'Invalid working copy stream request');
     }
     if ((await owner()) !== context.userId) throw new AppFileError('denied', 'A working copy streams to its own account only');
@@ -243,9 +242,7 @@ export function createWorkingCopyStreamer(owner: () => Promise<string>, workspac
     }
     const info = await fsp.stat(file, { bigint: true });
     if (!info.isFile()) throw new AppFileError('invalid', `not a file: ${file}`);
-    if (etagOf(info) !== request.etag) throw new AppFileError('content-changed', 'Local file changed during read');
-    await streamFileRange(file, { size: Number(info.size), etag: request.etag }, request.offset, context);
-    return { size: Number(info.size), etag: request.etag };
+    return streamFileRange(file, { etag: request.etag as string | undefined }, request.offset, context);
   };
 }
 

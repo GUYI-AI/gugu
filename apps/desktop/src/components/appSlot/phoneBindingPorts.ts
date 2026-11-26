@@ -1,6 +1,6 @@
 import { readAssistantPanelBody, uploadAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies'
 import { withAssistantPanelReadDeadline } from '@gugu/core/cloud/assistantPanelRead'
-import { pickAssistant, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision'
+import { ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC, pickAssistant } from '@gugu/core/shared/assistantProvision'
 import { userIdFromSupabaseAccessToken } from '@gugu/core/cloud/runtimeAuthProvider'
 import type { AssistantPanelClient } from '@gugu/core/cloud/assistantPanel'
 import { requireAssistantPanelBridge } from '../../lib/assistantPanelBridge'
@@ -15,8 +15,6 @@ import type { PhoneBindingPorts, PhoneInstalledApp } from './phoneAppBindings'
 
 const failed = (message: string) => Object.assign(new Error(message), { code: 'failed' })
 
-// What `pickAssistant` reads, plus the private conversation and the identity's owner (as the desktop's resources read it).
-const PERSONAL_ASSISTANT_SELECT = 'agent_user_id,device_id,member_key,phase,created_at,dm_chat_id,agent:users!agent_provisions_agent_user_id_fkey(owner_user_id,removed_at)'
 
 /**
  * The assistant panel's client as the person (assistant-panel-cloud.ts), loaded when first asked: a page whose Apps never
@@ -57,26 +55,23 @@ export function phoneBindingPorts(files: ReturnType<typeof createAppFiles>): Pho
       return token && ownerId ? { token, ownerId } : null
     },
     installed: phoneInstalledApp,
-    async personalAssistant(_token, ownerId) {
-      const { data, error } = await identityDb.from('agent_provisions').select(PERSONAL_ASSISTANT_SELECT)
-        .eq('owner_user_id', ownerId).eq('member_key', 'assistant').limit(32).abortSignal(AbortSignal.timeout(5000))
-      if (error) throw failed('Could not verify the personal assistant')
-      type Identity = { owner_user_id?: unknown; removed_at?: unknown }
-      type Row = Omit<AssistantProvisionRow, 'agent'> & { dm_chat_id?: unknown; agent: Identity | Identity[] | null }
-      const rows = (data ?? []) as Row[]
+    async personalAssistant(_token, _ownerId) {
+      const bound = await identityDb.rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS).abortSignal(AbortSignal.timeout(5000))
+      if (bound.error) throw failed('Could not verify the personal assistant')
       let pick: ReturnType<typeof pickAssistant>
       try {
-        pick = pickAssistant(rows as AssistantProvisionRow[])
+        pick = pickAssistant(bound.data)
       } catch {
         throw failed('Could not verify the personal assistant')
       }
       if (!pick) return null
-      const row = rows.find((candidate) => {
-        const agent = Array.isArray(candidate.agent) ? candidate.agent.length === 1 ? candidate.agent[0] : null : candidate.agent
-        return candidate.agent_user_id === pick.agentId && candidate.member_key === 'assistant' && typeof candidate.dm_chat_id === 'string'
-          && ['ready', 'completed'].includes(String(candidate.phase)) && agent?.owner_user_id === ownerId && agent.removed_at === null
-      })
-      return row ? { agentId: pick.agentId, chatId: row.dm_chat_id as string, deviceId: pick.deviceId } : null
+      // Its private conversation: the person's DM with that agent (`bound` checks it has no one else in it).
+      const dms = await chatDb.from('chats').select('id,members:chat_members!inner(user_id)').eq('kind', 'dm')
+        .eq('members.user_id', pick.agentId).limit(2).abortSignal(AbortSignal.timeout(5000))
+      if (dms.error) throw failed('Could not verify the personal assistant')
+      const rows = (dms.data ?? []) as { id: string }[]
+      if (rows.length > 1) throw failed('Could not verify the personal assistant')
+      return rows[0] ? { agentId: pick.agentId, chatId: rows[0].id, deviceId: pick.deviceId } : null
     },
     async conversation(_token, chatId) {
       const [chat, members] = await Promise.all([

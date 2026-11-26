@@ -159,7 +159,7 @@ it('phone group long-press keeps personal removal when the member cannot dissolv
   state.canDissolve = false
   await render(true)
   await hold(row())
-  expect(document.querySelector('[data-testid=conversation-row-hide-chat]')?.textContent).toContain('不显示')
+  expect(document.querySelector('[data-testid=conversation-row-hide-chat]')?.textContent).toContain('从列表隐藏')
   expect(document.querySelector('[data-testid=conversation-row-delete-chat]')?.textContent).toContain('清空聊天记录')
   expect(chatService.getGroupChatSettings).not.toHaveBeenCalled()
   expect(readAction()).not.toBeNull()

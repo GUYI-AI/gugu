@@ -1,0 +1,39 @@
+{
+  "$comment": "check-overlay-layers.mjs baseline (#3857): files allowed a hard-coded overlay-level z-index, with why. Only shrinks.",
+  "apps/desktop/src/components/BuildTagBadge.tsx": {
+    "count": 2,
+    "reason": "Debug build tag; must stay above every layer including toasts and image preview. Not shown in release builds."
+  },
+  "apps/desktop/src/components/agentsettings/agentSettingsStyles.ts": {
+    "count": 1,
+    "reason": "Agent settings share scrim at 500, deliberately under window chrome (--z-chrome 1000). Moving it to --z-modal covers the Windows title-bar controls; needs its own check on Windows before it moves."
+  },
+  "apps/desktop/src/session/renderer/features/projects/components/main-panel/project-folder-card.css": {
+    "count": 1,
+    "reason": "Hovered paper inside one folder card's hand of papers; orders siblings inside the card, not an overlay."
+  },
+  "apps/desktop/src/session/renderer/features/sidebar/left-sidebar.tsx": {
+    "count": 1,
+    "reason": "Drop-target veil absolutely positioned over the sidebar's own rows; local to the sidebar, not an overlay."
+  },
+  "apps/desktop/src/session/renderer/features/sidebar/sidebar-primitives.tsx": {
+    "count": 1,
+    "reason": "Sidebar root lifted above the main panel inside the task page; page layout, below every overlay token."
+  },
+  "apps/desktop/src/session/renderer/lib/components/titlebar/shell-restore-lane.tsx": {
+    "count": 1,
+    "reason": "Title-bar restore lane above the page content inside the title bar band; page layout, below every overlay token."
+  },
+  "apps/desktop/src/session/renderer/lib/ui/tooltip.tsx": {
+    "count": 1,
+    "reason": "`**:data-[slot=kbd]:z-50` lifts the keyboard-shortcut chip above its own isolate inside the tooltip popup; local to the tooltip, not its layer."
+  },
+  "apps/desktop/src/session/shared/extensions/selection-menu-dom.ts": {
+    "count": 1,
+    "reason": "Selection menu injected into third-party web pages; must beat whatever the page sets, our tokens do not exist there."
+  },
+  "packages/session-ui/src/react/components/chat-composer/phone-composer.css": {
+    "count": 1,
+    "reason": "Expanded phone composer bar (position: fixed) above the chat page content and below every overlay token."
+  }
+}

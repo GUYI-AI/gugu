@@ -1,36 +1,57 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeAll, expect, it, vi } from 'vitest'
 import { installAssistantRulesResolver } from '../../apps/desktop/electron/assistant-rules-resolver'
 import { fixedAssistantRules } from './desktop/assistantRules/fixtureApp'
 import { NEUTRAL_ASSISTANT_RULES } from './desktop/assistantRules/neutralRules'
+import { prepareLocalAssistantHome } from '../../apps/desktop/electron/assistant-home-prepare'
+import { assistantHomePaths } from '@gugu/core/shared/assistantPolicy'
+import type { AssistantPanelItem } from '@gugu/core/cloud/assistantPanel'
+import type { PanelObservation } from '../../apps/desktop/electron/sessionpage/assistant-panel-publisher'
 import { createAssistantPanelRuntime } from '../../apps/desktop/electron/sessionpage/assistant-panel-runtime'
 
 // Drive the explicit schedule/integration callbacks without fixture filesystem events starting an unrelated full publication.
 vi.mock('node:fs', async importOriginal => ({ ...await importOriginal<typeof import('node:fs')>(),
-  watch: () => ({ on() { return this }, close() {} }),
+  watch: () => ({ on() { return this }, close() { calls.closedWatchers++ } }),
 }))
 
-const calls = vi.hoisted(() => ({ signals: [] as AbortSignal[],domains:[] as string[],assistants:[] as string[],rpcNames:[] as string[],holdRpc:null as string|null,commitPublication:false,live:true,readable:false,stalled:true,collectIntegrations: false,blockedDomain:null as string|null,hold: null as Promise<void> | null }))
+const calls = vi.hoisted(() => ({ closedWatchers: 0,requests: [] as { name: string; assistant: unknown }[],sessionAgents: {} as Record<string,string>,boundAssistant: null as string|null,roleHold: null as Promise<boolean>|null,roleChecks: [] as string[],rejectAssistant: null as string|null,rejection: { code: '42501',message: 'Personal assistant is not available to this account' },networkFailure: false,signals: [] as AbortSignal[],domains:[] as string[],assistants:[] as string[],rpcNames:[] as string[],prepareFailure:null as Error|null,holdRpc:null as string|null,commitPublication:false,live:true,readable:false,stalled:true,collectIntegrations: false, previousIntegrations: [] as AssistantPanelItem[], integrationRows: [] as PanelObservation[], uploadIntegrations: false, moves: [] as Record<string, unknown>[], moveError: null as Error | null,blockedDomain:null as string|null,hold: null as Promise<void> | null }))
+vi.mock('../../apps/desktop/electron/sessionpage/assistant-agent-role',() => ({
+  isPersonalAssistantAgent: async (auth: { userId: string },id: string) => {
+    calls.roleChecks.push(`${auth.userId}:${id}`)
+    return calls.roleHold ?? calls.boundAssistant === id
+  },
+}))
+vi.mock('../../apps/desktop/electron/sessionpage/sessionpage-session-agent',() => ({
+  localAgentForSession: async (id: string) => calls.sessionAgents[id] ? { gugu_user_id: calls.sessionAgents[id] } : null,
+}))
 vi.mock('../../apps/desktop/electron/sessionpage/assistant-panel-admission',async importOriginal=>{
   const original=await importOriginal<typeof import('../../apps/desktop/electron/sessionpage/assistant-panel-admission')>()
   return {...original,
-    prepareAssistantPanelAdmission:(input:Parameters<typeof original.prepareAssistantPanelAdmission>[0])=>calls.stalled ? original.prepareAssistantPanelAdmission(input) : Promise.resolve({text:'',accepted:async()=>{}}),
+    prepareAssistantPanelAdmission:(input:Parameters<typeof original.prepareAssistantPanelAdmission>[0])=>calls.prepareFailure ? Promise.reject(calls.prepareFailure) : calls.stalled ? original.prepareAssistantPanelAdmission(input) : Promise.resolve({text:'',accepted:async()=>{}}),
     applyAssistantPanelPending:(input:Parameters<typeof original.applyAssistantPanelPending>[0])=>calls.readable ? original.applyAssistantPanelPending(input) : Promise.resolve({revision:'0',settledFailure:false,superseded:false}),
   }
 })
-vi.mock('../../apps/desktop/electron/sessionpage/assistant-panel-publisher',()=>({collectAssistantPanelFiles:async()=>[],publishAssistantPanelCollection:async({domain,assistantId,cloud,collect}:{domain:string;assistantId:string;cloud:{commit:(id:string,change:unknown)=>Promise<unknown>};collect: (previous: never[]) => Promise<unknown>})=>{
+const uploads = vi.hoisted(() => vi.fn(async (_input: unknown) => ({ itemId: 'new-body', sha256: 'digest' })))
+vi.mock('@gugu/core/cloud/assistantPanelBodies', () => ({ uploadAssistantPanelBody: uploads, readAssistantPanelBody: vi.fn(), panelBodyFileName: (label: string) => `${label}.bin` }))
+vi.mock('../../apps/desktop/electron/sessionpage/assistant-panel-publisher',()=>({collectAssistantPanelFiles:async()=>[],publishAssistantPanelCollection:async({domain,assistantId,cloud,collect,upload}:{domain:string;assistantId:string;cloud:{commit:(id:string,change:unknown)=>Promise<unknown>};collect: (previous: AssistantPanelItem[]) => Promise<PanelObservation[]>;upload:(row:PanelObservation)=>Promise<unknown>})=>{
   calls.domains.push(domain)
   calls.assistants.push(assistantId)
   if (calls.commitPublication) await cloud.commit(assistantId,{operationId:'operation',domain,key:'fixture',expectedRevision:'0',operation:'save',data:{}})
   if (domain === calls.blockedDomain) await calls.hold
-  if (domain === 'integrations' && calls.collectIntegrations) { await collect([]); await calls.hold }
+  if (domain === 'integrations' && calls.collectIntegrations) { calls.integrationRows = await collect(calls.previousIntegrations); if (calls.uploadIntegrations) for (const row of calls.integrationRows) await upload(row); await calls.hold }
 }}))
 vi.mock('@gugu/core/cloud/supabase',() => ({ createGuguSupabaseClient: () => ({
   from: () => { const query = { select: () => query,eq: () => query,abortSignal: () => query,maybeSingle: async () => ({error:null,data:calls.live ? {id:'assistant'} : null}) }; return query },
-  rpc(name: string) {
-    calls.rpcNames.push(name)
+  rpc(name: string,args: Record<string,unknown> = {}) {
+    calls.rpcNames.push(name); calls.requests.push({ name,assistant: args.p_assistant })
+    if (args.p_assistant === calls.rejectAssistant) return { abortSignal: async () => {
+      if (calls.networkFailure) throw new TypeError('fetch failed')
+      return { data: null,error: calls.rejection }
+    } }
+    if (name === 'workspace_move_as') { calls.moves.push(args); return { abortSignal: async () => { if (calls.moveError?.name === 'TimeoutError') throw calls.moveError; return { data: {}, error: calls.moveError } } } }
+    if (name === 'open_dm') return { abortSignal: async () => ({ data: 'private-dm', error: null }) }
     if (name === calls.holdRpc) return {abortSignal(signal:AbortSignal) {
       calls.signals.push(signal)
       return new Promise<never>((_resolve,reject) => { if(signal.aborted) reject(signal.reason); else signal.addEventListener('abort',()=>reject(signal.reason),{once:true}) })
@@ -51,7 +72,7 @@ vi.mock('@gugu/core/cloud/supabase',() => ({ createGuguSupabaseClient: () => ({
 // Each turn's profile review is rendered from the assistant App's rules (#1931): fixed rules here, at the version the
 // index lines below name.
 beforeAll(() => installAssistantRulesResolver(fixedAssistantRules({ ...NEUTRAL_ASSISTANT_RULES, defaults: { ...NEUTRAL_ASSISTANT_RULES.defaults, profileRulesVersion: 6 } })))
-afterEach(() => { vi.useRealTimers(); calls.signals.length = 0; calls.domains.length=0; calls.assistants.length=0; calls.rpcNames.length=0; calls.holdRpc=null; calls.commitPublication=false; calls.live=true; calls.readable=false; calls.stalled=true; calls.collectIntegrations=false; calls.blockedDomain=null; calls.hold=null })
+afterEach(() => { calls.closedWatchers=0;calls.requests.length=0;calls.sessionAgents={};calls.boundAssistant=null;calls.roleHold=null;calls.roleChecks.length=0;calls.rejectAssistant=null;calls.rejection={code:'42501',message:'Personal assistant is not available to this account'};calls.networkFailure=false;vi.useRealTimers(); calls.signals.length = 0; calls.domains.length=0; calls.assistants.length=0; calls.rpcNames.length=0; calls.prepareFailure=null; calls.holdRpc=null; calls.commitPublication=false; calls.live=true; calls.readable=false; calls.stalled=true; calls.collectIntegrations=false; calls.previousIntegrations=[]; calls.integrationRows=[]; calls.uploadIntegrations=false; calls.moves=[]; calls.moveError=null; uploads.mockClear(); calls.blockedDomain=null; calls.hold=null })
 
 it('stops only the removed assistant timers and listeners and never recreates its cached binding',async()=>{
   vi.useFakeTimers();calls.stalled=false;calls.readable=true
@@ -203,7 +224,7 @@ async function panelFixture() {
   let schedulesChanged:(()=>void)|undefined
   const unsubscribeIntegrations=vi.fn(),unsubscribeSchedules=vi.fn()
   const runtime=createAssistantPanelRuntime({getAuth:async()=>({accessToken:'fixture',userId:'owner'}),instanceId:()=> 'runtime',deviceId:async()=> 'device',
-    local:{onIntegrationsChanged:(listener:()=>void)=>{integrationChanged=listener;return unsubscribeIntegrations},onSchedulesChanged:(listener:()=>void)=>{schedulesChanged=listener;return unsubscribeSchedules}} as never,guguHome:cwd,kind:'computer',env:{},failed:vi.fn(),locale:()=> 'zh-CN'})
+    local:{home:async()=>({cwd}),onIntegrationsChanged:(listener:()=>void)=>{integrationChanged=listener;return unsubscribeIntegrations},onSchedulesChanged:(listener:()=>void)=>{schedulesChanged=listener;return unsubscribeSchedules}} as never,guguHome:cwd,kind:'computer',env:{},failed:vi.fn(),locale:()=> 'zh-CN'})
   await runtime.bind({sessionId:'session',assistantId:'assistant',ownerId:'owner',cwd})
   return {runtime,integrationChanged:()=>integrationChanged?.(),schedulesChanged:()=>schedulesChanged?.(),unsubscribeIntegrations,unsubscribeSchedules,
     async cleanup(){runtime.dispose();await rm(cwd,{recursive:true,force:true})}}
@@ -258,4 +279,283 @@ it('publishes again when a second schedule change arrives during the first publi
     held.resolve();await vi.advanceTimersByTimeAsync(300)
     expect(calls.domains).toEqual(['schedules','schedules'])
   }finally{held.resolve();await f.cleanup()}
+})
+
+
+it('retires a rejected panel without stopping other publishers or its ordinary conversation',async()=>{
+  vi.useFakeTimers();calls.stalled=false;calls.readable=true
+  const cwd=await mkdtemp(join(tmpdir(),'panel-revoked-')),listeners=new Set<()=>void>()
+  const runtime=createAssistantPanelRuntime({getAuth:async()=>({accessToken:'fixture',userId:'owner'}),instanceId:()=> 'runtime',deviceId:async()=> 'device',
+    local:{onSchedulesChanged:(listener:()=>void)=>{listeners.add(listener);return()=>listeners.delete(listener)}} as never,guguHome:cwd,kind:'computer',env:{},failed:vi.fn(),locale:()=> 'en-US'})
+  try{
+    await runtime.bind({sessionId:'old',assistantId:'stale',ownerId:'owner',cwd})
+    await runtime.bind({sessionId:'other',assistantId:'live',ownerId:'owner',cwd})
+    await vi.advanceTimersByTimeAsync(1000)
+    calls.requests.length=0;calls.rejectAssistant='stale';calls.boundAssistant='live';calls.sessionAgents.old='stale'
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(calls.requests.filter(row=>row.assistant==='stale').map(row=>row.name)).toEqual(['assistant_panel_pending'])
+    expect(listeners.size).toBe(1)
+    expect(calls.closedWatchers).toBeGreaterThan(0)
+    const ordinary=await runtime.prepare('old','ordinary task stays intact')
+    expect(ordinary.text).toBe('ordinary task stays intact')
+    expect(ordinary.assistantPanel).toBeUndefined()
+    await ordinary.accepted()
+    await vi.advanceTimersByTimeAsync(600_001)
+    expect(calls.requests.filter(row=>row.assistant==='stale')).toHaveLength(1)
+    expect(calls.requests.some(row=>row.assistant==='live' && row.name==='assistant_panel_snapshot')).toBe(true)
+    await expect(runtime.bind({sessionId:'old',assistantId:'stale',ownerId:'owner',cwd})).rejects.toThrow('Personal assistant is not available')
+    calls.boundAssistant='stale';calls.rejectAssistant=null
+    await runtime.bind({sessionId:'old',assistantId:'stale',ownerId:'owner',cwd})
+    await runtime.publish('old')
+    expect(calls.roleChecks).toEqual(['owner:stale','owner:stale','owner:stale'])
+    expect(calls.requests.some(row=>row.assistant==='stale' && row.name==='assistant_panel_snapshot')).toBe(true)
+  }finally{runtime.dispose();await rm(cwd,{recursive:true,force:true})}
+})
+
+it('uses the ordinary turn after a confirmed binding rejection during panel admission',async()=>{
+  vi.useFakeTimers();calls.readable=true
+  const f=await panelFixture()
+  try{
+    calls.stalled=true;calls.rejectAssistant='assistant';calls.requests.length=0
+    const prepared=await f.runtime.prepare('session','keep this prompt')
+    expect(prepared.text).toBe('keep this prompt')
+    expect(prepared.assistantPanel).toBeUndefined()
+    expect(calls.requests.map(row=>row.name)).toEqual(['assistant_panel_pending'])
+    expect(f.unsubscribeIntegrations).toHaveBeenCalledOnce()
+    expect(f.unsubscribeSchedules).toHaveBeenCalledOnce()
+  }finally{await f.cleanup()}
+})
+
+it.each([
+  {kind:'other permission',rejection:{code:'42501',message:'Runtime lease is not ready'},networkFailure:false},
+  {kind:'authentication',rejection:{code:'PGRST301',message:'JWT expired'},networkFailure:false},
+  {kind:'server',rejection:{code:'XX000',message:'temporary failure'},networkFailure:false},
+  {kind:'transport',rejection:{code:'',message:''},networkFailure:true},
+])('keeps $kind failures visible and the publisher recoverable',async({rejection,networkFailure})=>{
+  vi.useFakeTimers();calls.readable=true
+  const f=await panelFixture()
+  try{
+    calls.stalled=true;calls.rejectAssistant='assistant';calls.rejection=rejection;calls.networkFailure=networkFailure
+    let failure: unknown
+    const preparation=f.runtime.prepare('session','must not be silently admitted').catch(error=>{failure=error})
+    await vi.advanceTimersByTimeAsync(2500);await preparation
+    expect(failure).toBeInstanceOf(Error)
+    expect(f.unsubscribeSchedules).not.toHaveBeenCalled()
+    calls.rejectAssistant=null;calls.stalled=false
+    await f.runtime.publish('session')
+    const before=calls.requests.filter(row=>row.name==='assistant_panel_pending').length
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(calls.requests.filter(row=>row.name==='assistant_panel_pending').length).toBeGreaterThan(before)
+  }finally{await f.cleanup()}
+})
+
+it('aborts in-flight panel work on rejection and sends no later domain',async()=>{
+  vi.useFakeTimers();calls.readable=true
+  const f=await panelFixture()
+  try{
+    calls.commitPublication=true;calls.holdRpc='assistant_panel_commit'
+    const publication=f.runtime.publish('session')
+    await vi.waitFor(()=>expect(calls.signals).toHaveLength(1))
+    calls.rejectAssistant='assistant'
+    calls.stalled=true
+    await f.runtime.prepare('session','ordinary turn')
+    await publication
+    expect(calls.signals[0]!.aborted).toBe(true)
+    expect(calls.domains).toEqual(['memory'])
+    const requests=calls.requests.length
+    f.schedulesChanged();f.integrationChanged()
+    await vi.advanceTimersByTimeAsync(600_001)
+    expect(calls.requests).toHaveLength(requests)
+  }finally{await f.cleanup()}
+})
+
+it('cannot restore a rejected binding using a role read that began before the rejection',async()=>{
+  vi.useFakeTimers();calls.readable=true
+  const f=await panelFixture(),held=Promise.withResolvers<boolean>()
+  try{
+    calls.sessionAgents.restored='assistant';calls.roleHold=held.promise
+    const restoring=f.runtime.publish('restored')
+    await vi.waitFor(()=>expect(calls.roleChecks).toEqual(['owner:assistant']))
+    calls.rejectAssistant='assistant'
+    await f.runtime.publish('session')
+    held.resolve(true);await restoring
+    calls.roleHold=null
+    const requests=calls.requests.length
+    await vi.advanceTimersByTimeAsync(600_001)
+    expect(calls.requests).toHaveLength(requests)
+    calls.boundAssistant='assistant';calls.rejectAssistant=null
+    await f.runtime.publish('restored')
+    expect(calls.roleChecks).toEqual(['owner:assistant','owner:assistant'])
+    expect(calls.requests.slice(requests).some(row=>row.name==='assistant_panel_snapshot')).toBe(true)
+  }finally{held.resolve(false);await f.cleanup()}
+
+})
+
+async function freshlyPreparedProfile() {
+  calls.stalled=false
+  const root=await mkdtemp(join(tmpdir(),'panel-fresh-profile-')), home=join(root,'home'),guguHome=join(root,'gugu')
+  const prepared=await prepareLocalAssistantHome({fresh:true,engine:'codex',ownerProfile:'Fresh introduction'}, {home,guguHome})
+  const paths=assistantHomePaths(home,prepared.workdir,'computer')
+  const runtime=createAssistantPanelRuntime({getAuth:async()=>({accessToken:'fixture',userId:'owner'}),instanceId:()=> 'runtime',deviceId:async()=> 'device',
+    local:{} as never,guguHome,kind:'computer',env:{},failed:vi.fn(),locale:()=> 'en-US'})
+  await runtime.bind({sessionId:'session',assistantId:'assistant',ownerId:'owner',cwd:prepared.workdir})
+  return {runtime,paths,root,refresh:()=>prepareLocalAssistantHome({engine:'codex'},{home,guguHome}),home,guguHome,async cleanup(){runtime.dispose();await rm(root,{recursive:true,force:true})}}
+}
+
+it('#1457 skips review only on the first unchanged freshly prepared profile and never stamps a review receipt',async()=>{
+  const f=await freshlyPreparedProfile()
+  try {
+    const before=await readFile(f.paths.memoryIndex,'utf8')
+    const first=await f.runtime.prepare('session','first task')
+    expect(first.beforeText??'').not.toContain('<gugu_profile_review>')
+    await first.rejected?.()
+    expect((await f.runtime.prepare('session','second task')).beforeText).toContain('<gugu_profile_review>')
+    expect(await readFile(f.paths.memoryIndex,'utf8')).toBe(before)
+    expect(before).not.toContain('profile_rules:')
+  }finally{await f.cleanup()}
+})
+
+it.each(['instructions', 'identical profile'] as const)('#1457 preserves the first-admission proof through an App refresh of %s', async kind => {
+  const f = await freshlyPreparedProfile()
+  try {
+    const profilePath = join(f.paths.memoryDir, 'owner-profile.md')
+    const profile = await readFile(profilePath, 'utf8')
+    const index = await readFile(f.paths.memoryIndex, 'utf8')
+    // The App entry refreshes the home after fresh setup and before the first task is admitted.
+    await prepareLocalAssistantHome({ engine: 'codex', ...(kind === 'identical profile' ? { ownerProfile: 'Fresh introduction' } : {}) }, { home: f.home, guguHome: f.guguHome })
+    expect(await readFile(profilePath, 'utf8')).toBe(profile)
+    expect(await readFile(f.paths.memoryIndex, 'utf8')).toBe(index)
+    const first = await f.runtime.prepare('session', 'first system task')
+    expect(first.beforeText ?? '').not.toContain('<gugu_profile_review>')
+    expect(await readFile(f.paths.memoryIndex, 'utf8')).toBe(index)
+    expect(index).not.toContain('profile_rules:')
+    await first.rejected?.()
+    await f.refresh()
+    expect((await f.runtime.prepare('session', 'second task')).beforeText).toContain('<gugu_profile_review>')
+  } finally { await f.cleanup() }
+})
+
+it('#1457 invalidates a pending proof before home preparation replaces profile bytes', async () => {
+  const f = await freshlyPreparedProfile()
+  try {
+    const profilePath = join(f.paths.memoryDir, 'owner-profile.md')
+    const profile = await readFile(profilePath, 'utf8')
+    const index = await readFile(f.paths.memoryIndex, 'utf8')
+    await prepareLocalAssistantHome({ engine: 'codex', ownerProfile: 'Changed introduction' }, { home: f.home, guguHome: f.guguHome })
+    // Restoring old bytes must not resurrect a proof revoked by a real replacement.
+    await writeFile(profilePath, profile)
+    await writeFile(f.paths.memoryIndex, index)
+    expect((await f.runtime.prepare('session', 'first task')).beforeText).toContain('<gugu_profile_review>')
+  } finally { await f.cleanup() }
+})
+
+it.each(['profile','missing profile','index','index receipt','rules','app rules'] as const)('#1457 reviews a fresh profile when its %s fingerprint changes',async(part)=>{
+  const f=await freshlyPreparedProfile()
+  try {
+    if(part==='profile')await writeFile(join(f.paths.memoryDir,'owner-profile.md'),(await readFile(join(f.paths.memoryDir,'owner-profile.md'))).subarray(0,-1))
+    if(part==='missing profile')await rm(join(f.paths.memoryDir,'owner-profile.md'))
+    if(part==='index receipt')await writeFile(f.paths.memoryIndex,(await readFile(f.paths.memoryIndex,'utf8')).trimEnd()+' profile_rules: 6\n')
+    if(part==='index')await writeFile(f.paths.memoryIndex,(await readFile(f.paths.memoryIndex,'utf8'))+' ')
+    if(part==='rules')installAssistantRulesResolver(fixedAssistantRules({...NEUTRAL_ASSISTANT_RULES,defaults:{...NEUTRAL_ASSISTANT_RULES.defaults,profileRulesVersion:7}}))
+    if(part==='app rules')installAssistantRulesResolver(fixedAssistantRules({...NEUTRAL_ASSISTANT_RULES,rulesVersion:'99.0.0',defaults:{...NEUTRAL_ASSISTANT_RULES.defaults,profileRulesVersion:6}}))
+    await f.refresh()
+    expect((await f.runtime.prepare('session','first task')).beforeText).toContain('<gugu_profile_review>')
+  }finally{installAssistantRulesResolver(fixedAssistantRules({...NEUTRAL_ASSISTANT_RULES,defaults:{...NEUTRAL_ASSISTANT_RULES.defaults,profileRulesVersion:6}}));await f.cleanup()}
+})
+
+it.each(['PANEL_CLOUD_TIMEOUT','PANEL_IDENTITY_REMOVED'])('#1457 consumes the fresh proof before failed admission: %s',async(code)=>{
+  const f=await freshlyPreparedProfile()
+  try {
+    await f.refresh()
+    calls.prepareFailure=new Error(code)
+    await expect(f.runtime.prepare('session','first task')).rejects.toThrow(code)
+    calls.prepareFailure=null
+    await f.refresh()
+    expect((await f.runtime.prepare('session','next task')).beforeText).toContain('<gugu_profile_review>')
+  }finally{await f.cleanup()}
+})
+
+it('#1457 reviews an old identical profile without a preparation proof',async()=>{
+  const f=await freshlyPreparedProfile(),cwd=join(f.root,'old-identical'),memory=join(cwd,'.claude','memory')
+  try {
+    await mkdir(memory,{recursive:true})
+    for(const name of ['owner-profile.md','MEMORY.md'])await writeFile(join(memory,name),await readFile(join(f.paths.memoryDir,name)))
+    await f.runtime.bind({sessionId:'old',assistantId:'assistant',ownerId:'owner',cwd})
+    expect((await f.runtime.prepare('old','task')).beforeText).toContain('<gugu_profile_review>')
+  }finally{await f.cleanup()}
+})
+
+
+it('#1457 does not restore a fresh proof when the host modules restart',async()=>{
+  const f=await freshlyPreparedProfile()
+  try {
+    vi.resetModules()
+    const resolver=await import('../../apps/desktop/electron/assistant-rules-resolver')
+    resolver.installAssistantRulesResolver(fixedAssistantRules({...NEUTRAL_ASSISTANT_RULES,defaults:{...NEUTRAL_ASSISTANT_RULES.defaults,profileRulesVersion:6}}))
+    const review=await import('../../apps/desktop/electron/sessionpage/assistant-profile-review')
+    const proof=review.takeFreshAssistantProfile(f.paths.memoryDir)
+    expect(proof).toBeUndefined()
+    const prepared=await review.prepareAssistantProfileReview({text:'task',accepted:async()=>{}},f.paths.memoryDir,proof)
+    expect(prepared.beforeText).toContain('<gugu_profile_review>')
+  }finally{await f.cleanup()}
+})
+
+
+function catalogItem(data: Record<string, unknown> = {}): AssistantPanelItem {
+  return { assistant_user_id:'assistant',owner_user_id:'owner',domain:'integrations',device_id:null,revision:'1',
+    resource_key:'catalog:gitlab',body_item_id:'existing-catalog',body_sha256:'digest',data,
+    deleted_at:null,observed_at:null,updated_at:'2026-01-01T00:00:00Z' }
+}
+
+it('labels unconfigured catalog files without changing saved connections or stable catalog keys', async () => {
+  calls.stalled=false; calls.collectIntegrations=true; calls.uploadIntegrations=true
+  const cwd=await mkdtemp(join(tmpdir(),'panel-catalog-label-'))
+  const failed=vi.fn()
+  const catalog={id:'gitlab',en:{id:'gitlab',name:'GitLab',catalog:{categoryId:'coding'},auth:{methods:[]}},zh:{id:'gitlab',name:'GitLab',auth:{methods:[]}}}
+  const saved={providerId:'gitlab',accountId:'account',configured:true,displayName:'My GitLab',publicMetadata:{updatedAt:1}}
+  const runtime=createAssistantPanelRuntime({getAuth:async()=>({accessToken:'fixture',userId:'owner'}),instanceId:()=> 'runtime',deviceId:async()=> 'device',
+    local:{integrationCatalog:()=>[catalog],integrations:async()=>[saved]} as never,guguHome:cwd,kind:'computer',env:{},failed,locale:()=> 'en-US'})
+  try {
+    await runtime.bind({sessionId:'session',assistantId:'assistant',ownerId:'owner',cwd})
+    await runtime.publish('session')
+    expect(failed).not.toHaveBeenCalled()
+    expect(calls.integrationRows.map(row=>row.key)).toEqual(['catalog:gitlab',JSON.stringify(['gitlab','account'])])
+    expect(uploads.mock.calls.map(([input])=>(input as {label:string}).label)).toEqual(['catalog:gitlab (configurable, not connected)',JSON.stringify(['gitlab','account'])])
+    expect(calls.integrationRows[0].data.configured).toBe(false)
+    expect(calls.integrationRows[1].data.configured).toBe(true)
+    expect(calls.moves).toEqual([])
+
+    calls.uploadIntegrations=false
+    calls.previousIntegrations=[catalogItem({configured:false})]
+    await runtime.publish('session')
+    expect(calls.moves).toEqual([{p_item_id:'existing-catalog',p_as_user_id:'owner',p_folder:null,p_name:'catalog:gitlab (configurable, not connected).bin'}])
+    calls.previousIntegrations=[catalogItem(calls.integrationRows[0].data)]
+    await runtime.publish('session')
+    expect(calls.moves).toHaveLength(1)
+    calls.previousIntegrations=[{...catalogItem(),deleted_at:'2026-01-02T00:00:00Z'},
+      {...catalogItem({configured:true}),resource_key:JSON.stringify(['gitlab','account']),body_item_id:'saved-connection'}]
+    await runtime.publish('session')
+    expect(calls.moves).toHaveLength(1)
+  } finally {runtime.dispose();await rm(cwd,{recursive:true,force:true})}
+})
+
+it.each(['denied','timeout'])('keeps publishing saved connections when a catalog rename fails: %s', async reason => {
+  calls.stalled=false; calls.collectIntegrations=true; calls.moveError=reason === 'timeout' ? new DOMException('rename timed out','TimeoutError') : new Error('denied'); calls.uploadIntegrations=true
+  calls.previousIntegrations=[catalogItem()]
+  const cwd=await mkdtemp(join(tmpdir(),'panel-catalog-denied-')),failed=vi.fn()
+  const runtime=createAssistantPanelRuntime({getAuth:async()=>({accessToken:'fixture',userId:'owner'}),instanceId:()=> 'runtime',deviceId:async()=> 'device',
+    local:{integrationCatalog:()=>[{id:'gitlab',en:{name:'GitLab'},zh:{name:'GitLab'}}],integrations:async()=>[{providerId:'gitlab',accountId:'account',configured:true,publicMetadata:{updatedAt:1}}]} as never,guguHome:cwd,kind:'computer',env:{},failed,locale:()=> 'en-US'})
+  try {
+    await runtime.bind({sessionId:'session',assistantId:'assistant',ownerId:'owner',cwd})
+    await runtime.publish('session')
+    expect(failed).not.toHaveBeenCalled()
+    expect(calls.integrationRows.map(row=>row.key)).toEqual(['catalog:gitlab',JSON.stringify(['gitlab','account'])])
+    expect(calls.integrationRows[0].data).not.toHaveProperty('catalogBodyLabel')
+    expect(calls.integrationRows[1].data.configured).toBe(true)
+    expect(uploads.mock.calls.map(([input])=>(input as {label:string}).label)).toEqual(['catalog:gitlab',JSON.stringify(['gitlab','account'])])
+    expect(calls.moves).toHaveLength(1)
+    await runtime.publish('session')
+    expect(calls.moves).toHaveLength(2)
+    expect(failed).not.toHaveBeenCalled()
+  }finally{runtime.dispose();await rm(cwd,{recursive:true,force:true})}
 })

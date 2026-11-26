@@ -14,8 +14,8 @@ const { listCustomModels } = await import('./custom-models');
 beforeEach(async () => { state.home = await mkdtemp(join(tmpdir(), 'gugu-vendor-account-')); state.fixture = await openRegistryFixture('empty'); });
 afterEach(async () => { state.fixture?.close(); state.fixture = null; await rm(state.home, { recursive: true, force: true }); });
 it('only OAuth account holders and vendor-key accounts have subscription connections', () => {
-  for (const id of ['claude', 'codex', 'kilocode', 'mimocode']) expect(harnessHasConnections(id), id).toBe(true);
-  for (const id of ['qwen', 'dsh', 'copilot', 'zcode', 'hermes', 'pi', 'opencode', 'codebuddy', 'antigravity', 'kiro']) expect(harnessHasConnections(id), id).toBe(false);
+  for (const id of ['claude', 'codex', 'antigravity', 'kilocode', 'mimocode']) expect(harnessHasConnections(id), id).toBe(true);
+  for (const id of ['qwen', 'dsh', 'copilot', 'zcode', 'hermes', 'pi', 'opencode', 'codebuddy', 'kiro']) expect(harnessHasConnections(id), id).toBe(false);
 });
 it.each([['kilocode', 'KILO_API_KEY'], ['mimocode', 'XIAOMI_API_KEY']])('%s keeps its vendor key in its own namespace and overrides inherited credentials', async (providerId, envVar) => {
   const saved = await createHarnessConnection({ providerId, kind: 'account', apiKey: 'selected-key', name: 'Work' });

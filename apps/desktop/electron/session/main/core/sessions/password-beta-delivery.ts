@@ -4,10 +4,13 @@ import { eq } from 'drizzle-orm'
 import { db } from '@main/db/client'
 import { sessions } from '@main/db/schema'
 import { sendMessage } from './sendMessage'
+import { endPasswordRequest } from '../../../../password-vault/beta-messages'
 
 const LOGIN_ENDED: Record<string, string> = { rejected: '被本人拒绝', expired: '已过期，本人没有处理', invalidated: '已失效', cancelled: '已取消' }
 /** Fixed native host only. The password authority passes metadata, never a capability or field value. */
 export async function deliverPasswordBetaDecision(sessionId: string, requestId: string, status: string): Promise<void> {
+  // Every outcome ends the request where the person was asked (its Ask), even when the session can no longer be told.
+  endPasswordRequest(requestId)
   if (!['approved', 'filled', 'unavailable', 'rejected', 'expired', 'invalidated', 'cancelled'].includes(status)) throw new Error('password_delivery_unavailable')
   const row = db.select().from(sessions).where(eq(sessions.id, sessionId)).get()
   if (!row || row.archivedAt || row.runtime !== 'acp') throw new Error('password_delivery_unavailable')
@@ -42,6 +45,7 @@ const SAVE_NEXT: Record<string, string> = {
 }
 /** Outcome of an Agent's save request. Metadata only: the stored values never travel back. */
 export async function deliverPasswordBetaSaveResult(sessionId: string, requestId: string, status: string, credentialId?: string): Promise<void> {
+  endPasswordRequest(requestId)
   const next = SAVE_NEXT[status]
   if (!next) throw new Error('password_delivery_unavailable')
   const row = db.select().from(sessions).where(eq(sessions.id, sessionId)).get()

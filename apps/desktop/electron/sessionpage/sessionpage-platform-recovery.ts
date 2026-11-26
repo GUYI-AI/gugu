@@ -116,8 +116,20 @@ export class SessionpagePlatformRecoveryCoordinator {
     }
     const currentGeneration = this.deps.currentGeneration?.(sessionId) ?? target.credentialGeneration
     if (currentGeneration && observation.generation !== currentGeneration) return false
-    const current = this.states.get(sessionId) ?? { status: 'live' as const }
-    this.publish(target, { ...current, observation })
+    const current = this.states.get(sessionId)
+    // A confirmed, non-failing observation of a newer generation retires a `failed` verdict left by the
+    // generation it replaced: the credential that failed is gone, a valid one is current, so the state goes back to
+    // `live` instead of only gaining an observation under a still-`failed` status. ❌ a `failure` observation never
+    // clears failed, and a same-generation `failed` is untouched (that lease really did fail — retry owns it).
+    const staleFailure = current?.status === 'failed'
+      && current.credentialGeneration !== observation.generation
+      && observation.outcome !== 'failure'
+    const nextTarget = staleFailure && target.credentialGeneration !== observation.generation
+      ? { ...target, credentialGeneration: observation.generation }
+      : target
+    if (staleFailure) this.targets.set(sessionId, nextTarget)
+    const base: SessionpagePlatformRecoveryState = !current || staleFailure ? { status: 'live' } : current
+    this.publish(nextTarget, { ...base, observation })
     return true
   }
 
@@ -146,8 +158,12 @@ export class SessionpagePlatformRecoveryCoordinator {
       ? { status: 'ready' } : activeFlight
     this.targets.set(sessionId, target)
     const previous = this.states.get(sessionId)
+    // A credential generation that supersedes the one a prior state belongs to invalidates that state —
+    // including a terminal `failed`. A failure verdict against an older generation must not outlive the lease it
+    // judged: once a new generation is current, re-evaluate from scratch (→ live, or expired → reopen) instead of
+    // rejecting every later delivery. (Same-generation `failed` still sticks until an explicit retry.)
     if (previous?.credentialGeneration && previous.credentialGeneration !== target.credentialGeneration
-      && (previous.status === 'live' || previous.status === 'expired')) {
+      && (previous.status === 'live' || previous.status === 'expired' || previous.status === 'failed')) {
       this.states.delete(sessionId)
     }
 

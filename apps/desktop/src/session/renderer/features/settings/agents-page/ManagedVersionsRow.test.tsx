@@ -14,7 +14,7 @@ vi.mock('@/lib/userFacingError', () => ({ messageForUser: String }));
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn() }) }));
 vi.mock('@renderer/features/library/library-host', () => ({ useLibraryHost: () => ({ key: 'local', remote: null }) }));
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string, values?: Record<string, string>) => key + (values ? JSON.stringify(values) : '') }) }));
-vi.mock('@renderer/lib/modal/modal-provider', () => ({ useShowModal: () => state.confirm }));
+vi.mock('@renderer/lib/modal/modal-surface', () => ({ useConfirm: () => state.confirm }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: state.toast }));
 let root: Root;
 let host: HTMLDivElement;

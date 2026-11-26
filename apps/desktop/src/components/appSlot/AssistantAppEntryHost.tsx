@@ -71,9 +71,7 @@ export const AssistantAppEntryHost = observer(function AssistantAppEntryHost() {
         if (!result.success) throw new Error(result.error)
         if (result.data.ownerId !== ownerId) return
         publishAssistantAppWord({ ownerId, trusted: result.data.trusted })
-        // `pending`: the assistant's setup has not finished, so nothing was bound yet (the App would be refused over it): asked
-        // again as `unverified` is, and whenever the setup moves on (below).
-        if ((result.data.outcome === 'unverified' || result.data.outcome === 'pending') && attempt < ENTRY_SYNC_RETRY_MS.length) {
+        if (result.data.outcome === 'unverified' && attempt < ENTRY_SYNC_RETRY_MS.length) {
           timer = setTimeout(() => ask(attempt + 1), ENTRY_SYNC_RETRY_MS[attempt])
         }
       }).catch((error: unknown) => {

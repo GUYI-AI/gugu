@@ -143,7 +143,6 @@ function Harness(props: HarnessProps) {
       state: states[0],
       parent: container,
       stickToBottom: true,
-      pinUserMessages: true,
       composer: 'none',
     });
     onCleanup(() => view?.dispose());

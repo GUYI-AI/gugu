@@ -1,4 +1,4 @@
-import type { AssistantPanelChange, AssistantPanelClient } from '@gugu/core/cloud/assistantPanel'
+import { isAssistantPanelBindingRevoked, type AssistantPanelChange, type AssistantPanelClient } from '@gugu/core/cloud/assistantPanel'
 import { panelApplicationFailure } from '@gugu/core/shared/assistantPanelFailure'
 
 export type PanelPreparedAdmission = { text: string; beforeText?: string; accepted(): Promise<void>; rejected?(): Promise<void> }
@@ -34,7 +34,7 @@ function panelRetry(wait: (milliseconds: number) => Promise<void>) {
       if (pause) await wait(pause)
       try { return await operation() } catch (error) {
         failure = error
-        if (['22023','54000','55000','PT409'].includes(String((error as { code?: string }).code))) throw error
+        if (isAssistantPanelBindingRevoked(error) || ['22023','54000','55000','PT409'].includes(String((error as { code?: string }).code))) throw error
       }
     }
     throw failure
@@ -52,14 +52,17 @@ export async function applyAssistantPanelPending(input: PanelPendingInput) {
     try {
       await input.application.inform(notice)
       await retry(() => input.cloud.ack(input.assistant,input.instance,notice.operation_id))
-    } catch { /* Non-blocking metadata remains pending for another opportunity. */ }
+    } catch (error) {
+      if (isAssistantPanelBindingRevoked(error)) throw error
+      /* Non-blocking metadata remains pending for another opportunity. */
+    }
   }
   for (const change of pending.changes) {
     let failed: unknown
     for (const pause of [0,50,150]) {
       if (pause) await wait(pause)
       try { await input.application.apply(change); failed = undefined; break }
-      catch (error) { failed = error }
+      catch (error) { if (isAssistantPanelBindingRevoked(error)) throw error; failed = error }
     }
     // An effect and its receipt have different failure modes. In particular,
     // losing a success response must never reapply it or publish a failure.
@@ -68,7 +71,8 @@ export async function applyAssistantPanelPending(input: PanelPendingInput) {
       receipt = await retry(() => failed
         ? input.cloud.reject(input.assistant,input.instance,change.operation_id,errorCode(failed))
         : input.cloud.ack(input.assistant,input.instance,change.operation_id))
-    } catch {
+    } catch (error) {
+      if (isAssistantPanelBindingRevoked(error)) throw error
       throw new AssistantPanelApplicationError(change.domain,change.resource_key,'CHANGE_ACK_UNAVAILABLE',input.locale)
     }
     if (receipt.status === 'superseded') { superseded = true; break }

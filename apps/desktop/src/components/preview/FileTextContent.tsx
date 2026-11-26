@@ -11,6 +11,7 @@ import { fileTextRange, sourceLineRange, type FileTextRange } from './file-text-
 import { openSendLine } from '@renderer/features/sessions/annotations/file-selection-overlay'
 import { FileSelectionMenu } from './FileSelectionMenu'
 import { linesPlace, selectionCite, type SelectionCite } from './quote-preview-file'
+import { useOpenWebLink } from '@/hooks/useOpenWebLink'
 import './file-text-content.css'
 
 type Selection = { range: Range; quote: FileTextRange }
@@ -34,6 +35,7 @@ export function FileTextContent({ content, kind, style, selectable }: {
   selectable?: FileTextSelection
 }) {
   const { t } = useTranslation('messaging')
+  const openWebLink = useOpenWebLink('newTab')
   const container = useUiPortalContainer()
   const root = useRef<HTMLDivElement>(null)
   const [selection, setSelection] = useState<Selection | null>(null)
@@ -102,7 +104,7 @@ export function FileTextContent({ content, kind, style, selectable }: {
         if (!(event.target instanceof Element) || !event.target.closest('.gg-file-line-number')) selectedLines.current = null
         if (event.button === 0) { selecting.current = true; setSelection(null) }
       }}>
-      {kind === 'markdown' ? <Markdown trust="chat" density="comfortable" content={content} hardBreaks sourceLines={!!selectable} />
+      {kind === 'markdown' ? <Markdown trust="chat" density="comfortable" content={content} hardBreaks sourceLines={!!selectable} onOpenLink={openWebLink} />
         : selectable ? <div className="gg-file-source">
           {lines.map((line, index) => <div className="gg-file-source-row" key={index}>
             <Button variant="ghost" size="sm" className="gg-file-line-number" data-line={index + 1}

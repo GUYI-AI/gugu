@@ -74,7 +74,8 @@ export function LoginPage() {
     const address = email.trim()
     if (!address) { setError(t('auth.emailRequired')); return }
     const input = (e.currentTarget as HTMLFormElement).querySelector<HTMLInputElement>('input[type="email"]')
-    if (!input?.checkValidity()) { setError(t('auth.invalidEmail')); return }
+    // The form is noValidate: the browser's own bubble speaks the OS language and covers the button, so the check is ours.
+    if (!input?.checkValidity()) { setError(t(address.includes('@') ? 'auth.invalidEmail' : 'auth.emailMissingAt')); return }
     setEmail(address)
     setStep('otp')
     setError('')
@@ -94,7 +95,9 @@ export function LoginPage() {
     verifying.current = false
     setLoading(false)
     if (!result.success) {
-      setError(result.error ?? t('auth.verifyFailed'))
+      // Within the resend wait the code cannot have expired yet, and the resend button is still greyed out:
+      // asking for a new code there points at a control that does not work.
+      setError(result.otpRejected && otpSend.countdown > 0 ? t('auth.otpCheckDigits') : result.error ?? t('auth.verifyFailed'))
       setSubmitFailed(true)
     }
   }
@@ -134,7 +137,7 @@ export function LoginPage() {
           <p>{t('auth.subtitle')}</p>
         </header>
         <AnimatePresence initial={false}>
-          {step === 'email' && <motion.form key="email" {...stepMotion(reduceMotion, -10)} onSubmit={handleRequestOtp} className="gugu-auth-form">
+          {step === 'email' && <motion.form key="email" {...stepMotion(reduceMotion, -10)} onSubmit={handleRequestOtp} noValidate className="gugu-auth-form">
             {!registering && googleLogin.available && (googleEnabled || (google.busy && google.phase !== 'failed')) && <Button type="button" variant="secondary" size="xl" className="gugu-auth-google"
                 disabled={loading || otpRequestPending || google.phase === 'restoring' || google.phase === 'accepting' || (google.busy && google.phase === 'failed')}
                 onClick={() => { setError(''); void (google.busy ? googleLogin.cancel() : googleLogin.start()) }}>

@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useMobileShell } from '@/hooks/useMobileShell'
+import { isImeComposing } from '@/lib/ime'
 
 const nonTextInputs = new Set(['button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit'])
 
@@ -15,7 +16,7 @@ export function installPhoneImeDismiss(doc: Document): () => void {
   const start = (event: CompositionEvent) => { const input = singleLineInput(event); if (input) composing.add(input) }
   const end = (event: CompositionEvent) => { const input = singleLineInput(event); if (input) composing.delete(input) }
   const keydown = (event: KeyboardEvent) => {
-    if ((event.key !== 'Enter' && event.keyCode !== 13) || event.isComposing || event.keyCode === 229
+    if ((event.key !== 'Enter' && event.keyCode !== 13) || isImeComposing(event)
       || event.ctrlKey || event.altKey || event.metaKey || event.repeat) return
     const input = singleLineInput(event)
     if (!input || composing.has(input)) return

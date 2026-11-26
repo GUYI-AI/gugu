@@ -22,8 +22,11 @@ export function ChatBlockHead({ host, chat, name, avatar, isAgent }: {
   const room = isRoomChat(chat.kind)
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
+  // Focus goes back to the name only when the card is closed with Escape. Its rows close it on their way somewhere else
+  // (search's input takes focus in the same render): handing focus back to the name there stole it from the search prompt.
+  const escaped = useRef(false)
   return host.title ? createPortal(
-    <Popover.Root open={open} modal={false} onOpenChange={setOpen}>
+    <Popover.Root open={open} modal={false} onOpenChange={(next, details) => { escaped.current = details.reason === 'escape-key'; setOpen(next) }}>
       <Popover.Trigger ref={trigger} nativeButton={false} data-testid="conversation-capsule" render={<span className="flex h-full min-w-0 items-center gap-1" data-chat-block-title="" />}>
         <span className="flex" data-chat-block-avatar=""><Avatar
           name={name}
@@ -38,7 +41,7 @@ export function ChatBlockHead({ host, chat, name, avatar, isAgent }: {
       </Popover.Trigger>
       {open ? <Popover.Portal><Popover.Positioner side="bottom" align="center" sideOffset={3} collisionPadding={8}
         anchor={() => trigger.current?.closest<HTMLElement>('[data-chat-workspace-title]') ?? trigger.current}>
-        <Popover.Popup aria-label={name}>
+        <Popover.Popup aria-label={name} finalFocus={() => escaped.current}>
           <ChatConversationCard chat={chat} name={name} avatar={avatar} isAgent={isAgent} onClose={() => setOpen(false)} />
         </Popover.Popup>
       </Popover.Positioner></Popover.Portal> : null}

@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
 import { closeSync, openSync, statSync } from 'node:fs';
-import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
+import { readDeliveryEnvelope, visibleDeliveryText } from '@gugu/core/local/agent/deliveryEnvelope';
 import { messageReferenceId } from '@gugu/session-core/acp/client';
 import { isGuguSilence } from '@gugu/core/local/agent/silenceMarker';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
@@ -105,7 +105,8 @@ export function createSessionIndexStore(sqlite: Database.Database) {
     let activity: Map<string, unknown> | null = null;
     for (const item of turn.items) {
       if (item.kind !== 'message' || typeof item.text !== 'string') continue;
-      const text = searchText(item.text);
+      const visible = item.role === 'user' ? visibleDeliveryText(item.text) : item.text;
+      const text = visible === null ? null : searchText(visible);
       if (!text) continue;
       activity ??= activityPreviewSources(turn);
       const time = nativeMessageTime(turn, item);

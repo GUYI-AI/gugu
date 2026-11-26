@@ -11,17 +11,14 @@ vi.mock('@main/core/extensions/extension-agents', () => ({ listAgentsForExtensio
 }) }));
 vi.mock('@main/core/extensions/account-token', () => ({ currentAccountAccessToken: async () => state.owner || null }));
 vi.mock('@gugu/core', () => ({ userIdFromSupabaseAccessToken: (token: string) => token }));
-vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: () => ({ from: () => {
-  const filters = new Map<string, unknown>();
-  const query = { select: () => query, eq: (key: string, value: unknown) => { filters.set(key, value); return query; },
-    then: (resolve: (result: unknown) => unknown) => {
-      if (state.swapDuringQuery) state.owner = 'other';
-      return Promise.resolve(resolve({ data: state.role && filters.get('member_key') === 'assistant' && filters.get('owner_user_id') === 'owner'
-        ? [{ agent_user_id: 'assistant', agent: { removed_at: null }, device_id: 'home', member_key: 'assistant', phase: 'completed', created_at: '2026-10-21' }] : [],
-        error: state.queryError ? new Error('unavailable') : null }));
-    } };
-  return query;
-} }) }));
+vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: () => ({ rpc: () => ({
+  then: (resolve: (result: unknown) => unknown) => {
+    const signedIn = state.owner;
+    if (state.swapDuringQuery) state.owner = 'other';
+    return Promise.resolve(resolve({ data: state.role && signedIn === 'owner' ? [{ agent_user_id: 'assistant', device_id: 'home' }] : [],
+      error: state.queryError ? new Error('unavailable') : null }));
+  },
+}) }) }));
 vi.mock('@main/core/extensions/extension-send', async () => {
   const { AppSendError } = await import('@shared/extensions/app-send-core');
   return { AppSendError, messageAgentFromHostApp: send };

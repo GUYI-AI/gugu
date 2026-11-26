@@ -1,5 +1,5 @@
 import type { IExecutionContext } from '../../exec/execution-context';
-import type { Platform } from '../capability';
+import type { Platform, WindowsRegisteredPath } from '../capability';
 import { toPlatform } from './install-options';
 import type { DependencyStatus, ProbeResult } from './types';
 
@@ -148,13 +148,11 @@ export async function resolveAllCommandPaths(
 }
 
 /**
- * 厂商把 CLI 放在**固定安装位置**、却不放上 PATH 时(例:ZCode 的 CLI 是桌面 app 包里的
- * `resources/glm/zcode.cjs`),按声明的位置找它。只认两种展开,都在**目标机器上**做(本机与
- * SSH 远端同一条路):POSIX 开头的 `~/`(目标机的 `$HOME`)、Windows 的 `%VAR%`(目标机的 `cmd`)。
- * 展开不出来的那一条直接跳过 —— 没装就是没装,❌ 拿字面量去碰运气。返回存在的那几条,按声明顺序。
+ * Resolve declared vendor locations in order, preserving the existing path expansion on the target host.
+ * Windows installer entries are read by the execution context that owns the target registry.
  */
 export async function resolveKnownPaths(
-  paths: readonly string[],
+  paths: readonly (string | WindowsRegisteredPath)[],
   ctx: IExecutionContext,
   platform?: Platform,
   env?: Record<string, string>,
@@ -162,6 +160,13 @@ export async function resolveKnownPaths(
   const plat = targetPlatform(platform);
   const found: string[] = [];
   for (const declared of paths) {
+    if (typeof declared !== 'string') {
+      if (plat === 'windows') {
+        const registered = await ctx.findWindowsRegisteredPaths?.(declared.registryKey, declared.relativePath, env);
+        if (registered) found.push(...registered);
+      }
+      continue;
+    }
     // 本机 Windows:`%VAR%` 与查找都在进程内做 —— `cmd /c echo` 的回显同样是控制台代码页,中文用户名的
     // `%LOCALAPPDATA%` 展开回来就是乱码。
     const local = plat === 'windows' ? await ctx.findWindowsCommandPaths?.(declared, env) : null;
@@ -174,7 +179,14 @@ export async function resolveKnownPaths(
     const resolved = await resolveCommandPath(expanded, ctx, plat, env);
     if (resolved) found.push(resolved);
   }
-  return found;
+  if (plat !== 'windows') return found;
+  const seen = new Set<string>();
+  return found.filter((candidate) => {
+    const key = candidate.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 async function expandKnownPath(path: string, ctx: IExecutionContext, plat: Platform): Promise<string | null> {

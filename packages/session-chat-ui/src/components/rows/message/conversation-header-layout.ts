@@ -4,9 +4,8 @@ import { conversationReferenceInFooter, conversationShowsName, messageReplyRefer
 import { readableLabel } from '../readable-label';
 import { processButtonLayout, processRowHeight, backgroundPillLayout } from './process-row-layout';
 
-// @@@sender-label-once — a sender line is laid out for its row and again for its pinned summary each time the pin geometry
-// is rebuilt (every anchor at once): with 500 delivered anchors that was 14 ms a rebuild (#2629, Chromium). Unwrapped, the
-// label depends on its text, the theme and the font epoch alone, so the most recently asked keep theirs.
+// @@@sender-label-once — a sender line is laid out again for every measure of its row. Unwrapped, the label depends on its
+// text, the theme and the font epoch alone, so the most recently asked keep theirs.
 const SENDER_LABELS_KEPT = 4096;
 const senderLabels = new WeakMap<MeasureCtx['theme'], Map<string, ReturnType<typeof readableLabel>>>();
 function senderLabel(text: string, ctx: MeasureCtx): ReturnType<typeof readableLabel> {

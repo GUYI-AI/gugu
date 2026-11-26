@@ -11,8 +11,9 @@ const codexDescriptions = new Map([
   ['gpt-5.6-luna', 'gpt56luna'],
 ])
 
-export function phoneModelName(id: string, name: string, t: TFunction<'mobileCreateControls'>): string {
-  return id === 'default' || name === 'Default (recommended)' ? t('modelRecommended') : name
+/** The shared assembly already named a `default` placeholder after its concrete model (owner 11-25): no 「默认」 here. */
+export function phoneModelName(_id: string, name: string, _t: TFunction<'mobileCreateControls'>): string {
+  return name
 }
 
 export function phoneModelDescription(id: string, name: string, description: string | undefined, t: TFunction<'mobileCreateControls'>): string | undefined {

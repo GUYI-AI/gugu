@@ -46,6 +46,7 @@ function RoomComposerControls({ chatId, topics, topicsReady, current, onPick, me
   const { chats, identitiesById } = useChatStore('chats', 'identitiesById')
   const [view, setView] = useState<'topics' | 'agents' | null>(null)
   const topicsButton = useRef<HTMLButtonElement>(null)
+  const agentsButton = useRef<HTMLButtonElement>(null)
   const choices = roomTopicChoices(chatId, topics, chats)
   const roomAgents = members.filter(member => member.type === 'agent' && member.membership !== 'former')
   const activityMs = useAgentActivityMs(roomAgents.map(agent => agent.id), identitiesById)
@@ -60,9 +61,9 @@ function RoomComposerControls({ chatId, topics, topicsReady, current, onPick, me
     <PhoneComposerControlRow>
       {menu.includes('topics') && <PhoneComposerControl label={t('topics')} menuExpanded={view === 'topics'} active={!!current} dot={choices.dot}
         testId="phone-room-topics" buttonRef={topicsButton} onClick={() => setView('topics')} />}
-      {menu.includes('agents') && <PhoneComposerControl label={t('agents')} menuExpanded={view === 'agents'} icon={<Users />} testId="phone-room-agents" onClick={() => setView('agents')} />}
+      {menu.includes('agents') && <PhoneComposerControl label={t('agents')} menuExpanded={view === 'agents'} icon={<Users />} testId="phone-room-agents" buttonRef={agentsButton} onClick={() => setView('agents')} />}
     </PhoneComposerControlRow>
-    <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'topics')} titleCount={titleCount} testId="phone-room-controls-sheet" className="gg-phone-room-sheet" anchor={view === 'topics' ? topicsButton : undefined}>
+    <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'topics')} titleCount={titleCount} testId="phone-room-controls-sheet" className="gg-phone-room-sheet" anchor={view === 'agents' ? agentsButton : topicsButton}>
       {view === 'topics' ? <PhoneNavigationPicker key="topics" kind="topics" items={[null, ...choices.topics]} nameOf={topic => topic?.name ?? t('main')}>
         {shown => <div role="radiogroup" aria-label={t('topics')}>
           {shown.map(topic => topic ? <PhoneTopicPinRow key={topic.chat_id} topic={topic}>

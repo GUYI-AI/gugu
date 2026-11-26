@@ -23,14 +23,14 @@ const chunkReader = (projectId: string, workspaceId: string, path: string) => as
 /**
  * @@@first-read-early - a read of a workspace's file, begun before the view that shows it is drawn: its first range is
  * on its way from the moment the file is opened, while the view's code loads and lays out, and the view's read goes on
- * from it with the same reader (`@@@machine-file-reader`: on a linked machine, the version it anchored and its stream).
+ * from it with the same reader (`@@@machine-file-reader`: on a linked machine, the version its stream said and that stream).
  * Opened in an App instead, or as text, this one range was read for nothing; nobody takes it, and its failure is nobody's.
  */
 export type BegunRead = { reader: ReturnType<typeof machineFileReader> | null; first: Promise<FirstChunk> };
 
 export function beginWorkspaceRead(projectId: string, workspaceId: string, path: string): BegunRead {
   const machine = workspaceBackend(projectId).machine;
-  // Another machine: its file reader. Linked, every byte streams after a no-byte anchor; not linked, its first chunk is
+  // Another machine: its file reader. Linked, every byte streams, its version said with the first; not linked, its first chunk is
   // the anchor and the rest are asked below, several at a time (`@@@cloud-only-chunks`).
   const reader = machine.kind === 'remote' ? machineFileReader(machine.deviceId, projectId, workspaceId, (at, offset, length) =>
     workspaceRpc(projectId).files.readChunk(projectId, workspaceId, { path: at, offset, length }).then((result) => {

@@ -19,7 +19,7 @@ import { PhoneViewportShell } from '@/mobile/PhoneViewportShell'
 import { useMobileShellDiagnostics } from '@/mobile/useMobileListDiagnostics'
 import { PhoneTabBar as MobileTabBar } from '@/mobile/PhoneTabBar'
 import { MeHost } from '../components/me/MeMenu'
-import { returnToScreen } from '@/session/renderer/app/screen-layout-actions'
+import { installPhoneScreen, phoneChatUnder, returnToScreen, showChatOnPhone } from '@/session/renderer/app/screen-layout-actions'
 import { UpdateBanner } from '../components/UpdateBanner'
 import { WindowControls } from '../components/WindowControls'
 import { MOBILE_TABS, SIDEBAR_TABS, type SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
@@ -130,6 +130,7 @@ import { appState } from '../session/renderer/lib/stores/app-state'
 import { setComposerVerb } from '../lib/composerVerbBridge'
 import { sessionPeek } from '../session/renderer/app/session-peek'
 import { pageModalOpen } from '../session/renderer/app/page-modal'
+import { useCommandProvider } from '@renderer/lib/commands/use-command-provider'
 
 const openChatLog = rendererLogger('chat/open-dm')
 
@@ -228,14 +229,17 @@ function InnerLayout({
   }, [mobile])
   const activeChatIdRef = useRef(activeChatId)
   activeChatIdRef.current = activeChatId
+  // The phone's chat page is the desktop's one-block screen (showChatOnPhone): it follows the chat drawn, so a topic stands under its group.
+  useEffect(() => mobile ? installPhoneScreen() : undefined, [mobile])
+  useEffect(() => { if (mobile && activeChatId) showChatOnPhone(activeChatId) }, [mobile, activeChatId])
   // 进一条会话:桌面切到对话 tab;手机退掉推上来的层(咕咕 / 项目 / 我的),从底下的根 tab 推会话页,返回回到那个 tab。
-  // 会话页开着时进另一条(资料卡「发消息」、消息里的群卡片、通知):压在屏上那条上面,返回先回到它;从搜索结果进的,返回回到搜索(@@@phone-chat-trail)。
+  // 会话页开着时进另一条(资料卡「发消息」、消息里的群卡片、通知):压在屏上那条上面,返回先回到它;同一个群里切话题换掉这一屏(phoneChatUnder);从搜索结果进的,返回回到搜索(@@@phone-chat-trail)。
   const enterChat = useCallback((chatId: string) => {
     if (!mobile) return setActiveTab('chats')
     const onPage = activeChatIdRef.current
     const from = shellTab.root()
     setActiveTab(from)
-    shellTab.openChat(from, onPage !== chatId ? onPage : null)
+    shellTab.openChat(from, phoneChatUnder(onPage, chatId))
   }, [mobile, setActiveTab, shellTab])
   const chatOpenNonce = useMobileChatOpenNonce(mobile, phoneChatShown ? 'chat' : 'list')
   const [sessionCreateOpen, setSessionCreateOpen] = useState(false)
@@ -931,21 +935,19 @@ function InnerLayout({
     openScanRoute(route)
   }
 
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.metaKey) {
-        // ⌘1 =「消息」(gugu-dev#181):会话页侧栏里的「项目 | 对话」;没有会话页的形态落在聊天页。
-        if (e.key === '1') {
-          e.preventDefault()
-          selectTab(sessionHostAvailable && !mobile ? 'tasks' : 'chats')
-          if (sessionHostAvailable && !mobile && pageModalOpen.get()) returnToScreen()
-        }
-        else if (e.key === '2') { e.preventDefault(); selectTab('contacts') }
-      }
-    }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [selectTab, sessionHostAvailable, mobile])
+  // gugu-dev#181:「消息」=会话页侧栏里的「项目 | 对话」;没有会话页的形态落在聊天页。两个都是外壳的命令,
+  // 键位登记在 COMMANDS(app.goMessages / app.goContacts),由唯一的分发器接。
+  useCommandProvider({
+    scopeId: 'app',
+    surface: 'shell',
+    getCommands: () => [
+      { id: 'app.goMessages', execute: () => {
+        selectTab(sessionHostAvailable && !mobile ? 'tasks' : 'chats')
+        if (sessionHostAvailable && !mobile && pageModalOpen.get()) returnToScreen()
+      } },
+      { id: 'app.goContacts', execute: () => { selectTab('contacts') } },
+    ],
+  })
 
   // 手机壳里盖在页面上的层与 Sheet 同一个返回栈(ui/sheetStack.ts);任务 tab 那一层在 AgentWatchPage 里。
   useBackLayer(() => setSettingsModalOpen(false), mobile && settingsModalOpen)

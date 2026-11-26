@@ -32,7 +32,16 @@ export type DiffAnnotationSelection = {
   text: string;
   annotation: string;
 };
-type AnnotationSelection = BrowserAnnotationSelection | DiffAnnotationSelection;
+/** Part of a message in the conversation: its words, and who wrote it (a chat member; null on a task's timeline). */
+export type MessageAnnotationSelection = {
+  kind: 'message';
+  messageId: string;
+  authorId: string | null;
+  authorName: string;
+  text: string;
+  annotation: string;
+};
+type AnnotationSelection = BrowserAnnotationSelection | DiffAnnotationSelection | MessageAnnotationSelection;
 type AnnotationIdentity = { id: string; number: number };
 export type SessionAnnotation = AnnotationSelection & AnnotationIdentity;
 
@@ -116,7 +125,7 @@ export const sessionAnnotations = {
 
 /** What a comment points at, as the composer and the sent message's card both name it. */
 export function annotationPlace(item: AnnotationSelection): string {
-  return item.kind === 'browser' ? item.filePath ?? item.url : item.path;
+  return item.kind === 'browser' ? item.filePath ?? item.url : item.kind === 'message' ? item.authorName : item.path;
 }
 
 type PromptKey = Extract<keyof typeof enUSAnnotationMessages, `annotations.prompt.${string}`>;
@@ -136,8 +145,17 @@ export function promptAnnotations(items: readonly SessionAnnotation[], locale: S
   const copy = promptCopy(locale);
   let previousHeading: PromptKey | undefined;
   return items.map(item => {
-    const heading: PromptKey = item.kind === 'diff' || item.filePath ? 'annotations.prompt.allComments' : 'annotations.prompt.browserComments';
-    const entry = item.kind === 'diff' ? [
+    const heading: PromptKey = item.kind !== 'browser' || item.filePath ? 'annotations.prompt.allComments' : 'annotations.prompt.browserComments';
+    const entry = item.kind === 'message' ? [
+      copy('annotations.prompt.userComment', { number: item.number }),
+      copy('annotations.prompt.message'),
+      `${copy('annotations.prompt.author')} ${JSON.stringify(item.authorName)}`,
+      `${copy('annotations.prompt.messageId')} ${JSON.stringify(item.messageId)}`,
+      copy('annotations.prompt.sourceEvidence'),
+      ...item.text.split(/\r?\n/).map(line => `> ${line}`),
+      '',
+      copy('annotations.prompt.comment'), item.annotation,
+    ].join('\n') : item.kind === 'diff' ? [
       copy('annotations.prompt.userComment', { number: item.number }),
       copy('annotations.prompt.diff'),
       `${copy('annotations.prompt.filePath')} ${JSON.stringify(item.path)}`,

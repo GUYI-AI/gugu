@@ -754,24 +754,38 @@ export const usageRing = style({ color: vars.foregroundMuted });
 export const usageRingTrack = style({ stroke: vars.border });
 export const usageRingWarn = style({ color: vars.surfaceWarningForeground });
 export const usageHeader = style({ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' });
+export const usageTitle = style({ color: vars.foregroundMuted, fontSize: tokenVars.textTiny });
+export const usageHeaderActions = style({ display: 'flex', alignItems: 'center', gap: '0.25rem', minWidth: 0 });
 export const usageHarness = style({
   display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: vars.foregroundMuted,
   fontSize: tokenVars.textTiny, whiteSpace: 'nowrap',
 });
 globalStyle(`${usageHarness} svg, ${usageHarness} img`, { width: 14, height: 14, flexShrink: 0 });
+export const usageClose = style({
+  display: 'grid', placeItems: 'center', width: '1.5rem', height: '1.5rem',
+  borderRadius: tokenVars.radiusMd, color: vars.foregroundMuted,
+  selectors: { '&:hover, &:focus-visible:not([data-pointer-focus])': { backgroundColor: vars.surfaceHover } },
+});
 
 export const contextUsageFooter = style({
   marginTop: '0.75rem', paddingTop: '0.375rem', borderTop: `1px solid ${vars.border}`,
   textAlign: 'center', color: vars.foregroundMuted, fontSize: tokenVars.textSm,
 });
-export const contextThresholdTrigger = style({
+export const modelDetailRow = style({
   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', width: '100%',
-  padding: '0.375rem 0.5rem', borderRadius: tokenVars.radiusMd, color: vars.foreground,
+  padding: '0.375rem 0.5rem', color: vars.foreground,
   fontSize: tokenVars.textSm, textAlign: 'left',
-  selectors: { '&:hover:not(:disabled), &[data-popup-open]': { backgroundColor: vars.surfaceHover } },
 });
+export const contextThresholdTrigger = style([modelDetailRow, {
+  borderRadius: tokenVars.radiusMd,
+  selectors: { '&:hover:not(:disabled), &[data-popup-open]': { backgroundColor: vars.surfaceHover } },
+}]);
 export const modelSelectedCheck = style({ color: vars.foregroundSuccess, flexShrink: 0, marginLeft: 'auto' });
 export const modelDetailControlValue = style({ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: vars.foregroundMuted });
+export const modelDetailRateValue = style([modelDetailControlValue, {
+  // Align the text with the tip of the adjacent 14px chevron.
+  paddingInlineEnd: '0.375rem',
+}]);
 export const modelDetailFastSwitch = style({
   display: 'inline-flex', alignItems: 'center', flexShrink: 0, width: '1.5rem', height: '0.875rem',
   border: `1px solid ${vars.borderPrimary}`, borderRadius: tokenVars.radiusFull, backgroundColor: vars.background,
@@ -791,6 +805,7 @@ export const modelDetailFastThumb = style({
   },
 });
 export const contextThresholdContent = style({ width: '11rem', padding: '0.25rem' });
+export const modelDetailSubmenu = style([contextThresholdContent, { width: '11.5rem', gap: 0 }]);
 export const contextThresholdInput = style({
   width: '100%', minHeight: '2rem', borderRadius: tokenVars.radiusMd, background: 'transparent',
   padding: '0.375rem 0.5rem', fontSize: tokenVars.textSm,
@@ -799,7 +814,14 @@ export const contextThresholdInput = style({
 export const contextThresholdError = style({
   padding: '0.25rem 0.5rem', color: vars.foregroundDestructive, fontSize: tokenVars.textTiny,
 });
+export const contextThresholdHeading = style({
+  color: vars.foregroundMuted,
+  fontSize: tokenVars.textTiny,
+  minHeight: '2rem',
+  padding: '0.375rem 0.5rem',
+});
 export const contextThresholdOption = style([contextThresholdTrigger, {
+  minHeight: '2.3125rem',
   selectors: {
     '&[aria-pressed="true"]': { backgroundColor: vars.surfaceHover },
     '&:disabled': { opacity: 0.55, cursor: 'not-allowed' },
@@ -817,20 +839,18 @@ export const usageCostRow = style({
   color: vars.foregroundMuted,
 });
 
-export const usagePopoverBody = style({
-  width: '16rem',
-});
+export const usagePopover = style({ width: '16rem', padding: '0.75rem', gap: '0.375rem' });
+export const usagePopoverBody = style({ minWidth: 0 });
 
 export const usageStatsRow = style({
   display: 'flex',
   alignItems: 'baseline',
-  justifyContent: 'space-between',
-  gap: '1rem',
+  gap: '0.5rem',
   fontSize: tokenVars.textTiny,
 });
 
 export const usagePercent = style({
-  fontSize: '1.75rem',
+  fontSize: '1.375rem',
   fontWeight: 600,
   color: vars.foreground,
 });
@@ -917,12 +937,15 @@ export const settingRowUnlock = style({
   whiteSpace: 'nowrap',
 });
 
-/** 二级列表:模型/档位多了自己滚,不外溢出面板。 */
-export const settingSubContent = style({
-  minWidth: '11rem',
-  maxHeight: '18rem',
-  overflowY: 'auto',
-});
+/**
+ * 模型清单本身不自己滚:滚动区是 `Combobox.List` 外面那层(primitive 的 ScrollContainer,18rem 封顶),
+ * 末尾两条去路(`after`)也在里面,跟着清单一起滚(owner 11-25:「配置模型」是列表最后一行)。
+ * ❌ 别在这里再挂 maxHeight/overflow:清单自己一滚,去路就又被挤到它外面、像钉死在底下。
+ */
+export const modelPanelList = style({ minWidth: '11rem' });
+// A scrollbar that takes room (mac1: 4px) would sit on the right only and break the rows' left/right symmetry
+// (owner 11-25): the model list's scroll area reserves the same gutter on both edges. Overlay scrollbars take none.
+globalStyle(`.scroll-fade__viewport:has(> ${modelPanelList})`, { scrollbarGutter: 'stable both-edges' });
 
 // ── Model trigger（底排右侧「5.6 Sol 轻度 ∨」）─────────────────────────────────
 
@@ -934,10 +957,17 @@ export const modelTriggerLabel = style({
   lineHeight: 1.25,
 });
 
+export const modelTriggerChevron = style({ flexShrink: 0, color: vars.foregroundMuted });
+
+/**
+ * 名字后面的思考档(「Opus 5.5 中」的「中」,owner 11-26)。次要文字色,且**不跟着悬停/展开提到正文色** ——
+ * 名字提亮时它留在二档,主次靠这一步拉开。不收缩:窄到要让位时省略号落在名字上,档永远完整。
+ */
 export const modelTriggerEffort = style({
   flexShrink: 0,
   color: vars.foregroundMuted,
   lineHeight: 1.25,
+  whiteSpace: 'nowrap',
 });
 
 // ❌ 这里曾有 modelTriggerChevron —— 底排三枚下拉箭头一并撤,见
@@ -1025,7 +1055,9 @@ globalStyle(`[data-slot="composer-toolbar"] ${agentLockedIndicator}:is(:disabled
 //    加新档时这两条要跟着挪,否则新档是死的。
 globalStyle(`[data-slot="composer-toolbar"][data-disclosure="6"] ${toolbarRight}`, {
   minWidth: 0,
-  flexShrink: 1,
+  // 缺口要全落在右边这组(由模型名吃掉):左边那组的键一律不收缩(见 toolbarLeft),两组按 1:1 分摊的话,
+  // 左组的键会越出自己的盒子、叠到模型键上(2026-11-26 实测:模型键带上思考档后,236px 里叠了 13px)。
+  flexShrink: 1000,
 })
 globalStyle(`[data-slot="composer-toolbar"][data-disclosure="6"] ${agentTrigger}`, {
   minWidth: 0,
@@ -1047,7 +1079,7 @@ globalStyle(`[data-slot="composer"]:has([data-slot="composer-toolbar"][data-disc
 // 所以逐条换成 token —— 换的是**写法**不是**形状**:间距、圆角、字号、按下态的强弱关系
 // 都按上游那份照抄。
 
-/** 分档过滤条。上游:`flex flex-wrap gap-1 border-b px-3 py-2`。 */
+/** 清单上方的那一行(「去登录」)。上游:`flex flex-wrap gap-1 border-b px-3 py-2`。 */
 export const modelFilterRow = style({
   display: 'flex',
   flexWrap: 'wrap',
@@ -1059,61 +1091,6 @@ export const modelFilterRow = style({
   borderBottom: `1px solid ${vars.border}`,
 });
 
-/**
- * 厂商过滤条本身:**一样大、各自分开**的几块(owner 2026-10-10:「按钮块的大小能保持一致,
- * 有时候智谱那块太小了,不好点」)。原来是一排按字宽收缩的药丸,`智谱` 两个字只有 40px 宽,
- * 旁边 `DeepSeek` 75px。
- *
- * ❌ 别做成一条底色里的分段控件:试过,owner 同日:「不同厂家怎么连在一块了」—— 几家共用一条底,
- * 看着像一个控件而不是几个能各自按下的开关。
- *
- * 为什么去掉每颗的描边:四颗都撑到最宽那颗(75px)要 312px,面板内容区只有 264px;
- * 每块 63px 时描边会贴着 `Anthropic` 的字,换成铺底就不显挤。
- * 列数由 tsx 按家数算(`providerFilterColumns`),这里只管格子等宽。
- */
-export const modelProviderFilter = style({
-  display: 'grid',
-  flex: '1 1 auto',
-  minWidth: 0,
-  gap: '0.25rem',
-});
-
-/**
- * 一块过滤片:静息铺浅底,按下换成选中色。
- *
- * ⚠️ 按下态**必须比 hover 强**:hover 只把字压深,按下才换底 —— 底色取 surfaceSelected,
- * 与清单里**选中那一行**同一个色,整张面板里「选中」只有一种说法。
- *
- * 左右内距只留 2px:63px 的块里 `Anthropic`(11px)占 57px。放不下时省略号收尾,tsx 挂了全名的 title。
- */
-export const modelFilterChip = style({
-  minWidth: 0,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-  textAlign: 'center',
-  borderRadius: tokenVars.radiusMd,
-  border: 'none',
-  paddingLeft: '0.125rem',
-  paddingRight: '0.125rem',
-  paddingTop: '0.1875rem',
-  paddingBottom: '0.1875rem',
-  fontSize: tokenVars.textTiny,
-  lineHeight: 1.5,
-  color: vars.foregroundMuted,
-  backgroundColor: vars.surfaceHover,
-  cursor: 'default',
-  outline: 'none',
-  transition: `color ${durFast} ${easeStandard}, background-color ${durFast} ${easeStandard}`,
-  selectors: {
-    '&:hover': { color: vars.foreground },
-    '&:focus-visible:not([data-pointer-focus])': { outline: `1px solid ${vars.borderPrimary}`, outlineOffset: '-1px' },
-    '&[data-pressed]': {
-      backgroundColor: vars.surfaceSelected,
-      color: vars.foreground,
-    },
-  },
-});
 
 /**
  * 底部「思考」那一段 —— 档位控件(owner 2026-09-17 指定)。
@@ -1648,9 +1625,9 @@ export const modelPanelContent = style({
   // 于是一个超长模型名会把面板按 max-content 撑开 —— 实测 1372px 的横幅
   // (`Some Vendor Very Long Model Name …` 那种 harness 真报得出的名字)。
   // 这个洞是 #5082 那条排版守卫移植过来之后当场抓到的,不是推理出来的。
-  width: '18rem',
-  minWidth: '18rem',
-  maxWidth: '18rem',
+  width: '19.5rem',
+  minWidth: 'min(19.5rem, var(--available-width))',
+  maxWidth: 'var(--available-width)',
   padding: 0,
 });
 
@@ -1710,7 +1687,7 @@ export const composerPanelItemDesc = style({
 // ── 行内厂商图标 ─────────────────────────────────────────────────────────────
 //
 // 厂商是**二级**(owner 2026-09-06:一级是「谁的」)。它不做组头,只出现在两处:
-// 顶部那排筛选药丸,和每行左边这枚 logo —— 没有组头之后,这枚 logo 就是行内认厂商的唯一线索,
+// 每行左边这枚 logo(顶上那排筛选块 owner 11-25 已撤)—— 没有组头之后,这枚 logo 就是行内认厂商的唯一线索,
 // ❌ 不能省。
 
 /**
@@ -1734,17 +1711,28 @@ export const composerPanelItemIcon = style({
 // ⇒ 一行只放 logo + 名字 + 行尾一小格(咕咕的模型写倍率),说明、上下文、推理档挪进悬浮卡。
 // ❌ 别再回到两段式行:那一版一屏只放得下五六条,说明行又被 288px 的面板截成省略号,两头都没讲清。
 
-/** 单行模型条:在 `composerPanelItem` 之上把上下内距收紧、整行垂直居中。 */
+/**
+ * 单行模型条:在 `composerPanelItem` 之上把上下内距收紧、整行垂直居中。
+ * 左右内距相等(owner 11-25「entry 离右边太远、左边太近」):logo 离面板左边 = 勾离面板右边;
+ * 勾那一列只有 14px,没选中的行不再空出 `composerPanelItem` 那 2.25rem 的勾位。
+ */
+export const MODEL_ROW_INLINE_PADDING = '1rem';
 export const modelPanelItemCompact = style({
   alignItems: 'center',
   paddingTop: '0.375rem',
   paddingBottom: '0.375rem',
+  paddingLeft: MODEL_ROW_INLINE_PADDING,
+  paddingRight: MODEL_ROW_INLINE_PADDING,
   selectors: {
     '&[data-disabled][role="option"]': { pointerEvents: 'auto' },
     '&[data-selected]': { fontWeight: 600 },
+    '&:focus-visible:not([data-pointer-focus])': { backgroundColor: vars.surfaceHover },
     '&[data-route-repair-target]': { backgroundColor: vars.surfaceHover },
   },
 });
+
+/** 认不出厂商的行那枚通用兜底图标:淡色,一眼看得出不是某家的 logo。 */
+export const modelPanelItemIconFallback = style({ color: vars.foregroundMuted });
 
 // 单行之后 logo 跟名字同一条中线,`composerPanelItemIcon` 那 3px 下压只属于两段式的行。
 globalStyle(`${modelPanelItemCompact} [data-slot="composer-model-icon"]`, { marginTop: 0 });
@@ -1759,12 +1747,16 @@ export const modelPanelItemTrailing = style({ display: 'flex', alignItems: 'cent
 export const modelPanelItemRate = style({ color: vars.foregroundMuted, fontVariantNumeric: 'tabular-nums', fontSize: '12px' });
 export const modelPanelItemCheck = style({ display: 'flex', width: '14px' });
 
-/** The vendor tag after a person's own model (`ComposerModelOption.tag`): 10px on a light grey, darker on the row in focus. */
+/**
+ * The vendor tag after a person's own model (`ComposerModelOption.tag`): a capsule with a fill and a hairline border,
+ * as in the owner's 11-24 draft. It never shrinks — a long model name truncates, the tag stays whole.
+ */
 export const modelPanelItemTag = style({
   flexShrink: 0,
-  paddingLeft: '0.25rem',
-  paddingRight: '0.25rem',
-  borderRadius: tokenVars.radiusSm,
+  paddingLeft: '0.375rem',
+  paddingRight: '0.375rem',
+  borderRadius: '999px',
+  border: `1px solid ${vars.border}`,
   background: vars.background1,
   color: vars.foregroundMuted,
   fontSize: '10px',
@@ -1777,9 +1769,8 @@ export const modelPanelItemTag = style({
 
 /** 悬浮详情卡本体。宽度随内容、但夹在一个窄区间里:卡跟着鼠标换行时不该忽宽忽窄得太厉害。 */
 export const modelDetailCard = style({
-  width: 'max-content',
-  minWidth: '11rem',
-  maxWidth: '16rem',
+  width: '16rem',
+  maxWidth: 'var(--available-width)',
   padding: '0.625rem 0.75rem',
   display: 'flex',
   flexDirection: 'column',
@@ -1787,15 +1778,26 @@ export const modelDetailCard = style({
   color: vars.foreground,
 });
 
+export const modelDetailBody = style({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 'inherit',
+  outline: 'none',
+});
+
 export const modelDetailHead = style({
   display: 'flex',
-  alignItems: 'center',
-  gap: '0.5rem',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
+  gap: '0.25rem',
   minWidth: 0,
+  paddingBottom: '0.375rem',
+  borderBottom: `1px solid ${vars.border}`,
 });
 
 export const modelDetailName = style({
   minWidth: 0,
+  maxWidth: '100%',
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
@@ -1803,7 +1805,7 @@ export const modelDetailName = style({
   fontSize: fallbackVar(tokenVars.textSm, '13px'),
 });
 
-/** 「这条是谁的」那一句(组头原文),卡里的第二行。 */
+/** The provider's model description when the catalog supplies one. */
 export const modelDetailTier = style({
   fontSize: tokenVars.textTiny,
   lineHeight: tokenVars.textTinyLineHeight,
@@ -1847,24 +1849,14 @@ export const modelDetailFactValue = style({
   overflowWrap: 'anywhere',
 });
 
-/**
- * 清单底下那一行:「管理模型」在左,「升级解锁更多模型」在右(免费档才有)。
- * 与推理档那一段同一种分隔(上边线 + 面板底色),它也是清单的兄弟节点、不随清单滚。
- */
-export const modelPanelFooter = style({
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: '0.5rem',
-  paddingLeft: '0.5rem',
-  paddingRight: '0.5rem',
+/** The custom-model action scrolls with the list, following its divider. */
+export const modelPanelActions = style({
+  marginTop: '0.25rem',
   paddingTop: '0.25rem',
-  paddingBottom: '0.25rem',
   borderTop: `1px solid ${vars.border}`,
-  backgroundColor: vars.surfaceBase,
 });
 
-/** 底部那两枚是动作不是取值:纯文字按钮,悬停给底色,与菜单项同一种手感。 */
+/** 详情卡里那枚动作(「添加路由」):纯文字按钮,悬停给底色,与菜单项同一种手感。 */
 export const modelPanelFooterAction = style({
   appearance: 'none',
   border: 0,
@@ -1882,13 +1874,42 @@ export const modelPanelFooterAction = style({
 });
 
 /**
- * 「升级解锁更多模型」用 info 前景,与「去登录」同一色:一眼看得出是去路。
- * 面板是定宽(18rem):这一枚要能收窄、折行,❌ 跟着 nowrap 把自己撑到面板外被裁掉(#7123,英文
- * 「Manage models」+「Upgrade to unlock more models」比面板宽约 19px,裁成「…more mode」)。
+ * 末尾一条去路:整行宽、与模型行同样的左内距和行高(字从图标那一列起),悬停给底色 —— 读起来是清单的
+ * 最后一行,不是一条底栏。整行宽也是详情卡要贴的那条(见 `detailHoverProps`)。
  */
+export const modelPanelActionRow = style({
+  appearance: 'none',
+  border: 0,
+  background: 'transparent',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.5rem',
+  width: '100%',
+  textAlign: 'start',
+  paddingTop: '0.375rem',
+  paddingBottom: '0.375rem',
+  paddingLeft: MODEL_ROW_INLINE_PADDING,
+  paddingRight: MODEL_ROW_INLINE_PADDING,
+  borderRadius: tokenVars.radiusMd,
+  fontSize: fallbackVar(tokenVars.textSm, '13px'),
+  fontWeight: 500,
+  color: vars.foreground,
+  cursor: 'pointer',
+  outline: 'none',
+  selectors: {
+    '&:hover, &:focus-visible:not([data-pointer-focus])': { backgroundColor: vars.surfaceHover },
+  },
+});
+
+/**
+ * 「升级解锁更多模型」用 info 前景,与「去登录」同一色:一眼看得出是去路。整行宽,长文案折行不裁(#7123)。
+ */
+// 图标位与模型行同一列、同一条中线(`composerPanelItemIcon` 那 3px 下压只属于两段式的行)。
+globalStyle(`${modelPanelActionRow} > ${composerPanelItemIcon}`, { marginTop: 0 });
+
 export const modelPanelUpgrade = style([
-  modelPanelFooterAction,
-  { color: vars.surfaceInfoForeground, whiteSpace: 'normal', textAlign: 'end', minWidth: 0 },
+  modelPanelActionRow,
+  { color: vars.surfaceInfoForeground },
 ]);
 
 /** 触发器上那枚,不需要 `mt` —— 触发器是单行、垂直居中。 */
@@ -1902,12 +1923,17 @@ export const modelTriggerIcon = style({
   color: vars.foreground,
 });
 
-// 档 6(见 @@@composer-toolbar-disclosure):模型名与强度让位,只剩厂商图形。写在 modelTriggerIcon 定义之后 ——
-// 模块按顺序求值,引用它的规则写在前面会读到未初始化的常量。
+// 档 6(见 @@@composer-toolbar-disclosure):触发器在这一档才可压缩,模型名先缩成省略号、再缩没,思考档不截、
+// 厂商图形留着(owner 11-26:「窄的时候先把模型名缩成省略号,档位那个字不截」);下拉箭头这一档让位。
+// 写在 modelTriggerIcon 定义之后 —— 模块按顺序求值,引用它的规则写在前面会读到未初始化的常量。
 globalStyle(
-  `[data-slot="composer-toolbar"][data-disclosure="6"] [data-testid="composer-model-trigger"]:has(${modelTriggerIcon}) :is(${modelTriggerLabel}, ${modelTriggerEffort})`,
+  `[data-slot="composer-toolbar"][data-disclosure="6"] [data-testid="composer-model-trigger"]:has(${modelTriggerIcon}) ${modelTriggerChevron}`,
   { display: 'none' },
 )
+// 这一档让位的只该是模型名:agent 那颗此时已只剩图形,❌ 跟着被压进权限键底下(实测 236px 新建任务框里两颗叠住)。
+// 名字缩没了还放不下(新建任务框窄到约 230px 以下),模型这颗从右边裁,❌ 压到邻居身上。
+globalStyle(`[data-slot="composer-toolbar"][data-disclosure="6"] [data-testid="composer-agent-trigger"]`, { flexShrink: 0 })
+globalStyle(`[data-slot="composer-toolbar"][data-disclosure="6"] [data-testid="composer-model-trigger"]`, { overflow: 'hidden' })
 
 // 模型左边有锁着的 harness 标时,触发器不再画厂商图形:Codex 挨着 OpenAI、Claude 挨着 Anthropic 是两枚几乎一样的标。
 // 档 5 起 harness 那颗让位,厂商图形回来,档 6 照旧只剩它。

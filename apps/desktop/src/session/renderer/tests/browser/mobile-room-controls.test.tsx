@@ -78,6 +78,13 @@ it('marks a topic that calls you in red and other unread with the grey dot, then
 it('opens the existing profile card for another person’s Agent without entering a DM',async()=>{
  await mount();await page.getByTestId('phone-room-agents').click()
  await expect.element(page.getByTestId('phone-room-agent')).toHaveTextContent('协作智能体')
+ // The same card as Topics, above the Agents control: no drag handle, 320 wide, 8 px above the button.
+ const panel=document.querySelector<HTMLElement>('[data-testid="phone-room-controls-sheet"]')!
+ const button=harness!.container.querySelector<HTMLButtonElement>('[data-testid="phone-room-agents"]')!
+ await Promise.all(panel.getAnimations().map(animation=>animation.finished))
+ expect(panel.querySelector('.gg-phone-composer-sheet-handle')).toBeNull()
+ expect(panel.getBoundingClientRect().width).toBe(320)
+ expect(button.getBoundingClientRect().top-panel.getBoundingClientRect().bottom).toBeCloseTo(8)
  await page.getByTestId('phone-room-agent').click()
  await until('existing profile card',()=>!!document.querySelector('[data-profile-member-id="peer-agent"]'))
  expect(onOpen).not.toHaveBeenCalled()

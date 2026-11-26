@@ -3,7 +3,7 @@ import type { MessageItem } from '@gugu/core/shared/types/chat';
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels';
 import { createEffect, createRoot } from 'solid-js';
-import { parseSentAttachmentLink } from '@gugu/session-core/session-record/send-receipt';
+import { parseSentAttachmentLink, sentAttachmentLink } from '@gugu/session-core/session-record/send-receipt';
 import { parseGroupFileLink } from '@gugu/core/shared/ui/guguLink';
 import { sentFileCopy } from '@/lib/sentFileCopies';
 import { keptDataUrl } from './kept-data-urls';
@@ -12,8 +12,11 @@ export function originalMessagePresentation(message: MessageItem): DeliveryMessa
   if (message.content_type !== 'attachment' || message.retracted_at) return null;
   const attachment = parseAttachmentContent(message.content, message);
   if (!attachment) return null;
-  const href = attachment.source.kind === 'item' ? `gugu-file://${attachment.source.itemId}?v=${attachment.source.version}`
-    : `gugu-message-file://${message.id}`;
+  // A picture opens from its message, over the conversation it is drawn in (openMessageAttachment → the image viewer), as
+  // every message thumbnail does. A folder file's own link opens it in the chat that holds it, so only a file that is not a
+  // picture keeps that link: it opens where it lives.
+  const href = attachment.kind !== 'image' && attachment.source.kind === 'item' ? `gugu-file://${attachment.source.itemId}?v=${attachment.source.version}`
+    : sentAttachmentLink(message.id, message.chat_id);
   return { text: attachment.caption ?? '', attachments: [{ id: `gugu-message-file://${message.id}`, name: attachment.fileName,
     kind: attachment.kind === 'image' ? 'image' : 'file', href }] };
 }

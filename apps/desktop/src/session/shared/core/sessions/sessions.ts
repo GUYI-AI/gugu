@@ -5,7 +5,7 @@ import type { GuguPermissionMode, PromptInput } from '@gugu/session-core/acp';
 import type { UnreachedMachine } from '@gugu/session-core/session-record/contract';
 import type { AgentStatus, AgentStatusDetail } from '@shared/core/agents/agentEvents';
 import type { LinkedIssue } from '@shared/core/linked-issue';
-import type { SessionContextUsage, SessionLibraryMcpFact } from '@shared/core/sessions/session-config';
+import type { SessionContextChoice, SessionContextUsage, SessionLibraryMcpFact } from '@shared/core/sessions/session-config';
 
 export const MAX_SESSION_TITLE_LENGTH = 100;
 
@@ -220,6 +220,7 @@ export type Session = {
   effort?: string;
   /** Per-session Fast intent; current native eligibility still applies. */
   fastMode?: boolean;
+  contextChoice?: SessionContextChoice;
   /** #7342 引擎最后一次报的上下文读数,进程停了也留着(通用模式才有)。缺席 = 还没报过。 */
   contextUsage?: SessionContextUsage;
   /** Initial queued prompts to deliver on first ACP spawn. Only present before sessionId is set. */

@@ -20,6 +20,7 @@ it.each(['codex', 'claude'] as const)('%s MCP identity and disclosure survive li
   host.style.cssText = 'position:fixed;inset:0;width:900px;height:1600px';
   document.body.append(host);
   let view = createChatView({ context, state, parent: host });
+  const run = () => host.querySelector<HTMLButtonElement>('[data-slot="tool-run"] [data-collapse-id]');
   const trigger = () => host.querySelector<HTMLElement>('[data-slot="tool-call-trigger"]');
   const send = (update: Record<string, unknown>) => {
     parser.pushEvent(decode(update), 1000);
@@ -30,9 +31,11 @@ it.each(['codex', 'claude'] as const)('%s MCP identity and disclosure survive li
     // Codex supplies arguments at start. Claude can announce the call before its input arrives.
     send({ sessionUpdate: 'tool_call_update', toolCallId: 'lookup', title: name, name, kind: 'other', status: 'in_progress',
       rawInput: provider === 'claude' ? {} : request });
-    await until('the collapsed MCP row identifies its server and tool', () => trigger()?.textContent?.includes('fixture, lookup') === true);
+    await until('the live process counts the MCP call', () => run()?.textContent?.includes('Called 1 MCP tool') === true);
     expect(host.querySelector('[data-conversation-process]')?.getAttribute('aria-expanded')).toBe('true');
-    expect(host.textContent).not.toContain('Called 1 MCP tool');
+    expect(trigger()).toBeNull();
+    run()!.click();
+    await until('the disclosed MCP row identifies its server and tool', () => trigger()?.textContent?.includes('fixture, lookup') === true);
     expect(host.querySelector('[data-slot="tool-call-request"]')).toBeNull();
     expect(trigger()!.getAttribute('aria-expanded')).toBe('false');
     trigger()!.click();
@@ -46,6 +49,8 @@ it.each(['codex', 'claude'] as const)('%s MCP identity and disclosure survive li
     expect(host.querySelector('[data-slot="tool-call-request"]')?.textContent).toContain('needle-3327');
     trigger()!.click();
     await until('MCP disclosure closes', () => trigger()?.getAttribute('aria-expanded') === 'false');
+    run()!.click();
+    await until('the summary hides the raw MCP row again', () => trigger() === null);
     parser.endTurn();
     const page = trimCursorPageForTransport({ turns: [...parser.history], nextCursor: null }, TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET, false);
     state.transcript.activeTurn.set(null);
@@ -53,11 +58,13 @@ it.each(['codex', 'claude'] as const)('%s MCP identity and disclosure survive li
     state.session.setGenerating(false);
     view.dispose();
     view = createChatView({ context, state, parent: host });
-    // A running process starts open; a finished one starts closed. Open the
-    // history through its own control, without changing the MCP disclosure.
+    // A running process starts open, and a finished one starts closed.
     const process = () => host.querySelector<HTMLButtonElement>('[data-conversation-process]');
     await until('the reopened history process starts closed', () => process()?.getAttribute('aria-expanded') === 'false');
     process()!.click();
+    await until('the reopened process shows the same MCP count', () => run()?.textContent?.includes('Called 1 MCP tool') === true);
+    expect(trigger()).toBeNull();
+    run()!.click();
     await until('the reopened local MCP row retains its identity', () => trigger()?.textContent?.includes('fixture, lookup') === true);
     expect(trigger()!.getAttribute('aria-expanded')).toBe('false');
     trigger()!.click();

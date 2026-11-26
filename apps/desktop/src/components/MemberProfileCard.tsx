@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next'
 import { resolveMessagingValue } from '@/lib/localizedStoredValue'
 import { useAgentContactStatusLabel } from './contactAgentTone'
 import { useAgentDisplayStatus } from '../hooks/useAgentDisplayStatus'
+import { AgentHarnessModelChips } from './AgentHarnessModelChips'
 import { Button } from './ui/Button'
 import { Hint } from './ui/Tooltip'
 import { Unknown } from './ui/Unknown'
@@ -28,6 +29,7 @@ import { useAgentSession } from '@/lib/projectGroupChatsBridge'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { useAgentSessionRow } from '@/components/session-watch/useAgentSessionRow'
 import type { AgentSession } from '@/session/renderer/features/projects/stores/project-group-chats-bridge'
+import { isImeComposing } from '@/lib/ime'
 
 // @@@float-one-edge (Refs #6104) — 名片是浮层:圆角 xl(12) + 一层 lift,❌ 不再叠描边。
 const profileCardClass = 'gg-pop w-[284px] overflow-hidden rounded-xl bg-[var(--bg-elevated)] text-[var(--text-primary)] shadow-[var(--shadow-lift)]'
@@ -171,6 +173,7 @@ function AliasField({ controls }: { controls: MemberProfileAliasControls }) {
         onChange={(event) => setDraft(event.target.value)}
         onBlur={save}
         onKeyDown={(event) => {
+          if (isImeComposing(event)) return
           if (event.key === 'Enter') event.currentTarget.blur()
           if (event.key === 'Escape') setDraft(saved)
         }}
@@ -304,6 +307,8 @@ export function MemberProfileCard({
               <span className="min-w-0 line-clamp-2 [overflow-wrap:anywhere]" data-profile-agent-owner><AgentOwnerLabel ownerUserId={member.ownerUserId} ownerDisplayName={member.ownerDisplayName} /></span>
             </div>
           ) : null}
+          {/* 状态与主人那行之下:harness 与模型两枚胶囊(owner 11-26「看不出它是什么智能体」)。 */}
+          {isAgent ? <AgentHarnessModelChips agentId={member.id} className="mt-2" /> : null}
         </div>
       </div>
 

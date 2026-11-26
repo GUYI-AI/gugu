@@ -2,7 +2,6 @@ import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
 import { followRendererSession, queryClient, refreshTag } from '@/lib/replica'
 import { createRoot, type Root } from 'react-dom/client'
 import { useState } from 'react'
-import { ComposerModelMenu } from '@gugu/session-ui/react/components'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import type { AgentPayload } from '@shared/core/agents/agent-payload'
@@ -33,7 +32,9 @@ const control = vi.hoisted(() => ({
   selected: '',
   rejectSelect: false,
   busy: false,
-  removed: [] as Array<{ connectionId: string; stopBusySessions?: boolean }>
+  removed: [] as Array<{ connectionId: string; stopBusySessions?: boolean }>,
+  /** What the real sign-in window started its login with (#3857: it opens nested in the detail, not via the global store). */
+  login: null as Record<string, unknown> | null
 }))
 
 const NAMES: Record<string, string> = { codex: 'Codex', claude: 'Claude', pi: 'Pi', opencode: 'OpenCode', amp: 'Amp', kilocode: 'Kilo Code' }
@@ -163,7 +164,9 @@ vi.mock('@renderer/lib/stores/use-agent-auth-status', () => ({
 
 vi.mock('@renderer/lib/acp/auth-login-binding', () => ({
   AcpAuthLoginBinding: {
-    create: async () => ({
+    create: async (args: Record<string, unknown>) => {
+      control.login = args
+      return {
       sendInput: () => {},
       resize: () => {},
       markUrlHandled: () => {},
@@ -174,9 +177,18 @@ vi.mock('@renderer/lib/acp/auth-login-binding', () => ({
           return () => {}
         }
       }
-    })
+    }
+    }
   }
 }))
+
+/** The sign-in a detail asked for opens nested in that detail (@@@modal-surface): the real window, and its login. */
+const nestedSignIn = async (login: Record<string, unknown>) => {
+  await until('the sign-in opens nested in the detail', () => document.querySelector('[data-surface-modal="agentSignInModal"][data-nested]') !== null)
+  expect(modalStore.isOpen, 'not through the global modal store').toBe(false)
+  await until('the real sign-in starts its login', () => control.login !== null)
+  expect(control.login).toMatchObject(login)
+}
 
 // The panels open inside the signed-in app: the model catalog a switch refreshes is an account's reading.
 followRendererSession('SIGNED_IN', 'reader')
@@ -195,6 +207,7 @@ beforeEach(() => {
   control.rejectSelect = false
   control.busy = false
   control.removed = []
+  control.login = null
   control.connections = [{ id: 'native', kind: 'native', name: 'CLI', current: true }]
   // The subscription readings are replicas: they live in the one client (lib/replica), cleared after each case.
   client = queryClient
@@ -299,13 +312,9 @@ function TaskDraft({ id = 'codex', machine = null }: { id?: string; machine?: st
   return (
     <>
       <input aria-label="Task draft" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
-      <ComposerModelMenu
-        panel={{ kind: 'shown', modelRow: 'list' }}
-        modelItems={[]}
-        effortItems={[]}
-        modelUnlock={{ groupLabel: `Your ${NAMES[id]} models`, label: 'Go sign in' }}
-        onModelUnlock={(anchor) => panel.show(agent(id), machine, anchor)}
-      />
+      <button type="button" onClick={event => panel.show(agent(id), machine, event.currentTarget)}>
+        Manage connection
+      </button>
       {panel.panel}
     </>
   )
@@ -315,8 +324,7 @@ it('with nothing configured, Codex opens the account form directly and keeps the
   render(<TaskDraft id="codex" />)
   const href = location.href
   await userEvent.fill(page.getByRole('textbox', { name: 'Task draft' }), 'Keep this draft')
-  await userEvent.click(page.getByTestId('composer-model-trigger'))
-  await userEvent.click(page.getByRole('button', { name: 'Go sign in', exact: true }))
+  await userEvent.click(page.getByRole('button', { name: 'Manage connection', exact: true }))
   const dialog = page.getByRole('dialog', { name: 'Add a Codex connection', exact: true })
   await expect.element(dialog).toBeVisible()
   expect(document.querySelector('[data-testid="connection-native"]')).toBeNull()
@@ -335,8 +343,7 @@ it('a task panel shows the busy refusal of its first vendor key with Close and s
   control.rejectSelect = true
   control.busy = true
   render(<TaskDraft id="kilocode" />)
-  await userEvent.click(page.getByTestId('composer-model-trigger'))
-  await userEvent.click(page.getByRole('button', { name: 'Go sign in', exact: true }))
+  await userEvent.click(page.getByRole('button', { name: 'Manage connection', exact: true }))
   await expect.element(page.getByRole('dialog', { name: 'Add a Kilo Code connection', exact: true })).toBeVisible()
   expect(document.querySelector('.subscription-connection-form input[type="url"], .subscription-connection-form input[name="models"]')).toBeNull()
   await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'fixture-key')
@@ -355,8 +362,7 @@ it('a rejected task connection remains visible with its cause and keeps the orig
   control.rejectSelect = true
   control.connections.push({ id: 'api', kind: 'account', name: 'Saved API', current: false })
   render(<TaskDraft />)
-  await userEvent.click(page.getByTestId('composer-model-trigger'))
-  await userEvent.click(page.getByRole('button', { name: 'Go sign in', exact: true }))
+  await userEvent.click(page.getByRole('button', { name: 'Manage connection', exact: true }))
   await userEvent.click(page.getByTestId('connection-use-api'))
   await until('the host refused the switch', () => control.selected === 'rejected')
   await until(
@@ -412,13 +418,7 @@ it.each([1440, 1024, 800, 390])(
       item.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))
     ).toBe(true)
     await userEvent.click(page.getByRole('menuitem', { name: 'Sign in', exact: true }))
-    expect(modalStore.activeModalId).toBe('agentSignInModal')
-    expect(modalStore.activeModalArgs).toMatchObject({
-      providerId: 'codex',
-      connectionId: 'saved-account',
-      steps: [{ methodId: 'codex-login' }]
-    })
-    expect(modalStore.activeModalArgs).not.toHaveProperty('portalContainer')
+    await nestedSignIn({ providerId: 'codex', connectionId: 'saved-account', methodId: 'codex-login' })
   }
 )
 
@@ -433,8 +433,7 @@ it('an authenticated native Codex connection keeps its row login entry and menu 
   await expect.element(login).toBeVisible()
   expect(page.getByRole('menuitem', { name: 'Remove', exact: true }).query()).toBeNull()
   await userEvent.click(login)
-  await until('the native login flow opens without deleting the connection', () => modalStore.activeModalId === 'agentSignInModal')
-  expect(modalStore.activeModalArgs).toMatchObject({ providerId: 'codex', connectionId: 'native' })
+  await nestedSignIn({ providerId: 'codex', connectionId: 'native' })
   expect(control.removed).toEqual([])
 })
 
@@ -445,8 +444,7 @@ it('working sessions refuse a task connection switch with a calm status and keep
   control.busy = true
   control.connections.push({ id: 'api', kind: 'account', name: 'Saved API', current: false })
   render(<TaskDraft />)
-  await userEvent.click(page.getByTestId('composer-model-trigger'))
-  await userEvent.click(page.getByRole('button', { name: 'Go sign in', exact: true }))
+  await userEvent.click(page.getByRole('button', { name: 'Manage connection', exact: true }))
   await userEvent.click(page.getByTestId('connection-use-api'))
   await until(
     'the busy refusal is rendered',
@@ -466,7 +464,7 @@ it('working sessions refuse a task connection switch with a calm status and keep
 })
 
 it.each([800, 1440])(
-  'the real global sign-in terminal remains accessible and clickable above the detail at %ipx',
+  'the real sign-in terminal remains accessible and clickable above the detail at %ipx',
   async (width) => {
     await page.viewport(width, 900)
     control.connections.push({
@@ -499,7 +497,7 @@ it.each([800, 1440])(
         ?.closest('button')
     ).toBe(cancel.element())
     await userEvent.click(cancel)
-    await until('the real login has closed', () => !modalStore.isOpen)
+    await until('the real login has closed', () => login.query() === null)
     await expect.element(page.getByRole('dialog', { name: 'Codex', exact: true })).toBeVisible()
   }
 )
@@ -526,8 +524,7 @@ it('OpenCode detail is that same section: no separate Account row, and Account s
   // 「账号」= 登它 CLI 自己那一份:不存连接、不起名，直接是那个登录窗口。
   expect(document.querySelector('.subscription-connection-form input[name="name"]')).toBeNull()
   await userEvent.click(page.getByRole('button', { name: 'Sign in', exact: true }))
-  expect(modalStore.activeModalId).toBe('agentSignInModal')
-  expect(modalStore.activeModalArgs).toMatchObject({ providerId: 'opencode', steps: [{ methodId: 'opencode-login', transport: 'terminal' }] })
+  await nestedSignIn({ providerId: 'opencode', methodId: 'opencode-login' })
   expect(control.created).toBeNull()
 })
 
@@ -550,8 +547,7 @@ it('a task on another machine signs in that machine\'s own CLI from Add connecti
   )
   try {
     render(<TaskDraft id="opencode" machine="dev-walk" />)
-    await userEvent.click(page.getByTestId('composer-model-trigger'))
-    await userEvent.click(page.getByRole('button', { name: 'Go sign in', exact: true }))
+    await userEvent.click(page.getByRole('button', { name: 'Manage connection', exact: true }))
     await expect.element(page.getByRole('dialog', { name: 'Add a OpenCode connection', exact: true })).toBeVisible()
     await userEvent.click(page.getByRole('button', { name: 'Sign in', exact: true }))
     expect(modalStore.activeModalId).toBe('agentSignInModal')

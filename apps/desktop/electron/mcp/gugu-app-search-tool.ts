@@ -34,7 +34,7 @@ export type AppSearchSource = () => Promise<{ apps: AppSearchHit[]; market?: str
  */
 export const APP_SEARCH_PAGE_ROWS = 7
 
-const DESCRIPTION = 'Find Apps — installed here (on, switched off, not given to you, unusable) and in the market — by keywords, state, category, risk or a file they open; each row says what to do next, facets count what narrowing would leave.'
+const DESCRIPTION = `Find Apps — installed here (on, switched off, not given to you, unusable) and in the market — by keywords, state, category, risk or a file they open; at most ${APP_SEARCH_PAGE_ROWS} rows per call, follow next for more. Each row says what to do next; facets count what narrowing would leave.`
 
 const schema = z.object({
   query: z.string().optional().describe('Keywords: name, id, subtitle, instructions, categories.'),
@@ -43,7 +43,7 @@ const schema = z.object({
   max_risk: z.enum(APP_RISKS).optional().describe('Only Apps whose permissions are at most this loud; none = it asks for none.'),
   opens: z.string().optional().describe('A file suffix, e.g. .pdf: Apps with a tab that opens it.'),
   sort: z.enum(APP_SEARCH_SORTS).optional().describe('relevance with a query, else name; newest = first published, updated = this version.'),
-  rows: listRowsSchema,
+  rows: listRowsSchema.describe(`1-based window, at most ${APP_SEARCH_PAGE_ROWS} rows per call; omit for the first ${APP_SEARCH_PAGE_ROWS}, then pass next. "all" is not supported.`),
 }).strict()
 
 export function registerGuguAppSearchTool(server: McpServer, source: AppSearchSource): void {

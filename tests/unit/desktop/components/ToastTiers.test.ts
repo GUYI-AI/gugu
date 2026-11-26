@@ -258,8 +258,10 @@ describe('用户读到的失败 / 告警落盘', () => {
 })
 
 
-it('no transient notice picks its own corner: every one lands in the single toast outlet', () => {
+it('keeps the shared transient placement unless a notice asks for the right corner', () => {
   notify({ key: 'one-stack', title: 'Copied', tier: 'success', duration: 1500 })
   expect(lastOptions(sonner.success)).not.toHaveProperty('position')
   expect(lastOptions(sonner.success).closeButton).toBe(false)
+  notify({ title: 'Switching model', tier: 'info', position: 'bottom-right' })
+  expect(lastOptions(sonner.info)).toMatchObject({ position: 'bottom-right', duration: 3000, closeButton: false })
 })

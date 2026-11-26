@@ -10,11 +10,13 @@ vi.mock('../use-automations', () => ({
   useScheduledAutomationRun: () => io.next,
   useRetryAutomationRuns: () => io.retry,
 }));
-vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
+vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ locale: 'en-US', translate: (key: string) => key }) }));
 vi.mock('@renderer/features/projects/stores/project-selectors', () => ({ getProjectStore: () => undefined, projectDisplayName: () => 'Project' }));
 vi.mock('@renderer/features/sessions/stores/session-selectors', () => ({ getSessionPageStore: () => undefined, sessionAgentStatus: () => null, sessionAgentStatusDetail: () => null }));
 vi.mock('@renderer/lib/components/agent-status-indicator', () => ({ AgentStatusIndicator: () => null }));
-vi.mock('@renderer/lib/ui/absolute-time', () => ({ AbsoluteTime: ({ value }: { value: string }) => <time>{value}</time> }));
+vi.mock('@renderer/lib/ui/absolute-time', () => ({
+  AbsoluteTime: ({ value, showTimeZone }: { value: string; showTimeZone?: boolean }) => <time data-show-zone={showTimeZone}>{value}</time>,
+}));
 vi.mock('./AutomationAgentAvatar', () => ({ AutomationAgentAvatar: () => null }));
 
 import { AutomationRow } from './AutomationRow';
@@ -40,6 +42,8 @@ describe('automation runs read before, their read again failing', () => {
     expect(container.textContent).toContain('2026-11-15T09:00:00Z');
     expect(container.textContent).toContain('2026-11-17T09:00:00Z');
     expect(container.querySelectorAll('[data-refresh-failed]')).toHaveLength(2);
+    expect(container.querySelectorAll('time[data-show-zone="true"]')).toHaveLength(2);
+    expect(container.querySelector('[role="switch"]')?.getAttribute('aria-label')).toBe('Daily digest');
   });
 
   it('read and current: nothing is said', () => {

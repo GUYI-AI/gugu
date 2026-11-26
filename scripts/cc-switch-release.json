@@ -14,8 +14,8 @@
       "sha256": "6c165ca6461f200aea1f739e4dad3be3ebacd21de864895679046ca99cd44024"
     },
     "linux-arm64": {
-      "asset": "cc-switch-cli-v5.11.4-linux-arm64.tar.gz",
-      "sha256": "f1357e8e242170e4166a4fb04438d824ccbd68c027e6293226de69c17dac761a"
+      "asset": "cc-switch-cli-v5.11.4-linux-arm64-musl.tar.gz",
+      "sha256": "ea1ee67c4c9a72383a95f9ce1b97d13b9ea7d5f1e896e16aba2c1999b7c77fec"
     },
     "win32-x64": {
       "asset": "cc-switch-cli-v5.11.4-windows-x64.zip",

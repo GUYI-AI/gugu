@@ -1,5 +1,4 @@
 import { AutomationAgentAvatar } from './AutomationAgentAvatar';
-import cronstrue from 'cronstrue';
 import { CheckCircle2, Clock, Folder, MinusCircle, XCircle, type IconComponent } from '@/lib/icons'
 import { observer } from 'mobx-react-lite';
 import {
@@ -23,6 +22,7 @@ import { cn } from '@renderer/utils/utils';
 import { isSpentOneTimeAutomation, type Automation } from '@shared/core/automations/automation';
 import type { AutomationRunStatus } from '@shared/core/automations/automation-run';
 import { formatRunTriggerKindLabel } from '../automation-run-format';
+import { scheduleRuleText } from '../session-schedule-format';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 import { ReadingSlot } from '@/components/ui/ReadingSlot';
 
@@ -53,7 +53,7 @@ export const AutomationRow = observer(function AutomationRow({
   readOnly = false,
   onClick,
 }: AutomationRowProps) {
-  const { translate } = useSessionMessages();
+  const { locale, translate } = useSessionMessages();
   const latest = useLatestAutomationRun(automation.id);
   const next = useScheduledAutomationRun(automation.id);
 
@@ -66,134 +66,100 @@ export const AutomationRow = observer(function AutomationRow({
   const agentStatusDetail = sessionPageStore ? sessionAgentStatusDetail(sessionPageStore) : null;
   const projectName = projectId ? projectDisplayName(getProjectStore(projectId)) : undefined;
 
-  const expr = automation.triggerConfig?.expr ?? null;
-  const cronLabel = automation.triggerConfig?.at != null
-    ? translate('automations.oneTime')
-    : expr
-    ? (() => {
-        try {
-          return cronstrue.toString(expr.trim());
-        } catch {
-          return expr;
-        }
-      })()
-    : null;
+  const trigger = automation.triggerConfig;
+  const cronLabel = trigger?.at != null ? translate('automations.oneTime') : trigger?.expr ? scheduleRuleText(trigger, locale) : null;
+  const cronTitle = cronLabel && trigger?.tz ? `${cronLabel} (${trigger.tz})` : cronLabel;
+  const spent = isSpentOneTimeAutomation(automation);
 
   return (
     <div
       role="button"
       tabIndex={0}
       onClick={onClick}
-      className="group flex cursor-pointer items-center gap-4 rounded-lg px-4 py-3 text-left hover:bg-row-hover"
+      className="grid min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 rounded-lg px-4 py-3 text-left hover:bg-row-hover @min-[640px]:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)_auto] @min-[640px]:gap-x-4"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        onPointerDown={(e) => e.stopPropagation()}
-        className="flex flex-row items-center justify-end gap-3"
-      >
-        <Switch
-          checked={automation.enabled}
-          // #7221 一次性的那一刻过了就不会再响,打开它没有意义(服务端也拒)。
-          disabled={readOnly || isSpentOneTimeAutomation(automation)}
-          onCheckedChange={(checked) => onToggleEnabled?.(checked)}
-        />
+      <div className="flex min-w-0 flex-col justify-center gap-1">
+        <div className="flex min-w-0 items-center gap-1">
+          <span className={cn('truncate text-md font-medium', automation.enabled ? 'text-foreground' : 'text-foreground-muted')}>
+            {automation.name}
+          </span>
+          <AgentStatusIndicator status={agentStatus} detail={agentStatusDetail} />
+        </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground-muted">
+          {cronLabel && (
+            <span title={cronTitle ?? undefined} className="flex min-w-0 max-w-full items-center gap-1">
+              <Clock aria-hidden="true" className="size-3 shrink-0" />
+              <span className="truncate">{cronTitle}</span>
+            </span>
+          )}
+          <span className={cn('flex min-w-0 max-w-32 items-center gap-1', projectId == null && 'text-foreground-destructive/80')}>
+            <Folder aria-hidden="true" className="size-3 shrink-0" />
+            <span title={projectName} className="truncate">{projectId ? projectName : translate('automations.noProject')}</span>
+          </span>
+          {automation.agentSession && (
+            <span className={cn('flex min-w-0 max-w-40 items-center gap-1', automation.agentSession.gone && 'text-foreground-destructive/80')}>
+              <AutomationAgentAvatar sessionId={automation.agentSessionId} />
+              <span className="truncate">
+                {automation.agentSession.gone
+                  ? translate('automations.byAgentGone')
+                  : translate('automations.byAgent', { name: automation.agentSession.name ?? '' })}
+              </span>
+            </span>
+          )}
+        </div>
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-        {/* Row 1: name + agent indicator left, cron + project right */}
-        <div className="flex min-w-0 items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-1">
-            <span
-              className={cn(
-                'min-w-0 truncate text-md',
-                automation.enabled ? 'text-foreground' : 'text-foreground-muted'
-              )}
-            >
-              {automation.name}
-            </span>
-            <AgentStatusIndicator status={agentStatus} detail={agentStatusDetail} />
-          </div>
-          <div className="flex shrink-0 flex-row items-center gap-1 text-xs text-foreground-muted">
-            {automation.agentSession && (
-              <span
-                className={cn(
-                  'flex max-w-40 items-center gap-1 rounded-md bg-background-1 px-2 py-1 group-hover:state-hover-layer',
-                  automation.agentSession.gone ? 'text-foreground-destructive/80' : 'text-foreground-muted'
-                )}
-              >
-                <AutomationAgentAvatar sessionId={automation.agentSessionId} />
-                <span className="min-w-0 truncate">
-                  {automation.agentSession.gone
-                    ? translate('automations.byAgentGone')
-                    : translate('automations.byAgent', { name: automation.agentSession.name ?? '' })}
-                </span>
-              </span>
-            )}
-            {cronLabel && (
-              <span className="flex items-center gap-1 rounded-md bg-background-1 px-2 py-1 text-foreground-muted group-hover:state-hover-layer">
-                <Clock className="size-3 shrink-0" />
-                <span className="shrink-0">{cronLabel}</span>
-              </span>
-            )}
-            <div className="flex max-w-32 flex-row items-center gap-1.5 rounded-md bg-background-1 px-2 py-1 text-foreground-muted group-hover:state-hover-layer">
-              <Folder className="size-3 shrink-0" />
-              <span
-                className={cn(
-                  'min-w-0 truncate text-xs font-normal',
-                  projectId == null && 'text-foreground-destructive/80'
-                )}
-              >
-                {projectId ? projectName : translate('automations.noProject')}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Row 2: latest run sentence left, next run / disabled right */}
-        <div className="flex min-w-0 items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-col gap-1">
-            <ReadingSlot reading={latest} placeholder="w-48">
-              {(run) => run ? (() => {
-                const { Icon, textClass, spin } = RUN_STATUS_ICON[run.status];
-                const time = run.startedAt ?? run.finishedAt;
-                return (
-                  <span className="flex items-center gap-1.5 text-sm text-foreground-muted">
-                    {spin ? (
-                      <LoadingIndicator size="inline" className={textClass} />
-                    ) : (
+      <div className="col-span-2 grid min-w-0 grid-cols-2 gap-3 text-xs text-foreground-muted @min-[640px]:col-span-1 @min-[640px]:col-start-2 @min-[640px]:row-start-1">
+        <div className="flex min-w-0 flex-col gap-1">
+          <ReadingSlot reading={latest} placeholder="w-full max-w-36">
+            {(run) => {
+              if (!run) return <span className="text-foreground-passive">{translate('automations.noRuns')}</span>;
+              const { Icon, textClass, spin } = RUN_STATUS_ICON[run.status];
+              const time = run.startedAt ?? run.finishedAt;
+              return (
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <span className="flex items-center gap-1.5">
+                    {spin ? <LoadingIndicator size="inline" className={textClass} /> : (
                       <Icon className={cn('size-3.5 shrink-0', textClass)} />
                     )}
                     {translate('automations.lastRunOn')}
-                    {time && <AbsoluteTime value={time} className="text-foreground-muted" />} {' '}
-                    {formatRunTriggerKindLabel(translate, run.triggerKind)}
                   </span>
-                );
-              })() : (
-                <span className="text-sm text-foreground-passive">
-                  {translate('automations.noRuns')}
-                </span>
-              )}
-            </ReadingSlot>
-          </div>
-
-          <div className="shrink-0 text-xs text-foreground-muted">
-            {automation.enabled ? (
-              <ReadingSlot reading={next} placeholder="w-32">
-                {(run) => run?.scheduledAt ? (
-                  <span className="flex items-center gap-1">
-                    {translate('automations.nextRunScheduled')}
-                    <AbsoluteTime value={run.scheduledAt} />
-                  </span>
-                ) : null}
-              </ReadingSlot>
-            ) : (
-              <span className="text-foreground-passive">
-                {/* #7221 跑过的一次性不是被谁关掉了,是那一次已经过去了(成败看左边那一行的图标)。 */}
-                {translate(isSpentOneTimeAutomation(automation) ? 'automations.oneTimeEnded' : 'automations.disabled')}
-              </span>
-            )}
-          </div>
+                  {time != null && <AbsoluteTime value={time} showTimeZone className="text-sm tabular-nums text-foreground" />}
+                  <span>{formatRunTriggerKindLabel(translate, run.triggerKind)}</span>
+                </div>
+              );
+            }}
+          </ReadingSlot>
         </div>
+        <div className="flex min-w-0 flex-col gap-1">
+          {automation.enabled ? (
+            <ReadingSlot reading={next} placeholder="w-full max-w-32">
+              {(run) => run?.scheduledAt != null ? (
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <span>{translate('automations.nextRunScheduled')}</span>
+                  <AbsoluteTime value={run.scheduledAt} showTimeZone className="text-sm tabular-nums text-foreground" />
+                </div>
+              ) : null}
+            </ReadingSlot>
+          ) : (
+            <span className="text-foreground-passive">
+              {translate(spent ? 'automations.oneTimeEnded' : 'automations.disabled')}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div
+        className="col-start-2 row-start-1 flex items-center justify-self-end @min-[640px]:col-start-3"
+        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <Switch
+          aria-label={automation.name}
+          checked={automation.enabled}
+          disabled={readOnly || spent}
+          onCheckedChange={(checked) => onToggleEnabled?.(checked)}
+        />
       </div>
     </div>
   );

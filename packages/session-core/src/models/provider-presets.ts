@@ -5,6 +5,8 @@ export interface ProviderPreset {
   name: string;
   icon: string;
   group: 'coding-plan' | 'api';
+  /** A coding plan's vendor, as its model tag and its Settings group say it (智谱 / Kimi / 火山方舟 / Z.ai). */
+  vendor?: string;
   endpoints: { protocol: ModelProtocol; baseUrl: string; source: string }[];
   docsUrl: string;
   sources: string[];
@@ -14,11 +16,11 @@ export interface ProviderPreset {
 
 function preset(
   id: string, name: string, icon: string, group: ProviderPreset['group'],
-  docsUrl: string, endpoints: [ModelProtocol, string, string?][],
+  docsUrl: string, endpoints: [ModelProtocol, string, string?][], vendor?: string,
 ): ProviderPreset {
   const sourced = endpoints.map(([protocol, baseUrl, source = docsUrl]) => ({ protocol, baseUrl, source }));
   return {
-    id, name, icon, group, docsUrl, endpoints: sourced,
+    id, name, icon, group, docsUrl, endpoints: sourced, ...(vendor ? { vendor } : {}),
     sources: [...new Set(sourced.map(({ source }) => source))],
     checkedAt: '2026-11-18',
     modelsListing: sourced.some(({ protocol }) => protocol.startsWith('openai-')),
@@ -32,23 +34,23 @@ export const providerPresets: readonly ProviderPreset[] = [
       ['anthropic-messages', 'https://open.bigmodel.cn/api/anthropic'],
       ['openai-chat-completions', 'https://open.bigmodel.cn/api/coding/paas/v4'],
       ['openai-responses', 'https://open.bigmodel.cn/api/v1'],
-    ]),
+    ], '智谱'),
   preset('kimi-coding', 'Kimi Code', 'kimi', 'coding-plan',
     'https://www.kimi.com/coding/docs/', [
       ['anthropic-messages', 'https://api.kimi.com/coding/'],
       ['openai-chat-completions', 'https://api.kimi.com/coding/v1'],
       ['openai-responses', 'https://api.kimi.com/coding/v1'],
-    ]),
+    ], 'Kimi'),
   preset('ark-coding', '火山方舟 Coding Plan', 'volcengine', 'coding-plan',
     'https://www.volcengine.com/docs/82379/1928262', [
       ['anthropic-messages', 'https://ark.cn-beijing.volces.com/api/coding'],
       ['openai-chat-completions', 'https://ark.cn-beijing.volces.com/api/coding/v3'],
-    ]),
+    ], '火山方舟'),
   preset('zai-coding', 'Z.ai Coding Plan', 'zai', 'coding-plan',
     'https://docs.z.ai/devpack/quick-start', [
       ['anthropic-messages', 'https://api.z.ai/api/anthropic'],
       ['openai-chat-completions', 'https://api.z.ai/api/coding/paas/v4'],
-    ]),
+    ], 'Z.ai'),
   preset('zhipu', '智谱开放平台', 'zhipu', 'api',
     'https://docs.bigmodel.cn/cn/guide/develop/openai/introduction', [
       ['anthropic-messages', 'https://open.bigmodel.cn/api/anthropic', 'https://docs.bigmodel.cn/cn/guide/develop/claude/introduction'],
@@ -90,3 +92,12 @@ export const providerPresets: readonly ProviderPreset[] = [
       ['openai-chat-completions', 'https://api.siliconflow.cn/v1'],
     ]),
 ];
+
+/**
+ * The harnesses whose own sign-in is a coding plan: the vendor the plan is sold by (the Settings group and the model
+ * tag), and the API preset whose domain tags the same harness when it runs on a pay-as-you-go key instead.
+ */
+export const subscriptionPlans: Readonly<Record<string, { vendor: string; apiPreset: string }>> = {
+  codex: { vendor: 'ChatGPT', apiPreset: 'openai' },
+  claude: { vendor: 'Claude', apiPreset: 'anthropic' },
+};

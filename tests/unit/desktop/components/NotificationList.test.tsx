@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
 import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation'
 import { ICON_BODIES } from '@gugu/session-ui/icon-bodies'
+import { GROW_CAP } from '@gugu/session-ui/react/growing-list'
 import { NeedsYouHost } from '../../../../apps/desktop/src/components/needsYou/NeedsYouHost'
 import { ChatListPanel } from '../../../../apps/desktop/src/components/ChatListPanel'
 import { ChatBottomDock } from '../../../../apps/desktop/src/components/chat/ChatBottomDock'
@@ -14,6 +15,12 @@ import { installAssistantShellBridge, publishAssistantShell } from '../../../../
 import { chat, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 
 const state = vi.hoisted(() => ({ sessions: [] as SessionpageSessionSummary[], mobile: false, readError: null as Error | null }))
+// Counts the conversation list's own renders: it reads the sidebar view once per render (ChatListPanel's body).
+const listRenders = vi.hoisted(() => ({ count: 0 }))
+vi.mock('@/lib/sidebarChatsBridge', async original => {
+  const real = await original<typeof import('@/lib/sidebarChatsBridge')>()
+  return { ...real, useSidebarChatView: () => { listRenders.count++; return real.useSidebarChatView() } }
+})
 const followLink = vi.hoisted(() => vi.fn())
 const markSeen = vi.hoisted(() => vi.fn(async (_id: string) => { if (state.readError) throw state.readError }))
 vi.mock('@/lib/guguLinks', () => ({ followLink }))
@@ -70,8 +77,28 @@ beforeEach(() => {
     disconnect() { observations.delete(this.record) }
   })
   shell = createReactHarness(); workspace = createReactHarness()
+  // jsdom has no layout: a notification row's line measures 0 px, so the growing list (@@@growing-list) would place its
+  // window as if every row sat at the top. Give the lines a row's height, as on screen.
+  const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!
+  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true,
+    get(this: HTMLElement) { return this.matches('[data-notification-scroll] [data-index]') ? 56 : height.get!.call(this) } })
+  undoRowLayout = () => { Object.defineProperty(HTMLElement.prototype, 'offsetHeight', height) }
+  // jsdom has no idle callback either: idle periods are queued and come when a test lets the page go idle (idle()).
+  idleQueue.clear()
+  vi.stubGlobal('requestIdleCallback', (callback: IdleRequestCallback) => { const id = ++idleIds; idleQueue.set(id, callback); return id })
+  vi.stubGlobal('cancelIdleCallback', (id: number) => { idleQueue.delete(id) })
 })
-afterEach(() => { shell.cleanup(); workspace.cleanup(); vi.unstubAllGlobals() })
+let undoRowLayout = () => {}
+const idleQueue = new Map<number, IdleRequestCallback>()
+let idleIds = 0
+/** The page goes idle until nothing more is queued (each slice of a growing list queues the next). */
+async function idle(maxPeriods = 200) {
+  for (let i = 0; i < maxPeriods && idleQueue.size > 0; i++) {
+    const due = [...idleQueue.values()]; idleQueue.clear()
+    await act(async () => { for (const callback of due) callback({ didTimeout: false, timeRemaining: () => 50 }) })
+  }
+}
+afterEach(() => { shell.cleanup(); workspace.cleanup(); vi.unstubAllGlobals(); undoRowLayout() })
 async function mount(mobile = false, hidden = false) {
   state.mobile = mobile
   if (!mobile) await workspace.render(<><ShellSidebarToggle /><LeftSidebar /></>)
@@ -234,6 +261,8 @@ it('phone and desktop show the same notifications for the same tasks: old read f
   const shown: Array<{ count: string | undefined; rows: string[]; listed: number }> = []
   for (const mobile of [false, true]) {
     await mount(mobile); await open()
+    // The rows in view mount at once; the rest as the list grows while the page is idle (@@@growing-list).
+    await idle()
     const zap = /\sd="([^"]+)"/.exec(ICON_BODIES.Zap)![1]
     expect([...document.querySelectorAll('[data-session-line] svg path, [data-chat-row] svg path')].filter(path => path.getAttribute('d') === zap), 'no ⚡ on any row').toHaveLength(0)
     // Tasks live in the notification list only; the Messages list has none of them.
@@ -258,4 +287,34 @@ it.each([false, true])('an answered App install stays below the waits, muted, un
   expect(rows().map(row => row.dataset.sessionLine)).toEqual(['approval', 'installer', 'decliner'])
   expect(rows().map(row => row.querySelector('.gg-list-row-subtitle')?.textContent)).toEqual(['等你批准', '已在手机端同意', '已在桌面端拒绝'])
   expect(rows().slice(1).every(row => !!row.querySelector('.gg-list-row-title .text-\\[var\\(--muted-fg\\)\\]') && !row.querySelector('.gg-list-row-trailing [data-shape="count"]'))).toBe(true)
+})
+
+// The bell's opening and closing re-render the two slots that swap places, not the conversation list (it is the frame's
+// biggest component on a busy account); its keyboard walk reads the bell when a key comes.
+it('opening and closing the phone bell does not re-render the conversation list', async () => {
+  await mount(true)
+  const original = () => document.querySelector<HTMLElement>('[data-notification-original-list]')
+  const before = listRenders.count
+  expect(before, 'the list rendered').toBeGreaterThan(0)
+  await open()
+  expect(list(), 'the bell list took its place').not.toBeNull()
+  expect(original()?.getAttribute('style'), 'the conversation list is hidden, kept mounted').toContain('content-visibility')
+  await act(async () => toggle()!.click())
+  expect(original()?.getAttribute('style') ?? '', 'and shown again').not.toContain('content-visibility')
+  expect(listRenders.count - before, 'no render of the list itself').toBe(0)
+})
+
+// A long list mounts the rows around its visible part (@@@growing-list), not every task at once.
+it.each([false, true])('a long notification list mounts only a window of its rows (phone=%s)', async mobile => {
+  state.sessions = Array.from({ length: 1000 }, (_, i) => task(`agent-${i}`))
+  await mount(mobile); await open()
+  // The frame that opens the list mounts the rows in view (and a few around them), from the top.
+  const first = rows()
+  expect(first.length).toBeGreaterThan(0)
+  expect(first.length, 'the opening frame mounts a window, not 1000 rows').toBeLessThan(40)
+  expect(first[0]!.dataset.sessionLine, 'from the top').toBe('agent-0')
+  // Then it grows a few rows at a time while the page is idle, never past GROW_CAP.
+  await idle()
+  expect(rows().length).toBeGreaterThan(first.length)
+  expect(rows().length).toBeLessThanOrEqual(GROW_CAP)
 })

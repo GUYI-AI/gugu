@@ -5,7 +5,7 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type PhotoSwipe from 'photoswipe'
 import { detectPlatform } from '@tanstack/react-hotkeys'
-import { CommandShortcutBinder } from '../../../../apps/desktop/src/session/renderer/lib/commands/command-shortcut-binder'
+import { KeyboardDispatcher } from '../../../../apps/desktop/src/session/renderer/lib/commands/keyboard-dispatcher'
 import { commandRegistry } from '../../../../apps/desktop/src/session/renderer/lib/commands/registry'
 import { ImagePreviewProvider } from '../../../../apps/desktop/src/components/ImagePreviewProvider'
 import { openImageViewer } from '../../../../apps/desktop/src/lib/imageViewer'
@@ -245,7 +245,7 @@ describe('ImagePreviewProvider', () => {
     thumb.remove()
   })
 
-  it('desktop backdrop is opaque, so the chat changing underneath never shows through the viewer', async () => {
+  it('desktop backdrop is drawn at full strength: the modal scrim it is painted with carries the see-through, not a lower opacity', async () => {
     const instances = await capturePhotoSwipe()
     await openViewer()
     expect(instances[0].options.bgOpacity).toBe(1)
@@ -527,7 +527,7 @@ describe('ImagePreviewProvider', () => {
       }))
     })
     try {
-      await renderWithAppProviders(harness, createNode(ImagePreviewProvider, null, createNode(CommandShortcutBinder, null)))
+      await renderWithAppProviders(harness, createNode(ImagePreviewProvider, null, createNode(KeyboardDispatcher, null)))
       await pressClose(document.body)
       expect(tabs).toEqual(['conversation', 'first file'])
 

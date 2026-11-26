@@ -7,4 +7,5 @@
     <string name="startup_compat">兼容启动</string>
     <string name="startup_restore">恢复启动动效</string>
     <string name="startup_policy_failed">未能保存启动设置，原设置仍然有效。</string>
+    <string name="photo_picker_read_failed">有一张或多张所选照片无法打开。</string>
 </resources>

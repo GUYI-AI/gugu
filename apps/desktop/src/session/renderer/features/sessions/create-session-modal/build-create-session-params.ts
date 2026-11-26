@@ -5,7 +5,7 @@ import type { NewSessionConfig } from '@shared/core/sessions/new-session-config'
 // The composer's selected permission mode is what gets persisted: ❌ 这里不覆盖 —— 覆盖过的那一版让草稿显示只读、
 // 会话开成最松档且不报错(#5597)(@@@5597-draft-decides)。
 export function buildInitialSession(
-  state: Pick<InitialSessionState, 'provider' | 'sessionView' | 'prompt' | 'attachments' | 'permissionMode' | 'model' | 'effort' | 'platformModel' | 'fastMode'>,
+  state: Pick<InitialSessionState, 'provider' | 'sessionView' | 'prompt' | 'attachments' | 'permissionMode' | 'model' | 'effort' | 'platformModel' | 'fastMode' | 'contextChoice'>,
   /** `id`:这条会话的 id(新建会话的 id 就是它)。附件在点「创建」之前就按它落盘,所以由调用方预留。 */
   options: { startupOrigin?: 'session-page'; id?: string } = {},
 ): NonNullable<NewSessionConfig['initialSession']> | undefined {
@@ -23,6 +23,7 @@ export function buildInitialSession(
     model: state.model,
     effort: state.effort,
     fastMode: state.fastMode === true,
+    contextChoice: state.contextChoice,
     // composer 就是这条会话的平台决策点:选 harness 也显式写 null(三态口径见 SessionPlatformModel)。
     platformModel: state.platformModel ? { modelId: state.platformModel } : null,
     ...(options.startupOrigin ? { startupOrigin: options.startupOrigin } : {}),

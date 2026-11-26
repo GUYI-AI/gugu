@@ -1,4 +1,5 @@
 import { registerPasswordBetaTools } from './mcp/password-beta-tools'
+import { ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC, pickAssistant } from '@gugu/core/shared/assistantProvision'
 import { guguMcpToolScope } from './mcp/password-native-identity'
 import { registerGuguActivityTools } from './mcp/gugu-activity-tool'
 import type { ProjectFileMessage, ProjectFileNextVersion, SelectedProjectFile } from './projectFilePublication'
@@ -79,13 +80,12 @@ async function getAuthenticatedIdentityClient(context: AcpEngineRuntimeContext) 
   return makeIdentityClient(accessToken)
 }
 
-/** A provision's explicit member role distinguishes the personal assistant from task agents. */
+/** The agent the owner's assistant App is bound to is the personal assistant; every other agent is a task agent. */
 export async function isPersonalAssistant(context: AcpEngineRuntimeContext, agentUserId: string): Promise<boolean> {
   const client = await getAuthenticatedIdentityClient(context)
-  const { data, error } = await client.from('agent_provisions').select('id')
-    .eq('agent_user_id', agentUserId).eq('member_key', 'assistant').limit(1)
+  const { data, error } = await client.rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS)
   if (error) throw new Error(`Assistant context role could not be read: ${error.message}`)
-  return Boolean(data?.length)
+  return pickAssistant(data)?.agentId === agentUserId
 }
 
 // 身份 bootstrap — 新 ACP 会话(session/new,非 resume)的 session system block:agent 是谁 + 它的
@@ -160,7 +160,7 @@ interface GuguMcpContextBase {
   webSearch?: SessionWebSearch
   expectedOwnerUserId: string
   subjectId: string
-  /** Explicit provision role, never inferred from workspace or inherited by executors. */
+  /** The agent the assistant App is bound to, never inferred from workspace or inherited by executors. */
   personalAssistant?: true
   assistantWork?: AssistantWorkBinding
   runSessionAction?: (action: unknown, signal?: AbortSignal) => Promise<unknown>

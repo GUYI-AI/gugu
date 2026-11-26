@@ -5,7 +5,6 @@ import { createChatState } from '@session-chat/state/chat-state';
 import { createChatView } from '@session-chat/chat-view';
 import type { TranscriptTurn } from '@session-chat/model';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
-import { pinnedSummaryShown } from '../../../../tests/support/pinnedSummaryShown';
 
 const teardown: (() => void)[] = [];
 afterEach(() => teardown.splice(0).forEach(dispose => dispose()));
@@ -16,7 +15,7 @@ it.each([
   { text: 'Check the weather in LA.', padTop: 32 },
   { text: longInput, padTop: 32 },
   { text: longInput, padTop: 32.8 },
-])('keeps the no-tool first header clear of the pinned question ($padTop, $text)', async ({ text, padTop }) => {
+])('keeps the no-tool first header clear of the question ($padTop, $text)', async ({ text, padTop }) => {
   const context = createChatContext({ locale: () => 'en-US' });
   context.setLayout({ preset: 'double', userGutter: 0, agentConversation: true });
   const state = createChatState(context);
@@ -24,7 +23,7 @@ it.each([
   // The long question puts the header in the middle, away from any viewport edge fade (#1129).
   host.style.cssText = 'position:fixed;top:100px;left:0;width:600px;height:800px';
   document.body.append(host);
-  const view = createChatView({ context, state, parent: host, pinUserMessages: true, padTop, padBottom: 140,
+  const view = createChatView({ context, state, parent: host, padTop, padBottom: 140,
     commands: { conversationAgentName: () => 'Fixture agent' } });
   teardown.push(() => { view.dispose(); state.dispose(); context.dispose(); host.remove(); });
   const startedAt = Date.now() - 4000;
@@ -37,20 +36,12 @@ it.each([
   const turn = (items: TranscriptTurn['items']): TranscriptTurn => ({ id: 'live', seq: 1, initiator: 'user', startedAt, items });
   state.transcript.activeTurn.set(turn([input]));
   const header = () => host.querySelector<HTMLElement>('[data-slot="turn-process"][data-turn-id="live"]')!;
-  const lane = () => host.querySelector<HTMLElement>('[data-user-card="input"]')!.closest<HTMLElement>('[data-index]')!;
   await until('the no-tool header renders', () => !!header());
   await untilStable('the no-tool layout settles', () => header().getBoundingClientRect().top);
 
-  const clearOfPin = () => {
+  const clearOfQuestion = () => {
     const head = header().getBoundingClientRect();
-    // The reading lane extends through the reply. The question scrolls as a row; its sticky child is the
-    // question's summary, painted only once the question has gone by. Inspect those boxes, not the lane.
-    const containment = getComputedStyle(lane()).contain.split(' ');
-    expect(containment.some(value => ['paint', 'content', 'strict'].includes(value))).toBe(true);
-    expect(getComputedStyle(lane().firstElementChild!).position).toBe('sticky');
-    const pin = lane().querySelector<HTMLElement>('[data-pin-summary]')!;
     expect(host.querySelector('[data-user-card="input"]')!.getBoundingClientRect().bottom, 'the question ends before the process header').toBeLessThanOrEqual(head.top + 0.5);
-    if (pinnedSummaryShown(pin)) expect(pin.getBoundingClientRect().bottom, 'the pin paint ends before the process header').toBeLessThanOrEqual(head.top + 0.5);
     expect(header().offsetHeight).toBe(28);
     for (let el: HTMLElement | null = header(); el && host.contains(el); el = el.parentElement) {
       expect(getComputedStyle(el).opacity).toBe('1');
@@ -60,13 +51,13 @@ it.each([
   expect(header().getBoundingClientRect().top - host.getBoundingClientRect().top).toBeGreaterThan(70);
   expect(host.querySelector('[data-slot="conversation-process-steps"]')).toBeNull();
   expect(header().querySelector<HTMLButtonElement>('[data-conversation-process]')!.disabled).toBe(true);
-  clearOfPin();
+  clearOfQuestion();
   const before = host.querySelector<HTMLElement>('[data-user-card="input"]')!.getBoundingClientRect().top;
   state.transcript.activeTurn.set(turn([input, { kind: 'execute-tool-call', id: 'tool', seq: 1,
     toolCallId: 'tool', toolName: 'Bash', command: 'echo fixture', title: 'echo fixture', status: 'running' }]));
   await untilStable('the first-tool layout settles', () => header().getBoundingClientRect().top);
   expect(header().querySelector<HTMLButtonElement>('[data-conversation-process]')!.disabled).toBe(false);
   expect(host.querySelector('[data-slot="conversation-process-steps"]')).not.toBeNull();
-  clearOfPin();
+  clearOfQuestion();
   expect(host.querySelector<HTMLElement>('[data-user-card="input"]')!.getBoundingClientRect().top).toBeCloseTo(before, 0);
 });

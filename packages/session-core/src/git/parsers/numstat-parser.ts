@@ -3,7 +3,7 @@ export type Numstat = Map<string, { additions: number; deletions: number }>
 export function parseNumstat(stdout: string): Numstat {
   const map: Numstat = new Map()
   const nul = stdout.includes('\0')
-  const records = nul ? stdout.split('\0') : stdout.trim().split('\n')
+  const records = nul ? stdout.split('\0') : stdout.split('\n')
   for (let i = 0; i < records.length; i++) {
     const line = records[i]
     if (!line) continue

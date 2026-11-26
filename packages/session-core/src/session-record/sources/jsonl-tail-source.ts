@@ -7,7 +7,7 @@ import type {
 } from '../contract';
 import { jsonlCheckAt, locateImages } from './record-images';
 import { initialTree, keepNode, markTurn, type RecordNode, type TreeState } from './record-tree';
-import { emitJsonLines, pollInterval, warnOf, type SessionRecordSourceOptions } from './shared';
+import { emitJsonLines, pollInterval, SessionRecordNotWrittenError, warnOf, type SessionRecordSourceOptions } from './shared';
 import { TailReader, type TailResume } from './tail-reader';
 import { stat } from 'node:fs/promises';
 import type { CodexRecordEvents } from './codex-record-events';
@@ -31,6 +31,11 @@ export type JsonlTailFormat<S> = {
    * record found elsewhere is read anew from there.
    */
   continuesElsewhere?: true;
+  /**
+   * A live read of a record its agent has not written yet (`resolve` or a prefix read throws
+   * `SessionRecordNotWrittenError`) starts with no entries and reads the record once catching up finds it.
+   */
+  awaitsRecord?: true;
   /** Immutable ancestors, each cut at its child's file-local byte boundary; only the resolved file is tail-followed. */
   prefixes?(path: string): Promise<ReadonlyArray<{ path: string; endByteOffset: number }>>;
   /** 从头读时的状态。文件被换掉、整份重读时回到它。 */
@@ -74,6 +79,8 @@ export function createJsonlTailSource<S>(
   let again: Promise<void> | null = null;
   let recordEvents: CodexRecordEvents | null = null;
   let failure: unknown;
+  /** The record is not written yet (`awaitsRecord`): catching up looks for it. */
+  let awaiting = false;
   const failed = (error: unknown) => {
     failure = error;
     recordEvents?.stop();
@@ -175,12 +182,14 @@ export function createJsonlTailSource<S>(
     },
     catchUp: async () => {
       if (options?.readMode === 'snapshot') return;
-      if (adapter.continuesElsewhere && sink && path && !reading) {
+      if (adapter.continuesElsewhere && sink && (path || awaiting) && !reading) {
         const events = sink;
         const found = await format.resolve().catch(() => null);
-        if (found && found !== path && !stopped) {
+        // `reading`, asked again: another catch-up may have started that read while this one looked.
+        if (found && found !== path && !stopped && !reading) {
           reader?.stop();
-          events.onReset('source_replaced');
+          // A record awaited until now gave no entries: there is nothing to replace.
+          if (path) events.onReset('source_replaced');
           await source.start(events);
           return;
         }
@@ -198,6 +207,7 @@ export function createJsonlTailSource<S>(
       const data: ResumeData<S> = { version: format.resumeVersion, path: found, tail, state: at === undefined ? format.initial() : at as Tracked<S> };
       return { data, fingerprint: `${format.name}:${found}:${tail.ino}:${tail.size}:${tail.mtimeMs}` } satisfies SessionRecordResume;
     },
+    ...(adapter.awaitsRecord ? { awaiting: () => awaiting } : {}),
     recordPath: () => format.resolve().catch(() => null),
     checkAt: async (position) => { const found = await format.resolve().catch(() => null); return found ? jsonlCheckAt(found, position) : null; },
     ...(format.childIds ? { childIdsAt: (at: unknown) => format.childIds!(at as Tracked<S>) } : {}),
@@ -234,7 +244,18 @@ export function createJsonlTailSource<S>(
     recordEvents = options?.readMode === 'snapshot' ? null : adapter.watch?.(failed) ?? null;
     try {
       await recordEvents?.ready();
-      await start(events, resume);
+      try {
+        await start(events, resume);
+        awaiting = false;
+      } catch (error) {
+        // A resume says the record was read before: one that is gone now is a failure, as it always was.
+        if (!adapter.awaitsRecord || !recordEvents || resume || !(error instanceof SessionRecordNotWrittenError)) throw error;
+        // Found with its first line still being written: nothing was read from it, so it is looked for again whole.
+        reader?.stop();
+        reader = null;
+        path = null;
+        awaiting = true;
+      }
       if (recordEvents && path) {
         await recordEvents.includeFile(path);
         // A legacy file may be outside the UUID/date hints. Close that subscription gap once, after ready.

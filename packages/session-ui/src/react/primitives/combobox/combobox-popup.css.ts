@@ -11,7 +11,7 @@ import { tokenVars } from '@session-ui/theme/tokens.css';
 export const popupRoot = style([
   popupShadow,
   {
-    zIndex: 50,
+    zIndex: 'var(--z-menu, 50)',
     minWidth: '220px',
     maxWidth: '340px',
     overflow: 'hidden',

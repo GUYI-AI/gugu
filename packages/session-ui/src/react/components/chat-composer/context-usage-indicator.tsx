@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { ContextThresholdMenu, type ContextThreshold } from './context-threshold';
+import { ContextThresholdMenu, effectiveAutoCompactThreshold, formatAutoCompactThreshold, type ContextThreshold } from './context-threshold';
+import { ChevronRight, X } from '../../../icons';
 import { Button } from '@session-ui/react/primitives/button';
 import { Popover } from '@session-ui/react/primitives/popover';
 import { cx } from '@session-ui/styles/utilities/cx';
@@ -12,6 +13,7 @@ import { formatTokenCount } from '@gugu/session-shared/format';
 export interface ContextUsage {
   used: number;
   size: number;
+  autoCompact?: { defaultTokens: number; ceiling: number };
   cost?: { amount: number; currency: string } | null;
   /** Where the current session gets billed. Unknown/subscription must hide provider currency. */
   costSource: 'platform' | 'api-key' | 'subscription' | 'unknown';
@@ -54,8 +56,9 @@ export function ContextUsageIndicator({
   harness?: { name: string; icon?: ReactNode };
   disabled?: boolean;
 }) {
+  const autoCompact = threshold && formatAutoCompactThreshold(effectiveAutoCompactThreshold(threshold, usage?.autoCompact));
   const { locale, translate } = useMessages();
-  const size = threshold?.value ?? usage?.size ?? threshold?.maximum ?? 0;
+  const size = threshold?.maximum ?? usage?.size ?? 0;
   const fraction = usage && size > 0 ? Math.min(1, Math.max(0, usage.used / size)) : 0;
   const pct = Math.round(fraction * 1000) / 10;
   const providerCost = usage && providerCostForRoute(usage);
@@ -71,6 +74,7 @@ export function ContextUsageIndicator({
             size="sm"
             className={styles.usageTrigger}
             disabled={disabled}
+            data-testid="context-usage-trigger"
             aria-label={triggerLabel}
             title={triggerLabel}
           >
@@ -84,10 +88,17 @@ export function ContextUsageIndicator({
           </Button>
         }
       />
-      <Popover.Content align="end" side="top">
+      <Popover.Content align="end" side="top" className={styles.usagePopover} data-testid="context-usage-panel">
         <div className={styles.usageHeader}>
-          <Popover.Title>{translate('composer.contextUsage')}</Popover.Title>
-          {harness && <span className={styles.usageHarness}>{harness.icon}{harness.name}</span>}
+          <Popover.Title className={styles.usageTitle}>{translate('composer.contextUsage')}</Popover.Title>
+          <div className={styles.usageHeaderActions}>
+            {harness && <span className={styles.usageHarness} data-slot="context-usage-harness">
+              {harness.icon}{harness.name}
+            </span>}
+            <Popover.Close aria-label={translate('composer.contextUsageClose')} className={styles.usageClose}>
+              <X size={13} aria-hidden />
+            </Popover.Close>
+          </div>
         </div>
         <div className={styles.usagePopoverBody}>
           <div className={styles.usageStatsRow}>
@@ -109,13 +120,17 @@ export function ContextUsageIndicator({
               {translate('composer.cost', { cost: formatCost(providerCost, locale) })}
             </div>
           ) : null}
-          {size > 0 && <div className={styles.contextUsageFooter}>
-            {threshold?.set ? <ContextThresholdMenu threshold={threshold}
-              label={translate('composer.contextThresholdValue', { size: formatTokens(threshold.value ?? threshold.maximum) })} />
-              : <span title={threshold?.unsupported ? translate('composer.contextThresholdUnsupported') : undefined}>
-                {translate('composer.contextThresholdValue', { size: formatTokens(size) })}
-              </span>}
-          </div>}
+          {threshold?.set && autoCompact && size > threshold.minimum && (
+            <div className={styles.contextUsageFooter}>
+              <ContextThresholdMenu threshold={threshold} autoCompact={usage?.autoCompact} label={<>
+                <span>{translate('composer.autoCompact')}</span>
+                <span className={styles.modelDetailControlValue}>
+                  {autoCompact}
+                  <ChevronRight size={14} aria-hidden />
+                </span>
+              </>} />
+            </div>
+          )}
         </div>
       </Popover.Content>
     </Popover.Root>

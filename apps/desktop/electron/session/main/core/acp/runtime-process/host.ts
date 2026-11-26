@@ -151,6 +151,9 @@ export async function readSessionInjectionFacts(input: {
     session?.providerSessionId && identitySessionId === input.sessionId
       ? await isResidentNeverRun(input.sessionId)
       : false;
+  const effort = session?.customModel && session.effort
+    ? await (await import('@main/core/agents/custom-models')).customModelArmedEffort(session.providerId, session.customModel, session.effort)
+    : session?.effort;
   return {
     residentNeverRun,
     platformModel,
@@ -160,7 +163,7 @@ export async function readSessionInjectionFacts(input: {
     // `platformArmedEffort`)。这里拿不到签发结果;活会话不认这一档时 runtime 已有「确认当前档、转录里说一行」
     // 的路径,codex 按目录逐模型的 catalog 就近落档。#6199 曾在这里按一张全局三档表过滤 —— 那会把用户在
     // GPT/Claude 上选的 xhigh/max 悄悄改回默认。
-    effort: session ? session.effort : undefined,
+    effort,
     fastMode: session?.fastMode === true,
     model: platformModel ? null : (runtimeModelId(session?.model) ?? null),
     // 缺席(运行时视图没有自己的行,或行刚被删)= 没有可续的 provider 会话 ⇒ `null`,与「新开一条」同义。

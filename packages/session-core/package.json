@@ -23,6 +23,7 @@
     "./package.json": "./package.json",
     "./acp/client": "./src/acp/client.ts",
     "./acp/native-prompt": "./src/acp/native-prompt.ts",
+    "./acp/inline-file-images": "./src/acp/inline-file-images.ts",
     "./session-record/contract": "./src/session-record/contract.ts",
     "./session-record/creation-attachment-protocol": "./src/session-record/creation-attachment-protocol.ts",
     "./session-record/team-credits": "./src/session-record/team-credits.ts",

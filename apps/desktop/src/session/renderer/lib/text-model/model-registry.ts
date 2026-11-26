@@ -112,6 +112,8 @@ export class TextModelRegistry {
 
   /** The disk read under way for each disk:// URI, and whether the file changed since it began: see `readDiskInTurn`. */
   private diskReads = new Map<string, { again: boolean; done: Promise<void> }>();
+  /** 同一文件的保存和重读依次执行，避免晚到的旧内容覆盖保存回执。 */
+  private fileOperations = new Map<string, Promise<void>>();
 
   /**
    * 盘上这份文件已经没了(外部删掉)的缓冲区 URI:页签标「已删除」、正文留着,存一下就重新建出来(照 VS Code)。
@@ -182,6 +184,7 @@ export class TextModelRegistry {
 
   /** Debounce timers for crash-recovery buffer autosave, keyed by buffer URI. */
   private bufferAutosaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private bufferPersistence = new Map<string, Promise<void>>();
 
   /** model.onDidChange unsubscribers for each registered buffer, keyed by buffer URI. */
   private bufferContentDisposables = new Map<string, () => void>();
@@ -219,6 +222,15 @@ export class TextModelRegistry {
     const p = fn().finally(() => this.pendingFetches.delete(key));
     this.pendingFetches.set(key, p);
     return p;
+  }
+
+  private inFileTurn<T>(uri: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.fileOperations.get(uri) ?? Promise.resolve();
+    const result = previous.then(operation);
+    const done = result.then(() => undefined, () => undefined);
+    this.fileOperations.set(uri, done);
+    void done.then(() => { if (this.fileOperations.get(uri) === done) this.fileOperations.delete(uri); });
+    return result;
   }
 
   // ---------------------------------------------------------------------------
@@ -496,25 +508,46 @@ export class TextModelRegistry {
         else this.dirtyUris.delete(uri);
         this.bufferVersions.set(uri, (this.bufferVersions.get(uri) ?? 0) + 1);
       });
-      // Debounced crash-recovery save — persists unsaved edits across app restarts.
-      const existingTimer = this.bufferAutosaveTimers.get(uri);
-      if (existingTimer) clearTimeout(existingTimer);
-      this.bufferAutosaveTimers.set(
-        uri,
-        setTimeout(() => {
-          this.bufferAutosaveTimers.delete(uri);
-          const currentEntry = this.modelMap.get(uri);
-          if (!currentEntry || currentEntry.type !== 'buffer') return;
-          if (!this.isDirty(uri)) return;
-          void workspaceRpc(currentEntry.projectId).editor.saveBuffer(
-            currentEntry.projectId,
-            currentEntry.workspaceId,
-            currentEntry.filePath,
-            currentEntry.model.getValue()
-          );
-        }, BUFFER_DEBOUNCE_MS)
-      );
+      this.scheduleBufferPersistence(uri);
     }));
+  }
+
+  private scheduleBufferPersistence(uri: string): void {
+    const previous = this.bufferAutosaveTimers.get(uri);
+    if (previous !== undefined) clearTimeout(previous);
+    this.bufferAutosaveTimers.set(uri, setTimeout(() => {
+      this.bufferAutosaveTimers.delete(uri);
+      const entry = this.modelMap.get(uri);
+      if (entry?.type === 'buffer') this.keepBuffer(uri, entry);
+    }, BUFFER_DEBOUNCE_MS));
+  }
+
+  private keepBuffer(uri: string, entry: BufferModelEntry): void {
+    void this.persistBuffer(uri, entry).catch(error => {
+      log.error('Failed to persist editor recovery buffer', { path: entry.filePath, error });
+    });
+  }
+
+  /** 恢复副本的写入和清除按文件保序；等待期间的新编辑也必须留下。 */
+  private persistBuffer(uri: string, entry: BufferModelEntry): Promise<void> {
+    const timer = this.bufferAutosaveTimers.get(uri);
+    if (timer !== undefined) clearTimeout(timer);
+    this.bufferAutosaveTimers.delete(uri);
+    const previous = this.bufferPersistence.get(uri) ?? Promise.resolve();
+    const result = previous.then(async () => {
+      while (this.modelMap.get(uri) === entry) {
+        const content = entry.model.getValue();
+        const dirty = this.isDirty(uri);
+        const editor = workspaceRpc(entry.projectId).editor;
+        if (dirty) await editor.saveBuffer(entry.projectId, entry.workspaceId, entry.filePath, content);
+        else await editor.clearBuffer(entry.projectId, entry.workspaceId, entry.filePath);
+        if (entry.model.getValue() === content && this.isDirty(uri) === dirty) break;
+      }
+    });
+    const done = result.then(() => undefined, () => undefined);
+    this.bufferPersistence.set(uri, done);
+    void done.then(() => { if (this.bufferPersistence.get(uri) === done) this.bufferPersistence.delete(uri); });
+    return result;
   }
 
   // ---------------------------------------------------------------------------
@@ -582,9 +615,9 @@ export class TextModelRegistry {
     }, 60_000);
     this.evictionTimers.set(uri, t);
 
-    // Eagerly clean up buffer-specific in-memory state immediately (content disposables,
-    // autosave timers) so that edits made in a closing tab don't fire after close.
+    // 最后一个视图关闭前保存恢复副本，再取消监听和延迟任务。
     if (entry.type === 'buffer') {
+      this.keepBuffer(uri, entry);
       this.bufferContentDisposables.get(uri)?.();
       this.bufferContentDisposables.delete(uri);
       const autosaveTimer = this.bufferAutosaveTimers.get(uri);
@@ -671,16 +704,16 @@ export class TextModelRegistry {
   }
 
   /**
-   * Mark the current buffer content as saved.
-   * Syncs the disk model to match the buffer so isDirty() returns false.
+   * 保存回执只确认实际写下的文本；写入期间新增的编辑仍然是未保存内容。
    */
-  markSaved(uri: string): void {
+  markSaved(uri: string, content: string): void {
     const buf = this.modelMap.get(uri);
     const disk = this.modelMap.get(this.toDiskUri(uri));
     if (buf?.type === 'buffer' && disk?.type === 'disk') {
-      disk.model.setValue(buf.model.getValue());
+      disk.model.setValue(content);
       runInAction(() => {
-        this.dirtyUris.delete(uri);
+        if (this.computeIsDirtyRaw(uri)) this.dirtyUris.add(uri);
+        else this.dirtyUris.delete(uri);
       });
     }
   }
@@ -742,7 +775,11 @@ export class TextModelRegistry {
    *
    * @returns the saved content string on success, or `null` on failure.
    */
-  async saveFileToDisk(uri: string, merged = false): Promise<string | null> {
+  saveFileToDisk(uri: string): Promise<string | null> {
+    return this.inFileTurn(uri, () => this.writeModelToDisk(uri));
+  }
+
+  private async writeModelToDisk(uri: string, merged = false): Promise<string | null> {
     const buf = this.modelMap.get(uri);
     if (!buf || buf.type !== 'buffer') return null;
 
@@ -758,15 +795,17 @@ export class TextModelRegistry {
         // 盘上那份在你上次读到之后被别人改过(别的机器的写入带着版本标记,对不上就拒):重读一次,那边的改动
         // 并进你的缓冲区(与本机外部改动同一条路,两边都留),再把并好的写下去 —— 这就是你按的那一下 ⌘S。
         if ((result.error as { code?: string }).code === 'conflict' && !merged) {
-          await this.invalidateModel(this.toDiskUri(uri));
-          return this.saveFileToDisk(uri, true);
+          const disk = this.modelMap.get(this.toDiskUri(uri));
+          if (disk?.type !== 'disk') throw new Error('The saved file has no disk model');
+          await this.readDisk(this.toDiskUri(uri), disk, false, true);
+          return this.writeModelToDisk(uri, true);
         }
         throw new Error(result.error.type === 'not_found' ? translateSessionMessage('taskError.fileNotFound', { path: '[path]' }) : result.error.message);
       }
 
-      this.markSaved(uri);
+      this.markSaved(uri, content);
       runInAction(() => this.deletedOnDisk.delete(uri));
-      void workspaceRpc(buf.projectId).editor.clearBuffer(buf.projectId, buf.workspaceId, buf.filePath);
+      await this.persistBuffer(uri, buf);
       return content;
     } catch (error) {
       log.error('Failed to save file', { path: buf.filePath, error });
@@ -838,7 +877,7 @@ export class TextModelRegistry {
     }
     const turn = { again: false, done: Promise.resolve() };
     this.diskReads.set(uri, turn);
-    turn.done = (async () => {
+    turn.done = this.inFileTurn(uri.replace(/^disk:\/\//, 'file://'), async () => {
       try {
         do {
           turn.again = false;
@@ -847,11 +886,11 @@ export class TextModelRegistry {
       } finally {
         this.diskReads.delete(uri);
       }
-    })();
+    });
     return turn.done;
   }
 
-  private async readDisk(uri: string, entry: DiskModelEntry, seenEmpty = false): Promise<void> {
+  private async readDisk(uri: string, entry: DiskModelEntry, seenEmpty = false, requireComplete = false): Promise<void> {
     const res = entry.external
       ? await workspaceRpc(entry.projectId).files.readExternalFile(
           entry.projectId,
@@ -867,6 +906,8 @@ export class TextModelRegistry {
         );
     const bufferUri = uri.replace(/^disk:\/\//, 'file://');
     if (!res.success) {
+      if (requireComplete) throw new Error(res.error.type === 'not_found'
+        ? translateSessionMessage('taskError.fileNotFound', { path: '[path]' }) : res.error.message);
       if (!entry.external) {
         const exists = await workspaceRpc(entry.projectId).files.fileExists(entry.projectId, entry.workspaceId, entry.filePath);
         if (exists.success && !exists.data.exists) runInAction(() => this.deletedOnDisk.add(bufferUri));
@@ -881,10 +922,16 @@ export class TextModelRegistry {
         this.modelStatus.set(uri, 'too-large');
         this.modelTotalSizes.set(uri, res.data.totalSize);
       });
+      if (requireComplete) throw new Error('The current file is too large to merge before saving');
+      return;
+    }
+    if (res.data.binary) {
+      runInAction(() => this.modelStatus.set(uri, 'binary'));
+      if (requireComplete) throw new Error('The current file is binary and cannot be merged before saving');
       return;
     }
     // Empty where it was not: most likely caught mid-write, so not taken on one read. Empty twice, it is empty.
-    if (res.data.content === '' && entry.model.doc.length > 0 && !seenEmpty) return this.readDisk(uri, entry, true);
+    if (res.data.content === '' && entry.model.doc.length > 0 && !seenEmpty) return this.readDisk(uri, entry, true, requireComplete);
     this.applyDiskUpdate(uri, entry, res.data.content);
   }
 
@@ -977,6 +1024,7 @@ export class TextModelRegistry {
       // 预览(HTML / markdown / SVG / CSV)只认它,不加就停在旧正文上。
       if (next !== mine) this.bufferVersions.set(bufferUri, (this.bufferVersions.get(bufferUri) ?? 0) + 1);
     });
+    this.scheduleBufferPersistence(bufferUri);
   }
 }
 

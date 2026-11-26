@@ -1,3 +1,4 @@
+import { sessionContextChoiceSchema } from '@shared/core/sessions/session-config'
 import { createTeamPaymentCheckout } from './team-payment-checkout'
 import { openTeamPaymentWindow } from './team-payment-window'
 import { releaseCustomModelForwarders } from './session/main/core/agents/custom-model-forwarder'
@@ -273,7 +274,7 @@ import { assistantWorkCoordinator } from '@gugu/core/cloud/assistantWorkRouting'
 import { createDesktopAssistantWorkReconciler } from './assistant-work-reconciliation'
 import { enqueueAssistantWorkReport } from '@gugu/core/cloud/assistantWorkReports'
 import {withAssistantWorkReply} from '@gugu/core/shared/assistantWorkReply'
-import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision'
+import { ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC, pickAssistant } from '@gugu/core/shared/assistantProvision'
 import { assistantHomeKind } from '@gugu/core/shared/assistantPolicy'
 import { landTaskCardFirstTurn } from './sessionpage/task-card-first-turn'
 import { withQuestionCard } from './sessionpage/question-card'
@@ -362,7 +363,7 @@ import {
   readLocalSessionInjectionAuditForTest,
   readLocalSessionDeliveryFailuresForTest,
 } from './sessionpage/local-session-delivery'
-import { assertAgentModelSelectionOpen, listPlatformModels, settleResidualPlatformModelAccess } from './model-access'
+import { assertAgentModelSelectionOpen, listCustomModelEffortFacts, listPlatformModels, settleResidualPlatformModelAccess } from './model-access'
 import {
   findInjectionContract,
   hasCredentialSink,
@@ -594,7 +595,8 @@ import {
 import { installPageFullscreen, PAGE_FULLSCREEN_PREFERENCES } from './page-fullscreen'
 import { applyApplicationMenu } from './app-menu'
 import { createMainRendererGoneHandler, createMainRendererResponsivenessLog, type CrashDialogChoice } from './renderer-crash-recovery'
-import { menuOpenSettingsChannel } from '@shared/events/appEvents'
+import { menuCloseChannel, menuCloseHandlerChannel, menuOpenSettingsChannel } from '@shared/events/appEvents'
+import { createMenuCloseRouting } from './menu-close-routing'
 import { pinDesktopPointerMedia } from './linux-pointer-media'
 import {
   NOTIFICATION_BUS_NAME,
@@ -996,6 +998,19 @@ let sessionpageAgentRehydration: Promise<void> = new Promise<void>((resolve, rej
 })
 void sessionpageAgentRehydration.catch(() => undefined)
 let isQuitting = false
+/**
+ * #3884 退出意图一立(按下安装更新、退出),会话就不再起新引擎:停机随后就关咕咕 MCP 端口和运行时,这时起的引擎握手撞上
+ * 关掉的端口,重启后那条会话显示「无法启动」(11-26 升级时两条定时任务的会话就是这样)。正在起的转成等下一个宿主登录再起,
+ * 排着的输入原样留给它。
+ */
+function noteQuitIntent(): void {
+  isQuitting = true
+  try {
+    emdashBridge?.beginSessionLifeHostQuit()
+  } catch (error) {
+    createLogger('shutdown').warn({ err: error }, 'session starts could not be held for the quit')
+  }
+}
 
 function getSessionpageLocalDelivery(): SessionpageLocalDeliveryRouter {
   // spec session-injection「认领者是注册表」:targets 来自注册表(内核角色由 owner-registry 登记,
@@ -1395,12 +1410,21 @@ function publishWindowChromeLabels(): void {
   )
 }
 
+// ⌘W 交给主窗渲染层的前提是它认领了「关闭」(menu-close-routing.ts);认领随那一页的文档与进程走。
+const menuCloseRouting = createMenuCloseRouting()
+ipcMain.on(menuCloseHandlerChannel.name, (event, handles: unknown) => menuCloseRouting.claim(event.sender.id, handles === true))
+
 /** 应用菜单跟着宿主语言走(「设置…」是自己的字,换语言要重装一次)。 */
 function refreshApplicationMenu(): void {
   applyApplicationMenu({
     locked: isDevtoolsLocked(),
     settingsLabel: hostCopy().appMenu.settings,
     // 设置是会话页那边的弹窗(product spec):主窗收在托盘里也先拉出来,再叫它打开。
+    // ⌘W / 菜单「关闭」:主窗交给渲染层的快捷键登记(有页签关页签,没有才关窗);别的窗口照旧直接关。
+    closeFromMenu: (window) => {
+      const main = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+      menuCloseRouting.route(window, main, () => main?.webContents.send(menuCloseChannel.name), () => window?.close())
+    },
     openSettings: () => {
       if (!mainWindow || mainWindow.isDestroyed()) return
       focusMainWindow()
@@ -1719,6 +1743,16 @@ function createWindow(loadContents = true): void {
   mainWindow.webContents.on('did-finish-load', () => mainWindow?.webContents.setZoomFactor(1))
   // 页面正被导航换掉时报上来的「会话页资源没载入」不是资源坏了(sessionpage/fatal-boot.ts)。
   watchNavigations(mainWindow.webContents)
+  {
+    const contents = mainWindow.webContents
+    const id = contents.id
+    // A new document, a crashed renderer or a destroyed page has not claimed ⌘W (yet): the menu closes the window.
+    contents.on('did-start-navigation', (details: { isMainFrame?: boolean; isSameDocument?: boolean }) => {
+      if (details?.isMainFrame !== false && details?.isSameDocument !== true) menuCloseRouting.release(id)
+    })
+    contents.on('render-process-gone', () => menuCloseRouting.release(id))
+    contents.once('destroyed', () => menuCloseRouting.release(id))
+  }
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     void handleMainRendererGone(details.reason, details.exitCode)
   })
@@ -1798,10 +1832,9 @@ function assistantWorkDeliveryHost(): AssistantWorkOutboxHost {
       if (assistantCache?.ownerId === current.ownerId && assistantCache.until > Date.now()) return assistantCache.value
       const auth = await desktopAuthProvider().getAuth()
       if (!auth?.accessToken || auth.userId !== current.ownerId) return null
-      const {data,error} = await makeIdentityClient(auth.accessToken).from('agent_provisions').select(ASSISTANT_PROVISION_SELECT)
-        .eq('owner_user_id',current.ownerId).eq('member_key','assistant')
+      const {data,error} = await makeIdentityClient(auth.accessToken).rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS)
       if (error) throw error
-      const value = pickAssistant((data ?? []) as AssistantProvisionRow[])
+      const value = pickAssistant(data)
       assistantCache = {ownerId:current.ownerId,until:Date.now()+60000,value}
       return value
   }
@@ -2692,6 +2725,7 @@ handleShellChannel(SESSIONPAGE_SESSION_RELOAD_CHANNEL, async (_event, input: unk
     modelSource?: unknown
     effort?: unknown
     mcpDisabledServers?: unknown
+    contextChoice?: unknown
     permissionMode?: unknown
   }
   const reason = row.reason === 'mcp-toggle'
@@ -2730,6 +2764,7 @@ handleShellChannel(SESSIONPAGE_SESSION_RELOAD_CHANNEL, async (_event, input: unk
         : {}),
       // 档位原样递,认不得的值由 reloadEmdashSession 响亮拒(❌ 在这里猜成某一档)。
       ...(row.permissionMode !== undefined ? { permissionMode: row.permissionMode as GuguPermissionMode } : {}),
+      ...(row.contextChoice !== undefined ? { contextChoice: sessionContextChoiceSchema.parse(row.contextChoice) } : {}),
     })
     // 从没起来过的会话只记下了选择(#7092):告诉渲染层接着正常首启,❌ 让它去重挂一条不存在的会话。
     return reloaded.nativeSession === 'not-started' ? { ok: true, notStarted: true } : { ok: true }
@@ -3390,9 +3425,7 @@ const squirrelHandoff = createSquirrelHandoff({
 
 // 顺序、看门狗、重复按下这三件事在 ./update-quit 里,连同 #5793 的根因一起写在那个文件的头注释。
 const updateQuit = createUpdateQuit({
-  markQuitIntent: () => {
-    isQuitting = true
-  },
+  markQuitIntent: noteQuitIntent,
   // NSIS shows installation progress and relaunches the app when installation finishes.
   handOff: () => {
     emitUpdateStatus({ success: true, status: 'installing', updateInfo: updaterState.current.updateInfo })
@@ -3565,6 +3598,7 @@ app.on('before-quit', createRuntimeBeforeQuitHandler({
   getHost: () => deviceRuntimeHost,
   setQuitting: (value) => {
     isQuitting = value
+    if (value) noteQuitIntent()
     if (value) projectionDeviceRuntime.invalidate()
     // @@@5793 停机已经开始,看门狗的使命结束 —— 别在停机中途再捅一次 app.quit()。
     if (value) updateQuit.noteShutdownStarted()
@@ -5086,10 +5120,9 @@ app.whenReady().then(async () => {
           const current = await assistantWorkDeliveryHost().context()
           if (!current || current.ownerId !== auth.userId) throw new Error('Work account changed')
           const identity = makeIdentityClient(auth.accessToken!)
-          const { data, error } = await identity.from('agent_provisions').select(ASSISTANT_PROVISION_SELECT)
-            .eq('owner_user_id', auth.userId).eq('member_key', 'assistant')
+          const { data, error } = await identity.rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS)
           if (error) throw error
-          const assistant = pickAssistant((data ?? []) as AssistantProvisionRow[])
+          const assistant = pickAssistant(data)
           if (!assistant) throw new Error('Personal assistant is not available')
           const receipt = await enqueueAssistantWorkReport({
             rpc: (name, args) => current.client.rpc(name, args),
@@ -6193,6 +6226,7 @@ app.whenReady().then(async () => {
     // 于是「agent 用 session_list_models 查到的」与「用户在下拉里看到的」不可能分岔。
     // ❌ 别在这里另加过滤或另算一份可用性:那就是第二份判据,它一定会漂。
     emdash.setPlatformModelCatalogResolver((query) => sessionpagePlatformHooks.listModels(query))
+    emdash.setCustomModelEffortResolver((ids) => listCustomModelEffortFacts(desktopAuthProvider(), ids))
     // 同一道门的答案随 `agents.modelCatalog` 回给 composer;账号口与上面那条 IPC 同一个(现取,❌ 早到的一问落成 null)。
     emdash.setPlatformModelGate((query) => sessionpagePlatformGate({ ...query, authProvider: desktopAuthProvider() }))
 

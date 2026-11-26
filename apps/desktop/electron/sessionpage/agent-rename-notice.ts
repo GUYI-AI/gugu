@@ -23,6 +23,7 @@ export async function tellAgentItWasRenamed(
     messageId: id,
     at: formatDeliveryTimestamp(now.toISOString()),
     content: agentRenameNoticeText(rename.displayName),
+    agentOnly: true,
   })
   return delivery.injectForAgent(rename.agentUserId, { id, text, kind: 'ordinary' })
 }

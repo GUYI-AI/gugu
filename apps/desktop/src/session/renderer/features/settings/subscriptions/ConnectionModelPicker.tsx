@@ -34,7 +34,7 @@ export type ModelList =
   | { kind: 'waiting' }
   | { kind: 'reading' }
   | { kind: 'listed'; models: string[]; endpoints?: CustomModelMeta['endpoints'] }
-  | { kind: 'unlisted'; reason: Extract<ConnectionModelList, { kind: 'unlisted' }>['reason']; endpoints?: CustomModelMeta['endpoints'] }
+  | { kind: 'unlisted'; reason: Extract<ConnectionModelList, { kind: 'unlisted' }>['reason']; endpoints?: CustomModelMeta['endpoints']; refused?: CustomModelMeta['endpoints'] }
   | { kind: 'failed'; message: string }
 
 /** 手填的几个模型名:逗号(中英文)、空格、换行都算隔开;去空、去重。 */
@@ -46,7 +46,7 @@ export function parseModelNames(text: string): string[] {
 export function probeModelList(probe: CustomModelProtocolProbe): ModelList {
   const { endpoints, models, failures } = probe
   if (models.length) return { kind: 'listed', models, endpoints }
-  if (failures.some(({ reason }) => reason === 'unauthorized')) return { kind: 'unlisted', reason: 'unauthorized', endpoints }
+  if (failures.some(({ reason }) => reason === 'unauthorized')) return { kind: 'unlisted', reason: 'unauthorized', endpoints, refused: probe.refused ?? [] }
   // The address answered, just without a list: the person names the model and the check reruns with it on save.
   if (endpoints.length || failures.some(({ step, reason }) => step === 'models' && reason === 'no-list')) return { kind: 'unlisted', reason: 'no-list', endpoints }
   const failure = failures.find(({ reason }) => reason !== 'no-list' && reason !== 'no-model' && reason !== 'refused')

@@ -301,7 +301,7 @@ function CreateOnMachine({
 
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     isRunning: creating,
-    adapters: { attachments: attachmentAdapter },
+    adapters: { attachments: attachmentAdapter?.attachments },
     messages,
     convertMessage: (message) => message,
     onNew: async (message: AppendMessage) => {
@@ -402,6 +402,19 @@ function CreateOnMachine({
   })
 
   const skillEditor = useRef<PromptEditorRef | null>(null)
+  const replaceAttachment = draftKey && attachmentAdapter && !attachmentAttempt && !creating
+    ? async (id: string, file: File, caption: string) => {
+        const composer = runtime.thread.composer
+        if (!page.active || readAttachmentCreation(draftKey) || !composer.getState().attachments.some((entry) => entry.id === id)) {
+          throw new Error(translateSessionMessage('composer.attachmentUploadFailed'))
+        }
+        await attachmentAdapter.replace(id, file, (next) => composer.addAttachment(next))
+        if (!composer.getState().attachments.some((entry) => entry.id === id && entry.file === file)) {
+          throw new Error(translateSessionMessage('composer.attachmentUploadFailed'))
+        }
+        if (caption && page.active) skillEditor.current?.insertText(caption, 'end')
+      }
+    : undefined
   const skillDraft = creationSkillInput(skill => skillEditor.current?.insertMention(skill))
 
   useEffect(() => {
@@ -543,7 +556,7 @@ function CreateOnMachine({
   const form = <AssistantRuntimeProvider runtime={runtime}>
     <div className={inSheet ? 'gg-aw gg-phone-group-agent-form gg-aw-create-host' : 'gg-aw-thread-host gg-aw-create-host'} data-testid="agent-watch-create-thread">
       {inSheet && <>{subtitle && !optionsNotice && <div className="gg-phone-group-agent-status">{subtitle}{actions}</div>}{controls}{overlay}</>}
-      <ComposerExtrasProvider attachmentPlacement="input" editorApiRef={skillEditor}
+      <ComposerExtrasProvider attachmentPlacement="input" editorApiRef={skillEditor} replaceAttachment={replaceAttachment}
         placeholder={t('agentWatch.create.placeholder')} extras={null} above={inSheet ? undefined : controls}>
         {inSheet
           ? <ThreadComposer autoFocus={false} submitOnEnter={false} sendDisabled={!canSubmit} />

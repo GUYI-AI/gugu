@@ -40,3 +40,6 @@ export type AutomationRun = {
   generatedSessionName: string | null;
   error: RunError | null;
 };
+
+/** Each automation's latest run (any but scheduled) and next scheduled one; an automation with neither is absent. */
+export type AutomationRunHeads = Record<string, { latest: AutomationRun | null; next: AutomationRun | null }>;

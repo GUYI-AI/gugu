@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { TranscriptTurn } from '../acp/models/turns/turn';
-import { endedTurnIds, withRuntimeTurn } from './runtime-turn';
+import { endedTurnIds, recordHolds, sameTurnAs, withDrawnTurns } from './runtime-turn';
+
+const withRuntimeTurn = (turns: readonly TranscriptTurn[], runtime: TranscriptTurn | null, before: ReadonlySet<string> = new Set()) =>
+  withDrawnTurns(turns, runtime ? [{ turn: runtime, before }] : []);
 
 const turn = (id: string, prompt: string, extra: { ended?: boolean; tool?: string; message?: string } = {}): TranscriptTurn => ({
   id, seq: 0, initiator: 'user', ...(extra.ended === false ? {} : { outcome: { kind: 'done' as const } }),
@@ -10,6 +13,61 @@ const turn = (id: string, prompt: string, extra: { ended?: boolean; tool?: strin
     ...(extra.tool ? [{ kind: 'tool' as const, id: `${id}:tool:${extra.tool}`, seq: 2, toolCallId: extra.tool, title: 'Read', status: 'completed' as const }] : []),
   ],
 } as TranscriptTurn);
+
+describe('which record turn is the runtime turn', () => {
+  const anchored = (one: TranscriptTurn, anchor: string): TranscriptTurn =>
+    ({ ...one, items: one.items.map((item, index) => index === 0 ? { ...item, revertAnchor: anchor } : item) } as TranscriptTurn);
+  const at = (one: TranscriptTurn, startedAt: number): TranscriptTurn => ({ ...one, startedAt });
+  it('two turns that both name themselves are one turn only by that name, whatever words they share', () => {
+    const live = anchored(turn('S:turn:2', 'continue', { ended: false }), 'turn-b');
+    expect(sameTurnAs(live)(anchored(turn('rec-1', 'continue'), 'turn-a'))).toBe(false);
+    expect(sameTurnAs(live)(anchored(turn('rec-2', 'worded its own way'), 'turn-b'))).toBe(true);
+  });
+  it('a turn that does not name itself yet is told by what it shares, as before', () => {
+    const live = turn('S:turn:2', 'continue', { ended: false });
+    expect(sameTurnAs(live)(anchored(turn('rec-2', 'continue'), 'turn-b'))).toBe(true);
+  });
+  it('a record turn that started before the runtime turn did is not its copy, read late or not', () => {
+    // Read late: nothing had ended when the runtime turn started, so `before` holds nothing.
+    const live = at(turn('S:turn:2', 'continue', { ended: false }), 20_000);
+    const first = at(turn('rec-1', 'continue'), 5_000);
+    const second = at(turn('rec-2', 'continue', { ended: false }), 20_400);
+    expect(withRuntimeTurn([first, second], live).map((t) => t.id)).toEqual(['rec-1', 'S:turn:2']);
+    // A record whose clock counts whole seconds still gives the turn its copy.
+    expect(withRuntimeTurn([first, at(second, 19_000)], live).map((t) => t.id)).toEqual(['rec-1', 'S:turn:2']);
+    expect(recordHolds([first], { turn: at(turn('S:turn:2', 'continue'), 20_000), before: new Set() }, true)).toBe(false);
+  });
+});
+
+describe('a turn its runtime ended is shown until the record holds it', () => {
+  const none = new Set<string>();
+  const ended = turn('S:turn:1', 'second', { tool: 'call-2' });
+  it('is held by an ended copy, read to now or not', () => {
+    expect(recordHolds([turn('rec-2', 'second')], { turn: ended, before: none }, false)).toBe(true);
+  });
+  it('is not held by an open copy until the record was read as written at that end', () => {
+    const open = turn('rec-2', 'second', { ended: false });
+    expect(recordHolds([open], { turn: ended, before: none }, false)).toBe(false);
+    expect(recordHolds([open], { turn: ended, before: none }, true)).toBe(true);
+  });
+  it('is not held by a record without it, however far that was read, nor by a turn that had ended when it started', () => {
+    expect(recordHolds([], { turn: ended, before: none }, true)).toBe(false);
+    expect(recordHolds([turn('rec-1', 'second')], { turn: ended, before: new Set(['rec-1']) }, true)).toBe(false);
+  });
+  it('is held by a later turn of a record that shares nothing with it, by when each started', () => {
+    const at = (one: TranscriptTurn, startedAt: number): TranscriptTurn => ({ ...one, startedAt });
+    const held = { turn: at(ended, 10), before: none };
+    expect(recordHolds([at(turn('rec-2', 'worded its own way'), 12)], held, true)).toBe(true);
+    expect(recordHolds([at(turn('rec-2', 'worded its own way'), 5)], held, true)).toBe(false);
+    expect(recordHolds([at(turn('rec-2', 'worded its own way'), 12)], held, false)).toBe(false);
+  });
+  it('draws held turns and the running one, oldest first, each in place of its copies', () => {
+    const first = turn('S:turn:1', 'first', { tool: 'call-1' });
+    const running = turn('S:turn:2', 'second', { ended: false });
+    const record = [turn('rec-0', 'zero'), turn('rec-1', 'first', { ended: false, tool: 'call-1' }), turn('rec-2', 'second', { ended: false })];
+    expect(withDrawnTurns(record, [{ turn: first, before: none }, { turn: running, before: none }]).map((t) => t.id)).toEqual(['rec-0', 'S:turn:1', 'S:turn:2']);
+  });
+});
 
 describe('the runtime turn in progress replaces the record copy of it', () => {
   const older = turn('rec-1', 'first', { tool: 'call-1' });
@@ -46,7 +104,7 @@ describe('the runtime turn in progress replaces the record copy of it', () => {
 });
 
 describe('a timeline shows the runtime turn in progress', () => {
-  it('in its snapshot and in the batch a subscriber gets, until the turn ends', async () => {
+  it('in its snapshot and in the batch a subscriber gets, and after it ends until the record holds it', async () => {
     const { mkdtemp, mkdir, readFile, writeFile, rm } = await import('node:fs/promises');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
@@ -66,10 +124,13 @@ describe('a timeline shows the runtime turn in progress', () => {
         const after = timeline.getAfter(cursor);
         expect(after.ok && after.batch.turns.map((t) => t.id)).toEqual(['S:turn:9']);
         const next = timeline.getSnapshot().cursor;
+        // Ended by its runtime and not in the record: it stays, read to now or not, until the record holds it.
         timeline.syncActiveTurn(null);
-        expect(timeline.getSnapshot({ limit: 100 }).turns.map((t) => t.id)).toEqual(recorded);
-        const removed = timeline.getAfter(next);
-        expect(removed.ok && removed.batch.removedTurnIds).toEqual(['S:turn:9']);
+        await timeline.catchUp();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(timeline.getSnapshot({ limit: 100 }).turns.map((t) => t.id)).toEqual([...recorded, 'S:turn:9']);
+        const kept = timeline.getAfter(next);
+        expect(kept.ok && kept.batch.removedTurnIds).toEqual([]);
 
       } finally { timeline.dispose(); }
     } finally { await rm(root, { recursive: true, force: true }); }

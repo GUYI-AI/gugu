@@ -23,6 +23,8 @@ export interface CredentialProxyOptions {
   refresh?: (rejected: string) => Promise<string>
   credentialHeaders?: (token: string) => Record<string, string>
   maxRequestBytes?: number
+  /** Rewrites the buffered request body once, before the first send (a replay reuses the result). */
+  body?: (raw: Buffer<ArrayBuffer>) => Buffer<ArrayBuffer>
   refreshForbidden?: boolean
   refusal?: (status: number, retried: boolean) => Promise<{ code: string; reason_code?: string; message: string } | null>
   refusalError?: (error: unknown) => { code: string; reason_code?: string; message: string } | null
@@ -75,7 +77,8 @@ export async function proxyPlatformCredentialRequest(
     if (options.maxRequestBytes !== undefined && bytes > options.maxRequestBytes) { response.writeHead(413).end(); return }
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
   }
-  const body = Buffer.concat(chunks)
+  const raw = Buffer.concat(chunks)
+  const body = options.body ? options.body(raw) : raw
   let upstreamAbort: AbortController | undefined
   let harnessGone = response.destroyed
   let gatewayCut = false

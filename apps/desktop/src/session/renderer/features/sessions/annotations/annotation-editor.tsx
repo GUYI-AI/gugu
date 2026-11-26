@@ -2,6 +2,7 @@ import { Check, Trash2, X } from '@/lib/icons';
 import { useState, type CSSProperties } from 'react';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { isImeComposing } from '@/lib/ime';
 
 /**
  * The anchored editor used for a new selection or an existing numbered annotation — and, unnumbered, for a file selection's
@@ -22,7 +23,7 @@ export function AnnotationEditor({ number, words, initialValue = '', busy = fals
     <form data-annotation-editor className="flex min-h-10 w-full min-w-0 cursor-auto items-center gap-2 rounded-xl border border-border bg-background px-2 py-1 shadow-lift"
       onPointerDown={event => event.stopPropagation()} onPointerUp={event => event.stopPropagation()}
       onKeyDown={event => {
-        if (event.nativeEvent.isComposing || event.keyCode === 229) {
+        if (isImeComposing(event)) {
           if (event.key === 'Enter') event.preventDefault();
           return;
         }

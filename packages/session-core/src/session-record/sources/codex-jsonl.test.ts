@@ -369,14 +369,15 @@ describe('codex rollout 记录源', () => {
     ]);
   });
 
-  it('找不到 rollout 时响亮地失败', async () => {
+  it('a rollout that is nowhere is not written yet for a live read, and a failure for a snapshot', async () => {
     const root = await mkdtemp(join(tmpdir(), 'codex-empty-'));
     disposers.push(() => rm(root, { recursive: true, force: true }));
-    await expect(
-      start(
-        createCodexJsonlSource({ harness: 'codex', providerSessionId: THREAD_ID, roots: [root] })
-      )
-    ).rejects.toBeInstanceOf(SessionRecordNotFoundError);
+    const locator = { harness: 'codex' as const, providerSessionId: THREAD_ID, roots: [root] };
+    const live = createCodexJsonlSource(locator);
+    disposers.push(() => live.stop());
+    await expect(startAll(live)).resolves.toEqual([]);
+    expect(live.awaiting?.()).toBe(true);
+    await expect(start(createCodexJsonlSource(locator, { readMode: 'snapshot' }))).rejects.toBeInstanceOf(SessionRecordNotFoundError);
   });
 
   it('在 年/月/日 目录下钻找到 rollout 并解码', async () => {

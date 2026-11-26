@@ -70,6 +70,10 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
         replyToMessageId, activityMs, now: Date.now() }).map((member): MentionItem => ({
         id: member.type === 'all' ? MENTION_ALL_USER_ID : member.id,
         label: member.name, name: member.name, kind: 'custom', role: member.type === 'all' ? undefined : member.type,
+        // The row says what a person is in the UI language (the members panel's「人」), not the raw role value.
+        // Agents are left alone: their row already names the owner in the UI language, and a description
+        // would turn it into the stacked session row.
+        ...(member.type === 'human' ? { description: t('composer.mentionRoleHuman') } : {}),
         optionLabel: <span {...mentionOptionStatusProps(member, agentStatuses ?? {})}><AgentMentionOptionLabel member={member} status={agentStatuses?.[member.id]} /></span>,
       }))
     },

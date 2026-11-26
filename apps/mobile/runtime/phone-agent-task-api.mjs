@@ -26,7 +26,7 @@ export function createPhoneTaskApi({ ownerId, store, models, timelines, actions,
   const send = async (input, requestId) => {
     if (input.steerIfBusy) throw failure('unsupported', '手机任务当前不支持立即插话，请保留排队消息或取消后再发送')
     const files = Array.isArray(input.files) ? input.files : []
-    if (input.annotations !== undefined && !turnAnnotationSchema.array().safeParse(input.annotations).success) throw failure('invalid_args', '批注无效')
+    if (input.annotations !== undefined && !turnAnnotationSchema.array().safeParse(input.annotations).success) throw failure('invalid_args', '评论无效')
     const annotations = input.annotations ?? []
     if (typeof input.text !== 'string' || (!input.text.trim() && !files.length && !annotations.length)) throw failure('invalid_args', '请先填写任务内容')
     let clientId, sessionId

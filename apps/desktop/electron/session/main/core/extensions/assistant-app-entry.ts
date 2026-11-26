@@ -53,11 +53,9 @@ const notTrusted = (service: AssistantRulesInstallRecord, trust?: readonly Assis
  * - chosen: the person chose (or removed) its conversation themselves — left as they chose.
  * - bound / unbound: written now. kept: already as it should be, or changed meanwhile (the next sync decides).
  * - refused: the chat named is not the account's private chat with its own assistant. unverified: it could not be checked now.
- * - pending: it is that chat, but the assistant's setup has not finished (its resources are not served for it yet): nothing is
- *   bound — a binding written now is one every call of the App is refused over — and the window asks again.
  */
 export type AssistantAppEntryOutcome = 'absent' | 'distrusted' | 'off' | 'withdrawn' | 'undeclared' | 'chosen'
-  | 'bound' | 'unbound' | 'kept' | 'refused' | 'pending' | 'unverified';
+  | 'bound' | 'unbound' | 'kept' | 'refused' | 'unverified';
 export interface AssistantAppEntryState {
   ownerId: string;
   extensionId: typeof ASSISTANT_APP_ID;
@@ -72,7 +70,7 @@ const codeOf = (error: unknown) => (error as { code?: unknown } | null)?.code;
 export interface AssistantAppEntryDeps {
   /** Tests only: #1931's conditions with release keys made in the test (default: the shipped ones). */
   trust?: readonly AssistantRulesTrustCondition[];
-  ownAssistantChat?: (token: string, ownerId: string, chatId: string) => Promise<boolean | 'pending'>;
+  ownAssistantChat?: (token: string, ownerId: string, chatId: string) => Promise<boolean>;
   /** Tells the App's pages what its binding is now (default: `pushBindingSurfaces`, the one way a page hears `onSurface`). */
   push?: () => Promise<void>;
   /** Asks the ensure step to put the App in (assistant-rules-root.ts `ensureAssistantApp('assistant')`); it decides if needed. */
@@ -128,7 +126,6 @@ export async function syncAssistantAppEntry(input: unknown, deps: AssistantAppEn
     } else {
       if (before.binding?.chatId === chatId) return state(true, 'kept');
       const own = await ownChat(token, ownerId, chatId);
-      if (own === 'pending') return state(true, 'pending');
       if (!own) return state(true, 'refused');
       target = chatId;
     }

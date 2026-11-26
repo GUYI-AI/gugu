@@ -1,9 +1,4 @@
 import type { MessageItem } from '@gugu/core/shared/types/chat'
-import { SELECTED_MESSAGE_QUOTES_ENABLED } from '../../lib/messageQuoteRollout'
-
-export interface QuoteSelection {
-  originalContent: string | null
-}
 
 /** Existing composer wire format; ordinary Markdown blockquotes are left alone. */
 export function parseQuotedContent(content: string): { senderName: string; quoteText: string; replyText: string } | null {
@@ -24,11 +19,8 @@ export function partialQuotedContent(msg: Pick<MessageItem, 'content' | 'reply_t
   return parsed?.replyText && parsed.quoteText !== msg.reply_to_content ? parsed : null
 }
 
-export function contentWithQuote(typed: string, quote?: { messageId?: string; senderName: string; content: string; originalContent?: string | null } | null) {
-  if (!typed || !quote) return typed
-  const partial = quote.originalContent != null && quote.content !== quote.originalContent
-  if (partial && !SELECTED_MESSAGE_QUOTES_ENABLED) return typed
-  if (quote.messageId && !partial) return typed
+export function contentWithQuote(typed: string, quote?: { messageId?: string; senderName: string; content: string } | null) {
+  if (!typed || !quote || quote.messageId) return typed
   // A blank line ends the quoted block even when the reply itself begins with Markdown `> `.
   return `> [${quote.senderName}]: ${quote.content.split('\n').join('\n> ')}\n\n${typed}`
 }

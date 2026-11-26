@@ -181,7 +181,7 @@ export function CacheHitChart({ series: data }: { series: CacheHitSeries }) {
           if (!time) return []
           return domain.map((engine, index) => ({
             key: engine, value: format(byDay.get(time)?.get(engine)?.value ?? null),
-            hasShape: true, shapeType: 'circle', shapeColor: colors[index],
+            hasShape: true, shapeType: 'circle', shapeFill: colors[index],
           }))
         },
       },

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { AgentAuthContext, AgentAuthStatus } from '@gugu/session-core/agents/plugins';
 import { createAgyProbeRoot } from './acp-tier';
 import { ANTIGRAVITY_PROBE_LAUNCH_SCRIPT } from './session-bundle';
+import { jwtPayload, readJsonObject } from '../../helpers/subscription';
 
 /**
  * Antigravity(官方 ACP 服务 `agy_acp_server`)的登录 —— **协议登录**,没有登录子命令(#6335)。
@@ -134,12 +135,9 @@ function messageOf(error: unknown): string {
  * 终端腿的程序 `agy`(伴随程序 `antigravity-cli`)自己的登录(#6335)—— 与上面 ACP 服务那份**不共享**:
  * 钥匙串里是两条条目(account `antigravity` vs `antigravity-acp`),登了一个另一个照样没登。
  *
- * 登录入口:`agy` 没有任何登录子命令(`agy --help` 全表:agent/changelog/help/install/mcp/mic-serve/
- * models/plugin/remote-control/update),登录长在它自己的 TUI 首屏上 —— 钥匙串里没有凭据时,它起来就是
- * 「You are currently not signed in … Select login method: 1. Google OAuth 2. Use a Google Cloud project」
- * (d22 Linux 实测,agy 1.2.10),选 OAuth 后桌面上自己开浏览器(https://antigravity.google/docs/cli/install
- * 「Local silent keyring sign-in」),SSH 下打印链接、要求贴回授权码(同页「Remote SSH OAuth flow」)。
- * ⇒ 咕咕的登录终端就是**起一个 `agy`**,由它自己的 TUI 带用户登完;咕咕只管入口与状态。
+ * 登录入口:`agy acp --login --gemini-dir <选中账号根>`。官方 CLI ACP 指南说明它与交互式 `agy`
+ * 共用缓存凭据(https://antigravity.google/docs/cli/acp)。独立账号在 SSH 文件存储模式下登录,
+ * 不把别的账号覆盖到全局钥匙串;登录状态直接读该目录的凭据,原生 macOS 登录只查钥匙串元信息。
  * 它跟终端腿走**同一个启动器**(`ANTIGRAVITY_LAUNCH_SCRIPT`,只换 `agy` 这一个进程的 HOME)、同一份
  * 可执行文件(宿主按 `tui` 解析),所以登录落进的就是终端会话会读的那个托管根与那份钥匙串。
  */
@@ -191,6 +189,27 @@ export async function antigravityCliAuthStatus(
     }
   }
 
+  // Saved file credentials are authoritative about a saved sign-in, just like Codex's auth.json.
+  // Reading status must not fetch the entire model catalog each time Settings opens.
+  const stored = await readJsonObject(ctx, '.gemini/antigravity-cli/antigravity-oauth-token');
+  if (stored) {
+    const token = stored.token as Record<string, unknown> | undefined;
+    if (token && typeof token.refresh_token === 'string' && token.refresh_token.trim()) {
+      const email = stored.id_token_email ?? jwtPayload(token.id_token)?.email;
+      return { kind: 'authenticated', credentialKind: 'subscription', ...(typeof email === 'string' ? { account: email } : {}) };
+    }
+  }
+  // agy's SSH mode deliberately bypasses the global keyring. Never fall through to another account.
+  if (ctx.env.SSH_CONNECTION?.trim()) return { kind: 'unauthenticated' };
+  if (platform === 'darwin') {
+    try {
+      await ctx.exec(SECURITY, ['find-generic-password', '-s', 'gemini', '-a', 'antigravity'], { timeout: 5_000 });
+      return { kind: 'authenticated', credentialKind: 'subscription' };
+    } catch (error) {
+      if ((error as { code?: unknown })?.code === KEYCHAIN_ITEM_NOT_FOUND) return { kind: 'unauthenticated' };
+      return { kind: 'unknown', message: `读钥匙串失败:${messageOf(error)}` };
+    }
+  }
   return agyModelsAuthStatus(ctx, platform);
 }
 

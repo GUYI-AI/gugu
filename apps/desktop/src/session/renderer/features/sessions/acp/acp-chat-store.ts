@@ -639,6 +639,7 @@ export class AcpChatStore {
   get usage(): {
     contextUsed: number;
     contextSize: number;
+    autoCompact?: { defaultTokens: number; ceiling: number };
     cost?: { amount: number; currency: string } | null;
   } | null {
     const session = this.session;
@@ -1633,6 +1634,17 @@ export class AcpChatStore {
         await this._recordLiveSetting({ dimension: 'effort', value: result.data.effectiveValue });
       }
       return this._settleLiveSetting('acpFailure.changeSetting', result);
+    } catch (error: unknown) {
+      this._toastError('acpFailure.changeSetting', error);
+      return null;
+    }
+  }
+
+  /** A custom model's Fast is the session record itself: the model forwarder reads it on the next request, no harness round-trip. */
+  async setCustomFastMode(enabled: boolean): Promise<LiveSettingOutcome> {
+    try {
+      await rpc.sessions.recordLiveSessionSetting(this.sessionId, { dimension: 'fast', value: enabled });
+      return { kind: 'applied', effectiveValue: enabled ? 'on' : 'off' };
     } catch (error: unknown) {
       this._toastError('acpFailure.changeSetting', error);
       return null;

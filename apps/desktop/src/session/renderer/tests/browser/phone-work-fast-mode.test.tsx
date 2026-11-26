@@ -169,7 +169,7 @@ for (const { normal, width, theme } of scenarios) it(normal
   await expect.element(toggle).toHaveAttribute('aria-checked', 'true')
   expect(host.set.mock.calls.filter(([dimension]) => dimension === 'model')).toHaveLength(0)
   expect(document.querySelector('[data-slot="composer-toolbar"] [data-phone-fast]')).toBeNull()
-  expect(document.body.textContent).not.toContain('更快，消耗更多额度')
+  expect(document.body.textContent).not.toContain('更快响应')
   await capture('F-existing-thinking-high')
   if (normal) {
     await closeWork(); await openWork()

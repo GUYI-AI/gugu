@@ -15,7 +15,7 @@ import { ProjectTaskComposer } from '@renderer/features/projects/components/main
 import { setComposerVerb, takeComposerCarry, useComposerVerb } from '@/lib/composerVerbBridge';
 import { useProjectFolderStage } from '@renderer/features/projects/components/main-panel/project-folder-stage';
 import { useFloatingCardKeys, useFloatingCardShown } from './floating-card-keys';
-import { BlockGrip } from './block-grip';
+import { BlockGrip, CloseSplitBlock } from './block-grip';
 import { ChatTabMenuItems, chatTabHasActions } from '@renderer/features/chats/chat-tab-menu-items';
 import { ChatPanes, ChatTabChip } from '@renderer/features/chats/chat-tabs/chat-panes';
 import { rpcOn } from '@renderer/lib/ipc';
@@ -88,7 +88,7 @@ export const ProjectBlock = observer(function ProjectBlock({
       blockId={blockId}
       leading={grip}
       reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
-      actionsSlot={<TabBarActionRow>{actions}</TabBarActionRow>}
+      actionsSlot={<TabBarActionRow>{actions}<CloseSplitBlock blockId={blockId} /></TabBarActionRow>}
       // 项目群那一枚写项目名;点它 = 看群(并排着的那一页照旧在旁边)。它和别的群页签一样没有右键菜单:项目的文件夹在「文件」的电脑文件里打开,移除项目在侧栏那一行的右键里。
       chip={({ tab, host }) => (
         <ChatTabChip

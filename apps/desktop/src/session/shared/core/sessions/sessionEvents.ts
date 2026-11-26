@@ -60,6 +60,7 @@ export const sessionChangedChannel = defineEvent<{
      * 输入框在没有活会话时画的就是渲染层手里这一份。
      */
     contextUsage?: Session['contextUsage'] | null;
+    contextChoice?: Session['contextChoice'] | null;
     /**
      * 引擎那边有没有这条会话的持久状态(`'missing'` / `'restart_failed'`)。`null` = 去掉了(重来了 / 新开起来了,#7223),
      * 理由同上:用 `undefined` 的话网页宿主那条传输收到的是「什么都没说」,页面一直挂着「已经没有这条会话了」。

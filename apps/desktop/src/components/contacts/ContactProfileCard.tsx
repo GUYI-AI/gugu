@@ -9,6 +9,7 @@ import {
 } from '../contactAgentTone'
 import { Avatar } from '../Avatar'
 import { AgentContactStatusMark } from '../AgentContactStatusMark'
+import { AgentHarnessModelChips } from '../AgentHarnessModelChips'
 import { CopyValue } from '../CopyValue'
 import { Button } from '../ui/Button'
 import { useTranslation } from 'react-i18next'
@@ -20,6 +21,7 @@ import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import type { AgentRequestState } from './agentContactRequest'
 import { nameClampClass, profileCardStyles as styles } from './contactsPanelStyles'
 import { ProfileCardAction } from './ProfileCardAction'
+import { isImeComposing } from '@/lib/ime'
 export type { AgentRequestState } from './agentContactRequest'
 
 
@@ -95,6 +97,8 @@ export function AgentContactProfileCard({
           {statusLabel}
         </div>
       ) : null}
+      {/* 与群里的资料卡同一组:harness 与模型两枚胶囊(owner 11-26,兄弟界面一起改)。 */}
+      <AgentHarnessModelChips agentId={contact.id} className="mt-2 justify-center" />
       {allowsLiveActions ? (
         hasOwnedActions ? <div className={styles.actions}>
           {allowsLiveActions && onSwitchToChat ? (
@@ -169,6 +173,7 @@ export function PersonAliasField({ contact }: { contact: ContactUser }) {
           onChange={(event) => setDraft(event.target.value)}
           onBlur={save}
           onKeyDown={(event) => {
+            if (isImeComposing(event)) return
             if (event.key === 'Enter') event.currentTarget.blur()
             if (event.key === 'Escape') setDraft(saved)
           }}

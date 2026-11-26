@@ -58,7 +58,7 @@ it.each([
   const host = document.body.appendChild(document.createElement('div'));
   host.className = appearance === 'dark' ? 'emdark' : 'emlight';
   host.style.cssText = `position:fixed;left:0;top:0;width:${width}px;height:800px;background:var(--chat-bg)`;
-  const view = createChatView({ context, state, parent: host, pinUserMessages: width > 390,
+  const view = createChatView({ context, state, parent: host,
     commands: { conversationAgentName: () => '研发主管（Claude）', onMessageBodyMount: plainMessageBody } });
   cleanup.push(() => { view.dispose(); state.dispose(); context.dispose(); host.remove(); });
   view.scrollToTop();

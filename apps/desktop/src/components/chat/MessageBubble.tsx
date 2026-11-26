@@ -6,33 +6,49 @@ import { memo, useEffect, useRef, useState } from 'react'
 import type { ReadReceiptHandle } from '@/hooks/useReadReceiptPanel'
 import { Popover } from '../ui/Popover'
 import { useTranslation } from 'react-i18next'
-import { useToast } from '../toastContext'; import { downloadAttachment } from '../../lib/attachmentBytes'
-import { motion, AnimatePresence } from 'framer-motion'; import { GroupAvatarSlot } from './StickyGroupAvatar'
-import { MessageSenderAvatar } from './MessageSenderAvatar'; import { platform } from '../../platform'
-import { useAuth } from '../../store/auth'; import { useLongPress } from '../../hooks/useLongPress'
+import { useToast } from '../toastContext'
+import { downloadAttachment } from '../../lib/attachmentBytes'
+import { motion, AnimatePresence } from 'framer-motion'
+import { GroupAvatarSlot } from './StickyGroupAvatar'
+import { MessageSenderAvatar } from './MessageSenderAvatar'
+import { platform } from '../../platform'
+import { useAuth } from '../../store/auth'
+import { useLongPress } from '../../hooks/useLongPress'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { MessageMetaRow } from './MessageMetaRow'
 import { useMentionRender } from './useMentionRender'
 import { parseVoiceAttachmentContent } from '@gugu/core/shared/ui/voiceAttachmentModels'
-import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'; import { reactionLabel } from '@gugu/core/shared/ui/reactionCatalog'; import { i18n } from '../../i18n/runtime'; import type { MessageItem, MessageSendState, ReactionGroup } from '@gugu/core/shared/types/chat'
+import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'
+import { reactionLabel } from '@gugu/core/shared/ui/reactionCatalog'
+import { i18n } from '../../i18n/runtime'
+import type { MessageItem, MessageSendState, ReactionGroup } from '@gugu/core/shared/types/chat'
 import { MemberProfileAvatarButton } from '../MemberProfileAvatarButton'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
 import type { MemberProfileOpener } from '../memberProfileModels'
 import { COLOR_MUTED, readReceiptLabel } from './chatPresentation'
-import { MessageSendStatus } from './MessageSendStatus'; import { useMessageAlbum } from './MessageAlbumContext'; import { downloadSendFiles } from './messageAlbumDownload'; import { sendCaption } from './messageAlbum'; import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'; import { keepAction } from './messageKeep'
+import { MessageSendStatus } from './MessageSendStatus'
+import { useMessageAlbum } from './MessageAlbumContext'
+import { downloadSendFiles } from './messageAlbumDownload'
+import { sendCaption } from './messageAlbum'
+import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
+import { keepAction } from './messageKeep'
 import { buildBubbleStyle } from './messageBubbleStyle'
 import { MessageBody } from './MessageBody'
-import { parseQuotedContent, type QuoteSelection } from './messageQuoteContent'
+import { parseQuotedContent } from './messageQuoteContent'
+import { openCommentLine } from '@renderer/features/sessions/annotations/selection-line'
 import { DirectMessageQuote, MessageQuote } from './MessageQuote'
 import { parseComposerCard } from '@gugu/core/shared/ui/taskCardModels'
 import { parseWidgetMessage } from '@gugu/core/shared/ui/widgetModels'
 import { HoverActionBar, MessageHoverRegion, MessageHoverTrigger } from './HoverActionBar'
 import { DeferredEmojiQuickPicker } from './messageActionModules'
-import { MsgMoreMenu } from './MsgMoreMenu'; import { PhoneTextSelection } from './PhoneTextSelection'; import { bubbleMenuGestures, usePhoneMessageMenu } from './phoneMessageMenuState'
+import { MsgMoreMenu } from './MsgMoreMenu'
+import { PhoneTextSelection } from './PhoneTextSelection'
+import { bubbleMenuGestures, usePhoneMessageMenu } from './phoneMessageMenuState'
 import { canSourceTopic } from './topicAnchorModels' // @@@5856 与顶栏那颗按钮共用同一个判据,❌ 不再写第二份
 import { SystemMessageNotice } from './SystemMessageNotice'
-import { BubbleSender, BubbleTime, ReadReceiptRing } from './MessageBubbleChrome'; import { fmtMsgTime } from './messageRowTime'
+import { BubbleSender, BubbleTime, ReadReceiptRing } from './MessageBubbleChrome'
+import { fmtMsgTime } from './messageRowTime'
 // Sending/failed state and its retry/discard menu live in MessageSendStatus.
 
 interface BubbleProps {
@@ -49,7 +65,7 @@ interface BubbleProps {
   readReceiptTotal?: number
   // @@@1313 点开已读名单（谁读谁没读）：环是父层（持 roster+profiles）那张名单浮层的 Trigger，稳定 handle，避免把 reader 列表作对象 prop 传进破 memo。
   readReceiptHandle?: ReadReceiptHandle
-  onQuote: (msg: MessageItem, selection?: QuoteSelection) => void; onShowMessage?: (id: string) => void
+  onQuote: (msg: MessageItem) => void; onShowMessage?: (id: string) => void
   onForward: (msg: MessageItem) => void
   onDelete: (messageId: string) => void
   isAgent?: boolean; hideAvatar?: boolean; streaming?: boolean // Live IM text shares the settled bubble's layout.
@@ -70,7 +86,9 @@ interface BubbleProps {
   onEnterSelectMode?: (msg: MessageItem) => void
   // 连续消息合组（父层按「同发送者 + 无时间分隔线切断」判定）：true 时气泡里不再写名字、收紧行距；
   // 头像位置用等宽 spacer 占住，保证组内气泡与组首对齐。
-  groupedWithPrev?: boolean; groupedWithNext?: boolean; showReplyQuote?: boolean // 下一条也属于这一组 ⇒ 头像不画在这里,画在组尾(Telegram 式,见 GroupAvatarSlot)
+  groupedWithPrev?: boolean
+  groupedWithNext?: boolean // 下一条也属于这一组 ⇒ 头像不画在这里,画在组尾(Telegram 式,见 GroupAvatarSlot)
+  showReplyQuote?: boolean
   // 气泡右下角不写时间(流式预览:回合还没落成一条消息)。
   hideTime?: boolean
   // 父层对每条本人消息都传 true（#2098 逐条已读：主列/话题视图均 showReadReceipt={is_mine}）→ 各自挂环；
@@ -102,7 +120,8 @@ export const MessageBubble = memo(function MessageBubble({
   showReadReceipt = true,
 }: BubbleProps) {
   const { t } = useTranslation('messaging')
-  const { toast } = useToast(); const album = useMessageAlbum(msg.id) // #2581 a send of several files is one message
+  const { toast } = useToast()
+  const album = useMessageAlbum(msg.id) // #2581 a send of several files is one message
   const copyText = msg.content_type === 'widget' ? parseWidgetMessage(msg.content)?.text ?? '[Widget]' : msg.content ?? ''
   const handleCopyText = async (content = copyText) => {
     try {
@@ -120,6 +139,13 @@ export const MessageBubble = memo(function MessageBubble({
   const bubbleRef = useRef<HTMLDivElement>(null)
   const [menuLink, setMenuLink] = useState<HTMLAnchorElement | null>(null)
   const [menuSelection, setMenuSelection] = useState('')
+  const menuSelectionAt = useRef<Range | null>(null)
+  const commentOn = (at: Range | DOMRect, text: string) => {
+    const bubble = bubbleRef.current!
+    openCommentLine({ kind: 'chat', chatId: msg.chat_id }, at, bubble.closest<HTMLElement>('[data-unread-stream-surface]') ?? bubble, {
+      kind: 'message', messageId: msg.id, authorId: msg.sender_user_id ?? null, authorName: avatarName, text,
+    })
+  }
   const { user } = useAuth()
   const voiceAttachment = msg.content_type === 'attachment'
     ? parseVoiceAttachmentContent(msg.content)
@@ -144,7 +170,7 @@ export const MessageBubble = memo(function MessageBubble({
     isRetracted: !!msg.retracted_at, content: copyText, hasHoverBar: !compactMobile, hasSelection: !compactMobile && !!menuSelection, onClose: close,
     onReply: () => { onQuote(msg); close() },
     onReact: (emoji: string) => { onReaction(msg.id, emoji); close() },
-    onQuoteSelection: menuSelection && msg.content_type === 'text' ? () => { onQuote({ ...msg, content: menuSelection }, { originalContent: msg.content }); close() } : undefined,
+    onCommentSelection: menuSelection && msg.content_type === 'text' && menuSelectionAt.current ? () => { commentOn(menuSelectionAt.current!, menuSelection); close() } : undefined,
     onCopy: (content = menuSelection || undefined) => { void handleCopyText(content); close() },
     onSelectText: compactMobile && (msg.content_type === 'text' || !!sendCaption(album ?? [msg])) && phone.source ? () => { phone.setSelecting(true); close() } : undefined,
     onCopyLink: menuLink ? () => { void handleCopyText(menuLink.href); close() } : undefined, onOpenLink: menuLink ? () => { menuLink.click(); close() } : undefined,
@@ -156,12 +182,14 @@ export const MessageBubble = memo(function MessageBubble({
   })
 
   const captureMenuSelection = () => {
-    const selection = window.getSelection()
-    setMenuSelection(selection && bubbleRef.current?.contains(selection.anchorNode) && bubbleRef.current.contains(selection.focusNode) ? selection.toString() : '')
+    const selection = window.getSelection(), inside = !!selection?.rangeCount && !!bubbleRef.current?.contains(selection.anchorNode) && bubbleRef.current.contains(selection.focusNode)
+    setMenuSelection(inside ? selection!.toString() : '')
+    menuSelectionAt.current = inside ? selection!.getRangeAt(0).cloneRange() : null
   }
 
   const openMenuAt = (x: number, y: number) => {
-    captureMenuSelection(); if (compactMobile) phone.captureAt(bubbleRef.current, x, y)
+    captureMenuSelection()
+    if (compactMobile) phone.captureAt(bubbleRef.current, x, y)
     document.dispatchEvent(new CustomEvent(UI_EVENTS.closeContextMenus))
     setMenuPos({ x, y })
     setShowMenu(true)
@@ -372,7 +400,7 @@ export const MessageBubble = memo(function MessageBubble({
       {compactMobile
         ? phone.mounted && !phone.selecting && <MsgMoreMenu lift={{ open: showMenu, bubble: bubbleRef, touchY: menuPos.y, mine: msg.is_mine }} {...messageActions(() => setShowMenu(false))} />
         : showMenu && <MsgMoreMenu x={menuPos.x} y={menuPos.y} {...messageActions(() => setShowMenu(false))} />}
-      {phone.selecting && phone.source && <PhoneTextSelection source={phone.source} onDone={() => phone.setSelecting(false)} />}
+      {phone.selecting && phone.source && <PhoneTextSelection source={phone.source} onDone={() => phone.setSelecting(false)} onComment={msg.content_type === 'text' ? (words) => commentOn(bubbleRef.current!.getBoundingClientRect(), words) : undefined} />}
 
     </MessageHoverRegion>
   )

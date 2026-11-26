@@ -16,6 +16,7 @@ import { SectionLabel } from '../ui/SectionLabel'
 import { publicGroupInvite } from '../../lib/publicGroupInvite'
 import { Check } from '@/lib/icons'
 import { cn } from '@/lib/cn'
+import { isImeComposing } from '@/lib/ime'
 
 const joinGroupLog = rendererLogger('contacts/join-group-by-id')
 
@@ -90,7 +91,7 @@ export function JoinGroupById({ headless }: { headless?: boolean }) {
     setQuery(value); setAsked(null); setAfter(null); setRefusal(null); setJoinError(null); setJustRequested(false)
   }
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.nativeEvent.isComposing || event.keyCode === 229 || event.key !== 'Enter') return
+    if (isImeComposing(event) || event.key !== 'Enter') return
     event.preventDefault()
     const id = idOf(query)
     if (id === null) return

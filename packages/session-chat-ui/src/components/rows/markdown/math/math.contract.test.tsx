@@ -83,6 +83,8 @@ const TALLER: MathBlock = {
   id: 'math#taller',
   tex: '\\frac{\\frac{a}{b}}{\\frac{c}{d}} + \\sum_{i=1}^{n} \\frac{x_i^2}{\\sqrt{y_i}}'
 }
+/** An equation number: KaTeX sets it absolutely, at the right of the line. */
+const TAGGED: MathBlock = { kind: 'math', id: 'math#tagged', tex: 'E = mc^2 \\tag{1}' }
 const BROKEN: MathBlock = { kind: 'math', id: 'math#broken', tex: '\\frac{1}{' }
 
 /**
@@ -152,6 +154,19 @@ describe('display math reserves the box it actually typesets into', () => {
       `${label}: formula starts ${reading.inspected.overLeft}px left of the frame, where no scroll reaches`
     ).toBeLessThanOrEqual(0.5)
     if (width === WIDTH) expect(reading.inspected.offCentre, `${label}: a formula that fits is off centre`).toBeLessThanOrEqual(1)
+  })
+
+  it('sets an equation number at the right of the line, clear of its formula', async () => {
+    const reading = await renderAndMeasureBlock(mathBlockDef, TAGGED, makeContractCtx({ width: WIDTH }), (host) => {
+      const frame = (host.firstElementChild as HTMLElement).getBoundingClientRect()
+      const tag = host.querySelector<HTMLElement>('.katex-html > .tag')?.getBoundingClientRect()
+      const formulaRight = Math.max(...Array.from(host.querySelectorAll<HTMLElement>('.katex-html > .base'), (base) => base.getBoundingClientRect().right))
+      return { tagFound: tag ? 1 : 0, overlap: Math.max(0, formulaRight - (tag?.left ?? 0)), rightGap: Math.abs(frame.right - (tag?.right ?? 0)) }
+    })
+    expectHeightMatch('display math (tagged)', reading)
+    expect(reading.inspected.tagFound, 'no equation number typeset').toBe(1)
+    expect(reading.inspected.overlap, 'the equation number is drawn over its formula').toBe(0)
+    expect(reading.inspected.rightGap, 'the equation number is not at the right of the line').toBeLessThanOrEqual(1)
   })
 
   it('reserves more height for a taller formula than for a short one', async () => {

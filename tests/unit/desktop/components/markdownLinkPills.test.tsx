@@ -35,7 +35,8 @@ function machines(rows: { id: string; sessions?: { conversationId: string; title
 
 const mocks = vi.hoisted(() => ({ fileMetadata: vi.fn(), getMessageById: vi.fn() }))
 vi.mock('@/platform', () => ({ platform: { kind: 'web' } }))
-vi.mock('@/components/appSlot/phoneAppHost', () => ({ openPhoneLink: vi.fn(async () => ({ kind: 'opened' })) }))
+const { openPhoneLink } = vi.hoisted(() => ({ openPhoneLink: vi.fn(async (_target: unknown, _source?: unknown) => ({ kind: 'opened' })) }))
+vi.mock('@/components/appSlot/phoneAppHost', () => ({ openPhoneLink }))
 vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({ fileMetadata: mocks.fileMetadata }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { getMessageById: mocks.getMessageById } }))
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -123,6 +124,23 @@ describe('chat link pills, drawn in place', () => {
     mocks.getMessageById.mockResolvedValue({ id: MESSAGE, chat_id: CHAT, sender_user_id: ALICE, content: '[附件] plan.pdf (application/pdf)\n[Size] 2048\n[Kind] file', content_type: 'attachment', retracted_at: null })
     await render(`[the file](${conversationLink(CHAT, MESSAGE)})`)
     await settle(() => expect(pills()[0]?.textContent).toBe('Alice：plan.pdf'))
+  })
+
+  // The pill names an attachment by its file, so a click opens the file (an image: the viewer); any other message is gone to.
+  it('opens the file of a message that is an attachment, and goes to any other message', async () => {
+    const TEXT = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+    mocks.getMessageById.mockImplementation(async (id: string) => id === MESSAGE
+      ? { id: MESSAGE, chat_id: CHAT, sender_user_id: ALICE, content: '[附件] shot.png (image/png)\n[Size] 2048\n[Kind] image', content_type: 'attachment', file_item_id: DOC, file_version: 3, retracted_at: null }
+      : { id: TEXT, chat_id: CHAT, sender_user_id: ALICE, content: 'Ship it', retracted_at: null })
+    await render(`[the shot](${conversationLink(CHAT, MESSAGE)}) [the decision](${conversationLink(CHAT, TEXT)})`)
+    await settle(() => expect(pills().map(pill => pill.textContent)).toEqual(['Alice：shot.png', 'Alice：Ship it']))
+    await act(async () => { pills()[0]!.click() })
+    await vi.waitFor(() => expect(openPhoneLink).toHaveBeenCalledTimes(1))
+    expect(openPhoneLink.mock.calls[0]![0]).toMatchObject({ kind: 'file', itemId: DOC, version: 3 })
+    expect(openPhoneLink.mock.calls[0]![1]).toMatchObject({ message: { id: MESSAGE } })
+    await act(async () => { pills()[1]!.click() })
+    await vi.waitFor(() => expect(openPhoneLink).toHaveBeenCalledTimes(2))
+    expect(openPhoneLink.mock.calls[1]![0]).toMatchObject({ kind: 'chat', chatId: CHAT, messageId: TEXT })
   })
 
   it('draws a message link as sender：its first words, showing the link\'s words until the read answers', async () => {

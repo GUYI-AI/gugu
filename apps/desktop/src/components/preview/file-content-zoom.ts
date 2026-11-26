@@ -46,7 +46,7 @@ export function showZoomRatio(on: Element, value: number) {
   let shown = ratioShown.get(doc);
   if (!shown) {
     const element = doc.createElement('div');
-    element.className = 'pointer-events-none fixed z-50 -translate-x-1/2 rounded-surface bg-foreground px-3 py-1 text-sm font-medium tabular-nums text-background shadow-lift transition-opacity duration-[var(--dur-fast)] data-[shown=false]:opacity-0';
+    element.className = 'pointer-events-none fixed z-[var(--z-popover)] -translate-x-1/2 rounded-surface bg-foreground px-3 py-1 text-sm font-medium tabular-nums text-background shadow-lift transition-opacity duration-[var(--dur-fast)] data-[shown=false]:opacity-0';
     element.setAttribute('role', 'status');
     element.setAttribute('data-occludes-browser-page', '');
     shown = { element, timer: 0 };

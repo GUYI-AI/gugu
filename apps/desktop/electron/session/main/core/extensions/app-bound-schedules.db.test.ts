@@ -38,6 +38,7 @@ const state = vi.hoisted(() => ({
   panelWords: new Set<{ assistantId: string; changed(): void }>(),
   thisDevice: '',
 }));
+const { boundRows } = await vi.hoisted(async () => await import('./test-support/binding-rpc'));
 vi.mock('@main/core/sessions/session-family', () => ({ otherMachines: () => ({ isThisDevice: async (id: string) => id === state.thisDevice }) }));
 vi.mock('@main/db/client', () => ({ get db() { if (!state.db) throw new Error('Test database not initialized'); return state.db; } }));
 vi.mock('@main/lib/events', () => ({
@@ -83,7 +84,7 @@ vi.mock('@gugu/core/cloud/supabase', () => ({
       return query;
     },
     rpc: (name: string, args: Record<string, unknown>) => ({
-      abortSignal: async () => (state.panel as FakePanel).rpc(name, args),
+      abortSignal: async () => name === 'my_app_agent' ? { data: boundRows(state.provisions as never[]), error: null } : (state.panel as FakePanel).rpc(name, args),
     }),
   }),
 }));

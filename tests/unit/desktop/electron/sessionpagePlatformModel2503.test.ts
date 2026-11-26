@@ -1818,6 +1818,12 @@ describe('#6447 平台模型的推理档逐模型到达 codex catalog', () => {
     { id: 'minimax-m3', displayName: 'MiniMax M3', contextWindow: 512_000, efforts: [] },
   ]
 
+  it('keeps the advertised Off level in the Codex catalog', () => {
+    const reasoningEfforts = ['none', 'low', 'medium', 'high', 'xhigh', 'max'];
+    expect(JSON.parse(codexPlatformModelFacts({ model: 'gpt-6-luna', reasoningEfforts }))[0].efforts)
+      .toEqual(reasoningEfforts);
+  })
+
   it('ACP 信封:codexPlatformInjection → acpPlatformInjectionSchema(zod 不丢键)→ catalog 事实', () => {
     const envelope = acpPlatformInjectionSchema.parse(codexPlatformInjection({
       model: 'glm-5.3', providerId: 'gugu_platform', providerLabel: 'Gugu', baseUrl: 'https://relay/v1', apiKey: 'sk',

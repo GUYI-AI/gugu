@@ -48,6 +48,7 @@ vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
 
 vi.mock('@renderer/features/sessions/stores/session-selectors', () => ({
   getSessionManagerStore: () => undefined,
+  findSessionAnywhere: () => undefined,
   getSessionView: () => undefined,
   getEditorView: () => undefined,
   getDiffView: () => undefined,

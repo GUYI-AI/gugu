@@ -151,3 +151,30 @@ describe('ACP inbox delivery goes into session-life', () => {
     await expect(emdashAgentRegistry.tryInjectSessionMessage('conv-1')).rejects.toThrow(/only through session-life/)
   })
 })
+
+// Regression: the platform-credential recovery gate resolves the gugu-acp owner and awaits its `waitUntilReady`
+// before publishing `live`. The registry is that owner (deliveryTargetName 'gugu-acp'); when it lacked the method the
+// gate threw `sessionpage owner gugu-acp has no admission waiter`, so group @-inbox messages were dropped.
+describe('gugu-acp credential-recovery admission waiter', () => {
+  afterEach(() => emdashAgentRegistry.setBridge(null))
+
+  const summary = (extra: Record<string, unknown> = {}) =>
+    ({ sessionId: 'conv-1', providerId: 'claude', lifecycle: 'resume', isGenerating: false, ...extra })
+  const bridgeWith = (summaries: ReturnType<typeof summary>[]) =>
+    ({ sessionLife: () => ({ enqueue: vi.fn() }), emdashSessionSummaries: async () => summaries }) as never
+
+  it('resolves once the reopened ACP session is live in the host summaries', async () => {
+    emdashAgentRegistry.setBridge(bridgeWith([summary()]))
+    await expect(emdashAgentRegistry.waitUntilReady('conv-1')).resolves.toBeUndefined()
+  })
+
+  it('fails loud when the session is absent after reopen (never silently ready)', async () => {
+    emdashAgentRegistry.setBridge(bridgeWith([]))
+    await expect(emdashAgentRegistry.waitUntilReady('conv-1')).rejects.toThrow(/is not live after reopen/)
+  })
+
+  it('fails loud when the reopened session is closing (never silently ready)', async () => {
+    emdashAgentRegistry.setBridge(bridgeWith([summary({ closing: true })]))
+    await expect(emdashAgentRegistry.waitUntilReady('conv-1')).rejects.toThrow(/is not live after reopen/)
+  })
+})

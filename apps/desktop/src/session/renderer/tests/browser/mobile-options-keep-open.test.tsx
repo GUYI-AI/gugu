@@ -106,7 +106,9 @@ it('localizes the phone model list while preserving the native selection ID', as
     mount(<ModelChoices models={models} state="ready" harnessName="Claude Code"
       selection={{ harness: 'claude', model: 'default', permissionMode: null, effort: null }}
       onPick={onPick} onLeave={() => {}} />);
-    await expect.element(page.getByRole('radio', { name: '默认（推荐） Sonnet 5.5', exact: true })).toHaveAttribute('aria-checked', 'true');
+    // owner 11-25: no 「默认」 placeholder — the default row is named after the model it runs (and keeps the native ID).
+    await expect.element(page.getByRole('radio', { name: /^Sonnet 5\.5/ })).toHaveAttribute('aria-checked', 'true');
+    expect([...document.querySelectorAll('[role="radio"]')].map((radio) => radio.textContent ?? '').join(' | ')).not.toMatch(/默认|Default/);
     await expect.element(page.getByRole('radio', { name: 'New model', exact: true })).toBeVisible();
     await page.getByRole('radio', { name: 'Haiku 5.5 响应速度快，适合简短问答' }).click();
     expect(onPick).toHaveBeenCalledExactlyOnceWith('haiku');

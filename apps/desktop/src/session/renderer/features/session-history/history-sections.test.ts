@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionHistoryDirectoryRow } from '@shared/core/session-history/session-history';
-import { buildSections, mergeSorted, type HistoryEntry, type SectionKeyed, type SectionRef } from './history-sections';
+import { buildSections, keepDrawnOrder, mergeSorted, type HistoryEntry, type SectionKeyed, type SectionRef } from './history-sections';
 
 // A directory page row as the main process gives it: `key` is its section (`project:<chat>` or a directory).
 const dir = (key: string, updatedAt: number, projectName: string | null = null): SessionHistoryDirectoryRow => ({
@@ -69,5 +69,18 @@ describe('history sections across machines', () => {
 
   it('merges already sorted lists into one sorted list', () => {
     expect(mergeSorted([[1, 4, 9], [2, 3], [10]], (a, b) => a - b)).toEqual([1, 2, 3, 4, 9, 10]);
+  });
+});
+
+describe('keepDrawnOrder', () => {
+  const keys = (sections: Array<{ key: string }>) => sections.map((section) => section.key);
+  it('keeps the sections already drawn where they were and appends new ones in their own order', () => {
+    // A late machine brings `b` (sorted first) and `d`: they go after what is on screen, which does not move.
+    const next = [{ key: 'b' }, { key: 'c' }, { key: 'a' }, { key: 'd' }];
+    expect(keys(keepDrawnOrder(next, ['a', 'c']))).toEqual(['a', 'c', 'b', 'd']);
+  });
+  it('with nothing drawn yet, follows the sort; a drawn section that is gone is just left out', () => {
+    expect(keys(keepDrawnOrder([{ key: 'b' }, { key: 'a' }], []))).toEqual(['b', 'a']);
+    expect(keys(keepDrawnOrder([{ key: 'c' }], ['a', 'c']))).toEqual(['c']);
   });
 });

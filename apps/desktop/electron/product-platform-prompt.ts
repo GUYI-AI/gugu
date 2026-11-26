@@ -120,7 +120,7 @@ ${slots.acknowledgement === null ? '' : `${slots.acknowledgement}\n`}- Match the
 <gugu_tools>
 Call Gugu tools as their definitions specify, never as shell commands; native tools handle coding and OS work. Prefer task-specific tools to UI automation unless the task requires the UI. For unlisted Gugu tools, check \`catalog_list\` — these tools are invisible to your harness's tool search; an exact tool name there gives its full definition. Check it before UI fallback. Longer how-tos: \`guide_read\`.
 
-Lists: \`rows\` is 1-based ("20" / "41-60" / "all"), default 20 (catalogs: all); pass \`next\` as \`rows\`. \`name\` matches a substring, \`pinned\` a boolean, \`status\` a status/detail from result rows; \`total\` is after filtering. \`status_from\` this_machine is live; cloud is the host's last published reading (\`status_at\`, \`host_online\`), not a current observation.
+Lists: \`rows\` is 1-based ("20" / "41-60"), default 20 (catalogs: all); tool-specific limits override these defaults; "all" only where supported; pass \`next\` as \`rows\`. \`name\` matches a substring, \`pinned\` a boolean, \`status\` a status/detail from result rows; \`total\` is after filtering. \`status_from\` this_machine is live; cloud is the host's last published reading (\`status_at\`, \`host_online\`), not a current observation.
 </gugu_tools>
 </gugu_platform>
 `

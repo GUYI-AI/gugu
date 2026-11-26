@@ -13,6 +13,13 @@ describe('inner sidebar topics, level one', () => {
     expect(rows.hidden).toBe(15 - INNER_SIDEBAR_TOPIC_LIMIT)
   })
 
+  it('keeps open topics in the compact list without changing its size or sort order', () => {
+    const topics = Array.from({ length: 12 }, (_, i) => topic(`t${i}`, 100 - i))
+    const rows = innerSidebarTopicRows(topics, { all: false, openTopicIds: ['t8', 't11'] })
+    expect(rows.shown.map(topic => topic.id)).toEqual(['t0', 't1', 't2', 't3', 't8', 't11'])
+    expect(rows.hidden).toBe(6)
+  })
+
   it('pinned first, then most recent, in both levels: unread only marks a topic, it never moves one (reading it leaves it in place)', () => {
     const chats = [
       topic('recent', 100), topic('recent-2', 99, { unread_count: 2 }), topic('recent-3', 98),

@@ -1,14 +1,21 @@
 import { sessionActionDefault, type ShortcutPlatform } from './shortcuts';
 
+/** The four groups the shortcut settings and the cheat sheet list commands under. */
+export type CommandCategory = 'Navigation' | 'Task View' | 'Tab Navigation' | 'View';
+
 /** The single catalog for built-in command labels and key bindings. */
 export interface CommandDef {
   id: string;
+  /** English name. Shown words come from the session catalog: `labelKey` (a menu's own name) or `command.<id>`. */
   label: string;
   labelKey?: string;
+  /** English help text; shown words come from `commandHelp.<id>`. */
   description: string;
   iconKey?: string;
-  category: string;
+  category: CommandCategory;
   defaultHotkey?: string | ((platform: ShortcutPlatform) => string);
+  /** Further fixed chords for the same command (browser-style Ctrl+Tab next to the configurable one). Not rebindable. */
+  aliases?: readonly string[];
   hideFromSettings?: boolean;
   ignoreInputs?: boolean;
   /** Capture before terminal widgets and modal roots consume global entry keys. */
@@ -16,16 +23,26 @@ export interface CommandDef {
   conflictBehavior?: 'prevent' | 'allow';
   ignoreWhenCodeEditorFocused?: boolean;
   ignoreWhenBrowserFocused?: boolean;
+  /**
+   * While the shell shows another tab the task page stays mounted but hidden, and its commands stand down. A command
+   * that is still the user's intent from there says so: 'run' = it acts on the shell itself; 'reveal' = bring the
+   * task page forward, then run it there. Unset = it only means something on the task page.
+   */
+  whenSessionPageHidden?: 'run' | 'reveal';
 }
+
+/** Whether a command is named by a menu's own words (`labelKey`) is kept in its type, so the copy catalog can tell. */
+type CommandEntry<K, D> = CommandDef & { id: K } & (D extends { labelKey: infer L extends string } ? { labelKey: L } : { labelKey?: undefined });
 
 function defineCommands<const T extends Record<string, Omit<CommandDef, 'id'>>>(defs: T) {
   return Object.fromEntries(Object.entries(defs).map(([id, def]) => [id, { ...def, id }])) as {
-    [K in keyof T]: CommandDef & { id: K };
+    [K in keyof T]: CommandEntry<K, T[K]>;
   };
 }
 
 export const COMMANDS = defineCommands({
   'app.settings': {
+    whenSessionPageHidden: 'run',
     label: 'Open Settings',
     labelKey: 'appSettings.settings',
     description: 'Open application settings',
@@ -35,6 +52,7 @@ export const COMMANDS = defineCommands({
   },
   // Preserve existing custom bindings for the shortcut to this area.
   'app.library': {
+    whenSessionPageHidden: 'reveal',
     label: 'Open Marketplace',
     labelKey: 'extensions.tabMarket',
     description: 'Open the Marketplace',
@@ -43,6 +61,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.newProject': {
+    whenSessionPageHidden: 'reveal',
     label: 'New Project',
     labelKey: 'sidebar.addProject',
     description: 'Add a new local or SSH project',
@@ -51,6 +70,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.newSession': {
+    whenSessionPageHidden: 'reveal',
     label: 'New Task',
     labelKey: 'sidebar.newTask',
     description: 'Create a new task in this project',
@@ -59,6 +79,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.sessionHistory': {
+    whenSessionPageHidden: 'reveal',
     label: 'Task history',
     labelKey: 'sidebar.sessionHistory',
     description: 'View Gugu tasks and local Claude Code / Codex sessions in one list: open them, restore archived ones, or import ones not yet imported',
@@ -66,6 +87,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.newGroupChat': {
+    whenSessionPageHidden: 'run',
     label: 'New group chat',
     labelKey: 'sidebar.newGroupChat',
     description: 'Create a group chat',
@@ -73,6 +95,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.addContact': {
+    whenSessionPageHidden: 'run',
     label: 'Add contact',
     labelKey: 'sidebar.addContact',
     description: 'Add a contact',
@@ -80,6 +103,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.scheduled': {
+    whenSessionPageHidden: 'reveal',
     label: 'Scheduled',
     labelKey: 'sidebar.scheduled',
     description: 'Open the scheduled tasks',
@@ -87,6 +111,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.giveFeedback': {
+    whenSessionPageHidden: 'run',
     label: 'Give Feedback',
     labelKey: 'main:shell.feedback',
     description: 'Send feedback to the Gugu team',
@@ -94,6 +119,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.toggleTheme': {
+    whenSessionPageHidden: 'run',
     label: 'Toggle Theme',
     description: 'Switch between light and dark themes',
     iconKey: 'palette',
@@ -114,6 +140,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.showKeyboardShortcuts': {
+    whenSessionPageHidden: 'reveal',
     label: 'Keyboard Shortcuts',
     description: 'Show the keyboard shortcuts cheat sheet',
     iconKey: 'keyboard',
@@ -286,6 +313,7 @@ export const COMMANDS = defineCommands({
     ignoreWhenBrowserFocused: true,
   },
   'app.commandPalette': {
+    whenSessionPageHidden: 'reveal',
     capture: true,
     defaultHotkey: 'Mod+P',
     label: 'Command Palette',
@@ -293,6 +321,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.quickSwitcher': {
+    whenSessionPageHidden: 'reveal',
     capture: true,
     defaultHotkey: 'Mod+O',
     label: 'Quick Switcher',
@@ -300,6 +329,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.globalSearch': {
+    whenSessionPageHidden: 'reveal',
     capture: true,
     defaultHotkey: 'Mod+Shift+F',
     label: 'Search Messages',
@@ -334,12 +364,14 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'session.tabNext': {
+    aliases: ['Control+Tab'],
     defaultHotkey: 'Mod+Alt+ArrowRight',
     label: 'Next Tab',
     description: 'Switch to the next tab',
     category: 'Tab Navigation',
   },
   'session.tabPrev': {
+    aliases: ['Control+Shift+Tab'],
     defaultHotkey: 'Mod+Alt+ArrowLeft',
     label: 'Previous Tab',
     description: 'Switch to the previous tab',
@@ -392,7 +424,6 @@ export const COMMANDS = defineCommands({
     label: 'Next Task',
     description: 'Move to the next task in the sidebar and show it',
     category: 'Navigation',
-    conflictBehavior: 'allow',
     ignoreWhenCodeEditorFocused: true,
     ignoreWhenBrowserFocused: true,
   },
@@ -401,7 +432,6 @@ export const COMMANDS = defineCommands({
     label: 'Previous Task',
     description: 'Move to the previous task in the sidebar and show it',
     category: 'Navigation',
-    conflictBehavior: 'allow',
     ignoreWhenCodeEditorFocused: true,
     ignoreWhenBrowserFocused: true,
   },
@@ -493,6 +523,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.resourceMonitor': {
+    whenSessionPageHidden: 'run',
     label: 'Resource Monitor',
     labelKey: 'palette.resourceMonitor',
     description: 'View application resource usage',
@@ -552,6 +583,99 @@ export const COMMANDS = defineCommands({
     category: 'Tab Navigation',
     defaultHotkey: 'Mod+9',
   },
+  'chat.scrollToTop': {
+    defaultHotkey: 'Mod+ArrowUp',
+    label: 'Scroll to Top',
+    description: 'Scroll the focused conversation to its first message',
+    category: 'Task View',
+  },
+  'chat.scrollToBottom': {
+    defaultHotkey: 'Mod+ArrowDown',
+    label: 'Jump to Latest',
+    description: 'Scroll the focused conversation to its latest message',
+    category: 'Task View',
+  },
+  'app.closeWindow': {
+    defaultHotkey: 'Mod+W',
+    label: 'Close Window',
+    description: 'Close this window when no tab has the focus',
+    category: 'Navigation',
+    whenSessionPageHidden: 'run',
+    ignoreWhenBrowserFocused: true,
+  },
+  'app.goMessages': {
+    defaultHotkey: 'Mod+Alt+1',
+    label: 'Go to Messages',
+    description: 'Show the messages tab',
+    category: 'Navigation',
+    whenSessionPageHidden: 'run',
+  },
+  'app.goContacts': {
+    defaultHotkey: 'Mod+Alt+2',
+    label: 'Go to Contacts',
+    description: 'Show the contacts tab',
+    category: 'Navigation',
+    whenSessionPageHidden: 'run',
+  },
+  'chat.select1': {
+    label: 'Open Conversation 1',
+    description: 'Open the conversation in position 1 of the list',
+    category: 'Navigation',
+    defaultHotkey: 'Mod+1',
+  },
+  'chat.select2': {
+    label: 'Open Conversation 2',
+    description: 'Open the conversation in position 2 of the list',
+    category: 'Navigation',
+    defaultHotkey: 'Mod+2',
+  },
+  'chat.select3': {
+    label: 'Open Conversation 3',
+    description: 'Open the conversation in position 3 of the list',
+    category: 'Navigation',
+    defaultHotkey: 'Mod+3',
+  },
+  'chat.select4': {
+    label: 'Open Conversation 4',
+    description: 'Open the conversation in position 4 of the list',
+    category: 'Navigation',
+    defaultHotkey: 'Mod+4',
+  },
+  'chat.select5': {
+    label: 'Open Conversation 5',
+    description: 'Open the conversation in position 5 of the list',
+    category: 'Navigation',
+    defaultHotkey: 'Mod+5',
+  },
+  'chat.select6': {
+    label: 'Open Conversation 6',
+    description: 'Open the conversation in position 6 of the list',
+    category: 'Navigation',
+    defaultHotkey: 'Mod+6',
+  },
+  'chat.select7': {
+    label: 'Open Conversation 7',
+    description: 'Open the conversation in position 7 of the list',
+    category: 'Navigation',
+    defaultHotkey: 'Mod+7',
+  },
+  'chat.select8': {
+    label: 'Open Conversation 8',
+    description: 'Open the conversation in position 8 of the list',
+    category: 'Navigation',
+    defaultHotkey: 'Mod+8',
+  },
+  'chat.select9': {
+    label: 'Open Conversation 9',
+    description: 'Open the conversation in position 9 of the list',
+    category: 'Navigation',
+    defaultHotkey: 'Mod+9',
+  },
 });
 
 export type CommandId = keyof typeof COMMANDS;
+
+/** Commands whose shown name is a menu's own entry (`labelKey`); every other command is named by `command.<id>`. */
+export type MenuNamedCommandId = {
+  [K in CommandId]: (typeof COMMANDS)[K] extends { labelKey: string } ? K : never;
+}[CommandId];

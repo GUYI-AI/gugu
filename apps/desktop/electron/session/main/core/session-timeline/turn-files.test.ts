@@ -161,7 +161,7 @@ describe('turnFileText (P3 task turn attachments)', () => {
   it('inlines an image only for an ACP turn and only a supported image type', async () => {
     mocks.resolveAccountFile.mockImplementation(async () => resolved('local'));
     const acp = await turnFileText('task-1', [png, heic, doc], true);
-    expect(acp.images).toEqual([{ type: 'local-file', originalPath: '/Users/me/shot.png', mimeType: 'image/png', name: 'shot.png' }]);
+    expect(acp.images).toEqual([{ type: 'local-file', originalPath: '/Users/me/shot.png', mimeType: 'image/png', name: 'shot.png', fileItemId: 'item-png' }]);
     expect(acp.text.split('\n\n')).toHaveLength(3);
     expect(acp.text).toContain('[File at local path: /Users/me/shot.heic]');
     const pty = await turnFileText('task-1', [png], false);

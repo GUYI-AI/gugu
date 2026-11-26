@@ -322,14 +322,21 @@ export class LocalPasswordVault {
       } finally { for (const item of payload.credentials) { item.account = ''; item.password = ''; for (const field of item.fields) field.value = '' } }
     })
   }
-  /** The host's own use of a credential it saved for itself (a connector's token, an App's request sent by main): its password,
-   * or null when the person deleted it. Read like any stored secret of the app: no person step and no per-use audit. */
+  /** The host's own use of a credential (a connector's token, an App's request sent by main): its secret value — the password,
+   * or, when it has none, its one secret field (a token saved through an agent's form names its field: `token`) — or null when
+   * the person deleted it, '' when it holds no such value. Read like any stored secret of the app: no person step and no
+   * per-use audit. */
   hostSecret(context: object, credentialId: string): Promise<string | null> {
     this.person(context)
     return this.run(async () => {
       await this.gates(); await this.open(undefined, true)
       const { key, document } = this.unlocked(), payload = this.#file.payload(document, key)
-      try { return payload.credentials.find(item => item.id === credentialId)?.password ?? null }
+      try {
+        const item = payload.credentials.find(entry => entry.id === credentialId)
+        if (!item) return null
+        const secrets = item.fields.filter(field => field.secret && field.value)
+        return item.password || (secrets.length === 1 ? secrets[0]!.value : '')
+      }
       finally { for (const item of payload.credentials) { item.account = ''; item.password = ''; for (const field of item.fields) field.value = '' } }
     })
   }

@@ -139,11 +139,9 @@ const PINNED_LONG_USER_TEXT = [
 ].join('\n');
 
 /**
- * Pinned user message + scrollable content — the user message row sticks to the
- * top while its turn is on screen, keeping its expand/collapse state.
+ * Long user message + scrollable content.
  * The long user message exceeds USER_COLLAPSED_MAX_H (120px); click it to expand
- * to USER_EXPANDED_MAX_H (360px). Click outside to collapse. Scroll down to see
- * it stay at the top in the same state.
+ * to USER_EXPANDED_MAX_H (360px). Click outside to collapse.
  */
 export const PinnedOverflow: Story = {
   render: () => (

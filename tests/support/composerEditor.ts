@@ -5,6 +5,7 @@ type ComposerElement = HTMLElement & { editor: {
   commands: {
     setContent(content: ReturnType<typeof plainTextDoc>, options: { emitUpdate: boolean }): void
     setTextSelection(position: number | { from: number; to: number }): void
+    insertContentAt(position: number, text: string): void
   }
   state: { doc: Parameters<typeof serializeDoc>[0] }
 } }
@@ -14,6 +15,13 @@ export function writeComposer(element: Element | null, text: string): void {
   const editor = (element as ComposerElement).editor
   editor.commands.setContent(plainTextDoc(text), { emitUpdate: true })
   editor.commands.setTextSelection(editor.state.doc.content.size - 1)
+}
+
+/** Types at the end of what is there, keeping it (an inline picture stays where it is). */
+export function appendToComposer(element: Element | null, text: string): void {
+  if (!(element instanceof HTMLElement) || !('editor' in element)) throw new Error('Chat editor is not mounted')
+  const editor = (element as ComposerElement).editor
+  editor.commands.insertContentAt(editor.state.doc.content.size - 1, text)
 }
 
 export function readComposer(element: Element | null): string {

@@ -107,7 +107,9 @@ export function useSessionWorkspaceActions(
     ? [{ id: 'extensions-unknown', label: '', icon: null, section: 'extensions', unknown: true, disabled: true, onClick: () => undefined }]
     : installed.value.enabledTabContributions.map((contribution) => ({
       id: contribution.kind,
-      label: contribution.title,
+      // The name its tab will carry once opened (an App's own page is called by the App's name, `tabTitle`), so the
+      // entry and the tab it opens never read as two different things (「动态」 opening 「咕咕助理」).
+      label: installed.value.tabTitle(contribution.kind) ?? contribution.title,
       icon: <TabKindMark kind={contribution.kind} />,
       section: 'extensions',
       onClick: () => onOpenApp(contribution.kind),

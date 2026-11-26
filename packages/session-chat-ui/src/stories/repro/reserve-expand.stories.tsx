@@ -105,7 +105,6 @@ function ReserveExpandHarness() {
       state,
       parent: container,
       stickToBottom: true,
-      pinUserMessages: true,
       composer: 'none',
     });
     onCleanup(() => view.dispose());
@@ -137,7 +136,7 @@ function ReserveExpandHarness() {
 }
 
 /**
- * Short transcript with pinUserMessages. The transcript fits in less than one
+ * Short transcript. The transcript fits in less than one
  * viewport height, activating the reserve. Expand/collapse the thinking row —
  * the header must remain stable (no scroll jump).
  */

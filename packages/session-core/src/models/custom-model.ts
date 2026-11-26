@@ -16,15 +16,23 @@ export function normalizeModelBaseUrl(value: string): string {
   return url.toString().replace(/\/+$/, '');
 }
 
+/** The entered URL is the identity; detected protocol routes may use other paths. */
+export function customModelApiUrl(connection: Pick<CustomModelMeta, 'apiUrl' | 'endpoints'>): string {
+  return normalizeModelBaseUrl(connection.apiUrl ?? connection.endpoints[0]!.baseUrl);
+}
+
 /**
  * The protocol an address names by its own path, before any network request: the vendor's documented route tail or
- * prefix. `undefined` when the path doesn't say (a bare `/v1` is served by several protocols), so the person chooses.
+ * prefix, or a vendor's own API host that speaks one protocol (Anthropic's, like Gemini's below). `undefined` when the
+ * address doesn't say (a bare `/v1` is served by several protocols). The probe tries this one first; an address that
+ * refuses every path (Anthropic and Zhipu check the key before routing) is then added as it.
  */
 export function detectModelProtocol(value: string): ModelProtocol | undefined {
   let url: URL;
   try { url = new URL(value.trim()); } catch { return undefined; }
   const path = url.pathname.replace(/\/+$/, '').toLowerCase();
-  if (/\/(?:v1\/)?messages$/.test(path) || /(?:^|\/)anthropic$/.test(path)) return 'anthropic-messages';
+  if (/\/(?:v1\/)?messages$/.test(path) || /(?:^|\/)anthropic(?:\/v1)?$/.test(path)) return 'anthropic-messages';
+  if (url.hostname === 'api.anthropic.com' && /^(?:\/v1)?$/.test(path)) return 'anthropic-messages';
   if (/\/responses$/.test(path)) return 'openai-responses';
   if (/\/chat\/completions$/.test(path) || /\/openai$/.test(path)) return 'openai-chat-completions';
   if (url.hostname === 'generativelanguage.googleapis.com' && /^\/v1(?:beta)?(?:\/models)?$/.test(path)) return 'gemini-generate-content';
@@ -39,14 +47,47 @@ export const modelEndpointSchema = z.object({
   }),
 });
 
+/** The thinking levels a person can declare for a custom model, lowest first. */
+export const CUSTOM_MODEL_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export const customModelEffortLevelSchema = z.enum(CUSTOM_MODEL_EFFORT_LEVELS);
+export type CustomModelEffortLevel = z.infer<typeof customModelEffortLevelSchema>;
+
 export const customModelEntrySchema = z.object({
   id: z.string().trim().min(1).max(200),
   label: z.string().trim().max(200).optional(),
   image: z.boolean().optional(),
+  /** Thinking mode. Off: the model is offered no thinking levels. */
   thinking: z.boolean().optional(),
+  /**
+   * What the person declared about tool calling and whether thinking can be switched off. Stored and shown again;
+   * no harness reads them yet.
+   */
+  toolCall: z.boolean().optional(),
+  thinkingOnly: z.boolean().optional(),
+  thinkingOptional: z.boolean().optional(),
+  /** The provider takes `service_tier: "priority"`; only an OpenAI Chat or Responses address can. */
+  fast: z.boolean().optional(),
+  /** The levels the person checked. Present (even empty) wins over the models.dev catalog. */
+  efforts: z.array(customModelEffortLevelSchema).max(CUSTOM_MODEL_EFFORT_LEVELS.length).optional(),
+  /** The level a new session starts on; absent = the request carries none. */
+  defaultEffort: customModelEffortLevelSchema.optional(),
+  /** An explicitly selected models.dev ID for a relay ID that cannot be resolved directly. */
+  modelsDevId: z.string().trim().min(1).max(200).optional(),
   contextWindow: z.number().int().positive().optional(),
+  contextLengths: z.array(z.number().int().positive()).max(20).optional(),
+  defaultContextLength: z.number().int().positive().optional(),
   maxOutput: z.number().int().positive().optional(),
 });
+
+const modelsDevChoiceSchema = z.object({ catalogId: z.string(), name: z.string() });
+export const customModelEffortResultSchema = z.discriminatedUnion('kind', [
+  modelsDevChoiceSchema.extend({ kind: z.literal('found'), efforts: z.array(z.string()) }),
+  z.object({ kind: z.literal('ambiguous'), candidates: z.array(modelsDevChoiceSchema) }),
+  z.object({ kind: z.literal('not-found') }),
+  z.object({ kind: z.literal('unavailable') }),
+]);
+export type CustomModelEffortResult = z.infer<typeof customModelEffortResultSchema>;
+const customModelViewSchema = customModelEntrySchema.extend({ effortCatalog: customModelEffortResultSchema.optional() });
 
 export const customModelRouteSchema = z.object({
   id: z.string().uuid(),
@@ -58,19 +99,28 @@ export const customModelRouteSchema = z.object({
 export type CustomModelRoute = z.infer<typeof customModelRouteSchema>;
 
 export const customModelMetaSchema = z.object({
+  apiUrl: modelEndpointSchema.shape.baseUrl.optional(),
   preset: z.string().nullable(),
   endpoints: z.array(modelEndpointSchema).min(1).max(4)
     .refine((entries) => new Set(entries.map(({ protocol }) => protocol)).size === entries.length, 'Use one address per protocol'),
   models: z.array(customModelEntrySchema).max(200)
     .refine((entries) => new Set(entries.map(({ id }) => id)).size === entries.length, 'Model IDs must be unique'),
+  // Keep per-model settings when a model is switched off. Runtime pickers read only `models`.
+  disabledModels: z.array(customModelEntrySchema).max(200)
+    .refine(entries => new Set(entries.map(({ id }) => id)).size === entries.length, 'Model IDs must be unique').optional(),
   routes: z.array(customModelRouteSchema).max(100)
     .refine((routes) => new Set(routes.map(({ id }) => id)).size === routes.length, 'Route IDs must be unique').optional(),
   /** The protocol the person picked for a harness (harness id → protocol); a harness not named here takes `matchCustomModel`'s order. */
   harnessProtocols: z.record(z.string(), modelProtocolSchema).optional(),
+  /**
+   * The address refused the key (401/403) when this was saved; the save went ahead with the key as typed and the protocol
+   * inferred from the refusal. The first real request tells whether the key works; a later save that the address answers clears it.
+   */
+  unverified: z.boolean().optional(),
   removed: z.boolean().optional(),
 });
 export type CustomModelMeta = z.infer<typeof customModelMetaSchema>;
-export type CustomModelEntry = z.infer<typeof customModelEntrySchema>;
+export type CustomModelEntry = z.infer<typeof customModelViewSchema>;
 
 /**
  * Whether a custom model takes image input. Only the person can say a model doesn't: no model list or Codex config
@@ -91,15 +141,45 @@ export function customModelThinks(entry: Pick<CustomModelEntry, 'thinking'> | un
 }
 
 /**
- * A thinking custom model's own levels. No model list we read (OpenAI's or Gemini's shape) declares any, so it offers
- * the harness's declared ladder; the picker shows and the launch arms this same list.
+ * The levels a session on this model can choose: the ones the person checked, else the matched catalog entry's, kept
+ * to those the harness can send. None while thinking is off.
  */
 export function customModelEfforts(
-  entry: Pick<CustomModelEntry, 'thinking'> | undefined,
+  entry: Pick<CustomModelEntry, 'effortCatalog' | 'efforts' | 'thinking'> | undefined,
   harnessEffort: { kind: string; effortOptions?: Record<string, unknown> } | undefined,
 ): string[] | null {
-  return customModelThinks(entry) && harnessEffort?.kind === 'selectable' && harnessEffort.effortOptions
-    ? Object.keys(harnessEffort.effortOptions) : null;
+  const catalog = entry?.effortCatalog;
+  const options = harnessEffort?.kind === 'selectable' ? harnessEffort.effortOptions : undefined;
+  if (!options || !customModelThinks(entry)) return null;
+  const declared = entry?.efforts ?? (catalog?.kind === 'found' ? catalog.efforts : null);
+  const levels = declared?.filter((id) => id.toLowerCase() !== 'default' && Object.hasOwn(options, id)) ?? [];
+  return levels.length ? levels : null;
+}
+
+/** The level a new session on this model starts on, when the person chose one this harness offers. */
+export function customModelDefaultEffort(
+  entry: Pick<CustomModelEntry, 'defaultEffort'> | undefined,
+  levels: readonly string[] | null,
+): string | undefined {
+  return entry?.defaultEffort && levels?.includes(entry.defaultEffort) ? entry.defaultEffort : undefined;
+}
+
+/** The protocols whose requests can carry `service_tier`. */
+export const FAST_PROTOCOLS: readonly ModelProtocol[] = ['openai-chat-completions', 'openai-responses'];
+
+/** A custom model's Fast uses twice the tokens (owner 2026-11-25), the same as Codex. */
+export const CUSTOM_FAST_TOKEN_MULTIPLIER = 2;
+
+/** The catalog's levels the dialog can check. */
+export function customModelCatalogLevels(result: CustomModelEffortResult | undefined): CustomModelEffortLevel[] {
+  if (result?.kind !== 'found') return [];
+  return CUSTOM_MODEL_EFFORT_LEVELS.filter((level) => result.efforts.includes(level));
+}
+
+/** The default a set of checked levels proposes: High when checked, else the highest one; none = automatic. */
+export function proposedDefaultEffort(levels: readonly CustomModelEffortLevel[]): CustomModelEffortLevel | undefined {
+  if (levels.includes('high')) return 'high';
+  return [...CUSTOM_MODEL_EFFORT_LEVELS].reverse().find((level) => levels.includes(level));
 }
 
 const NON_CHAT_MODEL = /embed|rerank|moderation|whisper|tts|speech|transcri|audio|realtime|dall-e|image|seedream|seedance|video|sora|veo|kling|hailuo/i;
@@ -136,7 +216,7 @@ export type SessionModelSelection = z.infer<typeof sessionModelSelectionSchema>;
 export type CustomModelRef = Extract<SessionModelSelection, { kind: 'custom' }>;
 
 /** Where a connection was found on this machine. Never carries the key or its fingerprint. */
-export const discoverySourceSchema = z.enum(['codex-auth', 'codex-provider', 'shell-env']);
+export const discoverySourceSchema = z.enum(['codex-auth', 'codex-provider', 'shell-env', 'claude-settings']);
 export type DiscoverySource = z.infer<typeof discoverySourceSchema>;
 
 export const customModelConnectionSchema = z.object({
@@ -144,7 +224,11 @@ export const customModelConnectionSchema = z.object({
   name: z.string(),
   credentialRef: z.string(),
   keySaved: z.boolean(),
+  managedNativeHarnesses: z.array(z.enum(['codex', 'claude'])).optional(),
+  keyConflict: z.boolean().optional(),
+  keyLast4: z.string().max(4).optional(),
   ...customModelMetaSchema.shape,
+  models: z.array(customModelViewSchema),
   /**
    * Present when this machine already had the connection configured; `keyLast4` is all the wire carries of the key.
    * Only this computer's own window reads the whole key, through `CUSTOM_MODEL_KEY_CHANNEL`.

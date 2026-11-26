@@ -14,7 +14,7 @@ vi.mock('@/lib/supabase', () => {
   };
   return {
     chatDb: { from: request, rpc: () => ({ abortSignal: () => Promise.resolve({ data: [], error: null }) }) },
-    identityDb: { from: () => ({ select: () => ({ eq: () => ({ eq: () => ({ abortSignal: () => Promise.resolve({ data: [], error: null }) }) }) }) }) },
+    identityDb: { rpc: () => ({ abortSignal: () => Promise.resolve({ data: [], error: null }) }) },
   };
 });
 vi.mock('@/lib/sessionPublication', () => ({ observeRendererSession: () => () => {}, getRendererSession: () => ({ user: { id: 'owner' } }) }));

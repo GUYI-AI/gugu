@@ -65,7 +65,6 @@ export type ChatViewOptions = {
    */
   contentOverlay?: boolean;
   stickToBottom?: boolean;
-  pinUserMessages?: boolean;
   /** Extra class for the scroll container. */
   class?: string;
   /** Class for the centered content column. */
@@ -113,8 +112,6 @@ export type ChatView = {
   /** Resume measurement from the latest model before showing a retained view. */
   setShown(shown: boolean): void;
   setCommands(commands: ChatCommands): void;
-  /** Change user-message pinning without remounting the transcript. */
-  setPinUserMessages(enabled: boolean): void;
   /** Settle a host compositor ownership change before the browser can paint it. */
   reconcileNow?(): void;
   /** Scroll to the top of the transcript. */
@@ -187,7 +184,6 @@ export function createChatView(opts: ChatViewOptions): ChatView {
   const [padTop, setPadTop] = createSignal(opts.padTop ?? 0);
   const [padBottom, setPadBottom] = createSignal(opts.padBottom ?? 0);
   const [commands, setCommandsSignal] = createSignal<ChatCommands>(opts.commands ?? {});
-  const [pinUserMessages, setPinUserMessages] = createSignal(!!opts.pinUserMessages);
   // Hold the active ChatState in a signal so view.setModel() can swap models
   // reactively without tearing down the Solid root. Use a function form of
   // setCurrentModel to prevent Solid from treating the ChatState as a factory.
@@ -231,7 +227,6 @@ export function createChatView(opts: ChatViewOptions): ChatView {
     setCommands(c) {
       setCommandsSignal(c);
     },
-    setPinUserMessages,
     reconcileNow() {
       controls.reconcileNow?.();
     },
@@ -297,7 +292,6 @@ export function createChatView(opts: ChatViewOptions): ChatView {
           onAtBottomChange={onAtBottomChange}
           onActiveUserMessageVisibilityChange={onActiveUserMessageVisibilityChange}
           controls={controls}
-          pinUserMessages={pinUserMessages()}
           composer={opts.composer}
           composerPlacement={opts.composerPlacement}
           contentOverlay={opts.contentOverlay}

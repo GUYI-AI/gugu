@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { contextThresholdKey, supportsContextThreshold } from '@gugu/session-core/models/context-threshold';
+import { contextThresholdForWindow, contextThresholdKey, contextThresholdMinimum, supportsContextThreshold } from '@gugu/session-core/models/context-threshold';
 import { platformOptionId } from '@/session/shared/platform-model-id';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
@@ -15,5 +15,9 @@ export async function sessionContextThreshold(id: string) {
   const model = platform ? platformOptionId(platform) : config?.model;
   if (!model) return undefined;
   const thresholds = await appSettingsService.get('contextThresholds');
-  return thresholds[contextThresholdKey(provider, model)];
+  const preference = thresholds[contextThresholdKey(provider, model)];
+  const choice = config?.contextChoice;
+  return choice?.model === model && choice.window > contextThresholdMinimum(provider)
+    ? contextThresholdForWindow(preference, choice.window)
+    : preference;
 }

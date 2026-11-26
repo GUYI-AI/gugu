@@ -1,3 +1,4 @@
+import { findWindowsRegisteredPaths } from '@gugu/core/local/windowsRegistry';
 import { realpath as fsRealpath } from 'node:fs/promises';
 import { execFile } from '@gugu/core/local/childProcess';
 import { promisify } from 'node:util';
@@ -55,6 +56,11 @@ export class LocalExecutionContext implements IExecutionContext {
     if (process.platform !== 'win32') return null;
     // 与 exec 同一份环境:找到的就是 exec 会跑的那个。
     return findWindowsCommandPaths(command, { env: env ?? buildExternalToolEnv(), cwd: this.root || undefined });
+  }
+
+  async findWindowsRegisteredPaths(registryKey: string, relativePath: string, env?: Record<string, string>): Promise<string[]> {
+    if (process.platform !== 'win32') return [];
+    return findWindowsRegisteredPaths(registryKey, relativePath, env ?? buildExternalToolEnv());
   }
 
   exec(command: string, args: string[] = [], opts: ExecContextOptions = {}): Promise<ExecResult> {

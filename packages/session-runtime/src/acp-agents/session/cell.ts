@@ -55,6 +55,7 @@ import type { Result } from '@gugu/session-shared';
 import { errorDetail, ok, toSerializedError } from '@gugu/session-shared';
 import { invokesCommand } from '@gugu/session-core/acp/commands';
 import { nativePromptMeta } from '@gugu/session-core/acp/native-prompt';
+import { inlinePromptParts } from './inline-images';
 import { annotationPromptText } from '@gugu/session-core/acp/client';
 import { classifyTurnFailure, refusedTurnOutcome } from './turn-failure';
 import {
@@ -607,7 +608,7 @@ export class SessionCell {
       if (event.error && request && !request.steered && request.cycle === this.activeTurnCompletion
         && this.machine.phase.kind === 'ready') {
         const classified = classifyTurnFailure({ at: 'prompt', cause: event.error,
-          hostCredentials: this.deps.hostCredentials, closeRequested: this.closeRequested,
+          hostCredentials: this.deps.hostCredentials, customModelKey: this.deps.customModelKey, closeRequested: this.closeRequested,
           credentialRefusal: this.credentialRefusal });
         this.rawLog.record({ kind: 'prompt_result', sessionId: this.acpSessionId, stopReason: null, error: event.error });
         this.endWork(classified.outcome, { dequeueQueuedPrompt: this.dequeueAfterFailure });
@@ -1614,7 +1615,7 @@ export class SessionCell {
         }
         const classified = classifyTurnFailure({ at: 'prompt',
           cause: toSerializedError(event.error ? Object.assign(new Error(event.error.message), event.error) : new Error('Foreground ended with an error')),
-          hostCredentials: this.deps.hostCredentials, closeRequested: this.closeRequested,
+          hostCredentials: this.deps.hostCredentials, customModelKey: this.deps.customModelKey, closeRequested: this.closeRequested,
           credentialRefusal: this.credentialRefusal });
         if (classified.outcome.kind === 'error') this.deps.logger.error('SessionCell: prompt failed', { sessionId: this.sessionId, providerId: this.deps.providerId, acpSessionId: this.acpSessionId, cause: event.error });
         if (this.endWork(classified.outcome, { foreground: event, dequeueQueuedPrompt: this.dequeueAfterFailure })) this.lastFailureProvisional = classified.provisional;
@@ -2102,7 +2103,8 @@ export class SessionCell {
           // Steering does not change who opened the turn; retain this input's own origin for conversation readers.
           ...(steered ? { guguOwnerInput: isOwnerOrigin(prompt.origin) } : {}),
         },
-        ...(prompt.files?.length ? { files: prompt.files.map(({ itemId, version, name, mimeType, sizeBytes }) => ({ itemId, version, name, mimeType, sizeBytes })) } : {}),
+        ...(prompt.files?.length ? { files: prompt.files.map(({ itemId, version, name, mimeType, sizeBytes, imageDimensions }) =>
+          ({ itemId, version, name, mimeType, sizeBytes, ...(imageDimensions ? { imageDimensions } : {}) })) } : {}),
         ...(prompt.annotations?.length ? { annotations: prompt.annotations } : {}),
         content: [{ type: 'text', text: prompt.text }],
         contentMode: 'replace',
@@ -2203,19 +2205,23 @@ export class SessionCell {
       const contextBlocks = sessionContext
         ? [{ type: 'text' as const, text: sessionContext }]
         : [];
-      const attachmentBlocks = resolvedAttachments.filter((_, index) =>
-        prompt.attachments?.[index]?.type !== 'local-file' || this.acceptsImagePrompts
-      ).map((attachment) => ({
-        type: 'image' as const,
-        data: attachment.data,
-        mimeType: attachment.mimeType,
-      }));
+      const sendsImage = (index: number) => prompt.attachments?.[index]?.type !== 'local-file' || this.acceptsImagePrompts;
+      const imageBlock = (index: number) => ({ type: 'image' as const, data: resolvedAttachments[index].data, mimeType: resolvedAttachments[index].mimeType });
+      // Pictures the person placed in their words go there (inline-images.ts); the rest lead, as before.
+      const inline = prompt.text ? inlinePromptParts(prompt.text, (itemId) => {
+        const index = prompt.attachments?.findIndex((attachment) => attachment.type === 'local-file' && attachment.fileItemId === itemId) ?? -1;
+        return index >= 0 && sendsImage(index) ? index : null;
+      }) : null;
+      const placed = new Set(inline?.flatMap((part) => 'image' in part ? [part.image] : []));
+      const attachmentBlocks = resolvedAttachments.flatMap((_, index) => sendsImage(index) && !placed.has(index) ? [imageBlock(index)] : []);
       const turnContextBlocks = [prepared?.text, prepared?.beforeText, turnContext]
         .filter((text): text is string => !!text).map(text => ({ type: 'text' as const, text }));
       // The person's comments on what they were looking at go just ahead of their own words, as one block.
       const annotationText = annotationPromptText(prompt.annotations);
       const annotationBlocks = annotationText ? [{ type: 'text' as const, text: annotationText }] : [];
-      const textBlocks = prompt.text ? [{ type: 'text' as const, text: prompt.text }] : [];
+      const textBlocks = inline
+        ? inline.map((part) => 'image' in part ? imageBlock(part.image) : { type: 'text' as const, text: part.text })
+        : prompt.text ? [{ type: 'text' as const, text: prompt.text }] : [];
       // hiddenContext is host context for this message, such as a mentioned or scheduled issue.
       // Typed turns carry someone's words verbatim, without host context beside them.
       const trailingBlocks = [

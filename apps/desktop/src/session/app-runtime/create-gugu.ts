@@ -395,7 +395,8 @@ export function createGugu(
   // `gugu.prompts` (34, `prompts`): the person's own prompts.
   if (raw.prompts) api.prompts = Object.freeze({ list: coded(raw.prompts.list), save: coded(raw.prompts.save), delete: coded(raw.prompts.delete) });
   // `gugu.credentials` (61): a computer's pages; a phone and a program have none.
-  if (raw.credentials) api.credentials = Object.freeze({ read: coded(raw.credentials.read), write: coded(raw.credentials.write) });
+  if (raw.credentials) api.credentials = Object.freeze({ read: coded(raw.credentials.read), write: coded(raw.credentials.write),
+    ...(raw.credentials.choose ? { choose: coded(raw.credentials.choose) } : {}) });
   // `gugu.projects` (`files:read`): this computer's projects — a phone has none, and no member.
   if (raw.projects) api.projects = Object.freeze({ list: coded(raw.projects.list) });
   if (raw.sessions) api.sessions = Object.freeze({ index: coded(raw.sessions.index), read: coded(raw.sessions.read) });

@@ -61,4 +61,6 @@ export const promptEditorContentClass = style({
   // 就是点在可编辑元素上,ProseMirror 自己把光标落到最近的位置。
   flexGrow: 1,
   flexShrink: 0,
+  // Inline images are numbered in document order (inline-image-pill.css.ts).
+  counterReset: 'inline-image',
 });

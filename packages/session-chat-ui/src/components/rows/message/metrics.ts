@@ -1,4 +1,4 @@
-import { type FileRowKind, fileRowsHeight } from '@gugu/session-shared/file-row';
+import { type FileRowItem, fileRowsHeight } from '@gugu/session-shared/file-row';
 import { type ChatLayout, isDoubleColumnLayout } from '@session-chat/core/layout/preset';
 import { CONVERSATION_BLOCK_GAP } from '@session-chat/core/spacing';
 import type { ChatAttachment } from '@session-chat/model';
@@ -92,15 +92,15 @@ export function userPillWidth(
 /**
  * 附件条占掉的高度(含它与气泡之间那道间距);一件都没有时是 0(❌ 不留那道间距)。
  *
- * 每一枚是一条定宽的文件行(图片是同高的方形缩略图),形状和尺寸只在 `@gugu/session-shared/file-row`,
- * 绘制读的也是那一组数 ⇒ 这里只把附件翻成「图 / 文件」交给它排。
+ * 每一枚是一条定宽的文件行或一张图(群聊气泡那样按原图比例),形状和尺寸只在 `@gugu/session-shared/file-row`,
+ * 绘制读的也是那一组数 ⇒ 这里只把附件翻成「图(带它的宽高) / 文件」交给它排。
  */
 export function attachStripHeight(attachments: readonly ChatAttachment[] | undefined, available: number, vars: Pick<MessageVars, 'attachGap'>): number {
   if (!attachments?.length) return 0;
-  return fileRowsHeight(attachments.map(attachmentRowKind), available) + vars.attachGap;
+  return fileRowsHeight(attachments.map(attachmentRowItem), available) + vars.attachGap;
 }
 
-/** 缺席 = 图片(历史生产者只送图,见 `ChatAttachment.kind`);批注画成一条文件行。 */
-export function attachmentRowKind(attachment: ChatAttachment): FileRowKind {
-  return attachment.kind === 'file' || attachment.kind === 'annotation' ? 'file' : 'image';
+/** 缺席 = 图片(历史生产者只送图,见 `ChatAttachment.kind`);评论画成一条文件行。 */
+export function attachmentRowItem(attachment: ChatAttachment): FileRowItem {
+  return attachment.kind === 'file' || attachment.kind === 'annotation' ? { kind: 'file' } : { kind: 'image', size: attachment.imageDimensions };
 }

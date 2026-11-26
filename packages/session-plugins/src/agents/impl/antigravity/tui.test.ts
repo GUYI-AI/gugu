@@ -237,7 +237,7 @@ describe.skipIf(!ANTIGRAVITY_SESSION_TUI_ENABLED)('antigravity 终端腿(agy,#63
     expect(lstatSync(join(thirdShadow, 'Library', 'Keychains')).isSymbolicLink()).toBe(false);
   });
 
-  it('agy 自己的登录(#6335):按程序声明 cli-login、有判据,登录命令走同一个启动器起裸的 agy', () => {
+  it('signs the selected agy account in through its explicit ACP login command', () => {
     const auth = agy().capabilities.auth;
     if (auth.kind !== 'supported') throw new Error('auth expected');
     // 聊天面板那个程序仍是协议登录
@@ -248,13 +248,13 @@ describe.skipIf(!ANTIGRAVITY_SESSION_TUI_ENABLED)('antigravity 终端腿(agy,#63
     // 键必须是一个真实的伴随程序
     expect(agy().capabilities.hostDependency.companions?.map((companion) => companion.id)).toContain('antigravity-cli');
     expect(programs['antigravity-cli']!.methods).toEqual([
-      expect.objectContaining({ kind: 'cli-login', id: 'google', args: [] }),
+      expect.objectContaining({ kind: 'cli-login', id: 'google', args: ['acp', '--login'], headlessArgs: ['acp', '--login'] }),
     ]);
     const behavior = agy().behavior.auth?.programs?.['antigravity-cli'];
     expect(behavior?.checkStatus).toBeTypeOf('function');
-    expect(behavior?.buildLoginCommand?.({ cli: '/managed/bin/agy' }, 'google')).toEqual({
+    expect(behavior?.buildLoginCommand?.({ cli: '/managed/bin/agy', env: { GEMINI_HOME: '/managed/.gemini' } }, 'google')).toEqual({
       command: '/bin/sh',
-      args: ['-c', ANTIGRAVITY_LAUNCH_SCRIPT, '/managed/bin/agy'],
+      args: ['-c', ANTIGRAVITY_LAUNCH_SCRIPT, '/managed/bin/agy', 'acp', '--login', '--gemini-dir', '/managed/.gemini'],
     });
   });
 

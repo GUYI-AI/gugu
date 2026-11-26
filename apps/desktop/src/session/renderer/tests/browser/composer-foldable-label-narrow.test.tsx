@@ -80,11 +80,11 @@ async function renderComposer(width: number, { tag }: { tag: boolean }) {
         onModelChange={() => {}}
         agentOptions={[{ id: 'codex', name: 'Codex', icon: <svg width="14" height="14" /> }]}
         selectedAgent="codex"
-        // 会话里 agent 已经定了(锁着,档 5 让位);新任务的框里还能选。
+        // 会话里 agent 已经定了(锁着,档 5 让位);新建智能体的框里还能选。
         agentLocked={!tag}
         permissionModeOptions={{ full: { name: '完全访问', destructive: true } }}
         selectedPermissionMode="full"
-        leading={tag ? composerVerbLook('task', { label: '新任务', onCancel: () => {}, testId: 'tag' }).tag('codex') : undefined}
+        leading={tag ? composerVerbLook('task', { label: '新建智能体', onCancel: () => {}, testId: 'tag' }).tag('codex') : undefined}
         onAttach={() => {}}
         onSubmit={() => {}}
         onStop={() => {}}
@@ -144,10 +144,10 @@ describe('session composer in a narrow pane', () => {
     expect(shown(document.querySelector(`${TOOLBAR} button[disabled][aria-label]:has(svg)`))).toBe(false)
   })
 
-  it('输入行最前那枚「新任务 ×」在窄框里只剩标和 ×,编辑区不被挤没', async () => {
+  it('输入行最前那枚「新建智能体 ×」在窄框里只剩标和 ×,编辑区不被挤没', async () => {
     await renderComposer(192, { tag: true })
     const tag = document.querySelector('[data-testid="tag-verb"]')!
-    expect(tag.getAttribute('title')).toBe('新任务')
+    expect(tag.getAttribute('title')).toBe('新建智能体')
     expect(shown(tag.querySelector('[data-slot="composer-foldable-label"]'))).toBe(false)
     expect(shown(document.querySelector('[data-testid="tag-cancel"]'))).toBe(true)
     // 父版实测编辑区只剩 30px,placeholder 一行两个字。

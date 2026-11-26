@@ -6,7 +6,7 @@
  */
 import { chat, createNode, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness';
 import { afterEach, beforeAll, expect, it, vi } from 'vitest';
-import { page } from 'vitest/browser';
+import { cdp, page } from 'vitest/browser';
 import { i18n } from '@/i18n';
 import '@/i18n/registerMessagingCatalog';
 import '@/i18n/registerMainCatalog';
@@ -57,4 +57,25 @@ it('mounts a window of the sidebar lines and moves only the arriving line to the
   observer.disconnect();
   expect(inserted.length, `inserted lines: ${inserted.join(', ')}`).toBeLessThanOrEqual(2);
   expect(inserted).toContain('g-120');
+});
+
+it('places existing rows and the list spacer immediately when a new row arrives with reduced motion', async () => {
+  await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  try {
+    harness = createReactHarness();
+    harness.container.style.cssText = 'width: 320px; height: 600px; overflow-y: auto;';
+    await render(groups.slice(1, 2));
+    await until('the existing row is mounted', () => mounted()[0] === 'g-1');
+    await render(groups.slice(0, 2));
+    await until('the new row is first', () => mounted().join() === 'g-0,g-1');
+
+    const first = harness.container.querySelector<HTMLElement>('[data-chat-row="g-0"]')!;
+    const second = harness.container.querySelector<HTMLElement>('[data-chat-row="g-1"]')!;
+    const movedLine = second.closest<HTMLElement>('[data-index]')!;
+    expect(getComputedStyle(movedLine).transitionProperty).toBe('none');
+    expect(getComputedStyle(movedLine.parentElement!).transitionProperty).toBe('none');
+    expect(second.getBoundingClientRect().top).toBeGreaterThanOrEqual(first.getBoundingClientRect().bottom);
+  } finally {
+    await cdp().send('Emulation.setEmulatedMedia', { features: [] });
+  }
 });

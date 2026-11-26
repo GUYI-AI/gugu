@@ -1284,9 +1284,9 @@ const chatIsRead = (binding: SurfaceBinding) => {
 
 /**
  * The folder's first reads belong to this binding, consumed once even on failure. Machine presence may move before that first call.
- * What the App reads first: the top and 「附件」 (whose files the top shows), one folder each — never the whole tree.
+ * What the App reads first: the top, one folder — never the whole tree.
  */
-const OPENING_FOLDERS = ['', '附件'] as const;
+const OPENING_FOLDERS = [''] as const;
 const openingFolders = new WeakMap<SurfaceBinding, { lists: Map<string, Promise<AppFileEntry[]>>; preferences?: Promise<{ showAppData: boolean }> }>();
 function preloadFolder(binding: SurfaceBinding, pageId: number): void {
   if (binding.extensionId !== 'workspace' || binding.tabName !== 'main' || !binding.resourceChat || binding.workspace || binding.itemId || binding.modal
@@ -2109,8 +2109,9 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       // Only the two schemes a person could have typed. `file:`, `gugu-ext:` and
       // custom schemes would turn "open a page" into "reach the machine".
       if (!/^https?:\/\//i.test(url)) throw new Error('Only http(s) URLs can be opened');
-      // In no session there is no browser tab to open it in: the person's own browser (摩擦单 F13).
-      if (!binding || !sessionOfBinding(binding)) {
+      // A chat's file has a pane too. Only an explicit external open, or a page outside both conversations,
+      // goes to the system browser; the renderer resolves the asking page's host-stamped tab.
+      if (args.external === true || !binding || (!sessionOfBinding(binding) && !binding.conversation)) {
         await shell.openExternal(url);
         return undefined;
       }
@@ -2375,6 +2376,13 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       if (caller.binding?.operator.kind === 'agent') throw Object.assign(new Error('Saved credentials are used only on a page the person works'), { code: 'unavailable' });
       const { appCredentials } = await import('@main/core/extensions/app-credentials-instance');
       return await appCredentials.request(extensionId, args, method === 'credentialsWrite');
+    }
+
+    case 'credentialsChoose': {
+      // The person's own dialog, in the window that draws the page they clicked; never on a page an agent works.
+      if (caller.binding?.operator.kind === 'agent') throw Object.assign(new Error('Saved credentials are chosen only on a page the person works'), { code: 'unavailable' });
+      const { appCredentials } = await import('@main/core/extensions/app-credentials-instance');
+      return await appCredentials.choose(extensionId, extensionsService().get(extensionId).manifest.name, args, thePage(caller));
     }
 
     case 'cloudRead':

@@ -16,7 +16,6 @@ names the website and the header, and gugu sends the request. Your code never se
 - `header`: `Authorization`, `X-API-Key`, `Private-Token` or `X-Auth-Token`. `format` names `{value}` once.
 - Which saved credential is used is the person's choice, made in your App's permissions on each computer. Until they
   pick one, gugu uses the one behind the connected GitHub account (for `github.com`), or the only one saved for the site.
-
 Calls, from a page only:
 
 - `gugu.credentials.read(site, url, { headers? })` → `{ status, data, headers }`: a GET.
@@ -28,5 +27,11 @@ Calls, from a page only:
 - Extra request headers: `Accept`, `Content-Type`, `If-None-Match` or `X-…-Api-Version` only.
 - On a page an agent works, a read is `unavailable` and a write is handed to the agent: the person's credential is used
   only on a page the person works.
+- `gugu.credentials.choose(site, { hint?, help? })` (API 65) → `{ chosen }`: inside the person's click, opens the host's own
+  dialog to pick one of their saved credentials for your App on that site, or save a new one there. `hint` (up to 120
+  characters) says what to save (`A GitHub fine-grained token: Pull requests read/write, Contents read`), `help` is the
+  `https://` page that makes one. Call it when a request answers
+  `unavailable` because none is chosen, then try again. On a page an agent works it is `unavailable`.
+  `typeof gugu.credentials.choose` tells an older gugu.
 - `unavailable` with a reason when none is chosen, the chosen one was deleted, or the vault cannot be read on this
-  computer: say so, and point the person to your App's permissions.
+  computer: offer `choose` (or, on an older gugu, point the person to your App's permissions).

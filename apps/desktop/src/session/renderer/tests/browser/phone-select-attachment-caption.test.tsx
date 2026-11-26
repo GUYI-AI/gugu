@@ -59,7 +59,7 @@ it('a file with words under it selects the words when the file card is pressed',
 });
 
 it('the phone shell\'s native selection page gets the words alone, not the file name', async () => {
-  const open = vi.fn<NativeTextSelection['open']>(async () => {});
+  const open = vi.fn<NativeTextSelection['open']>(async () => undefined);
   platform.textSelection = { open, close: async () => {} };
   try {
     await longPress(file('notes', CAPTION), undefined, bubble => bubble.querySelector('.gg-file-row')!);

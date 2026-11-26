@@ -29,8 +29,16 @@ div.gg-pane.gg-settings-detail:not([data-mobile]) { --settings-group-gap: var(--
 .gg-settings-detail:not([data-mobile]) .gg-settings-group > .gg-settings-card { padding-block: var(--spacing-xs); }
 .gg-settings-detail:not([data-mobile]) .gg-settings-group > .gg-section-label { font-weight: var(--font-weight-medium); }
 /* Rows reach the card edges (hover fills the card width); the divider between them stays inset. */
-.gg-settings-detail:not([data-mobile]) div.gg-settings-row { padding-inline: var(--spacing-lg); column-gap: var(--spacing-2xl); }
-.gg-settings-detail:not([data-mobile]) .gg-settings-row-description { max-width: 48ch; }
+.gg-settings-detail:not([data-mobile]) div.gg-settings-row {
+  --settings-row-description-max-width: 48ch;
+  padding-inline: var(--spacing-lg);
+  column-gap: var(--spacing-2xl);
+}
+.gg-settings-detail:not([data-mobile]) .gg-settings-row-description { max-width: var(--settings-row-description-max-width); }
+/* Let Chinese descriptions beside compact controls use the text column. */
+.gg-settings-detail:not([data-mobile]) div.gg-settings-row:lang(zh):has(> .gg-settings-row-control :is([data-slot='switch'], select.gg-settings-select)) {
+  --settings-row-description-max-width: none;
+}
 .gg-settings-detail:not([data-mobile]) .gg-settings-row + .gg-settings-row {
   border-top: 0;
   background-image: linear-gradient(var(--border-color), var(--border-color));

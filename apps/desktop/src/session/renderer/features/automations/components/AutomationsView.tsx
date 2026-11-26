@@ -73,7 +73,7 @@ export const AutomationsView = observer(function AutomationsView() {
       <div className="h-6 shrink-0 [-webkit-app-region:drag]" />
       <div className="mx-auto grid min-h-0 w-full max-w-4xl flex-1 grid-cols-1 gap-8">
         <div className="relative min-h-0 w-full min-w-0 overflow-y-auto px-8">
-          <div className="w-full py-8">
+          <div className="@container w-full py-6">
             <AutomationsHeader searchInputRef={searchRef} search={search} onSearchChange={setSearch} onNewAutomation={() => openCreateSheet()} />
             <div className="mt-4 space-y-3">
               {machines.map((machine) => (
@@ -81,6 +81,7 @@ export const AutomationsView = observer(function AutomationsView() {
                   <AutomationDeviceGroup
                     label={machine.label}
                     kind={machine.kind}
+                    collapsible={machines.length > 1}
                     search={search}
                     emptyState={machine.isLocal && machines.length === 1 ? (
                       <AutomationTemplatesEmptyState templates={templates} onSelectTemplate={openCreateSheet} />

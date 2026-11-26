@@ -5,6 +5,7 @@ import type { CSSProperties, ReactElement } from 'react'
 import { cn } from '@/lib/cn'
 import { useUiPopupZIndex, useUiPortalContainer } from '@gugu/session-ui/react/primitives'
 import { TOOLTIP_CLOSE_DELAY_MS, TOOLTIP_OPEN_DELAY_MS } from '@/styles/motion'
+import { useProbedRef } from '@/lib/overlayOcclusion'
 
 type ClassNameProp = { className?: string }
 
@@ -94,6 +95,7 @@ function Positioner({
 function Popup({
   className,
   style,
+  ref,
   ...props
 }: Omit<TooltipPrimitive.Popup.Props, 'className' | 'style'> &
   ClassNameProp & {
@@ -101,6 +103,7 @@ function Popup({
   }) {
   return (
     <TooltipPrimitive.Popup
+      ref={useProbedRef('app-tooltip', ref)}
       data-slot="tooltip-popup"
       className={cn(tooltipPopup, className)}
       style={{ ...(style?.padding == null ? { padding: '6px 8px' } : {}), ...style }}
@@ -116,6 +119,7 @@ export interface HintProps {
   children: ReactElement
   side?: TooltipPrimitive.Positioner.Props['side']
   sideOffset?: number
+  withArrow?: boolean
 }
 
 /**
@@ -130,14 +134,28 @@ export interface HintProps {
  * 而 title 是浏览器 chrome 自己画的、照弹不误。所以「按钮变灰了要解释为什么」的场合不能靠 disabled +
  * Hint,得让控件保持可聚焦(`aria-disabled` + 拦住 onClick)。
  */
-export function Hint({ label, children, side = 'right', sideOffset = 8 }: HintProps) {
+export function Hint({ label, children, side = 'right', sideOffset = 8, withArrow = false }: HintProps) {
   if (!label) return <>{children}</>
   return (
     <Root>
       <Trigger render={children} />
       <Portal>
         <Positioner side={side} sideOffset={sideOffset} collisionPadding={8}>
-          <Popup>{label}</Popup>
+          <Popup>
+            {label}
+            {withArrow && (
+              <TooltipPrimitive.Arrow
+                aria-hidden="true"
+                className={cn(
+                  'size-2 rounded-br-[var(--radius-xs)] border-r border-b border-[var(--border)] bg-[var(--popover)]',
+                  'data-[side=top]:-bottom-1 data-[side=top]:rotate-45',
+                  'data-[side=bottom]:-top-1 data-[side=bottom]:rotate-[225deg]',
+                  'data-[side=left]:-right-1 data-[side=left]:-rotate-45',
+                  'data-[side=right]:-left-1 data-[side=right]:rotate-[135deg]',
+                )}
+              />
+            )}
+          </Popup>
         </Positioner>
       </Portal>
     </Root>

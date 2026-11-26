@@ -140,7 +140,6 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
         harnessName={phone ? tf('phoneAgent') : selectedHarness?.name ?? configuration.selection.harness ?? ''} platformOnly={phone || selectedHarness?.chatAvailable === true && !selectedHarness.watchable}
         onPick={(model) => { if (existingSession) { if (model !== null) existingSession.model?.onPick?.(model); setView('device') } else select({ ...configuration.selection, model }, true) }} onLeave={() => setView(null)} />}
       {view === 'effort' && thinking && <PhoneThinkingOptions {...thinking} fastMode={undefined} disabled={busy}
-        onDefaultEffort={!existingSession && configuration ? () => select({ ...configuration.selection, effort: null }) : undefined}
         onEffortChange={effort => {
           if (existingSession) existingSession.model?.onEffortChange?.(effort)
           else if (configuration) configuration.onChange({ ...configuration.selection, effort })

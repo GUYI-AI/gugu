@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Button } from '../ui/Button'
 import { Check, ChevronRight } from '@/lib/icons'
 import { PhoneComposerSheet } from '@/mobile/composer/PhoneComposerControls'
+import { SettingsSelect } from './SettingsSelect'
 
 type Choice<Value extends string> = { value: Value; label: string }
 
@@ -16,12 +17,12 @@ export function SettingsChoice<Value extends string>({ id, testId, label, mobile
 }) {
   const [open, setOpen] = useState(false)
   if (!mobile) {
-    return <select id={id} className="gg-settings-select" data-testid={testId} value={value} onChange={event => {
+    return <SettingsSelect id={id} data-testid={testId} value={value} onChange={event => {
       const choice = options.find(option => option.value === event.currentTarget.value)
       if (choice) onChange(choice.value)
     }}>
       {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-    </select>
+    </SettingsSelect>
   }
 
   const current = options.find(option => option.value === value)

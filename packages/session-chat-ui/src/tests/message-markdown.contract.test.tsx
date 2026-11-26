@@ -16,8 +16,6 @@ import { mathBlockDef } from '@session-chat/components/rows/markdown/math/math.d
 import { mermaidBlockDef } from '@session-chat/components/rows/markdown/mermaid/mermaid.def'
 import { svgBlockDef } from '@session-chat/components/rows/markdown/svg/svg.def'
 import { messageUnitDef } from '@session-chat/components/rows/message/message.def'
-import { pinSummary } from '@session-chat/components/rows/message/PinnedUserSummary'
-import type { MessageVars } from '@session-chat/components/rows/message/metrics'
 import { srOnly } from '@session-chat/components/rows/message/message.css'
 import { resourceLinkUnitDef } from '@session-chat/components/rows/resource-link/resource-link.def'
 import type { Block, HtmlBlock } from '@session-chat/core/markdown/document'
@@ -270,7 +268,6 @@ describe('a cited file stays a one-line pill in the user message', () => {
     const { chips, pills, labelHeight, lineHeight, cut, place } = reading.inspected
     expect({ chips, pills, cut, place }).toEqual({ chips: 0, pills: 1, cut: 1, place: 1 })
     expect(labelHeight).toBe(Math.round(lineHeight))
-    expect(pinSummary(userMessageCitingAFile, ctx, messageUnitDef.vars as MessageVars).height).toBeLessThanOrEqual(reading.inspected.bubble)
   })
 
   it('a short name keeps to its own width beside the place', async () => {

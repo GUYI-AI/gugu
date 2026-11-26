@@ -667,9 +667,11 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     if (entry.kind !== oldEntry.kind) this._layoutSplitter?.kindChanged?.(entry.tabId);
   }
 
-  closeActiveTab(): void {
-    if (!this.activeTabId) return;
+  /** False when there is no tab to close, so ⌘W can mean the next thing (the window). */
+  closeActiveTab(): boolean {
+    if (!this.activeTabId) return false;
     this.requestCloseTab(this.activeTabId);
+    return true;
   }
 
   /**

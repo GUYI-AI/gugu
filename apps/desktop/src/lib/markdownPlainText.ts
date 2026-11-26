@@ -9,7 +9,7 @@ const INLINE_CODE = /((`+)(?!`)[^\n]*?\2(?!`))/
  * leftover markers outside code are dropped too, not just matched pairs.
  */
 export function markdownPlainText(text: string): string {
-  return withoutFencedBlocks(text)
+  return withoutFencedBlocks(text.replace(/\r\n?/g, '\n'))
     .split(INLINE_CODE)
     .filter((_, index) => index % 3 !== 2)
     .map((part, index) => (index % 2 === 1 ? part : plainSegment(part)))
@@ -31,7 +31,13 @@ function replaceInlineLinks(text: string): string {
     if (match.index < copied) continue;
     let depth = 1;
     let end = match.index + match[0].length;
+    let quote: string | null = null;
     for (; end < text.length && depth > 0; end += 1) {
+      if (quote) {
+        if (text[end] === quote) quote = null;
+        continue;
+      }
+      if ((text[end] === '"' || text[end] === "'") && /\s/.test(text[end - 1]!)) { quote = text[end]!; continue; }
       if (text[end] === '(') depth += 1;
       else if (text[end] === ')') depth -= 1;
     }
@@ -44,12 +50,16 @@ function replaceInlineLinks(text: string): string {
 
 function plainSegment(text: string): string {
   const literals: string[] = [];
+  let marker = '\uE000';
+  while (text.includes(marker)) marker += '\uE000';
   // A backslash escape and a numeric character reference (`&#91;`, markdownLiteral) both stand for the bare character.
   const escaped = text.replace(/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])|&#(\d{1,7}|[xX][0-9a-fA-F]{1,6});/g, (_, char: string | undefined, code: string | undefined) => {
-    literals.push(char ?? String.fromCodePoint(code![0] === 'x' || code![0] === 'X' ? parseInt(code!.slice(1), 16) : Number(code)));
-    return `\uE000${literals.length - 1}\uE000`;
+    const point = char === undefined ? (code![0] === 'x' || code![0] === 'X' ? parseInt(code!.slice(1), 16) : Number(code)) : null;
+    literals.push(char ?? String.fromCodePoint(point === 0 || point! > 0x10ffff || (point! >= 0xd800 && point! <= 0xdfff) ? 0xfffd : point!));
+    return `${marker}${literals.length - 1}${marker}`;
   });
   return replaceInlineLinks(escaped)
+    .replace(/<([a-z][a-z\d+.-]{1,31}:[^<>\s]*|[a-z\d.!#$%&'*+/=?^_`{|}~-]+@[a-z\d](?:[a-z\d.-]*[a-z\d])?)>/gi, '$1')
     .replace(/^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]+#+[ \t]*$/gm, '$1')
     .replace(/^\s{0,3}#{1,6}\s+/gm, '')
     .replace(/^\s*>\s?/gm, '')
@@ -58,5 +68,5 @@ function plainSegment(text: string): string {
     .replace(/(?<![\w*])(\*|_)(?=\S)([^*_\n]*?\S)\1(?![\w*])/g, '$2')
     .replace(/~~(?=\S)([\s\S]*?\S)~~/g, '$1')
     .replace(/\*\*|__|~~/g, '')
-    .replace(/\uE000(\d+)\uE000/g, (_, index: string) => literals[Number(index)])
+    .replace(new RegExp(`${marker}(\\d+)${marker}`, 'g'), (_, index: string) => literals[Number(index)])
 }

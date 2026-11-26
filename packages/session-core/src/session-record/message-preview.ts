@@ -1,4 +1,4 @@
-import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
+import { readDeliveryEnvelope, visibleDeliveryText } from '@gugu/core/local/agent/deliveryEnvelope';
 import { isGuguSilence } from '@gugu/core/local/agent/silenceMarker';
 import type { ToolNode, TranscriptItem, TranscriptTurn, TranscriptTurnOutcome } from '../acp/client';
 import { messageReferenceId } from '../acp/client';
@@ -142,7 +142,9 @@ export function projectMessagePreview(
     lastItem = items[items.length - 1];
     for (const item of items) {
       if (item.kind === 'message' && item.role === 'user') {
-        const ids = deliveryMessageIdsOf(item.text);
+        const visible = visibleDeliveryText(item.text);
+        if (visible === null) continue;
+        const ids = deliveryMessageIdsOf(visible);
         if (ids.length === 0) push({ kind: 'prompt', id: item.id, messageId: null, ...activity(item) });
         for (const messageId of ids) push({ kind: 'prompt', id: `${item.id}:${messageId}`, messageId, ...activity(item) });
       } else if (item.kind === 'message' && item.role === 'assistant' && item.text.trim() !== '') {

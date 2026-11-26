@@ -118,7 +118,8 @@ it('the desktop bell pops its list beside itself, a menu\'s way: a row acts and 
   expect(Math.abs(box.bottom - at.bottom)).toBeLessThanOrEqual(8)
   expect(box.bottom).toBeLessThanOrEqual(800)
   expect(harness.container.querySelector('[data-testid="sidebar-stand-in"]')!.contains(popover())).toBe(false)
-  expect(popover()!.querySelectorAll('[data-session-line]')).toHaveLength(100)
+  // The rows in view mount with the list; the rest grow in while the page is idle (@@@growing-list), up to all 100.
+  await until('the list grows to every task', () => popover()!.querySelectorAll('[data-session-line]').length === 100)
   await userEvent.click(popover()!.querySelectorAll<HTMLElement>('[data-session-line]')[1])
   expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'session', sessionId: 'task-1', deviceId: 'host' })
   await until('opening a task closes the list', () => !shown())

@@ -7,6 +7,7 @@ import { AgentLookEditor } from '../agentsettings/AgentLookEditor'
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
 import { IconButton } from '../ui/IconButton'
+import { isImeComposing } from '@/lib/ime'
 
 /** 名字与形象在安家前确认；工坊只更新草稿，取消不影响先前选择。 */
 export function AssistantSetupIdentity({ draft, onChange, onBack, onContinue }: {
@@ -33,7 +34,7 @@ export function AssistantSetupIdentity({ draft, onChange, onBack, onContinue }: 
           value={draft.name}
           maxLength={ASSISTANT_NAME_MAX}
           onChange={(event) => onChange({ ...draft, name: event.target.value })}
-          onKeyDown={(event) => { if (event.key === 'Enter' && draft.name.trim()) onContinue() }}
+          onKeyDown={(event) => { if (event.key === 'Enter' && !isImeComposing(event) && draft.name.trim()) onContinue() }}
           data-testid="assistant-setup-name"
         />
       </label>

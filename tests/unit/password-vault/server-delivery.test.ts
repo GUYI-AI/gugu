@@ -9,6 +9,9 @@ import { remoteOpSchema, serverDeliveryKey, type RemoteCaller, type RemoteOp } f
 import { sealTo } from '../../../apps/desktop/electron/password-vault/sync-crypto'
 import type { PasswordItem } from '../../../packages/core/src/shared/passwordBetaProtocol'
 
+// The request opens as an Ask of the Agent's session on this server (beta-messages.ts).
+let opened: string[] = []
+vi.mock('../../../apps/desktop/electron/password-vault/beta-messages', () => ({ openPasswordRequest: async (view: unknown) => { opened.push(JSON.stringify(view)) } }))
 const agentId = '11111111-1111-4111-8111-111111111111', owner = '99999999-9999-4999-8999-999999999999'
 const caller: RemoteCaller = { deviceId: '77777777-7777-4777-8777-777777777777', sessionId: '66666666-6666-4666-8666-666666666661', agentId, agentName: '研究助理', sessionTitle: '登录' }
 const item: PasswordItem = { reference: { id: '22222222-2222-4222-8222-222222222222', version: 1, epoch: 'e' }, origin: 'https://site.example', name: '',
@@ -57,7 +60,8 @@ describe('「本机送」 on the server: the password tools ask the desktop', ()
   function server(desktop: (op: RemoteOp) => unknown, extra: Partial<ServerPasswordHost> = {}) {
     const posted: string[] = [], delivered: string[] = []
     const context = { kind: 'social', expectedOwnerUserId: owner, subjectId: agentId, nativeSessionId: '66666666-6666-4666-8666-666666666661', agentId,
-      runHostAction: async (action: { request_id: string; text: string }) => { posted.push(action.text); return { status: 'sent', message_id: action.request_id } } } as unknown as GuguMcpContext
+    } as unknown as GuguMcpContext
+    opened = posted
     const calls: string[] = []
     const host: ServerPasswordHost = {
       ownerId: async () => owner, thisDevice: async () => '77777777-7777-4777-8777-777777777777', desktops: async () => ['old-laptop', 'mac-1'],

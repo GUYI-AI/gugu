@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { notifyManager as readModelNotify } from '@tanstack/react-query'
 import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { DevicesSection } from '@/components/settings/DevicesSection'
+import { signInSshMachine } from '@/lib/sshLinkChannel'
+import type { SshLinkOpenResult } from '@/lib/sshLink'
 import { Sheet } from '@/components/ui/Sheet'
 import { SessionLocalizationProvider } from '@/session/renderer/localization/localization-provider'
 import { ProjectFolderCard } from '@/session/renderer/features/projects/components/main-panel/project-folder-card'
@@ -82,6 +84,42 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 describe('DevicesSection interaction', () => {
+  it('reports a repeated SSH host key refusal in the device row and clears it after a successful retry', async () => {
+    const deviceId = 'rotated-host'
+    const refused: SshLinkOpenResult = { ok: false, reason: 'hostKeyChanged', hostKey: { host: 'box', fingerprint: 'SHA256:newKey', location: '/test/known_hosts:17' } }
+    const pending = Promise.withResolvers<SshLinkOpenResult>()
+    const signIn = vi.fn().mockResolvedValueOnce(refused).mockReturnValueOnce(pending.promise).mockResolvedValueOnce({ ok: true })
+    const electron = window as unknown as { electronAPI?: unknown }
+    electron.electronAPI = {
+      eventOn: () => () => undefined,
+      invoke: (channel: string, id: string) => {
+        if (channel === 'server-ssh-machines:describe') return Promise.resolve([{ deviceId, display: 'user@box' }])
+        if (channel === 'ssh-link:sign-in') return signIn(id)
+        return Promise.resolve(null)
+      },
+    }
+    try {
+      await signInSshMachine(deviceId)
+      const value = store({ devices: [device({ device_id: deviceId, is_online: false })] })
+      await act(async () => { root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection))) })
+      await flush()
+      const action = () => container.querySelector<HTMLElement>('[data-testid="settings-device-ssh-sign-in-action"]')!
+      expect(action().parentElement?.textContent).toContain('主机指纹已变更')
+      await act(async () => { action().click() })
+      expect(container.querySelector('[role="status"]')?.textContent).toContain('SSH')
+      await act(async () => { pending.resolve(refused) })
+      const alert = container.querySelector('[data-testid="settings-device-ssh-sign-in"] [role="alert"]')
+      expect(action().parentElement?.textContent).toContain('管理员')
+      expect(alert?.textContent).toContain('/test/known_hosts:17')
+      expect(alert?.textContent).toContain('SHA256:newKey')
+      await act(async () => { action().click() })
+      expect(container.querySelector('[data-testid="settings-device-ssh-sign-in"]')).toBeNull()
+      expect(signIn.mock.calls).toEqual([[deviceId], [deviceId], [deviceId]])
+    } finally {
+      delete electron.electronAPI
+    }
+  })
+
   it.each(['outcome', 'version'])('shows Restarting from the host’s report, offline included, until its %s arrives', async completion => {
     const capabilities: Device['capabilities'] = { terminals: [], runtimes: [], host_kind: 'server',
       app_version: '0.3.0', server_confirmed_restart: true,

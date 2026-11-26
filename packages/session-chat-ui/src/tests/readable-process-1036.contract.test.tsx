@@ -2,7 +2,6 @@ import { createChatContext } from '@session-chat/chat-context';
 import { createChatState } from '@session-chat/state/chat-state';
 import { createChatView } from '@session-chat/chat-view';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
-import { pinnedSummaryShown } from '../../../../tests/support/pinnedSummaryShown';
 import { describe, expect, it } from 'vitest';
 import { turnProcessUnitDef } from '@session-chat/components/rows/turn-process/turn-process.def';
 import { DEFAULT_THEME } from '@session-chat/core/theme';
@@ -157,14 +156,14 @@ describe('readable process rows at real split-column widths (#1036)', () => {
 });
 
 
-it('pins a long question as two lines in any column, with the reply readable below it', async () => {
+it('keeps a jumped-to reply readable below a long question in any column', async () => {
   const context = createChatContext({ locale: () => 'en-US' });
   context.setLayout({ preset: 'double', userGutter: 32, agentConversation: true });
   const state = createChatState(context);
   const host = document.createElement('div');
   host.style.cssText = 'position:fixed;top:0;left:0;width:748px;height:850px';
   document.body.append(host);
-  const view = createChatView({ context, state, parent: host, pinUserMessages: true, stickToBottom: false });
+  const view = createChatView({ context, state, parent: host, stickToBottom: false });
   try {
     state.transcript.history.seed([{ id: 'pin', seq: 0, initiator: 'user', outcome: { kind: 'done' }, items: [
       { kind: 'message', id: 'question', seq: 0, role: 'user', text: 'Read the three local files and run the verified local commands. '.repeat(10) },
@@ -176,14 +175,9 @@ it('pins a long question as two lines in any column, with the reply readable bel
       view.scrollToItem('answer', { align: 'start' });
       await until('the answer is rendered', () => !!host.querySelector('[data-agent-conversation-message="answer"]'));
       await untilStable(`reply geometry at ${width}`, () => [scroll().scrollTop, scroll().scrollHeight]);
-      const summaryEl = host.querySelector<HTMLElement>('[data-pin-summary="question"]')!, summary = summaryEl.getBoundingClientRect();
-      expect(summary.height, `two lines at ${width}`).toBeLessThanOrEqual(2 * context.theme.fonts.body.lineHeight + 24 + 1);
-      // Above the reply sits the summary once the question has gone by, else the question's own end.
-      const stuck = pinnedSummaryShown(summaryEl);
-      const above = stuck ? summary : host.querySelector<HTMLElement>('[data-user-card="question"]')!.getBoundingClientRect();
       const reply = host.querySelector<HTMLElement>('[data-agent-conversation-message="answer"]')!;
       const line = reply.querySelector<HTMLElement>('p')!.getBoundingClientRect();
-      expect(line.top, `the first reply line clears the question at ${width}`).toBeGreaterThanOrEqual(above.bottom);
+      expect(line.top, `the first reply line is on screen at ${width}`).toBeGreaterThanOrEqual(scroll().getBoundingClientRect().top);
       expect(reply.contains(document.elementFromPoint(line.left + 8, line.top + 8))).toBe(true);
     }
   } finally { view.dispose(); state.dispose(); context.dispose(); host.remove(); }

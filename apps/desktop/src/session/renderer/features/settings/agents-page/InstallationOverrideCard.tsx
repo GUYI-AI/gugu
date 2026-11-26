@@ -8,6 +8,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import type { Installation } from '@shared/core/agents/agent-payload';
 import { Button } from '@renderer/lib/ui/button';
 import { looksLikeAbsolutePath } from './installation-sources';
+import { isImeComposing } from '@/lib/ime';
 
 export type InstallationOverrideCardProps = {
   vm: HostDependencyInstallation;
@@ -90,6 +91,7 @@ export function InstallationOverrideCard({
             setError(null);
           }}
           onKeyDown={(e) => {
+            if (isImeComposing(e)) return;
             if (e.key === 'Enter' && hasValue && !isChecking) void handleValidate();
             if (e.key === 'Escape' && onCancel) onCancel();
           }}

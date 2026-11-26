@@ -41,13 +41,11 @@ function argsOf<T extends z.ZodType>(schema: T, input: unknown): z.infer<T> {
 /**
  * The agent the bound conversation is with, which must be the signed-in person's personal assistant, serving that very
  * conversation (`assistantServingChat`): anything else — another of the person's agents, someone else's, a group, a person —
- * is refused here, before the store is asked. While its setup is still under way (`pending`) the refusal says so
- * (`notYet`): the binding is not valid yet, not wrong (`boundAgent`).
+ * is refused here, before the store is asked.
  */
 async function personalAssistantOf(token: string, ownerId: string, chatId: string): Promise<{ agentId: string; deviceId: string }> {
   const serving = await assistantServingChat(token, ownerId, chatId);
   if (serving.state === 'served') return { agentId: serving.agentId, deviceId: serving.deviceId };
-  if (serving.state === 'pending') throw Object.assign(denied('Your personal assistant is not ready for the chosen conversation yet'), { notYet: true });
   throw denied('The chosen conversation is not your private conversation with your personal assistant');
 }
 
@@ -84,10 +82,6 @@ export async function boundAgent(
     throw error;
   });
   const [membership, agent] = await Promise.allSettled([membershipOf, personalAssistantOf(token, ownerId, before.chatId)]);
-  // The conversation is the person's and the assistant's, whose setup is not finished: the binding is not valid yet. That is
-  // not a refusal and not an error the App should report (it would sit on the page for good): nothing is bound for it yet,
-  // as before anyone chose a conversation — it is told again when the binding is valid (the surface and the assistant status).
-  if (membership.status === 'fulfilled' && agent.status === 'rejected' && (agent.reason as { notYet?: unknown } | null)?.notYet === true) return null;
   // A refusal outweighs a check that could not be made: the call is refused, not to be tried again.
   const rejected = [membership, agent].filter((check): check is PromiseRejectedResult => check.status === 'rejected');
   const refusal = rejected.find((check) => codeOf(check.reason) === 'denied') ?? rejected[0];

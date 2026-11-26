@@ -122,7 +122,6 @@ export function ChatHostExpanded(props: {
         context={ctx}
         state={state}
         stickToBottom
-        pinUserMessages
         commands={() => commands()}
       />
     </StoryViewport>
@@ -157,7 +156,6 @@ export function ChatHost(props: ChatHostProps) {
         context={ctx}
         state={state}
         stickToBottom
-        pinUserMessages
         commands={() => commands()}
       />
     </StoryViewport>
@@ -239,7 +237,6 @@ export function ScriptedChat(props: {
         context={ctx}
         state={state}
         stickToBottom
-        pinUserMessages
         commands={() => commands()}
       />
     </StoryViewport>

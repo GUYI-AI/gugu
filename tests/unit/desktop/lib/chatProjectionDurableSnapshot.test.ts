@@ -2,12 +2,15 @@
 // @@@durable-snapshot — a warm start adopts the stored list at the committed cursor and reads nothing; afterwards only
 // what the journal names is read, and a stored conversation the journal touches is read whole before it is re-assembled.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { DisplayIdentity } from '../../../../apps/desktop/src/lib/displayIdentity'
+import { displayIdentity } from '../../../support/testHarness'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 
 type Response = { data: unknown; error: { message: string } | null }
 const calls: Array<{ key: string; columns?: string; ids?: readonly string[] }> = []
 const rowsByKey = new Map<string, unknown[]>()
 const errorsByKey = new Map<string, { message: string }>()
+let delayedIdentities: Promise<DisplayIdentity[]> | null = null
 function builder(key: string, args?: { p_chat_ids?: readonly string[] }): unknown {
   if (key === 'rpc:list_conversation_memberships') key = 'active_members'
   const call: { key: string; columns?: string; ids?: readonly string[] } = { key, ids: args?.p_chat_ids }
@@ -38,10 +41,10 @@ vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({
   readDisplayIdentities: async (ids: readonly string[]) => {
     calls.push({ key: 'identity', ids })
-    return ids.map((id) => ({ id, display_name: `name-${id}`, type: 'human' }))
+    return delayedIdentities ?? ids.map((id) => displayIdentity(id, { display_name: `name-${id}`, type: 'human' }))
   },
 }))
-vi.mock('../../../../apps/desktop/src/lib/messageIngest', () => ({ ingestMessages: async () => undefined }))
+vi.mock('../../../../apps/desktop/src/lib/messageIngest', () => ({ ingestMessages: async () => undefined, initializeMessages: () => undefined, retireClosedMessageAccount: async () => undefined }))
 const { createChatProjection, toProjectionOperations } = await import('../../../../apps/desktop/src/lib/chatProjection')
 
 const VIEWER = 'u-viewer'
@@ -56,6 +59,7 @@ const chatRow = (id: string, kind: 'group' | 'dm', at: string) => ({
 })
 beforeEach(() => {
   calls.length = 0
+  delayedIdentities = null
   rowsByKey.clear()
   errorsByKey.clear()
   rowsByKey.set('active_members', [seat('g-1', VIEWER), seat('g-2', VIEWER), seat('d-1', VIEWER), seat('d-1', PEER)])
@@ -228,4 +232,125 @@ describe('warm start adopts the stored list', () => {
     expect(await projection.hydrate('9', signal())).toHaveLength(3)
     expect(keysetReads()).toBe(1)
   })
+})
+
+// #1477: exercise the real durable projection, repository transaction and sidebar label,
+// with a deferred initial identity GET rather than a timing-dependent sleep.
+describe('identity publication ordering', () => {
+  async function fixture() {
+    const { createMemoryLocalSyncDb } = await import('../../../../apps/desktop/src/lib/localSyncDb')
+    const { openImRepository, imSelectors, replaceChatRowsAndIdentities } = await import('../../../../apps/desktop/src/lib/imRepository')
+    const { chatDisplayName } = await import('@gugu/core/shared/ui/chatModels')
+    rowsByKey.set('contact_overrides', [])
+    const stored = await storedList()
+    stored.rows = stored.rows.map(row => row.id === 'd-1' ? { ...row, peer_alias: null } : row)
+    stored.identities = stored.identities.map(identity => identity.id === PEER
+      ? { ...identity, display_name: 'Codex 1', avatar: '/old.png' } : identity)
+    const repository = await openImRepository(VIEWER, { adapter: createMemoryLocalSyncDb(), initialize: async () => {} })
+    await replaceChatRowsAndIdentities(repository, stored.rows, stored.identities)
+    const held = () => imSelectors.identitiesById(repository.snapshot())
+    const projection = createChatProjection(VIEWER, {
+      rows: () => imSelectors.chats(repository.snapshot()),
+      identity: id => held()[id],
+      durable: () => stored,
+    })
+    await projection.hydrate('9', signal())
+    const latest = { ...held()[PEER]!, display_name: 'hello', avatar: '/new.png' }
+    const publish = async (rows: ChatItem[], deferred = false) => replaceChatRowsAndIdentities(repository, rows, deferred ? projection.identities : projection.identities())
+    const label = () => {
+      const row = imSelectors.chats(repository.snapshot()).find(row => row.id === 'd-1')!
+      return chatDisplayName(row, held()[PEER]?.display_name)
+    }
+    return { repository, projection, held, latest, publish, label }
+  }
+  function deferredIdentity() {
+    let resolve!: (rows: DisplayIdentity[]) => void
+    delayedIdentities = new Promise(done => { resolve = done })
+    return resolve
+  }
+
+  it('keeps the new sidebar name and avatar when Pin publishes after a delayed initial GET', async () => {
+    const f = await fixture()
+    try {
+      const resolve = deferredIdentity()
+      const { readDisplayIdentities } = await import('../../../../apps/desktop/src/lib/identityReadAdapter')
+      const initialGet = readDisplayIdentities([PEER]).then(rows => f.repository.putIdentities(rows))
+      expect(f.label()).toBe('Codex 1')
+      resolve([f.latest])
+      await initialGet
+      expect(f.label()).toBe('hello')
+      calls.length = 0
+      rowsByKey.set('active_members', [seat('d-1', PEER), { ...seat('d-1', VIEWER), is_pinned: true, version: 2 }])
+      const rows = await f.projection.advance([{ revision: '10', event: 'chat_members_changed', chatId: 'd-1', entityId: VIEWER, own: true }], '10', signal())
+      await f.publish(rows!)
+      expect(f.label()).toBe('hello')
+      expect(f.held()[PEER]!.avatar).toBe('/new.png')
+      expect(f.repository.snapshot().chat.find(row => row.id === 'd-1')!.value.is_pinned).toBe(true)
+      expect(calls.filter(call => call.key === 'identity')).toHaveLength(0)
+    } finally { f.repository.close() }
+  })
+
+  it('does not let a delayed projection GET overwrite an identity changed while it was in flight', async () => {
+    const f = await fixture()
+    try {
+      const old = f.held()[PEER]!
+      const resolve = deferredIdentity()
+      const reading = f.projection.advance([{ revision: '10', event: 'agent_changed', chatId: null, entityId: PEER }], '10', signal())
+      await vi.waitFor(() => expect(calls.some(call => call.key === 'identity')).toBe(true))
+      await f.repository.putIdentities([f.latest])
+      resolve([old])
+      await f.publish((await reading)!)
+      expect(f.label()).toBe('hello')
+      expect(f.held()[PEER]!.avatar).toBe('/new.png')
+    } finally { f.repository.close() }
+  })
+
+  it('selects identities inside the queued repository write, after an earlier fresh publication', async () => {
+    const f = await fixture()
+    try {
+      let release!: () => void
+      const barrier = new Promise<void>(done => { release = done })
+      const pending = f.repository.transaction(async () => { await barrier })
+      const fresh = f.repository.putIdentities([f.latest])
+      const publication = f.publish(f.projection.current(), true)
+      release()
+      await Promise.all([pending, fresh, publication])
+      expect(f.label()).toBe('hello')
+      expect(f.held()[PEER]!.avatar).toBe('/new.png')
+    } finally { f.repository.close() }
+  })
+
+  it('still publishes a fresh identity read and retains the list identity closure', async () => {
+    const f = await fixture()
+    try {
+      delayedIdentities = Promise.resolve([f.latest])
+      const rows = await f.projection.advance([{ revision: '10', event: 'agent_changed', chatId: null, entityId: PEER }], '10', signal())
+      await f.publish(rows!)
+      expect(f.label()).toBe('hello')
+      expect(f.held()[PEER]!.avatar).toBe('/new.png')
+      expect(f.repository.snapshot().chat).toHaveLength(3)
+    } finally { f.repository.close() }
+  })
+})
+
+it('publishes a newly listed DM together with its previously unknown identity', async () => {
+  const { createMemoryLocalSyncDb } = await import('../../../../apps/desktop/src/lib/localSyncDb')
+  const { openImRepository, imSelectors, replaceChatRowsAndIdentities } = await import('../../../../apps/desktop/src/lib/imRepository')
+  const stored = await storedList()
+  const repository = await openImRepository(VIEWER, { adapter: createMemoryLocalSyncDb(), initialize: async () => {} })
+  try {
+    await replaceChatRowsAndIdentities(repository, stored.rows, stored.identities)
+    const projection = createChatProjection(VIEWER, {
+      rows: () => imSelectors.chats(repository.snapshot()),
+      identity: id => imSelectors.identitiesById(repository.snapshot())[id],
+      durable: () => stored,
+    })
+    await projection.hydrate('9', signal())
+    rowsByKey.set('active_members', [...rowsByKey.get('active_members')!, seat('d-new', VIEWER), seat('d-new', 'new-peer')])
+    rowsByKey.set('chats', [...rowsByKey.get('chats')!, chatRow('d-new', 'dm', '2026-11-25T00:00:00Z')])
+    const rows = await projection.advance([{ revision: '10', event: 'chat_changed', chatId: 'd-new', entityId: null }], '10', signal())
+    await replaceChatRowsAndIdentities(repository, rows!, projection.identities)
+    expect(imSelectors.chats(repository.snapshot()).find(row => row.id === 'd-new')?.peer_user_id).toBe('new-peer')
+    expect(imSelectors.identitiesById(repository.snapshot())['new-peer']?.display_name).toBe('name-new-peer')
+  } finally { repository.close() }
 })

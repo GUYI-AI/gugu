@@ -17,7 +17,7 @@ import { tokenVars } from '@session-ui/theme/tokens.css';
 export const overlay = style({
   position: 'fixed',
   inset: 0,
-  zIndex: 50,
+  zIndex: 'var(--z-modal, 50)',
   backgroundColor: 'var(--bg-overlay-modal)',
   selectors: {
     '&[data-open]': { animation: `${kfFadeIn} ${durMed} ${easeStandard} both` },
@@ -29,7 +29,7 @@ export const overlay = style({
 export const positioner = style({
   position: 'fixed',
   inset: 0,
-  zIndex: 50,
+  zIndex: 'var(--z-modal, 50)',
   display: 'grid',
   placeItems: 'center',
   padding: '1rem',
@@ -44,7 +44,7 @@ export const content = recipe({
     popupShadow,
     {
       pointerEvents: 'auto',
-      zIndex: 50,
+      zIndex: 'var(--z-modal, 50)',
       display: 'flex',
       maxHeight: '100%',
       width: '100%',

@@ -11,12 +11,8 @@ import { HOST_PROMPT_HASH } from '../acp/native-prompt-key';
  * (records that number their lines themselves share no ids with the runtime). Being still open says nothing: a
  * record without turn ends keeps its last turn open until the next prompt is written. The first turn from the end
  * that is neither stays, and so does everything before it. Once the runtime's turn ends (`runtime` null), the
- * record's turns are shown as they are. `before`: see `withoutCopiesOf`.
+ * record's turns are shown as they are (`withDrawnTurns`), from when the record holds that turn (`recordHolds`).
  */
-export function withRuntimeTurn(turns: readonly TranscriptTurn[], runtime: TranscriptTurn | null, before?: ReadonlySet<string>): TranscriptTurn[] {
-  if (!runtime) return [...turns];
-  return [...withoutCopiesOf(turns, runtime, before), runtime];
-}
 
 /**
  * `turns` without their tail turns that are `turn` as another source holds it (`sameTurnAs`), for whoever draws `turn`
@@ -26,8 +22,46 @@ export function withRuntimeTurn(turns: readonly TranscriptTurn[], runtime: Trans
 export function withoutCopiesOf(turns: readonly TranscriptTurn[], turn: TranscriptTurn, before?: ReadonlySet<string>): TranscriptTurn[] {
   const same = sameTurnAs(turn);
   let end = turns.length;
-  while (end > 0 && !before?.has(turns[end - 1]!.id) && same(turns[end - 1]!)) end -= 1;
+  while (end > 0 && !before?.has(turns[end - 1]!.id) && !startedBefore(turns[end - 1]!, turn) && same(turns[end - 1]!)) end -= 1;
   return turns.slice(0, end);
+}
+
+/**
+ * A record's line is written after its runtime opened the turn, both on this machine's clock; a record's clock may
+ * count whole seconds. So a turn that started more than that before `turn` did is an earlier turn, whatever it shares
+ * with it and whenever it was read: this holds for a record read late, where `before` (taken when `turn` started)
+ * holds nothing. A turn without a time says nothing.
+ */
+const RECORD_CLOCK_MS = 1_000;
+export function startedBefore(other: TranscriptTurn, turn: TranscriptTurn): boolean {
+  return other.startedAt !== undefined && turn.startedAt !== undefined && other.startedAt < turn.startedAt - RECORD_CLOCK_MS;
+}
+
+/** A turn of the runtime drawn in place of the record's copies of it. `before`: see `withoutCopiesOf`. */
+export type DrawnTurn = { turn: TranscriptTurn; before: ReadonlySet<string> };
+
+/** `turns` with each drawn turn, oldest first, in place of its copies at the tail. */
+export function withDrawnTurns(turns: readonly TranscriptTurn[], drawn: readonly DrawnTurn[]): TranscriptTurn[] {
+  if (drawn.length === 0) return [...turns];
+  let rest: TranscriptTurn[] = [...turns];
+  // The newest first: its copies are the ones at the tail.
+  for (let index = drawn.length - 1; index >= 0; index -= 1) rest = withoutCopiesOf(rest, drawn[index]!.turn, drawn[index]!.before);
+  return [...rest, ...drawn.map((one) => one.turn)];
+}
+
+/**
+ * Whether the record holds a turn its runtime has ended, so the record's copy is shown from here on. An ended copy
+ * does. So does any copy once the record was read as written at that end (`readToNow`): the record is then as far as
+ * its agent wrote it, and an open copy is what a record without turn ends keeps. A record read to there that has a
+ * later turn and no copy (it numbers nothing the runtime does and words the prompt its own way) holds it too.
+ */
+export function recordHolds(turns: readonly TranscriptTurn[], held: DrawnTurn, readToNow: boolean): boolean {
+  const same = sameTurnAs(held.turn);
+  const since = turns.filter((turn) => !held.before.has(turn.id) && !startedBefore(turn, held.turn));
+  const copies = since.filter(same);
+  if (copies.length > 0) return readToNow || copies.every((turn) => turn.outcome !== undefined || turn.endedAt !== undefined);
+  const startedAt = held.turn.startedAt;
+  return readToNow && startedAt !== undefined && since.some((turn) => turn.startedAt !== undefined && turn.startedAt >= startedAt);
 }
 
 /** The turns that have ended: what a turn starting now cannot be a copy of (`withoutCopiesOf`). */
@@ -42,7 +76,23 @@ export function endedTurnIds(turns: readonly TranscriptTurn[]): Set<string> {
  */
 export function sameTurnAs(turn: TranscriptTurn): (other: TranscriptTurn) => boolean {
   const keys = new Set(sameTurnKeys(turn));
-  return (other) => sameTurnKeys(other).some((key) => keys.has(key));
+  const anchor = turnAnchor(turn);
+  return (other) => {
+    // Both name their turn (`turnAnchor`): that alone says whether they are one turn, the same words or not.
+    const theirs = anchor === null ? null : turnAnchor(other);
+    if (anchor !== null && theirs !== null) return anchor === theirs;
+    return sameTurnKeys(other).some((key) => keys.has(key));
+  };
+}
+
+/**
+ * The agent's own name for a turn, where its harness gives one to both the runtime and the record: the point a revert
+ * steps back to, on the message that opened the turn (Codex: the turn id; Claude: that message's id). Null when the
+ * turn carries none (a harness without one, or a runtime turn whose receipt has not come yet).
+ */
+export function turnAnchor(turn: Pick<TranscriptTurn, 'items'>): string | null {
+  const first = turn.items.find((item): item is Extract<TranscriptItem, { kind: 'message' }> => item.kind === 'message' && item.role === 'user');
+  return first?.revertAnchor ?? null;
 }
 
 const keysOf = new WeakMap<TranscriptTurn, readonly string[]>();

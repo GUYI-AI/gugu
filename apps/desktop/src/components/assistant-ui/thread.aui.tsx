@@ -8,6 +8,7 @@ import { SessionUiTheme } from "@/components/sessionpage/SessionUiTheme";
 import { useLocale } from "@/i18n";
 import { useTheme } from "@/store/theme";
 import { useMobileShell } from "@/hooks/useMobileShell";
+import { useDraftAttachmentPreview } from "../chat/useDraftAttachmentPreview";
 import { createLocalSessionMentionProvider } from "@/session/renderer/lib/chat/local-session-mention-provider";
 import { useSessionAgentCreationTools } from "@/session/renderer/lib/chat/use-session-agent-creation-tools";
 import { useSessionMentionDrop } from "@/session/renderer/lib/chat/use-session-mention-drop";
@@ -29,7 +30,7 @@ import {
   ToolGroupRoot,
   ToolGroupTrigger,
 } from "./tool-group.aui";
-import { ComposerAboveExtras, ComposerExtras, ComposerInputHeader, ThreadTailExtras, useComposerAttachmentPlacement, useComposerEditorRef, useComposerPlaceholder, useComposerStop } from "./composer-extras";
+import { ComposerAboveExtras, ComposerExtras, ComposerInputHeader, ThreadTailExtras, useComposerAttachmentPlacement, useComposerAttachmentReplace, useComposerEditorRef, useComposerPlaceholder, useComposerStop } from "./composer-extras";
 import { useAuiCopy } from "./copy";
 import { TooltipIconButton } from "./tooltip-icon-button";
 import { Button } from "./ui/button";
@@ -338,6 +339,8 @@ export function ThreadComposer({ autoFocus, submitOnEnter, sendDisabled }: { aut
   const { isRunning, isDisabled, capabilities } = useAuiState((s) => s.thread);
   const hostStop = useComposerStop();
   const attachmentPlacement = useComposerAttachmentPlacement();
+  const replaceAttachment = useComposerAttachmentReplace();
+  const draftPreview = useDraftAttachmentPreview(null, mobile, (id) => attachments.find((attachment) => attachment.id === id)?.file, replaceAttachment);
   const placeholder = useComposerPlaceholder() ?? c.placeholder;
   const editor = useRef<PromptEditorRef | null>(null);
   const hostEditor = useComposerEditorRef();
@@ -396,10 +399,12 @@ export function ThreadComposer({ autoFocus, submitOnEnter, sendDisabled }: { aut
           onStop={hostStop?.onStop} onInputChange={(value) => composer.setText(value)} onSubmit={() => composer.send()}
           onAttach={capabilities.attachments && (!mobile || attachmentPlacement === 'input') ? () => picker.current?.click() : undefined}
           onFilesDropped={capabilities.attachments ? addFiles : undefined} onImageFilesDropped={capabilities.attachments ? addFiles : undefined}
-          attachments={chips} onAttachmentsChange={capabilities.attachments ? (next) => { for (const attachment of attachments) if (!next.some((chip) => chip.id === attachment.id)) void composer.attachment({ id: attachment.id }).remove(); } : undefined}
+          attachments={chips} onViewAttachment={mobile ? draftPreview.open : undefined}
+          onAttachmentsChange={capabilities.attachments ? (next) => { for (const attachment of attachments) if (!next.some((chip) => chip.id === attachment.id)) void composer.attachment({ id: attachment.id }).remove(); } : undefined}
           onRetryAttachment={(id) => { const file = attachments.find((attachment) => attachment.id === id)?.file; if (file) void composer.attachment({ id }).remove().then(() => composer.addAttachment(file)); }}
           toolbarExtra={<ComposerExtras />} inputHeader={<ComposerInputHeader />} mentionProvider={mentionProvider} renderMentionIcon={renderMentionIcon}
           dataDropTypes={dataDropTypes} onDataDropped={onDataDropped} />
+        {draftPreview.panel}
       </MessageProvider>
     </SessionUiTheme>
   );
@@ -541,7 +546,7 @@ const AssistantActionBar: FC = () => {
           side="bottom"
           align="start"
           sideOffset={6}
-          className="aui-action-bar-more-content bg-popover text-popover-foreground data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:animate-out data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 min-w-[8rem] overflow-hidden rounded-xl border p-1.5"
+          className="aui-action-bar-more-content bg-popover text-popover-foreground data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:animate-out data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-[var(--z-menu)] min-w-[8rem] overflow-hidden rounded-xl border p-1.5"
         >
           <ActionBarPrimitive.ExportMarkdown asChild>
             <ActionBarMorePrimitive.Item className="aui-action-bar-more-item hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none">

@@ -1,6 +1,5 @@
 import type { TFunction } from 'i18next'
 import { Clock, Copy, Download, ExternalLink, GitFork, MessageSquare, Pencil, Pin, Reply, Share, SquareCheck, TextCursorInput, Trash, type IconComponent } from '@/lib/icons'
-import { SELECTED_MESSAGE_QUOTES_ENABLED } from '../../lib/messageQuoteRollout'
 import { confirmDanger } from '../../lib/confirmDanger'
 
 export type MessageActionTarget = {
@@ -9,7 +8,8 @@ export type MessageActionTarget = {
   /** Limit the menu to handlers for the captured text selection. */
   hasSelection?: boolean
   onReply?: () => void
-  onQuoteSelection?: () => void
+  /** Comment on the selected words: the small box at the selection, into the conversation's draft (selection-line.tsx). */
+  onCommentSelection?: () => void
   onCopy?: (content?: string) => void
   /** 手机才有:收起菜单,在气泡上原地选字(手机长按就是菜单,平时气泡不能选字)。 */
   onSelectText?: () => void
@@ -24,7 +24,7 @@ export type MessageActionTarget = {
   onSelect?: () => void
   /** 提供则有「开话题」;话题里不提供(单层不嵌套)。 */
   onOpenTopic?: () => void
-  /** The task timeline: quote the text (or the selection) into its composer as markdown. */
+  /** The task timeline: quote the whole message into its composer as markdown. */
   onQuoteToComposer?: () => void
   /** The task timeline: open the file this message carries, the way its card opens it. */
   onOpenFile?: () => void
@@ -47,22 +47,23 @@ export type MessageActionItem = {
 
 /** 一条消息能做的事。右键 / ⋯ / 长按 / 文件预览共用,按提供的 handler 取适合当前场景的动作。 */
 export function messageActionItems(input: MessageActionTarget, t: TFunction<'messaging'>): MessageActionItem[] {
+  // A selection is commented on, never replied to or quoted: 评论是评论，引用是引用 (the whole message is quoted).
   const target: MessageActionTarget = input.hasSelection ? {
     isRetracted: input.isRetracted, content: input.content,
-    onReply: selectionReply(input), onQuoteToComposer: input.onQuoteToComposer, onCopy: input.onCopy,
+    onCommentSelection: input.onCommentSelection, onCopy: input.onCopy,
     onCopyLink: input.onCopyLink, onOpenLink: input.onOpenLink,
   } : input
   const hasContent = !!target.content && !target.isRetracted
   // Ordered by session/shared/menu-table.ts @@@menu-order. No click data exists; each row says why it sits where it does.
   const items: (MessageActionItem | false)[] = [
+    // Comment on the selected words: offered only while text is selected, which is the comment's own intent.
+    !!target.onCommentSelection && { key: 'comment', icon: MessageSquare, label: t('message.actions.comment'), onSelect: target.onCommentSelection, disabled: target.isRetracted },
     // Reply: many times a day in any group.
     !!target.onReply && { key: 'reply', icon: Reply, label: t('message.actions.reply'), onSelect: target.onReply, disabled: target.isRetracted },
-    // Reply to the selected words: offered only while text is selected, which is the reply's own intent.
-    SELECTED_MESSAGE_QUOTES_ENABLED && !!target.onQuoteSelection && { key: 'quoteSelection', icon: Reply, label: t('message.actions.quoteSelection'), onSelect: target.onQuoteSelection, disabled: target.isRetracted },
     // Copy: many times a day, mostly to paste into another app.
     !!target.onCopy && { key: 'copy', icon: Copy, label: t('message.actions.copy'), onSelect: target.onCopy, disabled: !hasContent },
     // The task timeline's reply: quote into the composer, as often as reply in a chat.
-    !!target.onQuoteToComposer && { key: 'quoteToComposer', icon: Reply, label: t(input.hasSelection ? 'message.actions.quoteSelectionToComposer' : 'message.actions.quoteToComposer'), onSelect: target.onQuoteToComposer, disabled: !hasContent },
+    !!target.onQuoteToComposer && { key: 'quoteToComposer', icon: Reply, label: t('message.actions.quoteToComposer'), onSelect: target.onQuoteToComposer, disabled: !hasContent },
     // Phone only: selecting part of a message to copy it, the phone's way to a partial copy.
     !!target.onSelectText && { key: 'selectText', icon: TextCursorInput, label: t('message.actions.selectText'), onSelect: target.onSelectText, disabled: !hasContent },
     // Copy or open a link: offered only when the pointer is on a link; after copy, which keeps its place so the rows a
@@ -93,9 +94,4 @@ export function messageActionItems(input: MessageActionTarget, t: TFunction<'mes
     } },
   ]
   return items.filter((item): item is MessageActionItem => item !== false)
-}
-
-/** Until excerpt-aware receivers ship, Reply on a selection keeps its whole-message meaning. */
-function selectionReply(target: MessageActionTarget) {
-  return SELECTED_MESSAGE_QUOTES_ENABLED ? target.onQuoteSelection ?? target.onReply : target.onReply
 }

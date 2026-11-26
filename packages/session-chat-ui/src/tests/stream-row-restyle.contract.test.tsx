@@ -31,11 +31,12 @@ function liveTurn(paragraphs: number, marker: string): TranscriptTurn {
 
 /** Every element from the reply's marker text up to the host, with its inline custom properties. */
 function ancestorsOf(host: HTMLElement, marker: string): Map<Element, string> {
-  const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
-  let node: Node | null = null;
-  while ((node = walker.nextNode())) if (node.textContent?.includes(marker)) break;
+  // The deepest element holding the whole marker: a streaming fade may split its text across word spans.
+  const walker = document.createTreeWalker(host, NodeFilter.SHOW_ELEMENT);
+  let deepest: Element | null = null;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) if (node.textContent?.includes(marker)) deepest = node as Element;
   const out = new Map<Element, string>();
-  for (let el = node?.parentElement ?? null; el && el !== host; el = el.parentElement) {
+  for (let el = deepest; el && el !== host; el = el.parentElement) {
     const style = (el as HTMLElement).style;
     const custom: string[] = [];
     for (let i = 0; i < style.length; i++) if (style[i]!.startsWith('--')) custom.push(`${style[i]}:${style.getPropertyValue(style[i]!)}`);

@@ -273,6 +273,15 @@ describe('text runs', () => {
     expect(blockPlainText(blocks[6]!)).toBe('<svg/>');
   });
 
+  it('leads a web link with its site icon, GitHub with its mark and a private address with the globe, neither requested', () => {
+    const root = rendered('[docs](https://example.org/a) [repo](https://github.com/o/r) [box](http://192.168.1.2/x)');
+    const icons = [...root.querySelectorAll<HTMLElement>('a .gg-md-link-icon')];
+    expect(icons.map((icon) => icon.querySelector('img')?.getAttribute('src') ?? null)).toEqual(['https://example.org/favicon.ico', null, null]);
+    expect(icons[1]!.getAttribute('data-mark')).toBe('github');
+    expect(icons[2]!.hasAttribute('data-failed')).toBe(true);
+    expect(root.textContent).toBe('docs repo box');
+  });
+
   it('reads like the chat bubble: raw HTML stays text, a typed newline is a line break', () => {
     const root = rendered('<details><span id="gg-mention-0">x</span></details>\none\ntwo');
     expect(root.querySelector('details, span[id]')).toBeNull();

@@ -22,8 +22,8 @@ import { rendererLogger } from '../../lib/log'
 import { useSshSignInStates } from '../../hooks/useSshSignInStates'
 import { useSshLinkProblems, useSshUpgrades } from '../../hooks/useSshLinkProblems'
 import { sshMachineAddresses, sshMachineIdsOf, watchSshMachineAddresses } from '../../lib/sshMachineAddresses'
-import { sshLinkFacts } from '../../lib/sshLinkOnline'
-import { requestSshServerUpgrade, signInSshMachine } from '../../lib/sshLinkChannel'
+import { sshLinkFacts, reportedSshUpdate } from '../../lib/sshLinkOnline'
+import { requestSshServerUpgrade } from '../../lib/sshLinkChannel'
 import { readServerVersionSwitchBusyAgents, retryServerVersionMatch, restartServerVersionNow, type VersionRestartResult } from '../../lib/serverVersionRetry'
 import type { SshLinkFailure } from '../../lib/sshLink'
 import type { SshSignInState } from '../../lib/serverSshMachines'
@@ -42,6 +42,7 @@ import { SegmentedTabs } from '../ui/SegmentedTabs'
 import { cn } from '../../lib/cn'
 import { AddServerPanel, type AddServerMethod, type AddedServer } from './AddServerPanel'
 import { InlineAction } from './addServer/InlineAction'
+import { DeviceSshSignIn } from './DeviceSshSignIn'
 import { supersededBy } from '../../lib/deviceSuperseded'
 import { consumeAddServerIntent } from '../../lib/addServerIntent'
 import { consumeDeviceActionsIntent } from '../../lib/deviceActionsIntent'
@@ -176,7 +177,6 @@ export function DevicesSection({
       onOpenActions={() => setActionsFor(device.device_id)}
       signIn={signIns.get(device.device_id) ?? null}
       sshLink={sshMachines.state === 'unknown' ? 'unknown' : sshMachineIds?.has(device.device_id) ? (linkProblems.get(device.device_id) ?? null) : undefined}
-      onSshSignIn={() => void signInSshMachine(device.device_id)}
       upgradePercent={upgrades.get(device.device_id) ?? null}
       onRetryUpdate={() => void requestSshServerUpgrade(device.device_id, { force: true })}
       onRetryVersionMatch={() => retryServerVersionMatch(device.device_id)}
@@ -420,7 +420,6 @@ function DeviceRow({
   onOpenActions,
   signIn,
   sshLink,
-  onSshSignIn,
   upgradePercent,
   onRetryUpdate,
   onRetryVersionMatch,
@@ -449,8 +448,6 @@ function DeviceRow({
   /** #6264 远程 SSH 那台此刻设备连接的问题(没有 = 连着);其它机器 null。 */
   /** Its SSH link from this desktop; undefined = not an SSH machine here; 'unknown' = the SSH machine list is not read yet. */
   sshLink?: SshLinkFailure | null | 'unknown'
-  /** 设备连接要先登录时,句中的「登录」:经 SSH 登录(问密码 / 口令)。 */
-  onSshSignIn?: () => void
   /** 正在替它升级时的进度百分比(不知道总量 = null)。 */
   upgradePercent?: number | null
   /** 替它升级没成时,句中的「重试」。 */
@@ -469,7 +466,7 @@ function DeviceRow({
   const sshAddress = model.connection.via === 'ssh' ? model.connection.address : null
   const lastSeen = device.is_online ? null : formatRelativeTime(device.last_seen_at, { mode: 'elapsed', dateAfterDays: 30 })
   // 「登录已失效」「那台机器上已退出登录」替掉「上次在线」:机器是离线的,但真正的原因是这个,下一步是重新登录。
-  const link = sshLink === undefined || sshLink === 'unknown' ? null : sshLinkFacts(true, sshLink, device.is_online).sshLink ?? null
+  const link = sshLink === undefined || sshLink === 'unknown' ? null : sshLinkFacts(true, reportedSshUpdate(device, sshLink), device.is_online).sshLink ?? null
   // 点了「重试」、那台机器的心跳还没报回新状态之前:先说「正在更新」;报回来(不再是这一次失败)就让位给它。
   const failedUpdate = device.is_online && model.update?.state === 'failed' ? model.update.version : null
   const [retriedFor, setRetriedFor] = useState<string | null>(null)
@@ -552,7 +549,7 @@ function DeviceRow({
             )}
             {model.notices
               // 远程 SSH 的机器太旧:状态那一行已说「正在更新 / 更新没成功」,❌ 再挂一颗说「空闲时会自动更新」的标签。
-              .filter((notice) => !(notice.kind === 'server-too-old' && (link === 'updating' || link === 'outdated')))
+              .filter((notice) => !(notice.kind === 'server-too-old' && (link === 'updating' || link === 'updateFailed')))
               .map((notice) => (
                 <DeviceNoticeChip key={notice.kind} notice={notice} />
               ))}
@@ -593,10 +590,7 @@ function DeviceRow({
               className={cn('size-[7px] shrink-0 rounded-[var(--radius-circle)]', device.is_online ? 'bg-live' : 'bg-[var(--faint-fg)]')}
             />
             {link === 'signInRequired' ? (
-              <span className="text-[var(--danger-fg)]" data-testid="settings-device-ssh-sign-in">
-                {t('devices.loginState.sshSignIn')}
-                {onSshSignIn && <>{' '}<InlineAction onClick={onSshSignIn} testId="settings-device-ssh-sign-in-action">{t('devices.loginState.sshSignInAction')}</InlineAction></>}
-              </span>
+              <DeviceSshSignIn deviceId={device.device_id} name={device.label} hostKeyChanged={sshLink === 'hostKeyChanged'} />
             ) : link === 'updating' ? (
               // 版本太旧、这台电脑正在替它升级(远程 SSH):说真实状态与进度,❌「重连中」。
               <span data-testid="settings-device-updating">
@@ -604,7 +598,9 @@ function DeviceRow({
                   ? t('devices.loginState.updatingPercent', { percent: upgradePercent })
                   : t('devices.loginState.updating')}
               </span>
-            ) : link === 'outdated' ? (
+            ) : (link === 'waitingIdle' || link === 'confirmationRequired') && !model.update ? (
+              <span>{t(link === 'waitingIdle' ? 'devices.link.waitingIdle' : 'devices.link.confirmationRequired', { name: device.label })}</span>
+            ) : link === 'updateFailed' ? (
               <span className="text-[var(--danger-fg)]" data-testid="settings-device-outdated">
                 {t('devices.loginState.updateFailed')}
                 {onRetryUpdate && <>{' '}<InlineAction onClick={onRetryUpdate} testId="settings-device-update-retry">{t('devices.loginState.retryUpdate')}</InlineAction></>}

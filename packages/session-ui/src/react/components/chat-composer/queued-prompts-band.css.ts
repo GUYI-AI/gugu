@@ -94,6 +94,8 @@ export const promptText = style({
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
   lineHeight: '1.25rem',
+  // A picture in the words is an "Image N" chip (InlineImageChip), N counted per prompt.
+  counterReset: 'inline-image',
   cursor: 'text',
   selectors: {
     '&:focus-visible:not([data-pointer-focus])': { outline: `1px solid ${vars.border1}`, outlineOffset: 2 },

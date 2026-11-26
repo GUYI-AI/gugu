@@ -7,7 +7,7 @@ import { tokenVars } from '@session-ui/theme/tokens.css';
 
 export const positioner = style({
   isolation: 'isolate',
-  zIndex: 50,
+  zIndex: 'var(--z-menu, 50)',
 });
 
 export const comboboxTrigger = style([svgDefaultSize, {}]);

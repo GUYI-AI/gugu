@@ -12,3 +12,13 @@ export const customModels = replica({
     return result.data;
   },
 });
+
+export const customModelEffortCatalog = replica({
+  name: 'customModelEffortCatalog', scope: 'device', fresh: 0,
+  read: async (_device: string, machine: string | null, ids: string[]) => {
+    const client = await getAgentConfigRuntimeClient(machine);
+    const result = await client.lookupCustomModelEfforts({ ids });
+    if (!result.success) throw new Error(errorText(result.error));
+    return result.data;
+  },
+});

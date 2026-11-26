@@ -21,6 +21,8 @@ export interface AppCommand {
 
 export interface CommandProvider {
   scopeId: ScopeId;
+  /** 'shell' = drawn by the gugu shell, outside the task page: it keeps answering while the task page is hidden. */
+  surface?: 'shell';
   /**
    * Called inside commandRegistry's @computed activeCommands — any MobX
    * observable read here is automatically tracked and causes activeCommands

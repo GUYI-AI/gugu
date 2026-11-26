@@ -27,6 +27,7 @@ import { AccountDeletionSettings } from './accountDeletion/AccountDeletionSettin
 import { ReferralAccountPreview } from '../referralPreview/ReferralPreview'
 import { TeamAccountMembership, TeamAccountMethods } from '@/features/team/TeamAccount'
 import { hasTeamAccountMarker } from '@/features/team/accountKind'
+import { isImeComposing } from '@/lib/ime'
 
 const log = rendererLogger('settings/account')
 
@@ -198,7 +199,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
               data-field="wide"
               value={nickname}
               onChange={e => { setNickname(e.target.value); setSaved(false) }}
-              onKeyDown={e => { if (e.key === 'Enter') void handleSave() }}
+              onKeyDown={e => { if (e.key === 'Enter' && !isImeComposing(e)) void handleSave() }}
             />
           )}
         />
@@ -241,7 +242,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
                   value={occupation.draft.text}
                   placeholder={tMain('firstRun.otherPlaceholder')}
                   onChange={(e) => { setOccupationEdit({ draft: { key: 'other', text: e.target.value } }); setSaved(false) }}
-                  onKeyDown={e => { if (e.key === 'Enter') void handleSave() }}
+                  onKeyDown={e => { if (e.key === 'Enter' && !isImeComposing(e)) void handleSave() }}
                 />
               ) : null}
             </span>
@@ -260,7 +261,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
               data-field="wide"
               value={bio ?? ''}
               onChange={e => { setBio(e.target.value); setSaved(false) }}
-              onKeyDown={e => { if (e.key === 'Enter') void handleSave() }}
+              onKeyDown={e => { if (e.key === 'Enter' && !isImeComposing(e)) void handleSave() }}
               placeholder={t('account.bioPlaceholder')}
             />
           )}

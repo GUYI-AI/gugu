@@ -1,11 +1,14 @@
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
 import { XIcon } from '@/lib/icons'
 import * as React from 'react';
-import { useUiPopupZIndex, useUiPortalContainer } from '@gugu/session-ui/react/primitives';
+import { UiPortalContainerProvider, useUiPopupZIndex, useUiPortalContainer } from '@gugu/session-ui/react/primitives';
 import { Button } from '@renderer/lib/ui/button';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { cn } from '@renderer/utils/utils';
 import { noteOverlayRequest } from '@/lib/localRendererDiagnostics';
+import { useOverlayOcclusionProbe } from '@/lib/overlayOcclusion';
+import { DIALOG_SCROLL_BODY } from '@renderer/lib/modal/modal-chrome';
+import { ModalSurfaceProvider } from '@renderer/lib/modal/modal-surface';
 
 function Dialog({ onOpenChange, ...props }: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} onOpenChange={(next, details) => {
@@ -33,7 +36,7 @@ function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) 
       style={{ zIndex: useUiPopupZIndex() }}
       data-slot="dialog-overlay"
       className={cn(
-        'fixed inset-0 isolate z-50 bg-[var(--bg-overlay-soft)] duration-[var(--dur-fast)]  data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0',
+        'fixed inset-0 isolate z-[var(--z-modal)] bg-[var(--bg-overlay-soft)] duration-[var(--dur-fast)]  data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0',
         className
       )}
       {...props}
@@ -44,13 +47,21 @@ function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) 
 function DialogContent({
   className,
   children,
+  ref,
   ...props
 }: DialogPrimitive.Popup.Props & { showCloseButton?: boolean }) {
   const zIndex = useUiPopupZIndex();
+  const probe = useOverlayOcclusionProbe('session-dialog');
+  const popupRef = React.useCallback((el: HTMLDivElement | null) => {
+    probe(el);
+    if (typeof ref === 'function') ref(el);
+    else if (ref) ref.current = el;
+  }, [probe, ref]);
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Popup
+        ref={popupRef}
         finalFocus={false}
         style={{ zIndex }}
         data-slot="dialog-content"
@@ -60,12 +71,17 @@ function DialogContent({
           }
         }}
         className={cn(
-          'fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-background-quaternary text-sm shadow-lift duration-[var(--dur-fast)] outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 sm:max-w-lg',
+          'fixed top-1/2 left-1/2 z-[var(--z-modal)] flex max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-background-quaternary text-sm shadow-lift duration-[var(--dur-fast)] outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 sm:max-w-lg',
+          DIALOG_SCROLL_BODY,
           className
         )}
         {...props}
       >
-        {children}
+        {/* @@@modal-surface: what opens from inside this dialog (a menu, a confirmation) goes one layer above it, and a
+            registered modal asked for here (useSurfaceModal / useConfirm) opens as a nested dialog in it. */}
+        <UiPortalContainerProvider zIndex={zIndex ?? 'var(--z-modal)'}>
+          <ModalSurfaceProvider>{children}</ModalSurfaceProvider>
+        </UiPortalContainerProvider>
       </DialogPrimitive.Popup>
     </DialogPortal>
   );

@@ -4,6 +4,8 @@ import { AgentQuestionCard } from './AgentQuestionCard'
 import { AgentPermissionBand } from './AgentPermissionBand'
 import { SettlementCard } from '@/components/session-watch/TimelineView'
 import { latestAgentQuestion } from '@/lib/agentQuestion'
+import { passwordAskOf } from '@gugu/core/shared/passwordBetaProtocol'
+import { PasswordRequestDock } from '@/session/renderer/features/extensions/session-password-request'
 
 /** Same question and permission controls as the project conversation, backed by the host's first-answer-wins result. */
 export function ConversationSettlements({ sessionId, settlements, runtime, mobile, machine, busyItemId, respond }: {
@@ -15,7 +17,10 @@ export function ConversationSettlements({ sessionId, settlements, runtime, mobil
   const discussion = latestAgentQuestion(settlements)
   return <div data-conversation-settlements="" style={{ maxHeight: '45dvh', overflowY: 'auto' }}>
     {discussion?.state === 'resolved' && <AgentQuestionCard scope={sessionId} settlement={discussion} respond={answers => respond({ itemId: discussion.itemId, kind: 'question', answers })} />}
-    {pending.map(item => remoteSettlementGap(runtime, item.kind ?? 'permission', item.questions, item.origin)
+    {pending.map(item => !mobile && passwordAskOf(item.origin)
+      // An Agent's password request: its card, answered with the vault (a phone keeps none: the band says where).
+      ? <PasswordRequestDock key={item.itemId} request={passwordAskOf(item.origin)!} />
+      : remoteSettlementGap(runtime, item.kind ?? 'permission', item.questions, item.origin)
       ? <SettlementCard key={item.itemId} settlement={item} runtime={runtime} machine={machine} busy={busyItemId === item.itemId}
           onRespond={input => { void respond(input).catch(() => undefined) }} />
       : item.kind === 'question' && item.questions?.length

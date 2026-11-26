@@ -269,6 +269,23 @@ class EmdashAgentRegistry {
   }
 
   /**
+   * Host credential-recovery admission (`SessionpageDeliveryTarget.waitUntilReady`): after the host reopens this
+   * platform ACP session, the recovery coordinator waits here before it publishes `live`. The reopen entry
+   * (`reloadEmdashSession`) already awaited `session/load`, so the gugu-acp control channel's admission signal is
+   * that the reloaded session is registered and not closing in the host's summaries. ❌ never resolve ready for a
+   * session that is gone or closing — fail loud, the same shape as the other native owners' admission waiters
+   * (`codex-app-server` / `claude` / `opencode-serve`). Without this the recovery gate threw
+   * `sessionpage owner gugu-acp has no admission waiter`, stranding group @-inbox messages behind a failed gate.
+   */
+  async waitUntilReady(sessionId: string): Promise<void> {
+    const summary = (await this.bridge?.emdashSessionSummaries())
+      ?.find((candidate) => candidate.sessionId === sessionId)
+    if (!summary || summary.closing) {
+      throw new Error(`gugu-acp session ${sessionId} is not live after reopen`)
+    }
+  }
+
+  /**
    * 这条 ACP 会话跑的 harness × surface —— 注入时机声明按它查(spec session-injection)。
    * ACP 结构化聊天是多家共用的一根管子,时机不是这个 target 的属性,是会话上那家 harness 的声明。
    */

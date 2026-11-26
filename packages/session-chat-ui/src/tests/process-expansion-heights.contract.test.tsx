@@ -20,7 +20,7 @@ it.each([390, 1024])('only moves content below the opened process by its new bod
   const state = createChatState(context);
   const host = document.body.appendChild(document.createElement('div'));
   host.style.cssText = `position:fixed;left:0;top:0;width:${width}px;height:720px`;
-  const view = createChatView({ context, state, parent: host, pinUserMessages: false });
+  const view = createChatView({ context, state, parent: host });
   cleanup.push(() => { view.dispose(); state.dispose(); context.dispose(); host.remove(); });
   // Folded incoming activity followed by a process that must remain visible.
   // Keep this genuinely unconfirmed, so receipt parsing cannot mask the

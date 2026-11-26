@@ -25,8 +25,8 @@ const NODE_FOR_ZCODE: NodeVersionRequirement = { major: 24, minor: 0 };
  *  · macOS:dmg 里 `ZCode.app/Contents/Resources/glm/zcode.cjs`,拖进 /Applications(2026-10-17 mac1 挂载读到);
  *  · Linux:deb 落 `/opt/ZCode/resources/glm/zcode.cjs`(`dpkg-deb -c` 读到;rpm 同一个 electron-builder 布局);
  *    AppImage 没有固定位置,由用户手动指定;
- *  · Windows:electron-builder NSIS 的按用户安装位置 `%LOCALAPPDATA%\Programs\ZCode`(未实测,与 zcode-acp
- *    README 列的位置一致)。
+ *  · Windows:ZCode 4.0.0's NSIS installer writes InstallLocation under Software\\268ce9e6-a30b-5890-ad18-d4b3ebba5377
+ *    (observed with the official installer). The default is %LOCALAPPDATA%\\Programs\\ZCode.
  * PATH 上的 `zcode`(官方 `build:zcode` 发行包或社区 zcode-app-cli 装出来的那个命令)先认。
  *
  * `skipVersionProbe`:它是一份要解释器来跑的脚本,直接执行就得靠用户 PATH 上恰好有一个够新的 node
@@ -37,7 +37,10 @@ const zcodeDependency = recognisedDependency({
   knownPaths: {
     macos: ['/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs', '~/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs'],
     linux: ['/opt/ZCode/resources/glm/zcode.cjs'],
-    windows: ['%LOCALAPPDATA%\\Programs\\ZCode\\resources\\glm\\zcode.cjs'],
+    windows: [
+      { registryKey: '268ce9e6-a30b-5890-ad18-d4b3ebba5377', relativePath: 'resources\\glm\\zcode.cjs' },
+      '%LOCALAPPDATA%\\Programs\\ZCode\\resources\\glm\\zcode.cjs',
+    ],
   },
   skipVersionProbe: true,
   installDocs: 'https://zcode.z.ai/en/docs/install',

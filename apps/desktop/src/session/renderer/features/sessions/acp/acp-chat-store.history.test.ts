@@ -183,7 +183,7 @@ describe('#7304 原地回退后的历史对账', () => {
     expect(custody).not.toHaveBeenCalled();
   });
 
-  it('发送编辑先原地回退再发送修改内容,保留原附件、批注和主输入框草稿', async () => {
+  it('发送编辑先原地回退再发送修改内容,保留原附件、评论和主输入框草稿', async () => {
     const { store, session, turns } = await setup();
     const annotations = [{ number: 1, target: 'docs/index.html', comment: 'Make it red', promptText: '# All comments\n\n## User Comment 1\nComment:\nMake it red' }];
     Object.assign(turns[1]!.items[0]!, { attachments: [{ id: 'image-1', name: 'photo.png', mimeType: 'image/png' }], files: [{ itemId: 'pdf', version: 1, name: 'brief.pdf', mimeType: 'application/pdf', sizeBytes: 3 }], annotations });

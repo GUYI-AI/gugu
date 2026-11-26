@@ -97,7 +97,7 @@ afterEach(() => {
 
 async function openPermissions() {
   await page.getByTestId('agent-watch-create-model-device').click()
-  await expect.element(page.getByRole('button', { name: /思考强度.*极高/ })).toBeVisible()
+  await expect.element(page.getByRole('button', { name: /思考强度.*超高/ })).toBeVisible()
   const drill = page.getByRole('button', { name: /权限.*全部放行/ })
   await expect.element(drill).toHaveTextContent('全部放行')
   expect(document.querySelector('[data-slot="composer-permission-mode"]')).toBeNull()
@@ -116,8 +116,8 @@ it('moves the actual phone conversation permissions into Work and sends the orig
   expect(host.set).toHaveBeenCalledWith('mode', ':workspace')
   expect(document.querySelector('[data-slot="composer-permission-mode"]')).toBeNull()
   await page.screenshot({ path: '__screenshots__/phone-work-permission-selected.png' })
-  await page.getByRole('button', { name: /思考强度.*极高/ }).click()
-  await expect.element(page.getByRole('radio', { name: /极高/ })).toHaveAttribute('aria-checked', 'true')
+  await page.getByRole('button', { name: /思考强度.*超高/ }).click()
+  await expect.element(page.getByRole('radio', { name: /超高/ })).toHaveAttribute('aria-checked', 'true')
   await expect.element(page.getByRole('radio', { name: 'Adaptive profile' })).toBeVisible()
 })
 

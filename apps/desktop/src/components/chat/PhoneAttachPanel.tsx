@@ -6,10 +6,10 @@ import './phoneAttach.css'
 export type PhoneAttachEntry = { id: string; label: string; icon: ReactNode; disabled?: boolean; onSelect: () => void }
 
 /**
- * 手机输入框的「+」(owner 11-05 认可):在键盘的位置升起一块面板,照片、拍摄、文件分开,后面接这个输入框原有的附加项。
+ * 手机输入框的回形针在键盘位置展开面板，提供照片、拍摄和文件入口。
  * 桌面不走这里:照旧是回形针 / 拖拽 / 粘贴。
  */
-export function PhoneAttachPanel({ entries, onClose }: { entries: PhoneAttachEntry[]; onClose: () => void }) {
+export function PhoneAttachPanel({ entries, onClose, children }: { entries: PhoneAttachEntry[]; onClose: () => void; children?: ReactNode }) {
   useBackLayer(onClose)
   return (
     <div className="gg-phone-attach" data-testid="chat-composer-attach-panel">
@@ -20,6 +20,7 @@ export function PhoneAttachPanel({ entries, onClose }: { entries: PhoneAttachEnt
           {entry.label}
         </Button>
       ))}
+      {children}
     </div>
   )
 }

@@ -30,7 +30,7 @@ import { err, ok, type Result } from '@gugu/session-shared';
 import type { AgentAuthStatus } from '@gugu/session-core/agents/plugins';
 import type { AgentConfigAuthError } from '@gugu/session-core/workspace-server';
 import { createHarnessConnection, renameHarnessConnection, harnessHasConnections, harnessLoginConnectionId, listHarnessConnections, removeHarnessConnection, selectHarnessConnection, sessionHarnessConnectionId } from '@main/core/agents/harness-connections';
-import { detectCustomModelProtocols, listCustomModels, saveCustomModel, removeCustomModel, testCustomModel } from '@main/core/agents/custom-models';
+import { detectCustomModelProtocols, listCustomModels, lookupCustomModelEfforts, saveCustomModel, removeCustomModel, testCustomModel } from '@main/core/agents/custom-models';
 import { scanAgentHomes, importHarnessHome, diffHarnessHome, reimportHarnessHome } from '@main/core/agents/agent-homes';
 import { connectionFailure } from '@main/core/sessions/subscription-sessions-busy';
 
@@ -235,6 +235,7 @@ export function withHostResolvedCli(
     },
     listConnections: (input) => connectionOperation(() => listHarnessConnections(input.providerId)),
     listCustomModels: () => connectionOperation(listCustomModels),
+    lookupCustomModelEfforts: ({ ids }) => connectionOperation(() => lookupCustomModelEfforts(ids)),
     saveCustomModel: (input) => connectionOperation(() => saveCustomModel(input)),
     removeCustomModel: ({ connectionId }) => connectionOperation(() => removeCustomModel(connectionId)),
     testCustomModel: (input) => connectionOperation(() => testCustomModel(input)),
@@ -245,7 +246,7 @@ export function withHostResolvedCli(
     removeConnection: ({ stopBusySessions, ...input }) => connectionOperation(async () => {
       // 按原生解析取这份 env:❌ 解开要删的那把 key(它解不开时也得删得掉)。
       const nativeEnv = (await runContextFor({ providerId: input.providerId, connectionId: 'native' })).env;
-      const current = input.connectionId !== 'native'
+      const current = (input.connectionId !== 'native' || input.providerId === 'antigravity')
         && (await listHarnessConnections(input.providerId)).some((connection) => connection.current && connection.id === input.connectionId);
       if (current) {
         // 删当前连接 = 一次切换,落回原生(#2507):与「切换连接」同一条路 —— 有会话在忙就先不切(拒绝带着

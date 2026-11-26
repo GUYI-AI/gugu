@@ -132,10 +132,17 @@ export function pendingPromptNativeEcho(prompt: PendingPrompt, turns: readonly T
   return prompt.nativeEcho ?? findPendingPromptEcho(prompt, turns);
 }
 
+/** History can carry the input's own message (by its id, never its words) before its live turn attaches. */
+function pendingPromptInHistory(prompt: PendingPrompt, committed: readonly TranscriptTurn[]): boolean {
+  return committed.some(turn => turn.items.some(item => item.kind === 'message' && item.role === 'user'
+    && (item.id === prompt.id || item._meta?.guguClientMessageId === prompt.id)));
+}
+
 /** Keep the input visible when a native turn starts before its user-message echo arrives. */
 export function activeTurnWithPending(turn: TranscriptTurn | null, prompt: PendingPrompt | null, committed: readonly TranscriptTurn[] = []): TranscriptTurn | null {
   if (!prompt) return turn;
-  if (!turn) return pendingPromptTurn(prompt);
+  // History already draws the input: keep only its running header until the live turn takes over, or it is drawn twice.
+  if (!turn) return pendingPromptInHistory(prompt, committed) ? { ...pendingPromptTurn(prompt), items: [] } : pendingPromptTurn(prompt);
   if (!prompt.delivery || pendingPromptLanded(prompt, [...committed, turn])) return turn;
   if (turn.items.some(item => item.kind === 'message' && item.role === 'user')) {
     return { ...turn, items: [...turn.items, ...pendingPromptTurn(prompt).items] };

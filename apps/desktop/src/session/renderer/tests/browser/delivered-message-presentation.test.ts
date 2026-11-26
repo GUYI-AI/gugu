@@ -43,7 +43,8 @@ it.each(['image', 'file'] as const)('updates a mounted transcript from the autho
   expect(host.textContent).not.toContain('Folder file');
   expect(host.textContent).not.toContain('/private/agent');
   host.querySelector<HTMLButtonElement>('[data-attachment-chip]')!.click();
-  expect(open).toHaveBeenCalledWith('gugu-file://proof?v=2');
+  // A picture opens from its message over this conversation; a file that is not a picture opens where it lives.
+  expect(open).toHaveBeenCalledWith(kind === 'image' ? `gugu-message-file://${id}` : 'gugu-file://proof?v=2');
   expect(state.transcript.history.get()[0].items[0]).toMatchObject({ text: raw });
 });
 

@@ -86,6 +86,25 @@ export function toGitCommandError(error: unknown): GitCommandError {
   };
 }
 
+/** Git could not reach the remote at all (DNS, proxy, connection). One list for every command that talks to a remote. */
+const NETWORK_PHRASES = [
+  'could not resolve host',
+  'network is unreachable',
+  'connection refused',
+  'connection timed out',
+  'could not resolve proxy',
+  'no route to host',
+  'network is down',
+  'temporary failure in name resolution',
+  'name or service not known',
+  'ssh: connect to host',
+  'unable to connect',
+] as const;
+
+function isGitNetworkError(lowerMessage: string): boolean {
+  return NETWORK_PHRASES.some((phrase) => lowerMessage.includes(phrase));
+}
+
 export function classifyCloneRepositoryError(
   error: unknown,
   targetPath: string
@@ -123,21 +142,7 @@ export function classifyFetchError(error: unknown, remote: string | undefined): 
   if (message.includes('authentication') || message.includes('permission denied')) {
     return { type: 'auth_failed', message: commandError.message };
   }
-  if (
-    message.includes('could not resolve host') ||
-    message.includes('network is unreachable') ||
-    message.includes('connection refused') ||
-    message.includes('connection timed out') ||
-    message.includes('no route to host') ||
-    message.includes('network is down') ||
-    message.includes('could not resolve hostname') ||
-    message.includes('temporary failure in name resolution') ||
-    message.includes('name or service not known') ||
-    message.includes('ssh: connect to host') ||
-    message.includes('unable to connect')
-  ) {
-    return { type: 'network_error', message: commandError.message };
-  }
+  if (isGitNetworkError(message)) return { type: 'network_error', message: commandError.message };
   if (message.includes('does not appear to be a git repository') || message.includes('not found')) {
     return { type: 'remote_not_found', remote, message: commandError.message };
   }
@@ -199,24 +204,16 @@ export function classifyPushError(error: unknown): PushError {
   ) {
     return { type: 'no_remote', message: commandError.message };
   }
+  if (message.includes('hook declined') || message.includes('pre-receive hook')) {
+    return { type: 'hook_rejected', message: commandError.message };
+  }
   if (message.includes('rejected') || message.includes('non-fast-forward')) {
     return { type: 'rejected', message: commandError.message };
   }
   if (message.includes('authentication') || message.includes('permission denied')) {
     return { type: 'auth_failed', message: commandError.message };
   }
-  if (
-    message.includes('could not resolve host') ||
-    message.includes('network is unreachable') ||
-    message.includes('connection refused') ||
-    message.includes('connection timed out') ||
-    message.includes('unable to connect')
-  ) {
-    return { type: 'network_error', message: commandError.message };
-  }
-  if (message.includes('hook declined') || message.includes('pre-receive hook')) {
-    return { type: 'hook_rejected', message: commandError.message };
-  }
+  if (isGitNetworkError(message)) return { type: 'network_error', message: commandError.message };
   return commandError;
 }
 
@@ -241,15 +238,7 @@ export function classifyPullError(error: unknown): PullError {
   if (message.includes('authentication') || message.includes('permission denied')) {
     return { type: 'auth_failed', message: commandError.message };
   }
-  if (
-    message.includes('could not resolve host') ||
-    message.includes('network is unreachable') ||
-    message.includes('connection refused') ||
-    message.includes('connection timed out') ||
-    message.includes('unable to connect')
-  ) {
-    return { type: 'network_error', message: commandError.message };
-  }
+  if (isGitNetworkError(message)) return { type: 'network_error', message: commandError.message };
   return commandError;
 }
 

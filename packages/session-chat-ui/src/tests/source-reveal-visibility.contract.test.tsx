@@ -6,9 +6,8 @@ import { buildChatTheme, DEFAULT_CONFIG } from '../core/theme';
 import type { TranscriptTurn } from '../model';
 import { createChatState } from '../state/chat-state';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
-import { pinnedSummaryShown } from '../../../../tests/support/pinnedSummaryShown';
 
-describe('source message visibility below the pinned question', () => {
+describe('source message visibility after a jump', () => {
   it.each([
     { count: 15, preamble: false }, { count: 35, preamble: false },
     { count: 15, preamble: true }, { count: 35, preamble: true },
@@ -20,7 +19,7 @@ describe('source message visibility below the pinned question', () => {
       { kind: 'message', id: `earlier-q-${i}`, seq: 0, role: 'user', text: 'An earlier question.' },
       { kind: 'message', id: `earlier-a-${i}`, seq: 1, role: 'assistant', text: 'An earlier answer. '.repeat(40) },
     ] })), { id: 't0', seq: 3, initiator: 'user', items: [
-      { kind: 'message', id: 'question', seq: 0, role: 'user', text: 'Keep this question pinned while reading the original answer. '.repeat(4) },
+      { kind: 'message', id: 'question', seq: 0, role: 'user', text: 'Ask a question above the original answer. '.repeat(4) },
       ...preamble ? [{ kind: 'message' as const, id: 'preamble', seq: 1, role: 'assistant' as const, text: 'Earlier content in the same turn.\n\n'.repeat(12) }] : [],
       { kind: 'message', id: 'source', seq: 2, role: 'assistant', text: source },
     ] }, ...Array.from({ length: 6 }, (_, i): TranscriptTurn => ({ id: `tail-${i}`, seq: i + 4, initiator: 'user', items: [
@@ -31,7 +30,7 @@ describe('source message visibility below the pinned question', () => {
     const host = document.createElement('div');
     host.style.cssText = 'position:fixed;top:0;left:0;width:800px;height:600px;';
     document.body.append(host);
-    const view = createChatView({ context, state, parent: host, pinUserMessages: true, stickToBottom: false });
+    const view = createChatView({ context, state, parent: host, stickToBottom: false });
     try {
       await until('the real transcript mounts', () => !!host.querySelector('[data-chat-scroll]'));
       const scroll = host.querySelector<HTMLElement>('[data-chat-scroll]')!;
@@ -47,15 +46,9 @@ describe('source message visibility below the pinned question', () => {
       expect(marker).not.toBeNull();
       const range = document.createRange(); range.setStart(marker!, 0); range.setEnd(marker!, 'SOURCE913-MARKER'.length);
       const firstLine = range.getBoundingClientRect();
-      // The question's summary shows only once the question has gone by; until then the question itself is the top.
-      const summary = host.querySelector<HTMLElement>('[data-pin-summary="question"]')!;
-      const stuck = pinnedSummaryShown(summary);
-      const readableTop = (stuck ? summary : question).getBoundingClientRect().bottom;
       expect(scroll.scrollTop).toBeGreaterThan(0);
-      expect(firstLine.top).toBeGreaterThanOrEqual(readableTop - 1);
+      expect(firstLine.top).toBeGreaterThanOrEqual(Math.max(scroll.getBoundingClientRect().top, question.getBoundingClientRect().bottom) - 1);
       expect(firstLine.bottom).toBeLessThanOrEqual(scroll.getBoundingClientRect().bottom);
-      if (stuck) expect(question.getBoundingClientRect().bottom).toBeLessThanOrEqual(summary.getBoundingClientRect().top + 1);
-      else expect(question.getBoundingClientRect().bottom).toBeGreaterThan(scroll.getBoundingClientRect().top);
     } finally { view.dispose(); host.remove(); }
   });
 });

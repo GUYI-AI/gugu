@@ -1,29 +1,28 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useRef } from 'react';
+import { replica, useReplicas, type Reading } from '@/lib/replica';
 import { LOCAL_IMPORT_DEVICE } from '@renderer/features/session-import/import-source';
 import { rpcOn } from '@renderer/lib/ipc';
 import type {
   SessionHistoryDirectoryPage,
   SessionHistoryDirectoryParams,
-  SessionHistoryPage,
-  SessionHistoryParams,
 } from '@shared/core/session-history/session-history';
 
-// spec session-page「会话历史」(#6083):面板的数据源。按轮读:
-//   第 0 轮 本机索引缓存直接出(毫秒级,面板一开就有东西看;咕咕自己的会话每轮都是库里的真值)
-//   第 1 轮 对账磁盘 + 解析一小批(400ms 预算)
-//   第 n 轮 继续解析,直到本机索引 pending 归零
-// 每轮结果整页替换 —— 筛 / 排 / 聚合都在主进程做完了,这里**不排序、不分组**,只按给定顺序画。
-// 每台问得到的机器各读各的(那台机器上同一个 `sessionHistory` 控制器,读的是它的库与各家原件),由面板合并。
+// spec session-page「会话历史」(#6083):面板的数据源。每台问得到的机器各读各的(那台机器上同一个 `sessionHistory`
+// 控制器,读的是它的库与各家原件),由面板合并。筛 / 排 / 聚合都在主进程做完了,这里**不排序、不分组**。
+//
+// 读到的页住在 replica 里(@@@replica,owner 2026-11-14 open-flicker),❌ 组件 state:每次进页都从空开始、各台到一台
+// 画一台,第二台一到整页重排、行上多出机器名(owner 2026-11-24「每次点进去都跳」)。再进页首帧就是上次那份完整的,
+// 后台读回来原地替换。
+// 本机索引按轮补:一轮 = 一次读。第 0 轮只读缓存(`cached`:库里的咕咕行 + 上次落盘的本机索引,不扫盘,毫秒级),咕咕行
+// ❌ 等本机索引扫完一万来个原件再出(gugu-dev#1487:冷开实测咕咕行 2-3ms、扫盘那一轮 ~520ms);第 1 轮起扫盘(第 1 轮
+// 400ms 预算,之后每轮 1200ms),本机 pending 没归零就隔 300ms 再读一轮。晚到的本机行按「已画的节不动」并进来(keepDrawnOrder)。
 
 const PAGE_LIMIT = 200;
 const FIRST_ROUND_BUDGET_MS = 400;
 const BACKGROUND_ROUND_BUDGET_MS = 1200;
 const ROUND_PAUSE_MS = 300;
-/** 轮数上限:正在被写入的 transcript 每轮都 miss 缓存,pending 可以永远不归零。 */
+/** 轮数上限:正在被写入的 transcript 每轮都 miss 缓存,pending 可以永远不归零。到顶后停,下次进页再从第 0 轮起。 */
 const MAX_ROUNDS = 40;
-
-type LocalProgress = SessionHistoryPage['local'];
-type RoundParams = Pick<SessionHistoryParams, 'mode' | 'hydrateBudgetMs'>;
 
 export type SessionHistoryState<TPage> = {
   page: TPage | null;
@@ -31,6 +30,10 @@ export type SessionHistoryState<TPage> = {
   isLoading: boolean;
   /** 本机索引还在补:未导入那一档的结果还会变多。 */
   isIndexing: boolean;
+  /** 对过盘的索引进度;第 0 轮只读了缓存、还没扫盘,没有进度可报(null)。 */
+  progress: { indexed: number; discovered: number } | null;
+  /** 换了筛选、这一套的页还没到:`page` 是上一套筛选的。 */
+  isPrevious: boolean;
   error: string | null;
   /** 原始错误:别的机器问不通 / 太旧时,调用方按它说人话(describeImportFailure)。 */
   cause: unknown;
@@ -38,7 +41,32 @@ export type SessionHistoryState<TPage> = {
 
 export type SessionHistoryDirectoryQuery = Omit<SessionHistoryDirectoryParams, 'mode' | 'hydrateBudgetMs'>;
 
-const IDLE = { page: null, isLoading: false, isIndexing: false, error: null, cause: null };
+type Round = { page: SessionHistoryDirectoryPage; round: number };
+
+/** 还要再读一轮:第 0 轮(只读了缓存)之后总要扫一次盘;之后本机 pending 没归零就接着补。 */
+const indexing = (value: Round | undefined) =>
+  !!value && value.round < MAX_ROUNDS && (value.round === 0 || (value.page.local?.pending ?? 0) > 0);
+
+/** 一台机器在一套筛选下的目录页。`query` 是 serialize 过的筛选(按值成键)。 */
+const directoryPages = replica({
+  name: 'sessionHistoryDirectories',
+  scope: 'account',
+  // 读的是本机主进程 / 名下那台机器:读不到就报,❌ 等浏览器说在线。
+  networkMode: 'always',
+  read: async (_owner, machine: string, query: string): Promise<Round> => {
+    const shown = directoryPages.peek(machine, query);
+    const previous = shown.state === 'value' ? shown.value : undefined;
+    const round = indexing(previous) ? previous!.round + 1 : 0;
+    const page = await rpcOn(machine === LOCAL_IMPORT_DEVICE ? null : machine).sessionHistory.listDirectories({
+      ...(JSON.parse(query) as SessionHistoryDirectoryQuery),
+      ...(round === 0
+        ? { mode: 'cached' as const }
+        : { mode: 'fresh' as const, hydrateBudgetMs: round === 1 ? FIRST_ROUND_BUDGET_MS : BACKGROUND_ROUND_BUDGET_MS }),
+    });
+    return { page, round };
+  },
+  refreshEvery: (value) => (indexing(value) ? ROUND_PAUSE_MS : false),
+});
 
 /** 去掉 undefined、补默认 limit,再按值序列化:调用方每次渲染都新建 query 对象,按引用比会让面板每一帧都重拉。 */
 function serialize(query: object): string {
@@ -58,80 +86,43 @@ function serialize(query: object): string {
   return JSON.stringify(normalized);
 }
 
-/** 一台机器按轮读到第几轮了;读完 / 读错停下。`put` 只写这一台那一格,❌ 动别的机器。 */
-async function runRounds<TParams extends object, TPage extends { local: LocalProgress }>(
-  fetchPage: (params: TParams & RoundParams) => Promise<TPage>,
-  base: TParams,
-  cancelled: () => boolean,
-  put: (next: (prev: SessionHistoryState<TPage>) => SessionHistoryState<TPage>) => void
-): Promise<void> {
-  try {
-    const cached = await fetchPage({ ...base, mode: 'cached' });
-    if (cancelled()) return;
-    // 缓存页只在本机索引真有缓存时才值得画;没有时下一轮 fresh 马上到。
-    if (cached.local?.stale) put(() => ({ page: cached, isLoading: false, isIndexing: false, error: null, cause: null }));
-
-    let budgetMs = FIRST_ROUND_BUDGET_MS;
-    for (let round = 0; round < MAX_ROUNDS; round += 1) {
-      const fresh = await fetchPage({ ...base, mode: 'fresh', hydrateBudgetMs: budgetMs });
-      if (cancelled()) return;
-      const pending = fresh.local?.pending ?? 0;
-      put(() => ({ page: fresh, isLoading: false, isIndexing: pending > 0, error: null, cause: null }));
-      if (pending === 0) return;
-      budgetMs = BACKGROUND_ROUND_BUDGET_MS;
-      await new Promise((resolve) => setTimeout(resolve, ROUND_PAUSE_MS));
-      if (cancelled()) return;
-    }
-  } catch (error) {
-    if (cancelled()) return;
-    put((prev) => ({
-      ...prev,
-      isLoading: false,
-      isIndexing: false,
-      error: error instanceof Error ? error.message : String(error),
-      cause: error,
-    }));
-  }
+function stateOf(reading: Reading<Round>): SessionHistoryState<SessionHistoryDirectoryPage> {
+  if (reading.state === 'unknown') return { page: null, isLoading: true, isIndexing: false, progress: null, isPrevious: false, error: null, cause: null };
+  if (reading.state === 'error') return { page: null, isLoading: false, isIndexing: false, progress: null, isPrevious: false, error: reading.error.message, cause: reading.error };
+  return {
+    page: reading.value.page,
+    isLoading: false,
+    isIndexing: indexing(reading.value),
+    progress: reading.value.round > 0 ? reading.value.page.local : null,
+    isPrevious: reading.previous === true,
+    error: reading.error?.message ?? null,
+    cause: reading.error,
+  };
 }
 
 export type MachineHistory = Readonly<Record<string, SessionHistoryState<SessionHistoryDirectoryPage>>>;
 
 /**
  * 目录视图,全部问得到的机器一起读(每台各自分轮、各自出错);键是机器 id(本机 = LOCAL_IMPORT_DEVICE)。
- * 换筛选时各台留着上一页直到新的一页到(❌ 闪空);不再问的那台连同它的页一起丢掉。
+ * 换筛选时各台留着上一页直到新的一页到(❌ 闪空);不再问的那台不在结果里。
  */
 export function useSessionHistoryDirectories(query: SessionHistoryDirectoryQuery, machines: readonly string[]) {
-  const [attempt, setAttempt] = useState(0);
-  const [byMachine, setByMachine] = useState<MachineHistory>({});
-  const refresh = useCallback(() => setAttempt((n) => n + 1), []);
   const key = serialize(query);
-  const machinesKey = machines.join('\n');
+  const readings = useReplicas(directoryPages, machines.map((machine) => [machine, key] as [string, string]));
+  // 这套筛选在这台上还没读过:先留着这台上一次画的那页(isPrevious),❌ 闪空。
+  const shown = useRef<MachineHistory>({});
+  const byMachine: MachineHistory = Object.fromEntries(
+    machines.map((machine, index) => {
+      const state = stateOf(readings[index]);
+      const last = shown.current[machine];
+      return [machine, state.isLoading && last?.page ? { ...last, isPrevious: true } : state];
+    })
+  );
+  shown.current = byMachine;
+  return { byMachine, refresh: refreshSessionHistory };
+}
 
-  useEffect(() => {
-    const ids = machinesKey ? machinesKey.split('\n') : [];
-    setByMachine((prev) =>
-      Object.fromEntries(
-        ids.map((id) => {
-          const old = prev[id];
-          return [id, old ? { ...old, isLoading: old.page === null, error: null, cause: null } : { ...IDLE, isLoading: true }];
-        })
-      )
-    );
-    let cancelled = false;
-    const base = JSON.parse(key) as SessionHistoryDirectoryQuery;
-    for (const id of ids) {
-      const rpc = rpcOn(id === LOCAL_IMPORT_DEVICE ? null : id);
-      void runRounds<SessionHistoryDirectoryQuery, SessionHistoryDirectoryPage>(
-        (params) => rpc.sessionHistory.listDirectories(params),
-        base,
-        () => cancelled,
-        (next) => setByMachine((prev) => (prev[id] ? { ...prev, [id]: next(prev[id]) } : prev))
-      );
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [key, machinesKey, attempt]);
-
-  return { byMachine, refresh };
+/** 全部机器、全部筛选的页都标旧,正在显示的那几份当场重读(归档 / 恢复 / 导入之后)。 */
+function refreshSessionHistory(): void {
+  void directoryPages.refresh();
 }

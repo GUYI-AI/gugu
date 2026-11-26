@@ -64,6 +64,7 @@ function buildMetadata(provider: CLIAgentPluginProvider): AgentMetadata {
       modelProtocols: metadata.id === 'antigravity' ? ['gemini-generate-content'] : capabilities.sessionBundle.platform.kind === 'supported'
         ? [...new Set([capabilities.sessionBundle.platform.wireProtocol, ...(capabilities.sessionBundle.platform.protocols ?? [])])] : [],
       hostDependency: capabilities.hostDependency,
+      subscription: capabilities.subscription.kind === 'supported',
       models: capabilities.models,
       effort: capabilities.effort,
       prompt: capabilities.prompt,

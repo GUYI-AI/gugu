@@ -4,8 +4,8 @@ import { watch, type FSWatcher } from 'node:fs'
 import { basename, dirname, isAbsolute, relative, sep } from 'node:path'
 import { withBoundedOperation } from '@gugu/core/cloud/boundedOperation'
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase'
-import { createAssistantPanelClient, type AssistantPanelChange, type AssistantPanelDomain, type AssistantPanelItem, type AssistantPanelSnapshot } from '@gugu/core/cloud/assistantPanel'
-import { readAssistantPanelBody, uploadAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies'
+import { AssistantPanelError, isAssistantPanelBindingRevoked, createAssistantPanelClient, type AssistantPanelChange, type AssistantPanelDomain, type AssistantPanelItem, type AssistantPanelSnapshot } from '@gugu/core/cloud/assistantPanel'
+import { panelBodyFileName, readAssistantPanelBody, uploadAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies'
 import type { AssistantHomeKind } from '@gugu/core/shared/assistantPolicy'
 import { assistantHomePaths } from '@gugu/core/shared/assistantPolicy'
 import type { assistantPanelLocal } from '../session/main/core/app/assistant-panel-local'
@@ -13,7 +13,7 @@ import { applyAssistantPanelService } from './assistant-panel-service'
 import { localAgentForSession } from './sessionpage-session-agent'
 import { createAssistantPanelApplication, type AssistantPanelHome } from './assistant-panel-application'
 import { applyAssistantPanelPending, prepareAssistantPanelAdmission, type PanelPreparedAdmission } from './assistant-panel-admission'
-import { prepareAssistantProfileReview } from './assistant-profile-review'
+import { prepareAssistantProfileReview, takeFreshAssistantProfile, type FreshAssistantProfile } from './assistant-profile-review'
 import { assistantResourceChanges } from './assistant-resource-changes'
 import { invalidateAssistantIndex, stopAssistantIndexRefresh } from './assistant-index-cache'
 import { collectAssistantPanelFiles, publishAssistantPanelCollection, type PanelObservation } from './assistant-panel-publisher'
@@ -37,6 +37,8 @@ export function createAssistantPanelRuntime(deps: {
   const bindings = new Map<string, Binding>()
   const runtimes = new Map<string, ReturnType<typeof runtime>>()
   const roles = new Map<string, boolean>()
+  const revokedBindings = new Set<string>()
+  const roleVersions = new Map<string, number>()
   const bodyFailures = new Map<string, ReturnType<typeof createAssistantPanelBodyFailures>>()
   const unavailable = new Set<string>()
   const removed = new Set<string>()
@@ -65,26 +67,48 @@ export function createAssistantPanelRuntime(deps: {
     for (const key of roles.keys()) if (key.endsWith(`:${assistantId}`)) roles.delete(key)
     for (const key of bodyFailures.keys()) if (JSON.parse(key)[1] === assistantId) bodyFailures.delete(key)
   }
+  function retireBinding(binding: Binding, reason: AssistantPanelError) {
+    const key = `${binding.ownerId}:${binding.assistantId}`
+    revokedBindings.add(key); roles.delete(key)
+    roleVersions.set(key,(roleVersions.get(key) ?? 0)+1)
+    for (const [sessionId,known] of bindings) {
+      if (known.ownerId === binding.ownerId && known.assistantId === binding.assistantId) bindings.delete(sessionId)
+    }
+    for (const [runtimeKey,entry] of runtimes) {
+      if (entry.ownerId === binding.ownerId && entry.assistantId === binding.assistantId) {
+        entry.dispose(reason); runtimes.delete(runtimeKey)
+      }
+    }
+  }
+  async function assistantRole(auth: Auth, assistantId: string): Promise<boolean> {
+    const key = `${auth.userId}:${assistantId}`, version = roleVersions.get(key) ?? 0
+    const cached = roles.get(key)
+    if (cached !== undefined && !revokedBindings.has(key)) return cached
+    const assistant = await isPersonalAssistantAgent(auth,assistantId)
+    if ((await hostAuth())?.userId !== auth.userId) throw new Error('PANEL_ACCOUNT_CHANGED')
+    // A role read started before a rejection cannot resurrect the rejected publisher.
+    if ((roleVersions.get(key) ?? 0) !== version) return false
+    if (assistant) { revokedBindings.delete(key); roles.set(key,true) }
+    else if (!revokedBindings.has(key)) roles.set(key,false)
+    return assistant
+  }
   async function resolve(sessionId: string): Promise<Binding | null> {
     if (removedSessions.has(sessionId)) return null
     const auth = await hostAuth()
     if (!auth) return null
     const known = bindings.get(sessionId)
-    if (known?.ownerId === auth.userId) return await available(known.assistantId,auth.userId,auth.accessToken) ? known : null
+    if (known?.ownerId === auth.userId) {
+      const live = await available(known.assistantId,auth.userId,auth.accessToken)
+      return live && !revokedBindings.has(`${auth.userId}:${known.assistantId}`) ? known : null
+    }
     const agent = await localAgentForSession(sessionId,deps.env,auth.userId)
     if (!agent?.gugu_user_id) return null
     if (!await available(agent.gugu_user_id,auth.userId,auth.accessToken)) return null
-    const key = `${auth.userId}:${agent.gugu_user_id}`
-    let assistant = roles.get(key)
-    if (assistant === undefined) {
-      assistant = await isPersonalAssistantAgent(auth, agent.gugu_user_id)
-      if ((await hostAuth())?.userId !== auth.userId) throw new Error('PANEL_ACCOUNT_CHANGED')
-      roles.set(key,assistant)
-    }
-    if (!assistant) return null
+    if (!await assistantRole(auth,agent.gugu_user_id)) return null
+    const roleKey = `${auth.userId}:${agent.gugu_user_id}`, version = roleVersions.get(roleKey) ?? 0
     const home = await deps.local.home(sessionId, { assistantId: agent.gugu_user_id, deviceId: await deps.deviceId(), ownerId: auth.userId })
     const binding = { assistantId: agent.gugu_user_id,ownerId: auth.userId,sessionId,cwd: home.cwd,home: homedir(),kind: deps.kind }
-    if (unavailable.has(binding.assistantId)) return null
+    if (unavailable.has(binding.assistantId) || revokedBindings.has(roleKey) || (roleVersions.get(roleKey) ?? 0) !== version) return null
     bindings.set(sessionId,binding)
     return binding
   }
@@ -98,6 +122,7 @@ export function createAssistantPanelRuntime(deps: {
     let pulling: Promise<void> | null = null
     let scheduled: ReturnType<typeof setTimeout> | undefined
     let republish = false, disposed = false, deferredPublication = false
+    let disposalReason: Error = new Error('PANEL_RUNTIME_DISPOSED')
     const lifetime = new AbortController()
     const watchers = new Map<string, FSWatcher>()
     const collectionTimers = new Map<AssistantPanelDomain, ReturnType<typeof setTimeout>>()
@@ -106,7 +131,7 @@ export function createAssistantPanelRuntime(deps: {
       const next = tail.catch(() => undefined).then(work); tail = next; return next
     }
     async function auth(): Promise<Auth> {
-      if (disposed) throw new Error('PANEL_RUNTIME_DISPOSED')
+      if (disposed) throw disposalReason
       const value = await hostAuth()
       lifetime.signal.throwIfAborted()
       if (!value || value.userId !== binding.ownerId) throw new Error('PANEL_ACCOUNT_CHANGED')
@@ -119,6 +144,11 @@ export function createAssistantPanelRuntime(deps: {
       active.throwIfAborted()
       const result = await client.rpc(name,args).abortSignal(active)
       await auth()
+      if (isAssistantPanelBindingRevoked(result.error)) {
+        const reason = new AssistantPanelError('42501',result.error!.message)
+        retireBinding(binding,reason)
+        throw reason
+      }
       return result
     }),() => binding.ownerId)
     async function access() {
@@ -187,8 +217,27 @@ export function createAssistantPanelRuntime(deps: {
         return rows
       }
       if (domain === 'integrations') return [
-        ...deps.local.integrationCatalog().map(row => ({ key: `catalog:${row.id}`,data: { providerId: row.id,configured: false,displayName: row.en.name,catalog: row.en.catalog },
-          bytes: new TextEncoder().encode(JSON.stringify({ version: 1,en: row.en,'zh-CN': row.zh })),
+        ...await Promise.all(deps.local.integrationCatalog().map(async row => {
+          const key = `catalog:${row.id}`, desiredLabel = `${key} (configurable, not connected)`
+          let catalogBodyLabel: string | undefined = desiredLabel
+          const existing = previous.find(item => item.resource_key === key && !item.deleted_at)
+          // A catalog describes a possible setup, not a saved connection. Upgrade the existing file in place:
+          // unchanged body hashes are reused by the publisher, and uploading another file would leave the old name behind.
+          if (existing?.body_item_id && existing.data.catalogBodyLabel !== desiredLabel) {
+            const current = await auth()
+            const client = createGuguSupabaseClient({ schema: 'chat',headers: { Authorization: `Bearer ${current.accessToken}` } })
+            try {
+              const { error } = await client.rpc('workspace_move_as',{ p_item_id: existing.body_item_id,p_as_user_id: binding.ownerId,
+                p_folder: null,p_name: panelBodyFileName(desiredLabel),
+              }).abortSignal(anySignal([AbortSignal.timeout(2000),lifetime.signal]))
+              if (error) catalogBodyLabel = undefined
+            } catch { catalogBodyLabel = undefined }
+            await auth()
+            // Keep publishing saved connections; no receipt means this catalog is retried at the next observation.
+          }
+          return { key,data: { providerId: row.id,configured: false,displayName: row.en.name,catalog: row.en.catalog,...(catalogBodyLabel ? { catalogBodyLabel } : {}) },
+            bytes: new TextEncoder().encode(JSON.stringify({ version: 1,en: row.en,'zh-CN': row.zh })),
+          }
         })),
         ...(await deps.local.integrations(binding.ownerId,() => scheduleCollection('integrations'))).map(({ publicMetadata,...row }) => {
           const checkedAt = typeof row.checkedAt === 'number' ? row.checkedAt : Date.parse(String(row.checkedAt ?? ''))
@@ -287,7 +336,8 @@ export function createAssistantPanelRuntime(deps: {
             baseline: baseline ?? await cloud.snapshot(binding.assistantId),
             bodyFailures: failures,
             collect: previous => observations(domain,previous),
-            upload: async row => uploadAssistantPanelBody({ ...await access(),label: row.key.split('/').pop() ?? domain,bytes: row.bytes! }),
+            upload: async row => uploadAssistantPanelBody({ ...await access(),label: domain === 'integrations' && row.key.startsWith('catalog:') && typeof row.data.catalogBodyLabel === 'string'
+              ? row.data.catalogBodyLabel : row.key.split('/').pop() ?? domain,bytes: row.bytes! }),
             discard: async itemId => {
               const current = await auth()
               const client = createGuguSupabaseClient({ schema: 'chat',headers: { Authorization: `Bearer ${current.accessToken}` } })
@@ -328,10 +378,10 @@ export function createAssistantPanelRuntime(deps: {
     refresh.unref()
     const reconcile = setInterval(() => { void publish().catch(() => deps.failed('panel')) },600_000)
     reconcile.unref()
-    function dispose() {
+    function dispose(reason: Error = new Error('PANEL_IDENTITY_REMOVED')) {
       if (disposed) return
-      disposed = true; republish = false
-      lifetime.abort(new Error('PANEL_IDENTITY_REMOVED'))
+      disposed = true; republish = false; disposalReason = reason
+      lifetime.abort(reason)
       clearInterval(refresh); clearInterval(reconcile); clearTimeout(scheduled)
       stopIntegrations?.()
       stopSchedules?.()
@@ -342,14 +392,17 @@ export function createAssistantPanelRuntime(deps: {
     }
     observeFiles()
     schedulePublication()
-    return { assistantId: binding.assistantId,application,dispose,
-      prepare: (text: string) => serial(async () => {
+    const memoryDir = assistantHomePaths(binding.home,binding.cwd,binding.kind).memoryDir
+    return { ownerId: binding.ownerId,assistantId: binding.assistantId,application,dispose,memoryDir,
+      bindingRevoked: () => isAssistantPanelBindingRevoked(disposalReason),
+      prepare: (text: string, fresh: FreshAssistantProfile | undefined) => serial(async () => {
         const prepared = await prepareAssistantProfileReview(await prepare(text),
-          assistantHomePaths(binding.home,binding.cwd,binding.kind).memoryDir)
+          memoryDir,fresh)
         const changes = await resources.prepare().catch(() => {
           deps.failed('resources')
           return { text: '', accepted: async () => {}, rejected: async () => {} }
         })
+        await auth()
         return { ...prepared,
           beforeText: [changes.text, prepared.beforeText].filter(Boolean).join('\n\n') || undefined,
           accepted: async () => { await prepared.accepted(); await changes.accepted() },
@@ -374,7 +427,11 @@ export function createAssistantPanelRuntime(deps: {
   }
   return {
     async bind(input: { sessionId: string; assistantId: string; ownerId: string; cwd: string }) {
-      if ((await hostAuth())?.userId !== input.ownerId) throw new Error('PANEL_ACCOUNT_CHANGED')
+      const auth = await hostAuth()
+      if (auth?.userId !== input.ownerId) throw new Error('PANEL_ACCOUNT_CHANGED')
+      if (revokedBindings.has(`${input.ownerId}:${input.assistantId}`) && !await assistantRole(auth,input.assistantId)) {
+        throw new AssistantPanelError('42501','Personal assistant is not available to this account')
+      }
       if (unavailable.has(input.assistantId)) throw new Error('PANEL_IDENTITY_REMOVED')
       removedSessions.delete(input.sessionId)
       bindings.set(input.sessionId,{ ...input,home: homedir(),kind: deps.kind })
@@ -384,8 +441,16 @@ export function createAssistantPanelRuntime(deps: {
       return entry.application.statePath
     },
     async prepare(sessionId: string, text: string): Promise<PanelPreparedAdmission & { assistantPanel?: true }> {
+      const binding = bindings.get(sessionId)
+      const fresh = binding ? takeFreshAssistantProfile(assistantHomePaths(binding.home,binding.cwd,binding.kind).memoryDir) : undefined
       const entry = await current(sessionId)
-      return entry ? { ...await entry.prepare(text),assistantPanel: true as const } : { text,accepted: async () => {} }
+      if (entry) {
+        try { return { ...await entry.prepare(text,binding ? fresh : takeFreshAssistantProfile(entry.memoryDir)),assistantPanel: true as const } }
+        catch (error) { if (!entry.bindingRevoked()) throw error }
+      }
+      // A confirmed loss of the App binding removes only the panel admission.
+      // Continue this agent's ordinary turn; no cloud denial is converted to panel data.
+      return { text,accepted: async () => {} }
     },
     async publish(sessionId: string) { await (await current(sessionId))?.publish() },
     /** Stop before the removal RPC; an uncertain failure must prove liveness before resuming. */
@@ -404,6 +469,6 @@ export function createAssistantPanelRuntime(deps: {
       }
     },
     remove,
-    dispose() { for (const entry of runtimes.values()) entry.dispose(); runtimes.clear(); bindings.clear(); roles.clear(); stopAssistantIndexRefresh(deps.guguHome) },
+    dispose() { for (const entry of runtimes.values()) entry.dispose(); runtimes.clear(); bindings.clear(); roles.clear(); revokedBindings.clear(); roleVersions.clear(); stopAssistantIndexRefresh(deps.guguHome) },
   }
 }

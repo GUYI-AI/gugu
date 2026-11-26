@@ -973,6 +973,12 @@ describe('runSshInstall', () => {
     expect(seen.some(stdin => stdin.includes('--no-login') || stdin.includes('service install') || stdin.includes('login --grant-stdin'))).toBe(false)
   })
 
+  it('keeps a protocol-reporting host awaiting explicit confirmation without reinstalling', async () => {
+    const { final, seen } = await install({ installed: true, grant: true, running: true, protocol: 19 }, { mode: 'upgrade' })
+    expect(final).toMatchObject({ finished: true, failure: null, awaitingConfirmation: true })
+    expect(seen).toHaveLength(1)
+  })
+
   it('reuses the whole installer without login when an upgrade has no prepared target', async () => {
     const { final, seen, calls } = await install({ installed: true, grant: true, running: true, version: '0.2.131', protocol: null }, { mode: 'upgrade', now: true })
     expect(final.failure).toBeNull()

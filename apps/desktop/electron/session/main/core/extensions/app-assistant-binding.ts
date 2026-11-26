@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { userIdFromSupabaseAccessToken } from '@gugu/core';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
-import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision';
+import { ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC, pickAssistant } from '@gugu/core/shared/assistantProvision';
 import {
   ASSISTANT_NAME_MAX,
   ASSISTANT_SCREENS,
@@ -31,7 +31,7 @@ import { extensionsService } from './extensions-root';
  * #1925 (API 44) An App's word about the person's own assistant, through its conversation binding (#1927). The authority
  * is #1927's — the signed-in account's own selection for this installed App (publisher included), that action declared and
  * its capability granted — and one more: the chosen conversation is the account's private chat with its own assistant
- * (the provision marker `assistant-app.ts` reads, and the chat's members). All of it is asked again after every wait. The
+ * (the agent the assistant App is bound to, as `assistant-app.ts` reads it, and the chat's members). All of it is asked again after every wait. The
  * App names the binding and a value from a closed list; it never names, nor hears, a chat, device or account.
  */
 const coded = (code: 'denied' | 'invalid' | 'failed' | 'not-found', message: string) => Object.assign(new Error(message), { code });
@@ -52,20 +52,20 @@ function argsOf<T extends z.ZodType>(schema: T, input: unknown, what: string): z
   return parsed.data;
 }
 
-/** The account's own assistant, by its provision marker; null: it has none. A marker that cannot be read is not "none". */
-async function personalAssistant(token: string, ownerId: string): Promise<string | null> {
+/** The account's own assistant, the agent the assistant App is bound to; null: it has none. A binding that cannot be read is not "none". */
+async function personalAssistant(token: string, _ownerId: string): Promise<string | null> {
   const client = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } });
-  const { data, error } = await client.from('agent_provisions').select(ASSISTANT_PROVISION_SELECT).eq('owner_user_id', ownerId).eq('member_key', 'assistant');
+  const { data, error } = await client.rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS);
   if (error) throw coded('failed', 'Could not verify the personal assistant');
   try {
-    return pickAssistant((data ?? []) as AssistantProvisionRow[])?.agentId ?? null;
+    return pickAssistant(data)?.agentId ?? null;
   } catch {
     throw coded('failed', 'Could not verify the personal assistant');
   }
 }
 
 /**
- * The signed-in account and its own assistant (by its provision marker), wherever that assistant lives — this computer,
+ * The signed-in account and its own assistant (the agent the assistant App is bound to), wherever that assistant lives — this computer,
  * another one, the cloud or a server. `denied`: no one is signed in; `failed`: the marker could not be read (never "none").
  */
 export async function signedInAccountAssistant(): Promise<{ ownerId: string; assistantId: string | null }> {
@@ -90,19 +90,11 @@ async function conversationOf(token: string, chatId: string): Promise<{ kind: st
 /**
  * Whether this conversation is the account's private chat with its own assistant and no one else — the one check every
  * assistant action makes (`boundAssistant`), also asked by the host's own binding of the trusted assistant App
- * (assistant-app-entry.ts). `failed`: it could not be verified now (never read as "no").
- *
- * `'pending'`: it is, but the assistant's setup has not reached the phase the store serves its resources in, so every call the
- * App would make over the binding is not valid yet (`assistantServingChat`, app-assistant-serving.ts). The host binds on
- * `true` only: a binding written sooner is one the App is refused over for good (verify-pass1 D4).
+ * (assistant-app-entry.ts), by the same check the store's resources stand on (`assistantServingChat`, app-assistant-serving.ts).
+ * `failed`: it could not be verified now (never read as "no").
  */
-export async function isOwnAssistantChat(token: string, ownerId: string, chatId: string): Promise<boolean | 'pending'> {
-  const [assistant, conversation] = await Promise.all([personalAssistant(token, ownerId), conversationOf(token, chatId)]);
-  if (!assistant) return false;
-  const members = new Set(conversation.members);
-  if (!(conversation.kind === 'dm' && members.size === 2 && members.has(ownerId) && members.has(assistant))) return false;
-  const serving = await assistantServingChat(token, ownerId, chatId);
-  return serving.state === 'served' ? true : serving.state === 'pending' ? 'pending' : false;
+export async function isOwnAssistantChat(token: string, ownerId: string, chatId: string): Promise<boolean> {
+  return (await assistantServingChat(token, ownerId, chatId)).state === 'served';
 }
 
 /**

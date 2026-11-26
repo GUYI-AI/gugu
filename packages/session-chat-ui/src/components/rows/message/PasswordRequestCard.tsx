@@ -31,7 +31,7 @@ const shownName = (entry: { key?: string; name: string }, t: ChatTranslator) => 
   return key === 'account' ? t('transcript.password.account') : key === 'password' ? t('transcript.password.password') : entry.name
 }
 /** A save request is a form in the chat (assistant-ui 「Elicitation form」): a label over each input, the inputs filled. */
-const DESC = 20, LABEL = 17, LABEL_GAP = 4, INPUT = 28, INPUT_GAP = 10, CHECK = 20, ADD = 20
+const DESC = 20, HINT_LINE = 16, HINT_LINES = 3, LABEL = 17, LABEL_GAP = 4, INPUT = 28, INPUT_GAP = 10, CHECK = 20, ADD = 20
 
 /** A value of the person's own, added on the card under a name of theirs (「+ 添加一项」): kept with the rest. */
 type Extra = { id: string; name: string; value: string; secret: boolean }
@@ -52,10 +52,12 @@ const addingOf = (request: PasswordRequestView) => request.kind === 'save' || st
 // The added rows; a save card also has 「+ 添加一项」 under them (a card to fill in has it on the 「存到咕咕」 row).
 const extrasHeight = (request: PasswordRequestView) => !addingOf(request) ? 0
   : extrasOf(request.requestId).length * (INPUT_GAP + INPUT) + (request.kind === 'save' ? INPUT_GAP + ADD : 0)
+/** What the Agent said to enter (`hint`, up to three lines) replaces the vault's line; `help` follows it as a link. */
+const descriptionHeight = (request: Extract<PasswordRequestView, { kind: 'save' }>) => request.hint ? HINT_LINE * HINT_LINES : DESC
 export function passwordCardHeight(request: PasswordRequestView): number {
   if (request.kind === 'save') {
     const inputs = request.inputs?.length ?? 2
-    return PAD * 2 + HEAD + GAP + DESC + GAP + inputs * (LABEL + LABEL_GAP + INPUT) + (inputs - 1) * INPUT_GAP + extrasHeight(request) + GAP + FOOT
+    return PAD * 2 + HEAD + GAP + descriptionHeight(request) + GAP + inputs * (LABEL + LABEL_GAP + INPUT) + (inputs - 1) * INPUT_GAP + extrasHeight(request) + GAP + FOOT
   }
   // Only the number of notes counts here, which does not depend on the language.
   const fields = fills(request).length, marks = notes(request, defaultChatTranslator).length
@@ -275,7 +277,12 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
           <span style={{ ...clip, 'font-size': '12px', 'line-height': '16px', color: vars.fgMuted }}>{requester(request, t)}</span>
         </div>
       </div>
-      <p style={{ ...clip, margin: 0, height: `${DESC}px`, 'font-size': '12px', 'line-height': `${DESC}px`, color: vars.fgMuted, 'flex-shrink': 0 }}>{t('transcript.password.saveDescription')}</p>
+      <p title={request.hint} style={{ margin: 0, height: `${descriptionHeight(request)}px`, 'font-size': '12px', 'line-height': `${request.hint ? HINT_LINE : DESC}px`, color: vars.fgMuted, 'flex-shrink': 0,
+        overflow: 'hidden', display: '-webkit-box', '-webkit-box-orient': 'vertical', '-webkit-line-clamp': request.hint ? HINT_LINES : 1, 'overflow-wrap': 'anywhere' }}>
+        {request.hint ?? t('transcript.password.saveDescription')}
+        <Show when={request.help?.startsWith('https://') ? request.help : undefined}>{help => <> <a href={help()} style={{ color: vars.fg, 'text-decoration': 'underline' }}
+          onClick={event => { event.preventDefault(); window.open(help(), '_blank', 'noopener,noreferrer') }}>{t('transcript.password.help')}</a></>}</Show>
+      </p>
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: `${INPUT_GAP}px`, 'flex-shrink': 0 }}>
         {inputs.map(entry => <div style={{ display: 'flex', 'flex-direction': 'column', gap: `${LABEL_GAP}px` }}>
           <span style={label}>{shownName(entry, t)}<Show when={secretOf(entry)}><span style={{ opacity: 0.7 }}> {t('transcript.password.secret')}</span></Show></span>

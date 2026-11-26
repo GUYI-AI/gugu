@@ -434,4 +434,118 @@ describe('SessionpagePlatformRecoveryCoordinator', () => {
     expect(tasks.snapshot()).toEqual([{ operation: 'platform-recovery', taskId: 'broken', message: 'target fixture refusal' }])
   })
 
+  // Regression: group @-messages reach the gugu host inbox but were dropped by the platform-credential recovery gate
+  // (`injected: 0`, `verdict: not-now`). The reproductions below are pure-logic (no network): the coordinator with
+  // fake deps standing in for the host's reopen / admission / generation sources, exactly as the real gate drives it.
+  const acpTarget: SessionpagePlatformRecoveryTarget = {
+    ...target,
+    providerId: 'claude',
+    surface: 'acp',
+    credentialGeneration: 'generation-1',
+  }
+
+  it('admits an idle group @-inbox after the lease expired, reopening through the gugu-acp admission waiter', async () => {
+    let generation = 'generation-1'
+    let expired = true
+    const reopen = vi.fn(async () => { generation = 'generation-2'; expired = false })
+    const waitUntilReady = vi.fn(async () => undefined)
+    const coordinator = new SessionpagePlatformRecoveryCoordinator({
+      isExpired: () => expired,
+      resolveTarget: () => ({ ...acpTarget, credentialGeneration: generation }),
+      currentGeneration: () => generation,
+      credentialLifecycleFor: () => lifecycle,
+      reopen,
+      waitUntilReady,
+    })
+    coordinator.markExpired({ ...acpTarget, credentialGeneration: 'generation-1' })
+    // The group @-inbox gate (ensureSessionReady 'chat-inbox') must resolve ready only after reopen + the native
+    // owner's admission waiter — the step that used to throw `gugu-acp has no admission waiter`.
+    await expect(coordinator.ensureReady(acpTarget.sessionId, 'chat-inbox')).resolves.toEqual({ status: 'ready' })
+    expect(reopen).toHaveBeenCalledTimes(1)
+    expect(waitUntilReady).toHaveBeenCalledTimes(1)
+    expect(coordinator.stateFor(acpTarget.sessionId)).toMatchObject({ status: 'live', credentialGeneration: 'generation-2' })
+  })
+
+  it('recovers a failed renewal once a valid new-generation credential is issued, then delivers', async () => {
+    let generation = 'generation-1'
+    let expired = true
+    let failRenew = true
+    const refresh = vi.fn(async () => { if (failRenew) throw new Error('gateway rejected replacement credential') })
+    const coordinator = new SessionpagePlatformRecoveryCoordinator({
+      isExpired: () => expired,
+      resolveTarget: () => ({ ...acpTarget, credentialGeneration: generation }),
+      currentGeneration: () => generation,
+      credentialLifecycleFor: () => ({ ...lifecycle, originalProcessRefresh: 'supported' }),
+      reopen: vi.fn(),
+      refresh,
+      waitUntilReady: vi.fn(async () => undefined),
+    })
+    coordinator.markExpired({ ...acpTarget, credentialGeneration: 'generation-1' })
+
+    // First inbox gate: the renewal fails → terminal failed for generation-1 (the stuck state the user hit).
+    await expect(coordinator.ensureReady(acpTarget.sessionId, 'chat-inbox')).resolves.toMatchObject({ status: 'failed' })
+    expect(coordinator.stateFor(acpTarget.sessionId)).toMatchObject({ status: 'failed', credentialGeneration: 'generation-1' })
+
+    // The host re-issues a valid credential out of band: new generation, lease no longer expired.
+    failRenew = false; expired = false; generation = 'generation-2'
+    // A confirmed, non-failing observation of the new generation retires the stale failure (→ live), not just an
+    // observation attached under a still-failed status.
+    expect(coordinator.recordObservation(acpTarget.sessionId, issue('generation-2'))).toBe(true)
+    expect(coordinator.stateFor(acpTarget.sessionId)).toMatchObject({ status: 'live', credentialGeneration: 'generation-2' })
+
+    // The next group @-inbox gate now admits delivery, without triggering another renewal.
+    await expect(coordinator.ensureReady(acpTarget.sessionId, 'chat-inbox')).resolves.toEqual({ status: 'ready' })
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears a failed renewal through the generation-switch cleanup even without a prior observation', async () => {
+    let generation = 'generation-1'
+    let expired = true
+    const reopen = vi.fn(async () => {
+      if (generation === 'generation-1') throw new Error('gateway rejected replacement credential')
+      expired = false
+    })
+    const coordinator = new SessionpagePlatformRecoveryCoordinator({
+      isExpired: () => expired,
+      resolveTarget: () => ({ ...acpTarget, credentialGeneration: generation }),
+      currentGeneration: () => generation,
+      credentialLifecycleFor: () => lifecycle,
+      reopen,
+      waitUntilReady: vi.fn(async () => undefined),
+    })
+    coordinator.markExpired({ ...acpTarget, credentialGeneration: 'generation-1' })
+    await expect(coordinator.ensureReady(acpTarget.sessionId, 'chat-inbox')).resolves.toMatchObject({ status: 'failed' })
+
+    // Host advances the generation (new credential minted). The next gate must re-evaluate from scratch — the old
+    // failure belonged to generation-1 — instead of rejecting forever.
+    generation = 'generation-2'; expired = false
+    await expect(coordinator.ensureReady(acpTarget.sessionId, 'chat-inbox')).resolves.toEqual({ status: 'ready' })
+  })
+
+  it('settles the recovered gate once: concurrent inbox triggers share one reopen and later ones re-use live', async () => {
+    let generation = 'generation-1'
+    let expired = true
+    const reopen = vi.fn(async () => { generation = 'generation-2'; expired = false })
+    const coordinator = new SessionpagePlatformRecoveryCoordinator({
+      isExpired: () => expired,
+      resolveTarget: () => ({ ...acpTarget, credentialGeneration: generation }),
+      currentGeneration: () => generation,
+      credentialLifecycleFor: () => lifecycle,
+      reopen,
+      waitUntilReady: vi.fn(async () => undefined),
+    })
+    coordinator.markExpired({ ...acpTarget, credentialGeneration: 'generation-1' })
+    // Two inbox triggers for the same expired session coalesce into a single reopen — the message is not injected
+    // twice through duplicate recoveries.
+    const [a, b] = await Promise.all([
+      coordinator.ensureReady(acpTarget.sessionId, 'chat-inbox'),
+      coordinator.ensureReady(acpTarget.sessionId, 'chat-inbox'),
+    ])
+    expect(a).toEqual({ status: 'ready' })
+    expect(b).toEqual({ status: 'ready' })
+    // A later trigger finds the session already live and admits without another reopen.
+    await expect(coordinator.ensureReady(acpTarget.sessionId, 'chat-inbox')).resolves.toEqual({ status: 'ready' })
+    expect(reopen).toHaveBeenCalledTimes(1)
+  })
+
 })

@@ -67,6 +67,8 @@ export type ChatAttachment = {
   title?: string;
   /** Data URL for inline display; absent when content can't be resolved -> fallback tile. */
   dataUrl?: string;
+  /** A picture's own pixel size, when its message knows it: its box keeps the picture's proportions before it loads. */
+  imageDimensions?: { width: number; height: number };
 };
 
 export type ChatMessage = {

@@ -16,6 +16,7 @@ import {
   isProjectPathConflictError,
   projectPathConflictMessage,
 } from '../stores/project-creation-error'
+import { isImeComposing } from '@/lib/ime'
 
 type CreateProjectNameProps = BaseModalProps<string> & {
   /** #6264 建在别的机器上(那台机器的默认项目目录,规则同本机)。null / 缺省 = 本机。 */
@@ -117,7 +118,7 @@ const CreateProjectNameForm = observer(function CreateProjectNameForm({
                 setError(null)
               }}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') void create()
+                if (event.key === 'Enter' && !isImeComposing(event)) void create()
               }}
             />
             {settingsSettings.state === 'error' && !error ? (

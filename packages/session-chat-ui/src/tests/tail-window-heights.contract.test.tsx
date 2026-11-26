@@ -12,15 +12,15 @@ import { until, untilStable } from '../../../../tests/support/awaitCondition';
 const cleanup: (() => void)[] = [];
 afterEach(() => { while (cleanup.length) cleanup.pop()?.(); });
 
-it.each([390, 1024].flatMap(width => [false, true].flatMap(pin => [false, true].map(image => ({ width, pin, image })))))(
-  'keeps a native user row visible after a 61-to-60 tail replacement (width=$width pin=$pin image=$image)', async ({ width, pin, image }) => {
+it.each([390, 1024].flatMap(width => [false, true].map(image => ({ width, image }))))(
+  'keeps a native user row visible after a 61-to-60 tail replacement (width=$width image=$image)', async ({ width, image }) => {
   await page.viewport(width, 820);
   const context = createChatContext({ locale: () => 'en-US', layout: { preset: 'double', userGutter: 0, agentConversation: true },
     actor: id => id === 'user:fixture-agent' ? { id, name: 'Fixture peer', type: 'agent' } : null });
   const state = createChatState(context);
   const host = document.body.appendChild(document.createElement('div'));
   host.style.cssText = `position:fixed;left:0;top:0;width:${width}px;height:650px`;
-  const view = createChatView({ context, state, parent: host, pinUserMessages: pin, stickToBottom: true, padBottom: 140 });
+  const view = createChatView({ context, state, parent: host, stickToBottom: true, padBottom: 140 });
   cleanup.push(() => { view.dispose(); state.dispose(); context.dispose(); host.remove(); });
   const old: TranscriptTurn = { id: 'old', seq: 59, initiator: 'user', outcome: { kind: 'done' }, items: [
     { kind: 'message', id: 'old-user', seq: 0, role: 'user', text: 'Previous user input' },
@@ -77,5 +77,5 @@ it.each([390, 1024].flatMap(width => [false, true].flatMap(pin => [false, true].
   expect(nativeBubble, 'a native user row must remain mounted when a tail reload omits older prefix').not.toBeNull();
   expect(nativeHeight).toBeGreaterThan(0);
   await sample('tail-window-replaces-older-prefix');
-  if (image && !pin) await page.screenshot({ element: host, path: `__screenshots__/tail-window-${width}.png` });
+  if (image) await page.screenshot({ element: host, path: `__screenshots__/tail-window-${width}.png` });
 });

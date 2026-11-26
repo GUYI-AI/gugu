@@ -79,8 +79,10 @@ export function createStandInTimeline(input: StandInTimelineInput): SessionTimel
         ? { ok: true, batch: { from: from.seq, cursor, turns: [], removedTurnIds: [], settlements: [] } }
         : { ok: false, reset: 'epoch_changed', snapshot: snapshot() },
     getOlder: () => ({ epoch, turns: [], hasOlder: false }),
-    subscribe: (_from, listener: (result: TimelineAfterResult) => void) => {
+    subscribe: (from, listener: (result: TimelineAfterResult) => void) => {
       let done = false;
+      // A reader that holds nothing of this timeline gets it whole at once, as from a record's timeline.
+      if (from && from.epoch !== epoch) listener({ ok: false, reset: 'epoch_changed', snapshot: snapshot() });
       const handle = every(() => {
         if (done || !input.recordAvailable()) return;
         done = true;

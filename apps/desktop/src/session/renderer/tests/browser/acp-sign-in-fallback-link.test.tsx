@@ -20,6 +20,7 @@ import '@renderer/index.css';
 const LINK = 'https://www.codebuddy.ai/login?platform=CLI&state=s1';
 
 const mocks = vi.hoisted(() => ({
+  create: vi.fn(),
   dispose: vi.fn(),
   openExternal: vi.fn(async () => undefined),
 }));
@@ -33,7 +34,7 @@ vi.mock('@renderer/lib/stores/use-agents', async (importOriginal) => ({
 // 运行时那一侧:登录已经起来、在等浏览器,厂商给了登录链接。
 vi.mock('@renderer/lib/acp/auth-login-binding', () => ({
   AcpAuthLoginBinding: {
-    create: async () => ({
+    create: async (args: unknown) => { mocks.create(args); return {
       status: {
         follow: (listener: (state: unknown) => void) => {
           listener({
@@ -51,7 +52,9 @@ vi.mock('@renderer/lib/acp/auth-login-binding', () => ({
         },
       },
       dispose: mocks.dispose,
-    }),
+      resize: () => {},
+      markUrlHandled: () => {},
+    }; },
   },
 }));
 // 只换掉「交给系统浏览器」那一下,其余 ipc 照旧。
@@ -83,6 +86,7 @@ beforeEach(() => {
   );
   modalStore.closeModal();
   mocks.dispose.mockClear();
+  mocks.create.mockClear();
   mocks.openExternal.mockClear();
 });
 
@@ -111,4 +115,15 @@ it('点备用链接:系统浏览器打开它,登录弹窗留着,登录不取消'
   expect(mocks.openExternal).toHaveBeenCalledWith(LINK);
   expect(document.querySelector('[data-testid="acp-sign-in-waiting"]')).not.toBeNull();
   expect(mocks.dispose).not.toHaveBeenCalled();
+});
+
+it('keeps the selected Antigravity account on the CLI companion login binding', async () => {
+  showModal('agentSignInModal', {
+    providerId: 'antigravity', providerName: 'Antigravity', connectionId: 'second-google-account',
+    steps: [{ methodId: 'google', program: 'antigravity-cli' }],
+  });
+  await until('the companion login binding starts', () => mocks.create.mock.calls.length > 0);
+  expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+    providerId: 'antigravity', program: 'antigravity-cli', connectionId: 'second-google-account',
+  }));
 });

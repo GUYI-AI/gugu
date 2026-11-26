@@ -8,7 +8,7 @@ import type { SessionTranslate } from '../extension-consent';
 
 const NONE = '__none__';
 // This computer's App credential picks, read by main from its password vault; read again after a pick.
-const appCredentialStates = replica({ name: 'appCredentialStates', scope: 'device',
+export const appCredentialStates = replica({ name: 'appCredentialStates', scope: 'device',
   read: async (_owner: string, extensionId: string) => {
     const result = await rpc.extensions.appCredentials({ extensionId });
     if (result.success && result.data) return result.data;

@@ -9,16 +9,20 @@ import type { PhoneTextSelectionSource } from './phoneTextSelectionSource'
 import { phoneTextSelectionAppearance } from './phoneTextSelectionAppearance'
 import { phoneTextSelectionRichText } from './phoneTextSelectionRichText'
 
-/** The phone shell owns native selection; browsers keep their own selection UI. */
-export function PhoneTextSelection({ source, onDone }: {
+/**
+ * The phone shell owns native selection; browsers keep their own selection UI. With `onComment`, the native page offers
+ * Comment beside Copy and hands the selected words back to it.
+ */
+export function PhoneTextSelection({ source, onDone, onComment }: {
   source: PhoneTextSelectionSource
   onDone: () => void
+  onComment?: (words: string) => void
 }) {
   const { t } = useTranslation('messaging')
   const { toast } = useToast()
   const [id] = useState(() => crypto.randomUUID())
-  const callbacks = useRef({ onDone, toast, t })
-  callbacks.current = { onDone, toast, t }
+  const callbacks = useRef({ onDone, onComment, toast, t })
+  callbacks.current = { onDone, onComment, toast, t }
   useBackLayer(onDone)
 
   useLayoutEffect(() => {
@@ -37,10 +41,15 @@ export function PhoneTextSelection({ source, onDone }: {
         element.style.visibility = 'hidden'
         return native.open({ id, ...rich,
           title: callbacks.current.t('message.actions.selectText'), closeLabel: callbacks.current.t('message.selectionClose'),
+          ...(callbacks.current.onComment ? { commentLabel: callbacks.current.t('message.actions.comment') } : {}),
           dark: document.documentElement.dataset.theme === 'dark',
           appearance,
         })
-      }).then(() => { if (active && opened) callbacks.current.onDone() }, error => {
+      }).then(closed => {
+        if (!active || !opened) return
+        if (closed?.comment) callbacks.current.onComment?.(closed.comment)
+        callbacks.current.onDone()
+      }, error => {
         if (!active) return
         callbacks.current.toast(callbacks.current.t('message.selectTextFailed'), 'error', safeFailureLine(String((error as Error)?.message ?? error)))
         callbacks.current.onDone()

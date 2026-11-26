@@ -22,11 +22,13 @@ import { AutomationsList } from './AutomationsList';
 export const AutomationDeviceGroup = observer(function AutomationDeviceGroup({
   label,
   kind,
+  collapsible,
   search,
   emptyState,
 }: {
   label: string;
   kind?: 'computer' | 'server' | 'cloudComputer';
+  collapsible: boolean;
   search: string;
   emptyState?: ReactNode;
 }) {
@@ -111,32 +113,41 @@ export const AutomationDeviceGroup = observer(function AutomationDeviceGroup({
 
   const GroupChevron = expanded ? ChevronDown : ChevronRightIcon;
   const InactiveChevron = inactiveExpanded ? ChevronDown : ChevronRightIcon;
+  const deviceLabel = (
+    <>
+      <DeviceIcon aria-hidden="true" className="size-4 shrink-0 text-foreground-muted" />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {status && (
+        <span className="flex shrink-0 items-center gap-2 text-xs font-normal text-foreground-muted">
+          <span aria-hidden="true" className="size-1.5 rounded-full bg-foreground-passive" />
+          {status}
+          {data !== null && <span className="sr-only">{translate('deviceScope.readOnlyCache')}</span>}
+        </span>
+      )}
+    </>
+  );
 
   return (
     <section aria-labelledby={`${groupId}-heading`} className="pb-2">
       <h2 id={`${groupId}-heading`}>
-        <button
-          type="button"
-          className="flex w-full items-center gap-3 rounded-lg border border-border bg-background-secondary px-3 py-2 text-left text-sm font-semibold hover:bg-row-hover focus-visible:bg-row-hover"
-          aria-expanded={expanded}
-          aria-controls={groupId}
-          onClick={() => setExpanded(!expanded)}
-        >
-          <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-background-tertiary text-foreground-muted">
-            <DeviceIcon aria-hidden="true" className="size-4" />
+        {collapsible ? (
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-lg border border-border bg-background-secondary px-4 py-2 text-left text-sm font-semibold hover:bg-row-hover focus-visible:bg-row-hover"
+            aria-expanded={expanded}
+            aria-controls={groupId}
+            onClick={() => setExpanded(!expanded)}
+          >
+            {deviceLabel}
+            <GroupChevron aria-hidden="true" className="size-4 shrink-0 text-foreground-muted" />
+          </button>
+        ) : (
+          <span className="flex items-center gap-2 px-4 py-1 text-sm font-medium text-foreground-muted">
+            {deviceLabel}
           </span>
-          <span className="min-w-0 flex-1 truncate">{label}</span>
-          {status && (
-            <span className="flex shrink-0 items-center gap-2 text-xs font-normal text-foreground-muted">
-              <span aria-hidden="true" className="size-1.5 rounded-full bg-foreground-passive" />
-              {status}
-              {data !== null && <span className="sr-only">{translate('deviceScope.readOnlyCache')}</span>}
-            </span>
-          )}
-          <GroupChevron aria-hidden="true" className="size-4 shrink-0 text-foreground-muted" />
-        </button>
+        )}
       </h2>
-      <Collapse id={groupId} open={expanded} onOpenChange={setExpanded}>
+      <Collapse id={groupId} open={!collapsible || expanded} onOpenChange={collapsible ? setExpanded : undefined}>
         {notice ? (
           (!offline || cloud?.state === 'wake-failed') && <DeviceScopeNoticeLine notice={notice} onRetry={retry} noHeading />
         ) : <RefreshFailed reading={automations} />}

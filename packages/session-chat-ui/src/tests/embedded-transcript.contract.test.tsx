@@ -32,7 +32,7 @@ async function mount(embedded: boolean) {
   const host = document.createElement('div');
   host.style.cssText = 'position:fixed;top:0;left:0;width:340px;';
   document.body.appendChild(host);
-  const view = createChatView({ context: ctx, state, parent: host, stickToBottom: false, pinUserMessages: false, embedded });
+  const view = createChatView({ context: ctx, state, parent: host, stickToBottom: false, embedded });
   // A running reasoning row remains visible; completed reasoning-only history is intentionally hidden.
   state.transcript.activeTurn.set(turn);
   await until('the thinking row mounts', () => host.querySelector('[data-row-kind="thinking"]') !== null);

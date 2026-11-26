@@ -29,7 +29,7 @@ async function mount(width: number, records = [turn('in', [delivery('incoming')]
   const host = document.body.appendChild(document.createElement('div'));
   host.style.cssText = `position:fixed;top:0;left:0;width:${width}px;height:600px`;
   const open = vi.fn();
-  const create = () => createChatView({ context, state, parent: host, pinUserMessages: true, commands: { onOpenSender: open } });
+  const create = () => createChatView({ context, state, parent: host, commands: { onOpenSender: open } });
   let view = create();
   view.scrollToTop();
   cleanup.push(() => { view.dispose(); state.dispose(); context.dispose(); host.remove(); });
@@ -76,13 +76,13 @@ describe('approved A2A activity', () => {
     expect(t.scroll().scrollHeight).toBe(before);
   });
 
-  it('never pins an activity header, closed or opened: only the viewer question sticks above its messages', async () => {
+  it('never pins an activity header, closed or opened, nor paints anything over its messages', async () => {
     // Owner 2026-11-21: an opened exchange pinned its header under the question and cut the next bubble in half.
     const t = await mount(800, [turn('own', [ordinary('Owner question', 'user'),
       ...Array.from({ length: 12 }, (_, i) => delivery(`a${i}`, `Update ${i}. `.repeat(45)))]),
       turn('conclusion', [ordinary('Following conclusion')])]);
     const lane = () => t.head()?.closest<HTMLElement>('[data-index]');
-    const unpinned = () => !lane() || (getComputedStyle(lane()!.firstElementChild!).position !== 'sticky' && !lane()!.querySelector('[data-pin-summary]'));
+    const unpinned = () => !lane() || getComputedStyle(lane()!.firstElementChild!).position !== 'sticky';
     for (const open of [false, true]) {
       if (open) { t.button().click(); await untilStable('opened activity settled', () => t.scroll().scrollHeight); }
       for (const scrollTop of [80, 300, 850]) {
@@ -91,40 +91,13 @@ describe('approved A2A activity', () => {
         expect(unpinned(), `activity header pinned (open: ${open}, scrollTop: ${scrollTop})`).toBe(true);
       }
     }
-    const own = t.host.querySelector('[data-pin-summary="Owner question"]')!.getBoundingClientRect();
-    expect(own.top).toBeCloseTo(t.scroll().getBoundingClientRect().top + 8, 0);
-    // Every opened message below the question shows its own first line: nothing else is painted over it.
-    const cards = [...t.host.querySelectorAll<HTMLElement>('[data-user-card^="a"]')].filter(card => card.getBoundingClientRect().top >= own.bottom);
+    // Every opened message on screen shows its own first line: nothing else is painted over it.
+    const cards = [...t.host.querySelectorAll<HTMLElement>('[data-user-card^="a"]')].filter(card => card.getBoundingClientRect().top >= t.scroll().getBoundingClientRect().top);
     expect(cards.length).toBeGreaterThan(0);
     for (const card of cards) {
       const r = card.getBoundingClientRect();
       if (r.top + 4 < t.scroll().getBoundingClientRect().bottom) expect(card.contains(document.elementFromPoint(r.left + 20, r.top + 4)), card.dataset.userCard).toBe(true);
     }
-  });
-  it('keeps the owner pinned while reading ordinary reply content beside a closed activity', async () => {
-    const t = await mount(800, [turn('own', [ordinary('Owner question', 'user'), delivery('incoming'),
-      ordinary(Array.from({ length: 24 }, (_, i) => `Reply ${i}. `.repeat(45)).join('\n\n'))]),
-      turn('next', [ordinary('Next owner question', 'user'), ordinary('Next answer')])]);
-    expect(t.button().getAttribute('aria-expanded')).toBe('false');
-    t.host.querySelector<HTMLButtonElement>('[data-expand-user-card]')!.click();
-    await untilStable('the full final answer is measured', () => t.scroll().scrollHeight);
-    t.scroll().scrollTop = 850;
-    await untilStable('owner reading ordinary reply', () => t.host.querySelector('[data-pin-summary="Owner question"]')?.getBoundingClientRect().top);
-    const row = t.host.querySelector<HTMLElement>('[data-pin-summary="Owner question"]');
-    expect(row).not.toBeNull();
-    expect(row!.getBoundingClientRect().top).toBeCloseTo(t.scroll().getBoundingClientRect().top + 8, 0);
-  });
-  it('pins the viewer human delivery above its opened activity without treating other human deliveries as the viewer', async () => {
-    const own = delivery('Owner message', 'The question I sent from the phone', 'human');
-    const t = await mount(800, [turn('own', [own, ...Array.from({ length: 24 }, (_, i) => delivery(`a${i}`, `Update ${i}. `.repeat(45)))]),
-      turn('conclusion', [ordinary('Following conclusion')])]);
-    t.button().click();
-    await untilStable('human owner activity geometry', () => t.scroll().scrollHeight);
-    t.scroll().scrollTop = 850;
-    await untilStable('human owner sticky position', () => t.host.querySelector('[data-pin-summary="Owner message"]')?.getBoundingClientRect().top);
-    const row = t.host.querySelector<HTMLElement>('[data-pin-summary="Owner message"]');
-    expect(row, 'the viewer message must remain mounted while its activity is read').not.toBeNull();
-    expect(row!.getBoundingClientRect().top).toBeCloseTo(t.scroll().getBoundingClientRect().top + 8, 0);
   });
 
   it.each([390, 1280])('defaults closed with centered 44px semantic action and original bubbles on manual open (%i)', async width => {

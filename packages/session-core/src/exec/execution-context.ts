@@ -50,6 +50,9 @@ export interface IExecutionContext {
    */
   findWindowsCommandPaths?(command: string, env?: Record<string, string>): Promise<string[] | null>;
 
+  /** Existing files relative to a Windows installer's InstallLocation under HKCU/HKLM Software. */
+  findWindowsRegisteredPaths?(registryKey: string, relativePath: string, env?: Record<string, string>): Promise<string[]>;
+
   /** The canonical path of `path` (symlinks followed), resolved in-process. Absent = callers run `realpath`. */
   realpath?(path: string): Promise<string>;
 

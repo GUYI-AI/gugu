@@ -717,6 +717,7 @@ function decodeStandardSessionUpdate(raw: unknown): NormalizedEvent {
         used?: number;
         size?: number;
         cost?: { amount?: number; currency?: string } | null;
+        _meta?: Record<string, unknown>;
       };
       const contextUsed = raw.used ?? 0;
       const contextSize = raw.size ?? 0;
@@ -724,7 +725,12 @@ function decodeStandardSessionUpdate(raw: unknown): NormalizedEvent {
         raw.cost && typeof raw.cost.amount === 'number' && raw.cost.currency
           ? { amount: raw.cost.amount, currency: raw.cost.currency }
           : null;
-      return { kind: 'usage', usage: { contextUsed, contextSize, cost } };
+      const limits = raw._meta?.['gugu/autoCompact'] as { defaultTokens?: number; ceiling?: number } | undefined;
+      const autoCompact = limits?.defaultTokens && limits.ceiling && Number.isSafeInteger(limits.defaultTokens)
+        && Number.isSafeInteger(limits.ceiling) && limits.defaultTokens > 0 && limits.defaultTokens <= limits.ceiling
+        ? { defaultTokens: limits.defaultTokens, ceiling: limits.ceiling }
+        : undefined;
+      return { kind: 'usage', usage: { contextUsed, contextSize, cost, ...(autoCompact && { autoCompact }) } };
     }
 
     case 'session_info_update': {

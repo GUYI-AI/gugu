@@ -34,10 +34,13 @@ import { bindOutboxActions, createOutboxWiring, forwardingDeviceFiles, type Outb
 import { markLatestThreadRead, markManualUnreadAndRefresh } from '../lib/chatUnreadLocator'
 import { useChatUnreadStreamNavigation } from '../lib/chatUnreadStreamNavigation'
 import { ChatStoreProvider, type SendMessageOptions, type SendAttachmentOptions, useDraftAttachmentsStore, useDraftMentionsStore, useTextDraftStore, useDraftQuotesStore, useDraftWhispersStore } from './chatContext'
-import { advanceReadWatermark, advanceSeenReadWatermark, chatReadsWhole, wholeReadSeq, applyThreadSnapshot, fetchOpenThreadSnapshot, patchChatRows, reconcileMemberReadSeqs, type PatchChat } from './chatRealtimeMutations'; import { subscribeChatLineRevisions } from '../lib/accountRevisionListeners'; import { chatOnScreen, isChatOnScreen, isChatShown, isAppActive, useWatchAppActive } from '../lib/onScreenChat'
+import { advanceReadWatermark, advanceSeenReadWatermark, chatReadsWhole, wholeReadSeq, applyThreadSnapshot, fetchOpenThreadSnapshot, patchChatRows, reconcileMemberReadSeqs, type PatchChat } from './chatRealtimeMutations'
+import { subscribeChatLineRevisions } from '../lib/accountRevisionListeners'
+import { chatOnScreen, isChatOnScreen, isChatShown, isAppActive, useWatchAppActive } from '../lib/onScreenChat'
 import { useMessageReadFailures, useMessageSnapshotEpochs } from './chatMessageReads'
 import { useChatConversation, type ChatConversationAccess } from './useChatConversation'
-import { useActiveChatTransitionState } from './activeChatTransition'; import { fetchChatHistoryPage, restoreChatHistoryAnchor, fetchThreadMessages, openCachedChatWindow, useChatWindowCache, type WindowObserver } from './chatWindowPublication'
+import { useActiveChatTransitionState } from './activeChatTransition'
+import { fetchChatHistoryPage, restoreChatHistoryAnchor, fetchThreadMessages, openCachedChatWindow, useChatWindowCache, type WindowObserver } from './chatWindowPublication'
 import {
   INITIAL_PAGE,
   NEWER_PAGE,
@@ -147,7 +150,10 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     if (imRepositoryRef.current?.accountId === userId) return imRepositoryRef.current
     if (imRepositoryPromiseRef.current?.accountId === userId) return imRepositoryPromiseRef.current.promise
     const loaded = (local: AccountImRepository) => publishLocalFirstFrame(local, () => !imRepositoryScope.disposed && imRepositoryPromiseRef.current?.promise === promise, setIdentitiesById, paintLocal)
-    const promise: Promise<AccountImRepository> = openImRepository(userId, { initialize: initializeAccountSync, loaded }).catch((error) => { if (imRepositoryPromiseRef.current?.promise === promise) imRepositoryPromiseRef.current = null; throw error })
+    const promise: Promise<AccountImRepository> = openImRepository(userId, { initialize: initializeAccountSync, loaded }).catch((error) => {
+      if (imRepositoryPromiseRef.current?.promise === promise) imRepositoryPromiseRef.current = null
+      throw error
+    })
     imRepositoryPromiseRef.current = { accountId: userId, promise }
     const repository = await promise
     if (imRepositoryScope.disposed || imRepositoryPromiseRef.current?.promise !== promise) {
@@ -431,7 +437,8 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
       if (changed && window.chatId) {
         if (direction === 'latest') cache.establishTail(window.chatId, window.messages)
         else cache.update(window.chatId, (rows) => mergeMessagesById(rows, window.messages, window.chatId!))
-        completeIdentities(window.chatId); await revalidateWindowOverlays(window.chatId)
+        completeIdentities(window.chatId)
+        await revalidateWindowOverlays(window.chatId)
       }
       if (direction !== 'older' && window.chatId) noteFreshMessageRead(window.chatId) // #7199 往新翻 / 回到最新成了:读得到最新的了
     } catch (err) {
@@ -447,7 +454,8 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
       const window = targetWindow.getSnapshot()
       if (!window.hasNewer) cache.establishTail(targetChatId, window.messages)
       else cache.update(targetChatId, (rows) => mergeMessagesById(rows, window.messages, targetChatId))
-      completeIdentities(targetChatId); await revalidateWindowOverlays(targetChatId)
+      completeIdentities(targetChatId)
+      await revalidateWindowOverlays(targetChatId)
     }
   }, [userId, cache, completeIdentities, revalidateWindowOverlays])
   const markMessageVisible = useCallback((message: MessageItem) => {
@@ -774,7 +782,10 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     if (activeChatIdRef.current === chatId) setActiveChatId(null)
   }, [setChats, dropTextDraft, dropDraftAttachments, cache, setActiveChatId, userId])
   const deleteChat = useCallback(async (chatId: string, persist = false) => {
-    if (persist) { await (chatsRef.current.find((chat) => chat.id === chatId)?.kind === 'topic' ? topicService.archiveTopic(chatId) : chatService.archiveChat(chatId)); if (imRepositoryScope.disposed) return }
+    if (persist) {
+      await (chatsRef.current.find((chat) => chat.id === chatId)?.kind === 'topic' ? topicService.archiveTopic(chatId) : chatService.archiveChat(chatId))
+      if (imRepositoryScope.disposed) return
+    }
     removeLocalChat(chatId)
   }, [chatsRef, imRepositoryScope.disposed, removeLocalChat])
   // #901 退出群聊：共同 RPC 确认移除本人席位后，再本地清理。
@@ -829,7 +840,11 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
   }), [cache, sendAttachmentsToChat, sendMessageToChat, toggleReaction, refreshMessages, loadHistoryPage, loadMessageAnchor,
     markMessageVisible, clearMessages, removeMessage, deleteMessage, appendMessage, openThread, openUnreadChat, entryFor, jumpToUnreadEntry])
   const conversations = useMemo<ChatConversationAccess>(() => ({
-    read: (id, viewport) => { readChatWindow(id); return cache.view(id, viewport) }, subscribe: subscribeChatWindow,
+    read: (id, viewport) => {
+      readChatWindow(id)
+      return cache.view(id, viewport)
+    },
+    subscribe: subscribeChatWindow,
     actions: conversationActions, setFollowingTail: cache.setFollowingTail, errorOf: messageReadFailureOf,
   }), [cache, readChatWindow, subscribeChatWindow, conversationActions, messageReadFailureOf])
   const refreshOnResume = useCallback(async (id: string) => {

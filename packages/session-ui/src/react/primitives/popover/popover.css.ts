@@ -5,7 +5,7 @@ import { tokenVars } from '@session-ui/theme/tokens.css';
 
 export const positioner = style({
   isolation: 'isolate',
-  zIndex: 50,
+  zIndex: 'var(--z-popover, 50)',
 });
 
 // 这里从前把 popupSurface 的圆角/底色/前景色/transformOrigin 与整套 8 条动画选择器
@@ -18,7 +18,7 @@ export const popupContent = style([
   popupSurface,
   popupShadow,
   {
-    zIndex: 50,
+    zIndex: 'var(--z-popover, 50)',
     display: 'flex',
     overflow: 'hidden',
     flexDirection: 'column',

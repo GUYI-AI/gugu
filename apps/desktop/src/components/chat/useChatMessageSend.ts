@@ -10,6 +10,7 @@ import { chatSendFailureNotice } from './chatSendFailureNotice'
 import { useToast } from '../toastContext'
 import { revokeAttachmentPreviewUrls, withPreviewUrl, type ChatDraft, type MentionTarget } from './useChatDraft'
 import { contentWithQuote } from './messageQuoteContent'
+import { withoutInlineImages } from '@gugu/session-ui/react/components'
 import type { ChatMessageComposerProps } from './chatComposerModels'
 import { useChatStore } from '../../store/chatContext'
 import { messageFailureNotice } from '@/lib/messageFailureNotice'
@@ -50,8 +51,10 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       return
     }
     // The words stay the words; the comments travel beside them (cards for people, their promptText for agents).
-    const { annotations } = annotatedSend(typed, annotated, resolvedLocale)
-    const content = contentWithQuote(typed, quoteContent)
+    // Pictures placed in the words go out as this message's files, the words as its text: one message, as typed.
+    const words = withoutInlineImages(typed).trim()
+    const { annotations } = annotatedSend(words, annotated, resolvedLocale)
+    const content = contentWithQuote(words, quoteContent)
     // @@@whisper (#820) — 悄悄话模式下覆盖 toUserIds + 附加 isWhisper flag；禁用 @提及。
     const replyToMessageId = quoteContent?.messageId ?? null
     const explicitRecipientIds = resolveMentionUserIds(
@@ -64,9 +67,12 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
     const rosterRecipientIds = undirected ? resolveOpeningAgentCall(rosterNameIndex, typed) : []
     sendingRef.current = true
     setSending(true)
-    // A message that cites chat files and names no one goes to the members who made those files.
+    // A message that cites chat files or comments on members' messages, and names no one, goes to the members who made
+    // those files and wrote those messages.
+    const memberIds = (props.groupMembers ?? []).map((member) => member.id)
     const citedRecipientIds = undirected && rosterRecipientIds.length === 0 && currentUserId && chatId
-      ? await citeRecipientIds(chatId, typed, currentUserId, (props.groupMembers ?? []).map((member) => member.id))
+      ? [...await citeRecipientIds(chatId, typed, currentUserId, memberIds), ...annotated.flatMap((item) =>
+        item.kind === 'message' && item.authorId && item.authorId !== currentUserId && memberIds.includes(item.authorId) ? [item.authorId] : [])]
       : []
     const sendOptions = whisperTarget
       ? {

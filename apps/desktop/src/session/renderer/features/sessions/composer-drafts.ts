@@ -7,6 +7,7 @@ import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
 import type { SessionFailure } from './stores/session-failure';
 import type { GuguPermissionMode } from '@gugu/session-core/acp/client';
 import type { SessionView } from '@shared/core/sessions/sessions';
+import type { SessionContextChoice } from '@shared/core/sessions/session-config';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 
 export interface PendingCreationMessage {
@@ -19,6 +20,7 @@ export interface PendingCreationMessage {
 }
 
 export type SubmittedComposerDraft = ComposerAttachmentDraft & { prompt: string };
+export type DraftContextSelection = { provider: AgentProviderId | null; choice: SessionContextChoice };
 
 /**
  * #2569 A first turn handed over from another box: the person already pressed send there (the sample project's box, before
@@ -48,6 +50,7 @@ export class ComposerDraft {
   pendingMessage: PendingCreationMessage | null = null;
   deliveryError: SessionFailure | null = null;
   handoff: ComposerHandoff | null = null;
+  contextSelection: DraftContextSelection | undefined = undefined;
 
   constructor() {
     makeAutoObservable(this, {
@@ -55,6 +58,7 @@ export class ComposerDraft {
       pendingMessage: observable.ref,
       deliveryError: observable.ref,
       handoff: observable.ref,
+      contextSelection: observable.ref,
     }, { autoBind: true });
   }
 
@@ -77,6 +81,10 @@ export class ComposerDraft {
   setPendingMessage(message: PendingCreationMessage | null): void { this.pendingMessage = message; }
   setDeliveryError(error: SessionFailure | null): void { this.deliveryError = error; }
   setHandoff(handoff: ComposerHandoff | null): void { this.handoff = handoff; }
+  setContextSelection(selection: DraftContextSelection): void { this.contextSelection = selection; }
+  clearSubmittedContextSelection(selection: DraftContextSelection): void {
+    if (this.contextSelection === selection) this.contextSelection = undefined;
+  }
   /** The task this draft became exists: the handed-over turn is done. */
   completeHandoff(): void { this.handoff = null; }
 

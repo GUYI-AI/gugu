@@ -1,7 +1,8 @@
+import type { SessionContextChoice } from '@shared/core/sessions/session-config';
 import { useContextThresholds } from '../session-config/use-context-thresholds';
 import { usePermissionMenu } from '@renderer/features/sessions/session-config/use-permission-menu';
 import { withAutoReviewHint } from './auto-review-permission-hint';
-import { customModelAcceptsImages, customModelOptionId, customModelThinks, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
+import { customModelAcceptsImages, customModelEfforts, customModelOptionId, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica, valueOf } from '@/lib/replica';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { AnnotationTray } from '../annotations/annotation-tray';
@@ -10,7 +11,6 @@ import { annotationImageId, currentAnnotationImages, isAnnotationImage, prepareA
 import { useSessionInputNotice, type SessionInputNotice } from '../session-input-notice';
 import { isCodexStartupFailure, sessionStartupFailureCopy } from '../session-input-failure-copy';
 import { codexStartupKind, isCodexProviderStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
-import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
 import { agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
 import { isTranscriptDelivery } from '@/lib/pendingSessionDeliveries';
@@ -30,21 +30,20 @@ import { AgentFailureSlot } from '@/components/AgentFailureSlot';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
 import { useSessionMessageQuotes } from './use-session-message-quotes';
 import { useSessionPromptEditor } from './use-session-prompt-editor';
+import { inlineImageOrder, inlineImageTurnText } from './inline-image-turn';
 import { continueSessionTurn } from './continue-session-turn';
+import { reloadWorkingModel } from './reload-working-model';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
-import { followConversationLink } from '@/lib/followConversationLink';
+import { followConversationLink, noteDrawnPictureLink } from '@/lib/followConversationLink';
+import { useOpenWebLink } from '@/hooks/useOpenWebLink';
 import { openMessageSender } from '@/lib/openMessageSender';
 import { classifyFileLink } from '@gugu/core/shared/ui/guguLink';
 import {
   AttachmentViewerDialog,
-  readAttachmentPreviewText,
 } from '@gugu/session-ui/react/components';
 import type {
-  CommandItem,
   ComposerAgentOption,
   ComposerAttachment,
-  ContextMentionProvider,
-  MentionItem,
   PromptEditorRef,
 } from '@gugu/session-ui/react/components';
 import { autorun } from 'mobx';
@@ -58,11 +57,7 @@ import { useMarkSeenWhenShown } from '@renderer/features/sessions/hooks/use-mark
 import { createPortal, flushSync } from 'react-dom';
 import { CodexPreparationStatus } from './codex-preparation-status';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
-import { IntegrationIcon } from '@renderer/features/integrations/integration-icon';
-import { useConnectedIssueProviders } from '@renderer/features/integrations/use-connected-issue-providers';
 import { usePromptLibrary } from '@renderer/features/library/prompts/use-prompt-library';
-import { promptSlashItems } from '@renderer/features/library/prompts/prompt-slash-items';
-import { asMounted, getProjectStore, getProjectViewStore } from '@renderer/features/projects/stores/project-selectors';
 import { composerLayerHoldsFocus, sessionNavigationFocus } from '@renderer/features/sidebar/session-navigation-focus';
 import { useComposerEntryFocus } from '@/lib/composerEntryFocus';
 import { usePaneContext } from '@renderer/features/tabs/pane-context';
@@ -74,22 +69,17 @@ import {
 } from '@renderer/features/sessions/stores/open-file-in-file-editor';
 // TODO(conversations-extraction): Pass task state into ACP chat instead of importing task stores.
 import {
-  asProvisioned,
-  getRegisteredSessionData,
-  getSessionPageStore,
   getSessionView,
 } from '@renderer/features/sessions/stores/session-selectors';
 import { sessionConversationTabId } from '../view/session-pane-policy';
 import {
-  chatMentionProvider,
-  clearLocalSessionMentions,
-  issueMentionToken,
   parseIssueMentionToken,
 } from '@renderer/lib/chat/chat-mention-provider';
 import { AgentConversationView as ChatTranscript, AgentConversationComposer as ChatComposer } from '@renderer/lib/chat/agent-conversation-view';
 import { useSessionChatLayout } from '@renderer/lib/chat/use-session-chat-layout';
 import type { ChatCommands, ChatView } from '@renderer/lib/chat/chat-transcript';
 import { AgentIcon } from '@renderer/lib/components/agent-icon';
+import { openShellSettings } from '@renderer/lib/open-shell-settings';
 import {
   agentGroupLabel,
   sortAgentsByAvailability,
@@ -104,7 +94,6 @@ type PanelCondition = Omit<ChatSessionCondition, 'actions'> & {
   actions?: readonly { label: string; pending?: boolean; run: (anchor?: HTMLElement) => void }[];
 };
 import { rpc } from '@renderer/lib/ipc';
-import { nudgeWorkspace } from '@renderer/features/sessions/stores/workspace-nudges';
 import { machineLabel } from '@renderer/lib/machine-clients';
 import { machineUnavailableLabel } from '../machine-unavailable-label';
 import { machineRegistry } from '@renderer/lib/machine-routing';
@@ -113,8 +102,6 @@ import { isEmbedVisible } from '@renderer/lib/portal-container';
 import { platformModelIdFromRuntimeOption, platformOptionId } from '@/session/shared/platform-model-id';
 import { openComposerImage, openDiagramViewer, openImageViewer } from '@/lib/imageViewer';
 import { resolveSignInTarget } from '@renderer/features/settings/agents-page/agent-account';
-import { pushTaskDirectory, taskAttachmentUsesSsh } from '@/lib/taskAttachmentTarget';
-import { droppedDirectoryMention, pathMention } from '@renderer/lib/drag-files';
 import { pathAttachmentTarget } from '@gugu/session-chat-ui/markdown-attachment-mentions';
 import { resolveAttachmentDataUrl } from './acp-attachment-image';
 import { scheduleSlotShown, SessionScheduleSlot } from '../session-schedule-chip';
@@ -123,11 +110,10 @@ import { useSessionSchedules } from '@renderer/features/automations/use-session-
 import { toComposerPermission } from './composer-permission';
 import { useHostAskBand } from '@renderer/features/extensions/use-session-host-ask';
 import { SessionHostQuestion } from '@renderer/features/extensions/session-host-question';
-import { registerPastedScreenshot } from '@/lib/pastedScreenshot';
-import { useComposerFileUploads } from './use-composer-file-uploads';
-import { shellPort } from '@renderer/lib/shell-port';
+import { SessionPasswordRequest } from '@renderer/features/extensions/session-password-request';
+import { useComposerAttachActions, useComposerAttachments } from './use-composer-attachments';
+import { useComposerMentions, useComposerSlashItems } from './use-composer-mentions';
 import { useBirthGroupJoin } from './use-birth-group-join';
-import { getRendererSession } from '@/lib/sessionPublication';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { agentForksOn } from '@shared/core/agents/agent-payload';
 import { forkTask } from '@renderer/features/sessions/fork-task';
@@ -137,7 +123,6 @@ import {
 } from '@renderer/lib/ui/assistant-ui/thread-welcome';
 import { log } from '@renderer/utils/logger';
 import { agentSteersActiveAcpTurn } from '@shared/core/agents/agent-payload';
-import { linkedIssueMentionName, type LinkedIssue } from '@shared/core/linked-issue';
 import type { AcpChatStore } from './acp-chat-store';
 import {
   localizePermissionModeOptions,
@@ -148,11 +133,14 @@ import {
 import { useOpenedOutputMenu } from './opened-output-menu';
 import { liveSettingOptions } from '../session-config/live-setting-options';
 import type { AcpChatTabResource } from './acp-chat-tab-resource';
-import { chatViewCommandForShortcut, executeChatViewCommand } from './acp-chat-view-commands';
+import { executeChatViewCommand, isEditableElement } from './acp-chat-view-commands';
+import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
+import { deepActiveElement } from '@renderer/features/sidebar/session-navigation-focus';
 import {
   effortSourceFor,
   localizeEffortOptions,
   platformEffortFacts,
+  resolveComposerTargetEfforts,
   resolveEffortCatalog,
 } from '@renderer/features/sessions/session-config/effort-options';
 import {
@@ -177,6 +165,7 @@ import { sessionBillingRoute, runningPlatformModelId, unavailablePlatformModelId
 import { planModelSwitch } from '@renderer/features/sessions/session-config/model-switch-plan';
 import { findSessionHostBridge } from '@renderer/lib/electron-api';
 import { SessionReloadConfirm } from '@renderer/features/sessions/session-reload-confirm';
+import { lastLiveEffort, rememberLiveEffort } from '@renderer/features/sessions/session-config/last-live-effort';
 import { requestSendQueuedPromptNow } from './send-queued-prompt-now-flow';
 import { requestSessionReload } from '@renderer/features/sessions/request-session-reload';
 import {
@@ -192,8 +181,8 @@ import {
 import { GUGU_CLIENT_COMMAND_MCP, isGuguClientCommand } from '@gugu/session-core/acp/commands';
 import { classifyProviderPermissionMode, type TurnAnnotation } from '@gugu/session-core/acp/client';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { sessionFastMode } from '../session-config/fast-mode';
-import { renderFastModeHint } from '../session-config/fast-mode-hint';
+import { customModelFastSupported, fastTokenMultiplier, sessionFastMode } from '../session-config/fast-mode';
+import { fastModeHint } from '../session-config/fast-mode-hint';
 import { useBoundChatView } from './use-bound-chat-view';
 import { useSessionHeroCopy } from './use-session-hero-copy';
 import { useLastTurnSignIn } from './use-last-turn-sign-in';
@@ -201,28 +190,15 @@ import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
 import { isAuthExpired } from '@renderer/lib/stores/harness-auth-expiry';
 import { useCodexPreparationNotice } from '@renderer/lib/stores/use-codex-preparation-notice';
 import { useHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
-import { filterSlashCommands } from './slash-command-matching';
 import { startupPlaceholderKey } from './startup-placeholder';
 import { canStartFreshSession } from '@shared/core/sessions/session-recovery';
 import { FindBar } from '@renderer/lib/ui/find-bar';
 import { useFindBar, type FindBackend } from '@renderer/lib/ui/use-find-bar';
 import { enUSMessages, type SessionMessageKey } from '@renderer/localization/messages';
 import type { InterruptedBy } from '@shared/core/sessions/sessions';
-import {
-  createLocalSessionMentionProvider,
-} from '@renderer/lib/chat/local-session-mention-provider';
-import { useSessionAgentCreationTools } from '@renderer/lib/chat/use-session-agent-creation-tools';
-import { useSessionMentionDrop } from '@renderer/lib/chat/use-session-mention-drop';
-import { getDraggedScreenContent } from '@renderer/lib/drag-screen-content';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** `/mcp` 这条自有命令的匹配 —— 与 agent 命令同一口径:空查询全列,否则按名字包含。 */
-function commandMatchesClientQuery(normalized: string): boolean {
-  return normalized.length === 0 || 'mcp'.includes(normalized);
-}
-const ISSUE_SEARCH_MIN_LENGTH = 2;
-const ISSUE_SEARCH_LIMIT = 20;
 /** 空态最多摆几个建议芯片 —— 再多就成了一堵墙,而空态要的是「开个头」。 */
 const WELCOME_SUGGESTION_LIMIT = 3;
 
@@ -232,26 +208,6 @@ function declaredMessageKey(key: string | null | undefined): SessionMessageKey |
     throw new Error(`ACP startup notice '${key}' is not present in the session message catalog`);
   }
   return key as SessionMessageKey;
-}
-
-function toIssueMentionItem(issue: LinkedIssue): MentionItem {
-  const token = issueMentionToken(issue.provider, issue.identifier);
-  return {
-    id: token,
-    label: token,
-    name: linkedIssueMentionName(issue),
-    kind: 'issue',
-    description: issue.title,
-    icon: <IntegrationIcon provider={issue.provider} size={13} />,
-  };
-}
-
-function issueMatchesQuery(issue: LinkedIssue, query: string): boolean {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) return true;
-  return [issue.identifier, issue.displayIdentifier, issue.title]
-    .filter((value): value is string => !!value)
-    .some((value) => value.toLowerCase().includes(normalized));
 }
 
 // ── Composer for a single store ────────────────────────────────────────────────
@@ -278,7 +234,7 @@ const ComposerForStore = observer(function ComposerForStore({
   /** 这条会话正在用的咕咕模型要开会员了(#7056):报给面板,由它挂那一行条件。null = 没有。 */
   onMembershipLockChange: (lock: { modelName: string } | null) => void;
   /** 点开一枚附件 chip 看里面是什么(#5269)。图片看图,文本看内容。 */
-  onViewAttachment: (att: ComposerAttachment) => void;
+  onViewAttachment: (att: ComposerAttachment, cell: HTMLElement) => void;
   /** Keep a newly sent prompt or stop result visible in the transcript. */
   onScrollToBottom?: () => void;
 }) {
@@ -287,31 +243,8 @@ const ComposerForStore = observer(function ComposerForStore({
   // 这个任务给自己排的定时:有就在输入框上沿挂一条托盘放那颗芯片,输入框往上压住它的下沿(与芯片读同一份缓存)。
   const scheduleMachine = machineRegistry.machineOf(store.projectId);
   const schedules = useSessionSchedules(scheduleMachine, store.sessionId);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
+  const { fileInputRef, attachments, attachmentsRef, setAttachments, fileSelection, fileUploads } = useComposerAttachments(store, translate);
   const annotationDraft = sessionAnnotations.forSession(store.sessionId);
-  const fileSelection = useAttachmentFileSelection(attachments, store.sessionId);
-  const attachmentsRef = useRef(attachments);
-  // 发送等待的是上传 promise;账本必须在它 resolve 前更新,不能等 React 的下一次渲染。
-  const setAttachments = useCallback((update: ComposerAttachment[] | ((prev: ComposerAttachment[]) => ComposerAttachment[])) => {
-    const next = typeof update === 'function' ? update(attachmentsRef.current) : update;
-    if (next.length !== attachmentsRef.current.length || next.some((item, i) => item.id !== attachmentsRef.current[i]?.id)) store.renewDraftSubmission();
-    attachmentsRef.current = next;
-    setAttachmentState(next);
-  }, [store]);
-  // 图片与文件同一条:贴上来就放进这个 agent 私聊的文件夹,进度在 chip 上,这一轮带着引用发出去(P3)。
-  const fileUploads = useComposerFileUploads({
-    resumable: true,
-    to: async () => {
-      const owner = getRendererSession()?.user.id;
-      if (!owner) throw new Error('attachments: not signed in');
-      const address = await shellPort().ensureAgentAddress({ projectId: store.projectId, sessionId: store.sessionId });
-      return { chatId: address.chatId, owner, sessionId: store.sessionId, deviceId: machineRegistry.machineOf(store.projectId),
-        projectId: store.projectId, workspaceId: asProvisioned(getSessionPageStore(store.projectId, store.sessionId))?.workspaceId };
-    },
-    setAttachments,
-    translate,
-  });
   /** 发送时附件还没传完:在等(发送键禁用、输入框上方一句话);有一件没成:不发,说一句。 */
   const [inputFailure, setInputFailure] = useState<SessionInputNotice | null>(null);
   useSessionInputNotice(`session-settings:${store.sessionId}`, inputFailure && { ...inputFailure, attempt: inputFailure });
@@ -360,9 +293,9 @@ const ComposerForStore = observer(function ComposerForStore({
           started: onScrollToBottom, unsettled: () => fileUploads.unsettled(),
           waitForUploads: async () => { await fileUploads.waitForUploads(); },
           hasFailedAttachments: () => attachmentsRef.current.some(att => att.state === 'error'),
-          files: () => fileUploads.files(attachmentsRef.current.map(att => att.id)),
+          files: () => fileUploads.files(inlineImageOrder(value, attachmentsRef.current.map(att => att.id))),
           status: setSendHold,
-          deliver,
+          deliver: (text, files, annotations) => deliver(inlineImageTurnText(text, id => fileUploads.files([id])[0], translate('composer.inlineImage')), files, annotations),
           committed: () => flushSync(() => {
             annotationDraft.submitted(annotated);
             setAttachments([]);
@@ -375,7 +308,7 @@ const ComposerForStore = observer(function ComposerForStore({
         sendingRef.current = false;
       }
     },
-    [fileUploads, store, onScrollToBottom, editorApiRef, setAttachments, annotationDraft, locale]
+    [fileUploads, store, onScrollToBottom, editorApiRef, setAttachments, annotationDraft, locale, translate]
   );
 
   const handleSubmit = useCallback(
@@ -395,12 +328,11 @@ const ComposerForStore = observer(function ComposerForStore({
   // the settlements this page's feed already holds.
   const hostSession = sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId);
   const runningCustomModel = hostSession?.data.customModel;
-  const customReading = useReplica(customModels, runningCustomModel ? [machineRegistry.machineOf(store.projectId) ?? null] : null);
+  const customReading = useReplica(customModels, [machineRegistry.machineOf(store.projectId) ?? null]);
   const customFeatures = runningCustomModel && customReading.state === 'value'
     ? customReading.value.find((record) => record.id === runningCustomModel.connectionId)?.models.find(({ id }) => id === runningCustomModel.modelId)
     : undefined;
   const acceptsImages = !runningCustomModel || customModelAcceptsImages(customFeatures);
-  const acceptsThinking = !runningCustomModel || customModelThinks(customFeatures);
   const hostBand = useHostAskBand(store.runtimeSessionId, hostSession, store.hostSettlements);
   const resolveHostAsk = hostBand?.resolve;
   const permissionRequest =
@@ -454,71 +386,9 @@ const ComposerForStore = observer(function ComposerForStore({
     [reportInputFailure, translate]
   );
 
-  const handleAttach = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
-
-  /** 拖 / 粘 / 选进来的文件(图片也是):各上一枚 chip,当场开始放进私聊文件夹。 */
-  const attachFiles = useCallback(async (files: File[], source?: 'paste' | 'drop') => {
-    const accepted = acceptsImages ? files : files.filter((file) => !file.type.toLowerCase().startsWith('image/'));
-    if (accepted.length < files.length) toast({ title: translate('customModels.imagesUnsupported'), variant: 'destructive' });
-    const selected = fileSelection.choose(accepted);
-    try {
-      for (const { id, file } of selected) {
-        // 用户读的名字是 `file.name`,❌ 不从盘上的路径反推 —— 从前正是这一步把 `gugu-drop-<uuid>-` 漏到了用户脸上。
-        const isImage = file.type.toLowerCase().startsWith('image/');
-        const chip: ComposerAttachment = {
-          id,
-          name: file.name || 'attachment',
-          kind: isImage ? 'image' : 'file',
-          mimeType: file.type,
-        };
-        if (source === 'paste') registerPastedScreenshot(file);
-        void fileUploads.add(chip, file);
-        if (!isImage) {
-          // 文本类附件的内容在入列时读一份,chip 点开看的就是它(#5269)。
-          const preview = await readAttachmentPreviewText(file);
-          if (preview) {
-            setAttachments(current => current.map(att => att.id === chip.id ? { ...att, previewText: preview.text, previewTruncated: preview.truncated } : att));
-          }
-        }
-      }
-    } catch (error) { fileSelection.release(selected); throw error; }
-  }, [acceptsImages, fileSelection, fileUploads, setAttachments, translate]);
-
-  /**
-   * 拖进来的文件夹。本机会话:落成正文里一条路径 pill(文件夹就在这台电脑上,agent 就地读)。
-   * 会话在别的机器上:这条路径那边没有,私聊文件夹也收不下一个文件夹 —— 说出来,❌ 静默丢。
-   */
-  const attachDirectories = useCallback(
-    (files: File[], entries: FileSystemDirectoryEntry[]) => {
-      const deviceId = machineRegistry.machineOf(store.projectId);
-      if (deviceId) {
-        if (!taskAttachmentUsesSsh(deviceId)) {
-          toast({ title: translate('chat.folderDropUnsupportedTitle'), description: translate('chat.folderDropUnsupportedDescription'), variant: 'destructive' });
-          return;
-        }
-        const workspaceId = asProvisioned(getSessionPageStore(store.projectId, store.sessionId))?.workspaceId;
-        for (const entry of entries) {
-          void pushTaskDirectory({ deviceId, projectId: store.projectId, workspaceId, chatId: '', owner: '' }, entry).then(path => {
-            editorApiRef.current?.insertMention({ id: path, label: path, kind: 'file', name: entry.name });
-          }).catch(error => {
-            log.warn('Task folder placement failed', { error: String(error) });
-            const code = (error as { code?: string })?.code;
-            toast({ title: translate('composer.attachmentUploadFailed'), description: translate(code === 'folder_too_large'
-              ? 'composer.attachmentFolderTooLarge' : code === 'host_update_required' ? 'composer.attachmentHostUpdateRequired'
-                : 'composer.attachmentUploadFailed'), variant: 'destructive' });
-          });
-        }
-        return;
-      }
-      for (const file of files) {
-        const mention = droppedDirectoryMention(file);
-        if (mention) editorApiRef.current?.insertMention(mention);
-      }
-    },
-    [store, translate]
-  );
+  const { handleAttach, attachFiles, attachDirectories, handleFileInputChange } = useComposerAttachActions({
+    store, translate, acceptsImages, editorApiRef, fileInputRef, fileSelection, fileUploads, setAttachments,
+  });
 
   const composerShown = useContext(SurfaceShownContext);
   const inputAccount = useSessionInputAccount();
@@ -543,204 +413,9 @@ const ComposerForStore = observer(function ComposerForStore({
     [fileUploads, setAttachments]
   );
 
-  const handleFileInputChange = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(e.target.files ?? []);
-      e.target.value = '';
-      await attachFiles(files);
-    },
-    [attachFiles]
-  );
-
-  const workspaceId = useObserver(
-    () => asProvisioned(getSessionPageStore(store.projectId, store.sessionId))?.workspaceId
-  );
-  const linkedIssue = useObserver(
-    () => getRegisteredSessionData(store.projectId, store.sessionId)?.linkedIssue
-  );
-  const issueProviderContext = useObserver(() => {
-    const mounted = asMounted(getProjectStore(store.projectId));
-    return {
-      projectPath: mounted?.data.path,
-      repositoryUrl:
-        mounted?.gitRepository.issueRepositoryUrl ??
-        mounted?.gitRepository.canonicalRepositoryUrl ??
-        undefined,
-      selectedIssueProvider: getProjectViewStore(store.projectId)?.selectedIssueProvider ?? null,
-    };
+  const { mentionProvider, dataDropTypes, onDataDropped, renderMentionIcon } = useComposerMentions({
+    store, editorApiRef, composerSlot, attachFiles, translate,
   });
-  const { connectedProviders, isProviderUsable } = useConnectedIssueProviders(issueProviderContext);
-  const { byEngine: agentCreationToolsByEngine, renderMentionIcon: renderAgentMentionIcon } = useSessionAgentCreationTools();
-  const issueProvider = useMemo(() => {
-    const selected = issueProviderContext.selectedIssueProvider;
-    if (selected && isProviderUsable(selected)) return selected;
-    return connectedProviders[0] ?? null;
-  }, [connectedProviders, isProviderUsable, issueProviderContext.selectedIssueProvider]);
-
-  const localSessionMentionProvider = useMemo(
-    () =>
-      createLocalSessionMentionProvider({
-        excludeSessionId: store.sessionId,
-        mentionUri: store.chatState.uri ?? store.sessionId,
-        creationToolsByEngine: agentCreationToolsByEngine,
-      }),
-    [agentCreationToolsByEngine, store],
-  );
-
-  // Transcript parsing is synchronous, so seed the task-scoped mention registry as soon as
-  // the panel mounts instead of waiting for the user to open the @ popup.
-  useEffect(() => {
-    if (!window.electronAPI) return;
-    let active = true;
-    const mentionUri = store.chatState.uri ?? store.sessionId;
-    // Registering is a side effect of the search, so a search that settles AFTER this effect was
-    // cleaned up writes an entry nobody clears again. Clear it here instead of skipping the
-    // register: by then the only thing that knows the entry is stale is this closure.
-    // The provider itself logs and returns [] on failure, so there is no rejection to catch —
-    // a second catch here would be dead code that reads like the error handler.
-    void localSessionMentionProvider.search('').then(() => {
-      if (!active) clearLocalSessionMentions(mentionUri);
-    });
-    return () => {
-      active = false;
-      clearLocalSessionMentions(mentionUri);
-    };
-  }, [localSessionMentionProvider, store]);
-
-  // 侧栏会话行拖进来 = 与 @ 弹层同一枚 pill(behavior session-page「把会话拖成 @」)。
-  const { dataDropTypes, onDataDropped } = useSessionMentionDrop({
-    provider: localSessionMentionProvider,
-    editorApiRef,
-    selfSessionId: store.sessionId,
-    attachFiles: (files) => {
-      attachFiles(files).catch((error: unknown) => log.error('Failed to attach dropped files', { error }));
-    },
-    // A folder on this computer: the same pill a folder dropped from the system gets; a task on another machine cannot read it.
-    dropFolder: (path) => {
-      if (machineRegistry.machineOf(store.projectId)) toast({ title: translate('chat.folderDropUnsupportedTitle'), variant: 'destructive' });
-      else editorApiRef.current?.insertMention(pathMention(path));
-    },
-  });
-
-  // 落在这条会话的**正中**(聊天记录那一片)也算落在输入框上(behavior session-page「把会话拖成 @」):一块的上下左右边
-  // 先被这一屏收走分出一块(screen-frame 的捕获阶段),剩下的才走到这里。composer 自己那一格由它自己收,这里只兜它
-  // 够不到的地方,❌ 两边都收(会插两枚)。owner 2026-10-15「拖到边缘是分屏,中间是 session 信息粘贴」——
-  // 取代 10-09 那句「正中什么都不发生」(那次把这一段删了,于是拖进来要么分屏、要么没反应)。
-  useEffect(() => {
-    const surface = composerSlot.closest('[data-session-chat-surface]');
-    if (!(surface instanceof HTMLElement)) return;
-    const accepts = (event: DragEvent) => event.dataTransfer && getDraggedScreenContent(event.dataTransfer)?.kind === 'session';
-    const onDragOver = (event: DragEvent) => {
-      if (accepts(event)) event.preventDefault();
-    };
-    const onDrop = (event: DragEvent) => {
-      if (!accepts(event)) return;
-      const target = event.target;
-      if (target instanceof Element && target.closest('[data-slot="composer-bar"]')) return;
-      event.preventDefault();
-      onDataDropped(event.dataTransfer!);
-    };
-    surface.addEventListener('dragover', onDragOver);
-    surface.addEventListener('drop', onDrop);
-    return () => {
-      surface.removeEventListener('dragover', onDragOver);
-      surface.removeEventListener('drop', onDrop);
-    };
-  }, [composerSlot, onDataDropped]);
-
-  const mentionProvider = useMemo<ContextMentionProvider | undefined>(() => {
-    const wsId = workspaceId;
-    const resultsChanged = new Set<() => void>();
-    return {
-      resolve(target, label) {
-        const meta = chatMentionProvider.resolve(target, store.chatState.uri ?? store.sessionId);
-        return meta ? { id: meta.id, label: target, name: label, kind: meta.kind,
-          role: target.startsWith('aid:') ? 'agent' : undefined, engine: meta.engine,
-          description: meta.title } : null;
-      },
-      onResultsChanged(listener: () => void) {
-        resultsChanged.add(listener);
-        return () => resultsChanged.delete(listener);
-      },
-      async search(query: string, options?: { requery?: boolean }): Promise<MentionItem[]> {
-        // 「@」刚打出来(查询还是空的):让文件索引补一遍 —— 只有一个目录一个 watch 的平台上它才真的去扫
-        // (没人盯着的目录里新建的文件靠这一下进索引)。❌ 等它:先用现有索引出结果,扫完再让弹层按当前查询重查一次。
-        // 重查(重扫完了编辑器按同一查询再问一次)❌ 再触发:否则停在「@」上会一轮接一轮全量重扫。
-        if (query === '' && wsId && !options?.requery) {
-          void nudgeWorkspace(store.projectId, wsId, { reindex: true }).then((rescanned) => {
-            if (rescanned) for (const listener of [...resultsChanged]) listener();
-          });
-        }
-        const pinnedIssue =
-          linkedIssue && issueMatchesQuery(linkedIssue, query)
-            ? toIssueMentionItem(linkedIssue)
-            : null;
-        const issueSearch =
-          issueProvider && query.trim().length >= ISSUE_SEARCH_MIN_LENGTH
-            ? rpc.issues
-                .searchIssues(issueProvider, {
-                  limit: ISSUE_SEARCH_LIMIT,
-                  searchTerm: query.trim(),
-                  projectId: store.projectId,
-                  projectPath: issueProviderContext.projectPath,
-                  repositoryUrl: issueProviderContext.repositoryUrl ?? undefined,
-                })
-                .catch((error: unknown) => {
-                  log.warn('Failed to search issue mentions', { provider: issueProvider, error });
-                  return null;
-                })
-            : Promise.resolve(null);
-
-        const [files, issueResult, localSessionItems] = await Promise.all([
-          wsId
-            ? rpc.search.searchWorkspaceFiles({ workspaceId: wsId, query })
-            : Promise.resolve([]),
-          issueSearch,
-          localSessionMentionProvider.search(query),
-        ]);
-
-        const pinnedIssueItems: MentionItem[] = [];
-        const searchedIssueItems: MentionItem[] = [];
-        const seenIssueIds = new Set<string>();
-        if (pinnedIssue) {
-          pinnedIssueItems.push(pinnedIssue);
-          seenIssueIds.add(pinnedIssue.id);
-        }
-        if (issueResult?.success) {
-          for (const issue of issueResult.data) {
-            const item = toIssueMentionItem(issue);
-            if (seenIssueIds.has(item.id)) continue;
-            seenIssueIds.add(item.id);
-            searchedIssueItems.push(item);
-          }
-        } else if (issueResult && !issueResult.success) {
-          log.warn('Failed to search issue mentions', {
-            provider: issueProvider,
-            error: issueResult.error,
-          });
-        }
-
-        const fileItems = files.map((f) => ({
-          id: f.path,
-          label: f.path,
-          name: f.filename,
-          kind: 'file' as const,
-          description: f.path,
-        }));
-
-        return [...localSessionItems, ...pinnedIssueItems, ...fileItems, ...searchedIssueItems];
-      },
-    };
-  }, [
-    workspaceId,
-    linkedIssue,
-    issueProvider,
-    store.projectId,
-    issueProviderContext.projectPath,
-    issueProviderContext.repositoryUrl,
-    agentCreationToolsByEngine,
-    localSessionMentionProvider,
-  ]);
 
   const agentsReading = useAgents();
   const agents = agentsReading.state === 'value' ? agentsReading.value : undefined;
@@ -758,13 +433,14 @@ const ComposerForStore = observer(function ComposerForStore({
     [agents]
   );
 
-  const providerId =
-    sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId)?.data
-      .providerId ?? null;
-  const contextThresholds = useContextThresholds(providerId, machineRegistry.machineOf(store.projectId));
+  const sessionRecord = sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId)?.data;
+  const providerId = sessionRecord?.providerId ?? null;
 
 
   const providerCapabilities = agents?.find((agent) => agent.id === providerId)?.capabilities;
+  const customFast = runningCustomModel && customReading.state === 'value'
+    ? customModelFastSupported(customReading.value.find(({ id }) => id === runningCustomModel.connectionId), runningCustomModel.modelId, agents?.find((agent) => agent.id === providerId))
+    : false;
 
   // 排队提示的「立即发送」:这家能插话就插进在跑的那一轮,插不了才取消再发(#6574)。
   const sendNowSteers = agentSteersActiveAcpTurn(providerCapabilities);
@@ -820,7 +496,7 @@ const ComposerForStore = observer(function ComposerForStore({
       const value = effortId === '' && resetEffortId && settable?.[resetEffortId]
         ? resetEffortId
         : effortId;
-      void store.setEffort(value).then((outcome) => {
+      return store.setEffort(value).then((outcome) => {
         if (outcome?.kind !== 'restart-required') return;
         reportUnwiredRestart('effort', outcome.requestedValue);
       });
@@ -958,27 +634,31 @@ const ComposerForStore = observer(function ComposerForStore({
   );
   const merged = useComposerModelOptions(ownTier, platformCatalog.models, providerId, runningPlatformModel);
 
-  const lockedForTurn = store.modelLockedForTurn(providerCapabilities?.acp.liveSettings?.model);
+  const planForOption = useCallback((id: string) => planModelSwitch({
+    selection: composerModelSelection(id),
+    advertised: advertisedModels,
+    catalog: platformCatalog.models,
+    runningOn,
+    runningCustomModel,
+    currentModel: store.model,
+    liveSetting: providerCapabilities?.acp.liveSettings?.model,
+  }), [advertisedModels, platformCatalog.models, runningOn, runningCustomModel, store.model, providerCapabilities]);
+
+  const canSwitchDuringReply = !store.isTransient
+    && store.session?.sessionState.current().lifecycle === 'working'
+    && !!store.session?.activeTurn.current();
+  const lockedForTurn = !canSwitchDuringReply && store.modelLockedForTurn(providerCapabilities?.acp.liveSettings?.model);
   const sessionModelOptions = useMemo(() => {
     // 能力声明还没到 ⇒ 还答不出「哪些能当场换」:❌ 不拿「未声明」去判(那会把整张菜单暂时置灰)。
     if ((!merged && !retiredModel && !runningCustomModel) || !providerCapabilities) return null;
-    const catalog = platformCatalog.models;
     const selectedOption = composerSelectedOptionId({ platformModel: runningPlatformModel, model: store.model, customModel: runningCustomModel });
     const options = Object.fromEntries(
       Object.entries(merged ?? {}).map(([id, option]) => {
         if (option.disabled) return [id, option];
         // 四态见 @@@session-options-disabled。hot / reload 都是"能选",
         // unavailable / unsupported 才置灰 —— ❌ 别按 `platform:` 前缀判,那会把能重开换成的也灰掉。
-        const plan = planModelSwitch({
-          selection: composerModelSelection(id),
-          advertised: advertisedModels,
-          catalog,
-          runningOn,
-          runningCustomModel,
-          currentModel: store.model,
-          liveSetting: providerCapabilities?.acp.liveSettings?.model,
-        });
-        // A hot switch this provider refuses during a turn: say so on the row, rather than offer one that can only fail.
+        const plan = planForOption(id);
+        // Only a mounted task can be reconfigured in place during its reply.
         if (plan.kind === 'hot' && lockedForTurn && id !== selectedOption) {
           return [id, { ...option, disabled: true, disabledReason: translate('composer.modelBusy') }];
         }
@@ -1012,19 +692,27 @@ const ComposerForStore = observer(function ComposerForStore({
       };
     }
     return options;
-  }, [
-    merged,
-    retiredModel,
-    advertisedModels,
-    platformCatalog.models,
-    runningOn,
-    runningCustomModel,
-    runningPlatformModel,
-    providerCapabilities,
-    lockedForTurn,
-    store.model,
-    translate,
-  ]);
+  }, [merged, retiredModel, planForOption, runningCustomModel, runningPlatformModel,
+    providerCapabilities, lockedForTurn, store.model, translate]);
+
+  const effortOptionsForModel = (optionId: string) => {
+    const plan = planForOption(optionId);
+    if (plan.kind !== 'hot' && plan.kind !== 'reload') return null;
+    const setting = providerCapabilities?.acp.liveSettings?.effort;
+    if (plan.kind === 'hot' && (setting?.channel === 'unsupported' || setting?.reloadRequired)) return null;
+    const selection = composerModelSelection(optionId);
+    const resolved = resolveComposerTargetEfforts({
+      state: harnessCatalog.state,
+      effortCapability: providerCapabilities?.effort,
+      staticModelsCapability: providerCapabilities?.models,
+      model: selection.source === 'own' ? selection.modelId : null,
+      platformModel: selection.source === 'platform' ? selection.modelId : null,
+      platformModels: platformCatalog.models,
+      customModels: customReading.state === 'value' ? customReading.value : undefined,
+      leg: 'acp',
+    });
+    return localizeEffortOptions(resolved?.options ?? null, translate);
+  };
 
   // ⚠️ 这一整段必须在 `platformCatalog` / `sessionModelOptions` **之后**:下面的 handler 把
   //    `platformCatalog` 列进 deps,而 deps 是渲染时求值的 —— 放到它前面会当场 TDZ 炸掉
@@ -1102,8 +790,73 @@ const ComposerForStore = observer(function ComposerForStore({
    * 而用户看到的是「点了没反应」。三态分开之后,能换的当场换、要重开的先问一句、
    * 到不了的直接说 —— 每一种都有下一步。
    */
+  const applyReload = useCallback(async (target: RestartTarget, continueTurnId?: string) => {
+    setReloading(true);
+    try {
+      const reload = () => requestSessionReload(reloadRequestFor(target, store.sessionId));
+      const result = continueTurnId
+        ? await reloadWorkingModel({
+            reload,
+            turnOutcome: () => store.chatState.transcript.state.committedTurns.find(turn => turn.id === continueTurnId)?.outcome?.kind,
+            continueTurn: () => continueSessionTurn(store, translate('transcript.continueTurnPrompt')),
+          })
+        : await reload();
+      if (result.ok) {
+        setInputFailure(null);
+        platformCatalog.retry();
+        if (result.notStarted) store.retry();
+        return true;
+      }
+      reportInputFailure(
+        translate(target.dimension === 'permission' ? 'chat.reloadConfirmTitlePermission' : 'chat.reloadConfirmTitleModel',
+          { target: target.label }),
+        result.startupReason ? { startupReason: result.startupReason, message: result.error } : result.error ?? '',
+      );
+      if (isCodexProviderStartupKind(result.startupReason ?? codexStartupKind(result.error))) {
+        setPendingReload(null);
+        onModelMenuRequest();
+      }
+      return false;
+    } catch (error: unknown) {
+      reportInputFailure(
+        translate(target.dimension === 'permission' ? 'chat.reloadConfirmTitlePermission' : 'chat.reloadConfirmTitleModel',
+          { target: target.label }),
+        error instanceof Error ? error.message : String(error),
+      );
+      return false;
+    } finally {
+      setReloading(false);
+    }
+  }, [store, platformCatalog, reportInputFailure, translate, onModelMenuRequest]);
+
+  const writingModel = useRef(false);
+  const contextThresholds = useContextThresholds(providerId, machineRegistry.machineOf(store.projectId), sessionRecord?.contextChoice,
+    store.isTransient ? undefined : async (choice: SessionContextChoice, effort) => {
+      if (writingModel.current || reloading) throw new Error('A session setting is already changing');
+      const selection = composerModelSelection(choice.model);
+      const source = selection.source === 'platform' ? 'platform' : 'own';
+      const label = sessionModelOptions?.[choice.model]?.name ?? selection.modelId;
+      const reply = store.session?.sessionState.current().lifecycle === 'working' ? store.session.activeTurn.current() : null;
+      writingModel.current = true;
+      try {
+        if (reply) toast({ tier: 'info', title: translate('chat.modelSwitchContinuing', { model: label }), position: 'bottom-right' });
+        const target: RestartTarget = {
+          dimension: 'model', value: selection.modelId, source, label, contextChoice: choice,
+          ...(sessionRecord?.providerSessionId && effort !== undefined ? { effort } : {}),
+        };
+        if (!await applyReload(target, reply?.id)) {
+          throw new Error('The session did not apply the context choice');
+        }
+      } finally {
+        writingModel.current = false;
+      }
+    });
   const handleModelChange = useCallback(
-    (optionId: string) => {
+    (optionId: string, effort?: string) => {
+      if (writingModel.current) {
+        toast({ title: translate('composer.modelBusy') });
+        return;
+      }
       // 与 `sessionModelOptions` 同一个前提:能力声明没到,菜单本来就没摆出来。
       if (!providerCapabilities) return;
       if (
@@ -1119,18 +872,25 @@ const ComposerForStore = observer(function ComposerForStore({
           value: selection.modelId,
           label: known?.displayName ?? sessionModelOptions?.[optionId]?.name ?? runtimeModelId(selection.modelId) ?? '',
           source: selection.source,
+          effort,
         });
         return;
       }
-      const plan = planModelSwitch({
-        selection: composerModelSelection(optionId),
-        advertised: advertisedModels,
-        catalog: platformCatalog.models,
-        runningOn,
-        runningCustomModel,
-        currentModel: store.model,
-        liveSetting: providerCapabilities?.acp.liveSettings?.model,
-      });
+      const plan = planForOption(optionId);
+      const session = store.session;
+      const reply = !store.isTransient && session?.sessionState.current().lifecycle === 'working'
+        ? session.activeTurn.current() : null;
+      if (reply && (plan.kind === 'hot' || plan.kind === 'reload')) {
+        const source = composerModelSelection(optionId).source === 'platform' ? 'platform' : 'own';
+        const label = sessionModelOptions?.[optionId]?.name ?? runtimeModelId(plan.modelId) ?? plan.modelId;
+        writingModel.current = true;
+        toast({ tier: 'info', title: translate('chat.modelSwitchContinuing', { model: label }), position: 'bottom-right' });
+        void applyReload({ dimension: 'model', value: plan.modelId, label, source, effort }, reply.id)
+          .finally(() => {
+            writingModel.current = false;
+          });
+        return;
+      }
       if (plan.kind === 'hot') {
         // ⚠️ 下发 `wireValue`,❌ 不是 `modelId`:平台模型在 opencode 上寻址成
         // `gugu-platform/<id>`,递裸 id 会被它当未知模型拒掉(owner 2026-09-13 实测:
@@ -1146,6 +906,7 @@ const ComposerForStore = observer(function ComposerForStore({
         const catalogName = platformCatalog.models
           .find((entry) => entry.id === plan.modelId)?.displayName;
         const source = selection.source === 'platform' ? 'platform' : 'own';
+        writingModel.current = true;
         void store.setModel(plan.wireValue).then(async (outcome) => {
           if (outcome?.kind === 'restart-required') {
             setPendingReload({
@@ -1153,6 +914,7 @@ const ComposerForStore = observer(function ComposerForStore({
               value: plan.modelId,
               label: catalogName ?? runtimeModelId(plan.modelId) ?? '',
               source,
+              effort,
             });
             return;
           }
@@ -1163,7 +925,11 @@ const ComposerForStore = observer(function ComposerForStore({
             platformCatalog.refresh();
             return;
           }
-          if (store.isTransient) { setInputFailure(null); return; }
+          if (store.isTransient) {
+            if (effort !== undefined) await handleEffortChange(effort);
+            setInputFailure(null);
+            return;
+          }
           // 记的是活会话**确认在跑的**那个(`effectiveValue`),不是我们请求的那个 —— provider 可能把别名规范成另一条。
           // 平台模型的生效值是它自己的寻址形式(`gugu-platform/<id>`),翻回规范 id;翻不出就是我们请求的那条(copilot 这类不回读的家)。
           const recorded = source === 'platform'
@@ -1183,9 +949,10 @@ const ComposerForStore = observer(function ComposerForStore({
             reportInputFailure(translate('chat.modelSwitchNotRecordedTitle', { target: catalogName ?? plan.modelId }), error instanceof Error ? error.message : String(error));
             return;
           }
+          if (effort !== undefined) await handleEffortChange(effort);
           setInputFailure(null);
           platformCatalog.refresh();
-        });
+        }).finally(() => { writingModel.current = false; });
         return;
       }
       if (plan.kind === 'unavailable') {
@@ -1205,52 +972,15 @@ const ComposerForStore = observer(function ComposerForStore({
         value: plan.modelId,
         label: plan.displayName,
         source: plan.source === 'platform' ? 'platform' : 'own',
+        effort,
       });
     },
-    [store, advertisedModels, platformCatalog.models, runningOn, runningCustomModel, sessionModelOptions, providerCapabilities, reportInputFailure, translate, providerId, switchBeforeFirstStart]
+    [store, planForOption, platformCatalog, sessionModelOptions, providerCapabilities, reportInputFailure, translate, providerId, switchBeforeFirstStart, handleEffortChange, applyReload]
   );
 
-  /**
-   * 用户确认之后才动:先把目标设置落进会话记录,再让主进程按记录重开 —— 顺序反了会重开出旧配置。
-   *
-   * **三维共用这一个函数。** 它自己不知道任何维度的细节:载荷由 `reloadRequestFor` 翻译。
-   */
   const confirmReload = useCallback(async () => {
-    const pending = pendingReload;
-    if (!pending) return;
-    setReloading(true);
-    let succeeded = false;
-    try {
-      // ⚠️ ❌ 不在这里再调一次活会话的 setter —— 那是 **live** `set_config_option`,
-      //    而「这个值活会话接不了」正是我们要重开的原因,调它必然失败并弹一句误导的错误
-      //    (owner 2026-09-07 真机撞到),而且目标值根本没被持久化 ⇒ 重开之后跑的还是旧值。
-      //    ⇒ 目标值交给宿主,由它保证「先写记录、再停、再起」。
-      const result = await requestSessionReload(reloadRequestFor(pending, store.sessionId));
-      // 宿主停掉又重开之后,聊天面自己重挂(`_onSessionClosedByHost`:副本跟着会话 id 走)。失败时保留确认层，允许用户重试。
-      if (result.ok) {
-        succeeded = true;
-        setInputFailure(null);
-        // The host persists the new platform/own decision before reopening. Refresh the
-        // catalog so a platform -> BYOK handoff cannot keep the old source label in the UI.
-        platformCatalog.retry();
-      }
-      if (!result.ok) {
-        // 原话直接给用户 —— ❌ 不折成「重开失败」:两种事故的下一步完全不同。
-        reportInputFailure(translate(
-            pending.dimension === 'permission' ? 'chat.reloadConfirmTitlePermission' : 'chat.reloadConfirmTitleModel',
-            { target: pending.label },
-          ), result.startupReason ? { startupReason: result.startupReason, message: result.error } : result.error ?? '');
-        if (isCodexProviderStartupKind(result.startupReason ?? codexStartupKind(result.error))) {
-          setPendingReload(null);
-          onModelMenuRequest();
-        }
-      }
-    } finally {
-      setReloading(false);
-      // Keep the target in the confirmation surface after a failed restart so it can be retried.
-      if (succeeded) setPendingReload(null);
-    }
-  }, [pendingReload, store, platformCatalog, reportInputFailure, translate, onModelMenuRequest]);
+    if (pendingReload && await applyReload(pendingReload)) setPendingReload(null);
+  }, [pendingReload, applyReload]);
 
   /**
    * `/mcp` —— **咕咕自己的**命令:拦下来开面板,**一个字都不发给 agent**。
@@ -1317,7 +1047,8 @@ const ComposerForStore = observer(function ComposerForStore({
    * disabled until a reload supplies it.
    */
   const sessionEffortOptions = useMemo(() => {
-    if (!acceptsThinking) return null;
+    const customEfforts = runningCustomModel ? customModelEfforts(customFeatures, providerCapabilities?.effort) : null;
+    if (runningCustomModel && !customEfforts) return null;
     const declaredOptions = declaredEffortOptions;
     const declared = declaredOptions
       ? { options: declaredOptions, defaultId: null }
@@ -1330,8 +1061,8 @@ const ComposerForStore = observer(function ComposerForStore({
     const resolved = resolveEffortCatalog(
       declared,
       live,
-      effortSourceFor(Boolean(runningPlatformModel), providerCapabilities?.effort, 'acp'),
-      platformEffortFacts(runningPlatformModel, platformCatalog.models)?.reasoningEfforts ?? null,
+      customEfforts ? 'platform' : effortSourceFor(Boolean(runningPlatformModel), providerCapabilities?.effort, 'acp'),
+      customEfforts ?? platformEffortFacts(runningPlatformModel, platformCatalog.models)?.reasoningEfforts ?? null,
     );
     if (!resolved) return null;
     const options = live || !declared ? resolved.options : Object.fromEntries(
@@ -1341,55 +1072,22 @@ const ComposerForStore = observer(function ComposerForStore({
       ])
     );
     return liveSettingOptions(options, providerCapabilities?.acp.liveSettings?.effort);
-  }, [acceptsThinking, store.effort, store.effortOptions, store.starting, declaredEffortOptions, providerCapabilities, runningPlatformModel, platformCatalog.models, translate]);
+  }, [runningCustomModel, customFeatures, store.effort, store.effortOptions, store.starting, declaredEffortOptions, providerCapabilities, runningPlatformModel, platformCatalog.models, translate]);
   // #7342 停下了、记录里也没记档位(= harness 自己那一档默认):用探针目录报的那一档当默认档画(触发器压一档不透明度),
   // 与新建页同一个来源(`harnessCatalogToModelsCapability` 的 defaultEffortId)。活会话报的就是已生效那一档,用不着它。
-  const detachedDefaultEffort = detached && !runningPlatformModel && harnessCatalog.state.kind === 'ready'
+  const probedDefaultEffort = detached && !runningPlatformModel && harnessCatalog.state.kind === 'ready'
     ? (harnessCatalog.state.selectedEffort ?? undefined)
     : undefined;
-  const renderMentionIcon = useCallback(
-    (attrs: Parameters<typeof renderAgentMentionIcon>[0]) => {
-      const { id, kind } = attrs;
-      if (kind === 'custom') return renderAgentMentionIcon(attrs);
-      if (kind !== 'issue') return null;
-      const target = parseIssueMentionToken(id);
-      if (!target) return null;
-      return <IntegrationIcon provider={target.provider} size={12} />;
-    },
-    [renderAgentMentionIcon]
-  );
-
-  const querySlashItems = useCallback(
-    async (query: string): Promise<CommandItem[]> => {
-      const normalized = query.trim().toLowerCase();
-      const commands = filterSlashCommands(store.commands, normalized)
-        .map((command) => ({
-          ...command,
-          section: translate('chat.commands'),
-        }));
-      // 提示词:我的一组,各 App 各一组(prompt-slash-items.ts,聊天输入框用的是同一份)。
-      const prompts = promptSlashItems(promptLibrary, promptOverrides, translate('chat.prompts'), normalized);
-      // @@@gugu-client-commands —— `/mcp` 是**咕咕自己的**命令,不是 agent 报上来的:
-      // 选中时被 `onCommand` 拦下来开面板,**一个字都不发给 agent**。
-      // ⚠️ 它出现在这里的前提是 apply 那条路已经接通(面板 → 记录 → 重开)——
-      //    一条点了没反应的命令就是假控件,那是这仓零容忍的。
-      const clientCommands: CommandItem[] = commandMatchesClientQuery(normalized)
-        ? [
-            {
-              id: GUGU_CLIENT_COMMAND_MCP,
-              name: 'mcp',
-              token: '/mcp',
-              label: '/mcp',
-              description: translate('mcpSession.commandDescription'),
-              behavior: 'execute' as const,
-              section: translate('chat.commands'),
-            },
-          ]
-        : [];
-      return [...clientCommands, ...commands, ...prompts];
-    },
-    [store, promptLibrary, promptOverrides, translate]
-  );
+  // #3973 Not live (stopped, reopened, restarting after a switch) and no level on the record: the level this session last
+  // ran at, which its thread comes back with (`last-live-effort.ts`); else the harness's probed default.
+  const detachedDefaultEffort = detached
+    ? lastLiveEffort(store.sessionId, sessionEffortOptions) ?? probedDefaultEffort
+    : undefined;
+  const liveUnrecordedEffort = store.session && !store.isTransient && !sessionRecord?.effort ? store.effort : null;
+  useEffect(() => {
+    if (liveUnrecordedEffort) rememberLiveEffort(store.sessionId, liveUnrecordedEffort);
+  }, [liveUnrecordedEffort, store.sessionId]);
+  const querySlashItems = useComposerSlashItems({ store, promptLibrary, promptOverrides, translate, providerId });
 
   const a = store.affordances;
   const agentUserId = sessionAgentBindings.bindingFor(store.sessionId)?.agentUserId ?? null;
@@ -1453,16 +1151,16 @@ const ComposerForStore = observer(function ComposerForStore({
       <SessionInputQueue sessionId={store.runtimeSessionId} waitingForConnection life={life}
         inTranscript={[...store.chatState.session.state.pendingMessages.map(input => input.id), store.transcriptPendingId, store.stoppedRowId, ...store.failedRowIds, ...life?.pending.items.filter(input => isTranscriptDelivery(input)).map(input => input.messageId) ?? []].filter((id): id is string => id !== null)} />
       <SessionHostQuestion sessionId={store.runtimeSessionId} session={hostSession} settlements={store.hostSettlements} />
+      <SessionPasswordRequest sessionId={store.runtimeSessionId} session={hostSession} settlements={store.hostSettlements} />
       <ChatComposer
         className={scheduleSlotShown(schedules) ? sessionComposerFrameLiftClassName : undefined}
-        // 会话页的标签头不显示 harness,锁着的那颗 agent 标留在模型左边(私聊照旧藏)。
-        hideLockedAgent={false}
+        hideLockedAgent
         isWorking={a.isWorking}
         attachmentStatus={sendHold === 'waiting' ? translate('composer.attachmentWaiting') : undefined}
         notice={
           sendHold === 'blocked'
-              ? { variant: 'error', message: translate('composer.attachmentBlocked'), onDismiss: () => setSendHold(null) }
-              : store.permissionModeChangeNotice
+            ? { variant: 'error', message: translate('composer.attachmentBlocked'), onDismiss: () => setSendHold(null) }
+            : store.permissionModeChangeNotice
         }
         // Store owns both live sending and pre-session queue admission.
         // 正在用的咕咕模型要会员了(#7056):下一轮之前停下,原因与去路在面板那一行。
@@ -1502,6 +1200,7 @@ const ComposerForStore = observer(function ComposerForStore({
           customModel: runningCustomModel,
         })}
         onModelChange={handleModelChange}
+        effortOptionsForModel={effortOptionsForModel}
         modelMenuOpenRequest={modelMenuRequest}
         modelSettingNotice={modelSettingNotice}
         modelMenuNotice={lockedForTurn ? translate('composer.modelBusy') : modelPreparationNotice}
@@ -1513,10 +1212,17 @@ const ComposerForStore = observer(function ComposerForStore({
         effortOptions={localizeEffortOptions(sessionEffortOptions, translate)}
         selectedEffort={store.effort ?? undefined}
         defaultEffort={detachedDefaultEffort}
-        onEffortChange={handleEffortChange}
-        fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup })}
-        onFastModeChange={(enabled) => { void store.setFastMode(enabled); }}
-        renderFastModeHint={renderFastModeHint}
+        onEffortChange={effortId => {
+          if (writingModel.current) {
+            toast({ title: translate('composer.modelBusy') });
+            return;
+          }
+          void handleEffortChange(effortId);
+        }}
+        fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup,
+          ...(runningCustomModel ? { customSupported: customFast, recorded: hostSession?.data.fastMode } : {}) })}
+        onFastModeChange={(enabled) => { void (runningCustomModel ? store.setCustomFastMode(enabled) : store.setFastMode(enabled)); }}
+        renderFastModeHint={fastModeHint(fastTokenMultiplier(providerCapabilities, !!runningCustomModel))}
         permissionModeOptions={withAutoReviewHint(localizePermissionModeOptions(
           sessionPermissionOptions,
           translate,
@@ -1540,6 +1246,7 @@ const ComposerForStore = observer(function ComposerForStore({
             ? {
                 used: store.usage.contextUsed,
                 size: store.usage.contextSize,
+                autoCompact: store.usage.autoCompact,
                 cost: store.usage.cost,
                 costSource,
               }
@@ -1557,6 +1264,7 @@ const ComposerForStore = observer(function ComposerForStore({
         attachmentExtra={annotationDraft.items.length ? <AnnotationTray conversation={{ kind: 'session', sessionId: store.sessionId }} onRemove={id => { if (!sendingRef.current) { const imageId = annotationImageId(id); fileUploads.forget(imageId); setAttachments(current => current.filter(item => item.id !== imageId)); } }} onSend={() => { void handleSubmit(store.draftText); }} enabled={sendHold !== 'waiting' && membershipLockedModel === null && !store.messageEdit && !store.reverting} /> : null}
         attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')}
         onAttachmentsChange={handleAttachmentsChange}
+        inlineImages
         onAttach={handleAttach}
         onImageFilesDropped={(files, source) => {
           attachFiles(files, source).catch((error: unknown) => log.error('Failed to attach dropped files', { error }));
@@ -1570,7 +1278,15 @@ const ComposerForStore = observer(function ComposerForStore({
         attachmentQualityLocked={sendHold === 'waiting'}
         dataDropTypes={dataDropTypes}
         onDataDropped={onDataDropped}
-        onViewAttachment={onViewAttachment}
+        onViewAttachment={(att, cell) => {
+          const source = fileUploads.draftFile(att.id);
+          if (openComposerImage(att, cell, source && ((file, caption) => {
+            if (sendingRef.current) throw new Error(translate('composer.attachmentWaiting'));
+            fileUploads.replaceImage(att.id, source, file);
+            if (caption) editorApiRef.current?.insertText(caption, 'end');
+          }))) return;
+          onViewAttachment(att, cell);
+        }}
       />
     </>,
     composerSlot
@@ -2019,33 +1735,23 @@ export const AcpChatPanel = observer(function AcpChatPanel({
 
   useMarkSeenWhenShown(sessionStore, visibility.shown && !store?.isTransient, store?.sessionId);
 
-  useEffect(() => {
-    if (!store) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const root = rootRef.current;
-      if (!root || !eventComposedPathContains(event, root)) return;
-
-      const commandId = chatViewCommandForShortcut(event);
-      if (!commandId) return;
-      if (!executeChatViewCommand(viewRef.current, commandId)) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-    };
-
-    window.addEventListener('keydown', handleKeyDown, { capture: true });
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown, { capture: true });
-    };
-  }, [store]);
+  // ⌘↑ / ⌘↓ in a focused transcript scroll it to the top / the latest message. From a text field the key is not the
+  // transcript's: the command declines and the same chord walks the conversation list (session.previous / next).
+  useCommandProvider({
+    scopeId: 'session-sub',
+    isActive: (element) => !!store && !!element && !!rootRef.current?.contains(element),
+    getCommands: () => (['chat.scrollToTop', 'chat.scrollToBottom'] as const).map((id) => ({
+      id,
+      execute: () => !isEditableElement(deepActiveElement()) && executeChatViewCommand(viewRef.current, id),
+    })),
+  });
 
   const handleViewerOpen = useCallback((src?: string, alt?: string) => {
     setViewer({ src, alt });
   }, []);
 
-  /** 输入框里点开一枚 chip:图片进看图查看器,文本给 `text` —— 由 chip 手上有什么决定(#5269)。 */
+  /** Text attachments open in the panel preview. */
   const handleAttachmentView = useCallback((att: ComposerAttachment) => {
-    if (openComposerImage(att)) return;
     setViewer({
       alt: att.name,
       text: att.previewText,
@@ -2088,6 +1794,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     onEdit: (itemId) => store?.beginMessageEdit(itemId),
     ...(canForkTask ? { onForkTask: () => forkTask({ projectId: store.projectId, sessionId: store.sessionId, navigate, translate }) } : {}),
   });
+  const openWebLink = useOpenWebLink();
   const transcriptCommands = useMemo<ChatCommands>(
     () => ({
       ...outputMenu.commands,
@@ -2101,6 +1808,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       onOpenSender: openMessageSender,
       classifyLink: classifyFileLink,
       onOpenLink: followConversationLink,
+      onOpenWebLink: openWebLink,
+      onDrawnPictureLink: noteDrawnPictureLink,
       // transcript 自己那颗停止按钮（用户消息卡右下角）一直**没有**接过宿主 ——
       // `commands().onStop?.()` 在 `?.` 上整条短路，按下去一个字节都不发（#3498 查出来的，
       // 与 #3500 同形）。composer 上那颗是另一条路，它一直是通的，于是这颗死按钮
@@ -2149,6 +1858,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         const [action] = reasonActions(reason, {
           switchModel: () => setModelMenuRequest((value) => value + 1),
           joinMembership: openMembershipPage,
+          openModelSettings: () => openShellSettings('model'),
         }, translate);
         const modelName = guguReasonCopy(reason).action === 'join-membership' ? membershipLock?.modelName : null;
         return { text: guguReasonText(reason, translate, modelName), ...(action ? { action } : {}) };
@@ -2250,7 +1960,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         if (store) dismissSubagent(store.sessionId, entryId);
       },
     }),
-    [store, translate, quotes.onMessageTextMount, quotes.restorePrompt, sourceMessage.reveal, sourceMessage.flashMessageId, conversationAgentName, historyActionsEnabled, messageEdit, messageEditPending, handleViewerOpen, translate, membershipLock?.modelName, outputMenu.commands]
+    [store, translate, quotes.onMessageTextMount, quotes.restorePrompt, sourceMessage.reveal, sourceMessage.flashMessageId, conversationAgentName, historyActionsEnabled, messageEdit, messageEditPending, handleViewerOpen, translate, membershipLock?.modelName, outputMenu.commands, openWebLink]
   );
 
   // A freshly-created task can publish its tab before the resource manager has finished attaching
@@ -2259,7 +1969,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   if (!store) {
     return (
       <div
-        className="relative h-full w-full bg-background-secondary-1"
+        className="relative h-full w-full bg-[var(--chat-bg)]"
         data-session-chat-surface={tabKind === 'side-chat' ? 'side-chat' : 'source'}
       />
     );
@@ -2289,7 +1999,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       data-session-chat-composer-slot={composerSlot ? 'present' : 'absent'}
       // Focusable (outside the Tab order) so ⌘F pressed after clicking the transcript lands in this panel.
       tabIndex={-1}
-      className={`relative h-full overflow-hidden bg-background-secondary-1 outline-none ${nativeChatAppearance}`}
+      className={`relative h-full overflow-hidden bg-[var(--chat-bg)] outline-none ${nativeChatAppearance}`}
     >
       <div className="flex h-full min-h-0 flex-col">
         <div className="relative min-h-0 flex-1">
@@ -2299,7 +2009,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
             composer="slot"
             composerPlacement={store.isEmpty ? 'center' : 'bottom'}
             stickToBottom
-            pinUserMessages={tabKind !== 'side-chat'}
             onReady={handleReady}
             onDisposed={handleTranscriptGone}
             commands={transcriptCommands}
@@ -2361,8 +2070,3 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     </div>
   );
 });
-
-function eventComposedPathContains(event: Event, element: HTMLElement): boolean {
-  if (event.composedPath().includes(element)) return true;
-  return event.target instanceof Node && element.contains(event.target);
-}

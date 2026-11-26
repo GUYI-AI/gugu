@@ -85,19 +85,7 @@ export class AppErrorBoundary extends React.Component<React.PropsWithChildren, A
       >
         {/* @@@2116 - the fallback replaces the whole chrome including the frameless title bar;
             keep a drag strip so the window can still be moved while broken. */}
-        <div
-          style={
-            {
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              height: 40,
-              zIndex: 0,
-              WebkitAppRegion: 'drag',
-            } as React.CSSProperties
-          }
-        />
+        <div className="window-drag-region fixed inset-x-0 top-0 z-0 h-10" />
         <div
           style={{
             position: 'relative',

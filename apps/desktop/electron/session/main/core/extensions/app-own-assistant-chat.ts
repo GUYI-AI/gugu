@@ -1,5 +1,5 @@
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
-import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision';
+import { ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC, pickAssistant } from '@gugu/core/shared/assistantProvision';
 
 /**
  * #1925 (API 46) Whether a conversation is the account's private chat with its own assistant — what the binding's `work` and
@@ -9,13 +9,13 @@ import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow }
  */
 const coded = (code: 'denied' | 'failed', message: string) => Object.assign(new Error(message), { code });
 
-/** The account's own assistant, by its provision marker; null: it has none. A marker that cannot be read is not "none". */
-async function personalAssistant(token: string, ownerId: string): Promise<string | null> {
+/** The account's own assistant, the agent the assistant App is bound to; null: it has none. A binding that cannot be read is not "none". */
+async function personalAssistant(token: string, _ownerId: string): Promise<string | null> {
   const client = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } });
-  const { data, error } = await client.from('agent_provisions').select(ASSISTANT_PROVISION_SELECT).eq('owner_user_id', ownerId).eq('member_key', 'assistant');
+  const { data, error } = await client.rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS);
   if (error) throw coded('failed', 'Could not verify the personal assistant');
   try {
-    return pickAssistant((data ?? []) as AssistantProvisionRow[])?.agentId ?? null;
+    return pickAssistant(data)?.agentId ?? null;
   } catch {
     throw coded('failed', 'Could not verify the personal assistant');
   }

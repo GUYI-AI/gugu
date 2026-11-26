@@ -15,7 +15,7 @@ import {
   wantTunnels,
 } from '../lib/sshLinkChannel'
 import { tunnelFacts, wantsTunnel } from '../lib/tunnelMachines'
-import { remoteLinkFacts } from '../lib/sshLinkOnline'
+import { remoteLinkFacts, reportedSshUpdate } from '../lib/sshLinkOnline'
 import { useSshLinkProblems } from './useSshLinkProblems'
 import { useSshMachineIds } from './useSshMachines'
 import { useDevicesStore } from '../store/devicesContext'
@@ -86,7 +86,7 @@ export function useRemoteHostsBridge(
           machineId: device.machine_id,
           ...(machineKeyOf(device) === currentMachineKey ? { isCurrentMachine: true as const } : {}),
           label: isAssistantHome(device, homeId) ? homeName : device.label,
-          ...remoteLinkFacts(device.device_id, sshMachines, linkProblems.get(device.device_id) ?? null, device.is_online),
+          ...remoteLinkFacts(device.device_id, sshMachines, reportedSshUpdate(device, linkProblems.get(device.device_id) ?? null), device.is_online),
           platform: device.platform,
           lastSeenAt: device.last_seen_at || null,
           sessionDigest: device.session_digest ?? null,

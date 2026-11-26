@@ -142,14 +142,17 @@ export async function probeEndpointProtocols(
     return { endpoints: [], models, failures };
   }
   const endpoints: ProtocolProbe['endpoints'] = [];
+  const refused: ProtocolProbe['endpoints'] = [];
   for (const protocol of order) {
     let last: ProbeReason = 'unreachable';
     for (const endpoint of basesFor(protocol)) {
       const result = await sendMinimal(fetchImpl, { endpoint, apiKey: input.apiKey, protocol, env: input.env }, modelId);
       if (result === 'connected') { endpoints.push({ protocol, baseUrl: endpoint }); break; }
-      last = result;
+      // 401/403: this path exists and only the key was refused. A later base's 404 for the same protocol does not take that back.
+      if (result === 'unauthorized' && !refused.some((entry) => entry.protocol === protocol)) refused.push({ protocol, baseUrl: endpoint });
+      if (last !== 'unauthorized') last = result;
     }
     if (!endpoints.some((entry) => entry.protocol === protocol)) failures.push({ step: protocol, reason: last });
   }
-  return { endpoints, models, failures };
+  return { endpoints, models, failures, ...(refused.length ? { refused } : {}) };
 }

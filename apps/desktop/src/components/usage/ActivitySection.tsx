@@ -37,7 +37,7 @@ import { tokenAmounts } from '../../lib/usage/charts'
 import { Layers, Zap } from '@/lib/icons'
 import { ModelBadge, SegSwitch, StatStrip } from './UsageParts'
 import { ModelAnalysisCard, RhythmCard } from './UsageChartCards'
-import '../settings/settings.css'
+import { SettingsSelect } from '../settings/SettingsSelect'
 import './usage.css'
 
 /**
@@ -67,9 +67,7 @@ export function ActivitySection({ preset }: { preset: RangePreset }) {
         {/* Before the device control: the control keeps the toolbar's end while the note comes and goes. */}
         {data.syncing && <span className="gg-usage-caption gg-loading-line mr-auto" data-testid="usage-syncing">{t('usage.syncing')}</span>}
         {data.devices === null ? <Unknown className="gg-usage-caption w-20" /> : deviceOptions.length > 1 || deviceId ? (
-          <select
-            // @@@6436 与设置里其它下拉(语言)同一种:手机上 44px 触控高度,桌面 32。
-            className="gg-settings-select"
+          <SettingsSelect
             aria-label={t('usage.deviceFilter')}
             value={deviceId ?? ''}
             onChange={(e) => setDeviceId(e.target.value || null)}
@@ -77,7 +75,7 @@ export function ActivitySection({ preset }: { preset: RangePreset }) {
           >
             <option value="">{t('usage.allDevices')}</option>
             {deviceOptions.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
-          </select>
+          </SettingsSelect>
         ) : <span className="gg-usage-caption">{t('usage.allDevices')}</span>}
       </div>
       {data.syncError && <span className="gg-usage-caption" data-testid="usage-sync-error" title={data.syncError}>{t('usage.syncError')}</span>}

@@ -22,12 +22,17 @@ import { menuSurfaceClassName } from '../ui/Menu'
 import { rowKeyActivate } from '../contacts/contactsPanelStyles'
 import { NOTIFICATION_LIST_SLOT_PREFIX, NOTIFICATION_TOGGLE_SLOT_PREFIX } from './NotificationSlot'
 import { NeedsYouTaskRow } from './NeedsYouTaskRow'
+import { GrowingList } from '@gugu/session-ui/react/growing-list'
 import { isAssistantAgent } from '@/session/renderer/features/assistant/assistant-lineage'
 import { markNeedsYouTaskSeen, useNeedsYouTasks, type NeedsYouTask } from './useNeedsYouTasks'
 import { passwordNotifications, usePasswordVault, openPasswordRequest, openPasswordDevicePrompt } from '@/lib/passwordBetaNotifications'
 import { promptedRequests } from '../password/passwordModel'
 import { persistentNotices } from '@/lib/notices'
 import { NoticeCard } from '../NoticeHost'
+
+const taskKey = (task: NeedsYouTask) => `${task.deviceId}/${task.session.conversationId}`
+const taskRowEstimate = () => 56
+const mobileTaskRowEstimate = () => 72
 
 installShellSlots()
 const EMPTY_SLOTS: ReadonlyMap<string, HTMLElement> = new Map()
@@ -49,6 +54,8 @@ export const NeedsYouHost = observer(function NeedsYouHost() {
   const open = useSidebarNotificationsOpen()
   const slots = readShellSlots()
   const entries = useSyncExternalStore(listener => slots?.subscribeSlots(listener) ?? (() => undefined), () => slots?.getSlots() ?? EMPTY_SLOTS)
+  // @@@growing-list: the task rows mount around the visible part of the list's scroller (one list on screen at a time).
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
   const [marking, setMarking] = useState(0)
   const [readError, setReadError] = useState<string | null>(null)
   useEffect(() => { setReadError(null) }, [open])
@@ -72,7 +79,7 @@ export const NeedsYouHost = observer(function NeedsYouHost() {
     </div>
     {showEmpty ? <div className="grid min-h-0 flex-1 place-items-center px-4 pb-4" data-testid="notification-list">
       <PaneEmptyState art={<Illustration name="no-notifications" className={mobile ? 'w-[104px]' : 'w-[88px]'} />} caption={t('settings.general.notificationsEmpty.title', { ns: 'main' })} hint={t('settings.general.notificationsEmpty.hint', { ns: 'main' })} />
-    </div> : <div data-testid="notification-list" data-notification-scroll="" role="listbox" aria-label={title} className="min-h-0 flex-1 overflow-auto px-2 pb-4">
+    </div> : <div ref={setScroller} data-testid="notification-list" data-notification-scroll="" data-growing-list="" role="listbox" aria-label={title} className="min-h-0 flex-1 overflow-auto px-2 pb-4">
       {error && <p role="alert">{error}</p>}
       {readError && <p role="alert">{readError}</p>}
       <RefreshFailed error={vault.failure} onRetry={vault.retry} />
@@ -83,7 +90,8 @@ export const NeedsYouHost = observer(function NeedsYouHost() {
       {deferred.length > 0 && <div className="flex flex-col gap-2 px-2 pb-2" data-testid="notification-notices">
         {deferred.map(notice => <NoticeCard key={notice.key} notice={notice} onClear={() => persistentNotices.clear(notice.key)} />)}
       </div>}
-      {tasks.map(task => {
+      <GrowingList scroller={scroller} count={tasks.length} getKey={index => taskKey(tasks[index]!)} estimateSize={mobile ? mobileTaskRowEstimate : taskRowEstimate} renderLine={index => {
+        const task = tasks[index]!
         // The assistant's own session is the assistant, not a task of its: its row opens the assistant's chat, which the one
         // decision (lib/assistantEntry.ts) sends to its App, or, when the App is not usable here, opens as any chat — never the
         // task view, which has no place for it. The task view's read bit is not set by a chat, so this click sets it.
@@ -97,8 +105,8 @@ export const NeedsYouHost = observer(function NeedsYouHost() {
           if (!failure) void markRead([task])
           return followLink({ kind: 'chat', chatId: assistant.chatId })
         }
-        return <NeedsYouTaskRow key={`${task.deviceId}/${task.session.conversationId}`} task={task} mobile={mobile} emphasis={unread(task)} onClick={openTask} onKeyDown={rowKeyActivate(openTask)} />
-      })}
+        return <NeedsYouTaskRow task={task} mobile={mobile} emphasis={unread(task)} onClick={openTask} onKeyDown={rowKeyActivate(openTask)} />
+      }} />
     </div>}
   </>
   return <>{[...entries].map(([key, element]) => {

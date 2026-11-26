@@ -6,13 +6,13 @@
  * instead: it fires whenever the answer goes from unknown (or another account's device) to a device id — first sign-in,
  * sign-in after a sign-out, account switch, or a resolution that failed before and succeeds now.
  */
-export function announceLocalDeviceIdentity(
-  resolve: () => Promise<string | null>,
+export function announceLocalDeviceIdentity<Args extends unknown[]>(
+  resolve: (...args: Args) => Promise<string | null>,
   announce: (deviceId: string) => void,
-): () => Promise<string | null> {
+): (...args: Args) => Promise<string | null> {
   let last: string | null = null
-  return async () => {
-    const deviceId = await resolve()
+  return async (...args) => {
+    const deviceId = await resolve(...args)
     const changed = deviceId !== null && deviceId !== last
     last = deviceId
     if (changed) announce(deviceId)

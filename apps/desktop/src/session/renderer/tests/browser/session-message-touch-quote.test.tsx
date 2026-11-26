@@ -10,6 +10,13 @@ import { FORWARD_PIECES_OPEN } from '@/components/chat/forwardToChats';
 import { platform } from '@/platform';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
+import { createRoot } from 'react-dom/client';
+import { act } from 'react';
+import { userEvent } from 'vitest/browser';
+import { SelectionLineLayer } from '../../features/sessions/annotations/selection-line';
+import { sessionAnnotations } from '../../features/sessions/annotations/session-annotations';
+import { ChatStoreProvider } from '@/store/chatContext';
+import { chatStore } from '../../../../../../../tests/support/testHarness';
 
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
 vi.mock('@/platform', () => ({ platform: { writeClipboardText: vi.fn() } }));
@@ -17,11 +24,11 @@ vi.mock('@/platform', () => ({ platform: { writeClipboardText: vi.fn() } }));
 let harness: ReturnType<typeof createReactHarness>;
 afterEach(() => { vi.useRealTimers(); harness?.cleanup(); document.getSelection()?.removeAllRanges(); });
 
-async function mountMessage() {
+async function mountMessage(phone = true) {
   const store = { sessionId: 'task-a', setDraftText: vi.fn(), chatState: { transcript: { state: { committedTurns: [] } } } } as unknown as AcpChatStore;
   function Harness() {
     const parent = useRef<HTMLDivElement>(null);
-    const quotes = useSessionMessageQuotes(store, useRef(null), { phone: true });
+    const quotes = useSessionMessageQuotes(store, useRef(null), { phone });
     useEffect(() => {
       const context = createChatContext({ locale: () => 'en-US', theme: buildChatTheme(DEFAULT_CONFIG, { preset: 'double', userGutter: 48, agentConversation: true }) });
       const state = createChatState(context);
@@ -147,8 +154,50 @@ it('offers the selection menu for selected text on the phone web build', async (
     expect(capture).toHaveBeenCalledOnce();
     const request = (capture.mock.calls[0][0] as CustomEvent<RendererMessageMenu>).detail;
     expect(request.hasSelection).toBe(true);
+    // A selection is commented on, not quoted; the phone has no comment box yet.
+    expect(request.onQuoteToComposer).toBeUndefined();
+    expect(request.onCommentSelection).toBeUndefined();
     request.onCopy?.();
     await Promise.resolve();
     expect(platform.writeClipboardText).toHaveBeenLastCalledWith('Original message words');
   } finally { window.removeEventListener(RENDERER_MESSAGE_MENU_OPEN, capture); }
+});
+
+it('comments on a desktop selection at the selection, into the task\'s draft; the whole message is still quoted', async () => {
+  const draft = sessionAnnotations.forSession('task-a');
+  draft.clear();
+  const layerHost = document.createElement('div');
+  document.body.append(layerHost);
+  const layer = createRoot(layerHost);
+  await act(async () => layer.render(<ChatStoreProvider value={chatStore()}><SelectionLineLayer /></ChatStoreProvider>));
+  const { text } = await mountMessage(false);
+  const capture = vi.fn();
+  window.addEventListener(RENDERER_MESSAGE_MENU_OPEN, capture);
+  try {
+    const range = document.createRange();
+    const words = document.createTreeWalker(text, NodeFilter.SHOW_TEXT).nextNode()!;
+    range.setStart(words, 0); range.setEnd(words, 'Original message'.length);
+    document.getSelection()!.removeAllRanges(); document.getSelection()!.addRange(range);
+    const box = range.getBoundingClientRect();
+    text.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: box.left, clientY: box.bottom }));
+    const request = (capture.mock.calls[0][0] as CustomEvent<RendererMessageMenu>).detail;
+    expect(request.onQuoteToComposer).toBeUndefined();
+    await act(async () => request.onCommentSelection!());
+    await until('the numbered comment box at the selection', () => document.querySelector('[data-selection-line] [data-annotation-editor]')?.textContent?.includes('1') ?? false);
+    await userEvent.keyboard('Say why');
+    await userEvent.keyboard('{Enter}');
+    await until('the comment joined the draft', () => draft.items.length === 1);
+    expect(draft.items[0]).toMatchObject({ kind: 'message', messageId: 'source', authorId: null, authorName: expect.any(String), text: 'Original message', annotation: 'Say why', number: 1 });
+    expect(document.querySelector('[data-selection-line]')).toBeNull();
+    document.getSelection()!.removeAllRanges();
+    text.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: box.left, clientY: box.bottom }));
+    const whole = (capture.mock.calls[1][0] as CustomEvent<RendererMessageMenu>).detail;
+    expect(whole.onCommentSelection).toBeUndefined();
+    expect(whole.onQuoteToComposer).toBeDefined();
+  } finally {
+    window.removeEventListener(RENDERER_MESSAGE_MENU_OPEN, capture);
+    draft.clear();
+    await act(async () => layer.unmount());
+    layerHost.remove();
+  }
 });

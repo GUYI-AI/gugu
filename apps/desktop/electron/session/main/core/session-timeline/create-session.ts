@@ -509,7 +509,12 @@ async function createSessionSteps(
   if (request.fastMode !== undefined && typeof request.fastMode !== 'boolean') {
     return fail('fast_rejected', 'Fast mode must be a boolean');
   }
-  if (request.fastMode === true) {
+  const fastCustom = request.fastMode === true ? customModelRefFromOption(request.model?.trim()) : null;
+  if (fastCustom) {
+    if (!await (await import('@main/core/agents/custom-models')).customModelFastAllowed(request.harness, fastCustom)) {
+      return fail('fast_rejected', 'This custom model does not declare Fast over an OpenAI Chat or Responses address');
+    }
+  } else if (request.fastMode === true) {
     if (!request.model?.trim()) return fail('fast_rejected', 'Fast requires an explicit model');
     const catalog = await createModels({ harness: request.harness, sessionView: view.view, model: request.model });
     if (!catalog.ok || catalog.value.fast?.model !== request.model.trim()) {

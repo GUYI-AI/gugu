@@ -66,7 +66,7 @@ export function MarketDetailConfirmations({ children }: { children: ReactNode })
       {children}
       {request && (
         <Dialog open onOpenChange={(open) => { if (!open) finish(false); }}>
-          <DialogContent className="z-[51] rounded-2xl bg-background sm:max-w-[480px]" data-testid="market-detail-confirmation">
+          <DialogContent className="rounded-2xl bg-background sm:max-w-[480px]" data-testid="market-detail-confirmation">
             <DialogHeader className="pb-4">
               <DialogTitle className="text-base font-semibold">{request.title}</DialogTitle>
             </DialogHeader>

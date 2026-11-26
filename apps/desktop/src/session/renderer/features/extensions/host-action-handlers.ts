@@ -1,3 +1,4 @@
+import type { AppCredentialChooseAsk } from '@shared/extensions/app-credentials';
 import { openFolderInTab } from '@renderer/features/sessions/file-view/file-view-kinds';
 import { findSessionAnywhere } from '@renderer/features/sessions/stores/session-selectors';
 import { composeChatDraft } from '@/lib/composeDraft';
@@ -26,6 +27,7 @@ import {
   EXTENSION_MEMBER_FACES_METHOD,
   EXTENSION_PICK_DISPATCH_TARGET_METHOD,
   EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD,
+  EXTENSION_CHOOSE_CREDENTIAL_METHOD,
   EXTENSION_TRANSCRIBE_VOICE_NOTE_METHOD,
   EXTENSION_EXPORT_VOICE_NOTE_METHOD,
   EXTENSION_VOICE_NOTE_METHOD,
@@ -293,8 +295,13 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       void import('../apps/app-host-layer').then(({ appPageNewDocument, pageKey }) => appPageNewDocument(extensionId, pageKey(sessionId, tabId)), () => undefined);
       return;
     case 'openBrowserTab': {
+      if (!sessionId) return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ chatPageOrigin }) => {
+        const source = chatPageOrigin(tabId);
+        if (!source) throw new Error('This chat page is no longer open');
+        source.pane.open('browser', { initialUrl: action.url }, { from: source.tabId, intent: 'newTab' });
+      });
       const view = requireSessionView(sessionId);
-      view.showPage(action.url, { reload: false, from: tabId });
+      view.showPage(action.url, { reload: false, from: tabId, intent: 'newTab' });
       view.setFocusedRegion('main');
       return;
     }
@@ -478,6 +485,15 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
   [EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD]: async (params: unknown) => {
     const { resourceWindow } = await import('@renderer/features/assistant/voice-notes/app-resource-window');
     return resourceWindow().confirmRemoval(params as ResourceRemovalAsk);
+  },
+  /** API 65 `gugu.credentials.choose`: the host's dialog in this window; answers once it closes (main reads the pick). */
+  [EXTENSION_CHOOSE_CREDENTIAL_METHOD]: async (params: unknown) => {
+    const { showModal } = await import('@renderer/lib/modal/modal-provider');
+    return new Promise<boolean>((resolve) => showModal('appCredentialModal', {
+      ask: params as AppCredentialChooseAsk,
+      onSuccess: () => resolve(true),
+      onClose: () => resolve(false),
+    }));
   },
   [EXTENSION_TRANSCRIBE_VOICE_NOTE_METHOD]: async (params: unknown) => {
     const { resourceWindow } = await import('@renderer/features/assistant/voice-notes/app-resource-window');

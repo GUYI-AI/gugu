@@ -8,8 +8,9 @@ export const saveCustomModelSchema = z.object({
   id: z.string().min(1).optional(),
   name: z.string().trim().min(1).max(80),
   apiKey: z.string().trim().min(1).max(8192).optional(),
+  resolveUrlConflict: z.boolean().optional(),
   ...customModelMetaSchema.omit({ removed: true }).shape,
-}).refine(({ models }) => models.length > 0, 'Pick at least one model');
+}).refine(({ id, models, resolveUrlConflict, disabledModels }) => models.length > 0 || Boolean(id && (resolveUrlConflict || disabledModels?.length)), 'Pick at least one model');
 export type SaveCustomModel = z.infer<typeof saveCustomModelSchema>;
 
 export const testCustomModelSchema = z.object({
@@ -39,5 +40,10 @@ export const customModelProtocolProbeSchema = z.object({
     step: z.union([z.literal('models'), modelProtocolSchema]),
     reason: z.enum([...connectionUnlistedReasonSchema.options, 'no-model', 'refused']),
   })),
+  /**
+   * The protocols whose request the address refused for the key (401/403), each with the base URL that refused it, in the
+   * order tried: the path exists, only the key was not accepted. A save through a refused key stores the first; absent when none was.
+   */
+  refused: z.array(modelEndpointSchema).optional(),
 });
 export type CustomModelProtocolProbe = z.infer<typeof customModelProtocolProbeSchema>;

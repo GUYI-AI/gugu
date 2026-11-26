@@ -53,35 +53,3 @@ export function mergeWindowsPath(read: string, current: string): string {
   }
   return merged.join(path.win32.delimiter);
 }
-
-/**
- * One value out of a `reg export` file (UTF-16LE whatever the system code page — `reg query` prints in the console
- * code page, so a non-ASCII path on zh-CN came back garbled). Handles the two string types:
- *  · REG_SZ `"Name"="C:\\x"` — `\` and `"` escaped inside the quotes;
- *  · REG_EXPAND_SZ `"Name"=hex(2):43,00,…,\` — UTF-16LE bytes, wrapped over `\`-continued lines. `expand` says the
- *    `%VAR%` references in it are meant to be expanded (`expandWindowsEnvStrings`).
- * Value names compare case-insensitively, as the registry does (`Path` and `PATH` are one value).
- */
-export function parseRegExportValue(exported: string, name: string): { value: string; expand: boolean } | null {
-  const prefix = `"${name.replace(/[\\"]/g, '\\$&')}"=`.toLowerCase();
-  const lines = exported.split(/\r?\n/);
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trimEnd();
-    if (!line.toLowerCase().startsWith(prefix)) continue;
-    const data = line.slice(prefix.length);
-    if (data.length >= 2 && data.startsWith('"') && data.endsWith('"')) {
-      return { value: data.slice(1, -1).replace(/\\(.)/g, '$1'), expand: false };
-    }
-    if (!data.startsWith('hex(2):')) return null;
-    let hex = data.slice('hex(2):'.length);
-    while (hex.endsWith('\\') && i + 1 < lines.length) hex = hex.slice(0, -1) + lines[++i].trim();
-    const bytes = Buffer.from(hex.split(',').filter(Boolean).map((byte) => parseInt(byte, 16)));
-    return { value: bytes.toString('utf16le').replace(/\0+$/, ''), expand: true };
-  }
-  return null;
-}
-
-/** `%NAME%` → its value in `env` (names case-insensitive); an undefined name stays as written, as Windows leaves it. */
-export function expandWindowsEnvStrings(value: string, env: NodeJS.ProcessEnv): string {
-  return value.replace(/%([^%]+)%/g, (whole, name: string) => getWindowsEnvValue(env, name) ?? whole);
-}

@@ -6,7 +6,7 @@ import { userIdFromSupabaseAccessToken } from '@gugu/core/cloud/runtimeAuthProvi
 import { resolveGuguHome } from '@gugu/core/local/state/paths'
 import { platformModelsEnabled } from '@gugu/core/cloud/optionalServices'
 import { assistantHomeKind } from '@gugu/core/shared/assistantPolicy'
-import { ASSISTANT_PROVISION_SELECT, pickAssistant, provisionIdentityRemovedAt, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision'
+import { ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC, ASSISTANT_PROVISION_SELECT, pickAssistant, provisionIdentityRemovedAt, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision'
 import { createRPCController } from '@shared/lib/ipc/rpc'
 import { currentAccountAccessToken } from '../extensions/account-token'
 import { createLogger } from '../../../../lib/logger'
@@ -47,10 +47,9 @@ async function account(input: AssistantServerBinding) {
 async function validate(input: AssistantServerBinding, starting: boolean) {
   const { client } = await account(input)
   if (!starting) return
-  const { data, error } = await client.from('agent_provisions').select(ASSISTANT_PROVISION_SELECT)
-    .eq('owner_user_id', input.ownerUserId).eq('member_key', 'assistant')
+  const { data, error } = await client.rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS)
   if (error) throw error
-  if (pickAssistant((data ?? []) as AssistantProvisionRow[])) fail('assistant_exists')
+  if (pickAssistant(data)) fail('assistant_exists')
   await account(input)
 }
 

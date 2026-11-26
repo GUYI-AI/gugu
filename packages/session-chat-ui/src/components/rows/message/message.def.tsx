@@ -1,9 +1,10 @@
 /** @jsxImportSource solid-js */
 import { attachmentKind } from '@gugu/core/shared/ui/attachmentType';
+import { fileImageLinks, withoutFileImages } from '@gugu/session-core/acp/inline-file-images';
 import { safeDeliveredBody, type DeliveryMessagePresentation } from '@session-chat/state/delivery-presentation';
 import { rowTranslator } from '../readable-label';
 import { ConversationMessage, conversationMessageHeight, isConversationMessage } from './ConversationMessage';
-import { StreamContext, type StreamAnimation } from '@session-chat/components/contexts/StreamContext';
+import { StreamContext, createStreamAnimation } from '@session-chat/components/contexts/StreamContext';
 import { BlockStackView } from '@session-chat/components/primitives/BlockStackView';
 import { CopyButton } from '@session-chat/components/primitives/CopyButton';
 import { proseLinesHeight } from '@session-chat/components/rows/markdown/html/layout';
@@ -104,10 +105,24 @@ export function normalizeMessage(item: ChatMessage, deliveredMessage?: (id: stri
   // 用户消息上的附件条只画结构化附件(上传的、发出的文件)。正文里的 `@[name](path)` 是引用,
   // 不论路径是不是绝对的,都留在正文里画成胶囊 —— 引用不是「我附了它」。
   if (normalized.role !== 'user') return normalized;
-  const imageNames = new Set(normalized.attachments?.map(file => file.name) ?? []);
-  const files = (item.files ?? []).filter(file => !imageNames.has(file.name)).map(file => {
+  // A picture placed in the words (`![Image 1](gugu-file://<id>…)`) is drawn above them on the strip, the way a chat draws
+  // a picture with its caption (owner 11-26): the words leave its place out. Each picture keeps the size it was sent with.
+  const sent = item.files ?? [];
+  const isSent = (itemId: string) => sent.some(file => file.itemId === itemId);
+  if (fileImageLinks(normalized.text).some(link => isSent(link.itemId))) normalized.text = withoutFileImages(normalized.text, isSent);
+  // An attachment the agent echoes back (a replayed turn) names no folder file, only the file's name: it is the first sent
+  // file of that name not taken yet. Echoes come in the turn's order, so two pastes both called `image.png` keep their own.
+  const unmatched = [...sent];
+  normalized.attachments = normalized.attachments?.map(file => {
+    const at = unmatched.findIndex(each => each.name === file.name);
+    if (at < 0) return file;
+    const [match] = unmatched.splice(at, 1);
+    return (file.kind ?? 'image') === 'image' && match.imageDimensions ? { ...file, imageDimensions: match.imageDimensions } : file;
+  });
+  const files = unmatched.map(file => {
     const href = `gugu-file://${file.itemId}?v=${file.version}`;
-    return { id: href, href, name: file.name, kind: attachmentKind({ fileName: file.name, mimeType: file.mimeType }) };
+    return { id: href, href, name: file.name, kind: attachmentKind({ fileName: file.name, mimeType: file.mimeType }),
+      ...(file.imageDimensions ? { imageDimensions: file.imageDimensions } : {}) };
   });
   // Each comment sent with the words is a row of its own: what it points at, and the comment.
   const annotations = (item.annotations ?? []).map(annotation => ({ id: `annotation:${annotation.number}`, kind: 'annotation' as const,
@@ -193,11 +208,7 @@ function AssistantRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Messa
     return { blocks, settledCount };
   });
 
-  const streamAnimation: StreamAnimation = {
-    frontier: new Map(),
-    streaming: () => props.data.streaming === true,
-    settledCount: () => parsed().settledCount,
-  };
+  const streamAnimation = createStreamAnimation(() => props.data.text, () => props.data.streaming === true, () => parsed().settledCount);
 
   const stack = createMemo<Measured<StackLayout> | null>(() => {
     const ctx = mCtx();

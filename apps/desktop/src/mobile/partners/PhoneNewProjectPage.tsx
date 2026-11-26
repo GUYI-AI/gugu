@@ -21,6 +21,7 @@ import { RefreshFailed } from '@/components/ui/RefreshFailed'
 import { useReplica } from '@/lib/replica'
 import { LOCAL_SETTINGS_HOST_KEY, appSettingsModel } from '@/session/renderer/features/settings/app-settings-client'
 import { readInterface, takeLegacyInterface, writeInterface } from '@/lib/viewStateTable'
+import { isImeComposing } from '@/lib/ime'
 
 export type CreatedProject = { chatId: string | null; deviceId: string; localProjectId: string; name: string; createdAt: string }
 
@@ -166,7 +167,7 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
             value={name}
             autoFocus={active}
             onChange={(event) => { setName(event.target.value); setError(null) }}
-            onKeyDown={(event) => { if (event.key === 'Enter') void create() }}
+            onKeyDown={(event) => { if (event.key === 'Enter' && !isImeComposing(event)) void create() }}
           />
         </div>
         <div className="gg-partners-navrows">
@@ -176,7 +177,7 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
                 <span className="gg-partners-navrow-icon"><Monitor size={20} /></span>
                 <span className="gg-partners-navrow-label">{t('partners.newProject.machine')}</span>
                 <span className="gg-partners-row-value">{device ? machineLabel(device) : t('partners.newProject.noMachine')}</span>
-                <ChevronRight size={16} aria-hidden className="gg-partners-navrow-chevron" />
+                {machines.length ? <ChevronRight size={16} aria-hidden className="gg-partners-navrow-chevron" /> : null}
               </Button>
             } />
             <DropdownMenu.Content className="min-w-[160px]">
@@ -194,7 +195,7 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
             <span className="gg-partners-navrow-icon">{folderPath ? <Folder size={20} /> : <FolderPlus size={20} />}</span>
             <span className="gg-partners-navrow-label">{t('partners.newProject.folder')}</span>
             <span className="gg-partners-row-value" title={folderPath ?? undefined}>{folderValue}</span>
-            <ChevronRight size={16} aria-hidden className="gg-partners-navrow-chevron" />
+            {device ? <ChevronRight size={16} aria-hidden className="gg-partners-navrow-chevron" /> : null}
           </Button>
           <PhoneComposerSheet open={folderMenu && !!device} onClose={() => setFolderMenu(false)}
             title={t('partners.newProject.folder')} testId="phone-new-project-folder-sheet">

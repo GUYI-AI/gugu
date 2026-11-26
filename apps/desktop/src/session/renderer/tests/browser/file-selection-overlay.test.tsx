@@ -2,7 +2,8 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
-import { FileSelectionLayer, runFileSelection } from '@renderer/features/sessions/annotations/file-selection-overlay'
+import { runFileSelection } from '@renderer/features/sessions/annotations/file-selection-overlay'
+import { SelectionLineLayer } from '@renderer/features/sessions/annotations/selection-line'
 import type { FileSelectionAsk } from '@shared/extensions/file-selection'
 import { APP_COMPOSE_EVENT } from '@shared/extensions/app-runtime-protocol'
 import { ChatStoreProvider } from '@/store/chatContext'
@@ -22,7 +23,7 @@ beforeEach(async () => {
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
-  await act(async () => root.render(<ChatStoreProvider value={chatStore({ sendMessageToChat })}><FileSelectionLayer /></ChatStoreProvider>))
+  await act(async () => root.render(<ChatStoreProvider value={chatStore({ sendMessageToChat })}><SelectionLineLayer /></ChatStoreProvider>))
   guest = document.createElement('div')
   Object.assign(guest.style, { position: 'fixed', left: '20px', top: '20px', width: '400px', height: '300px' })
   guest.tabIndex = -1

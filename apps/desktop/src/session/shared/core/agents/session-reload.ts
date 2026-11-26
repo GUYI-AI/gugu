@@ -11,6 +11,7 @@
  */
 
 import type { GuguPermissionMode } from '@gugu/session-core/acp';
+import type { SessionContextChoice } from '../sessions/session-config';
 import type { CodexStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
 
 /** 渲染层 → 主进程的重开请求(逻辑名 `taskpageSession.reload`)。 */
@@ -49,10 +50,11 @@ export interface SessionReloadRequest {
   modelSource?: 'platform' | 'own';
   /**
    * 思考档位,三态:字符串 = 换成这一档;`null` = 清掉、回 harness 默认;**缺席 = 不碰**。
-   * 只给终端会话用 —— 通用模式的档位在活会话里当场改,不需要重开。
+   * ACP 重开只在同时换模型时携带档位。单独换档通过现有的活会话设置写入。
    * 与 `model` 同一条纪律:由宿主先写进会话记录、再重开,spawn 按记录重算。
    */
   effort?: string | null;
+  contextChoice?: SessionContextChoice;
   /**
    * 这次要**关掉**的那几台 MCP server(harness 自己的配置键);不改 MCP 的重开(如换模型)省略。
    *

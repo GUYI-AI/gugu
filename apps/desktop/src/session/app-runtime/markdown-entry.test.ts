@@ -10,7 +10,7 @@ import { renderer } from './markdown-entry';
 const gugu = {
   openLink: vi.fn(async (_url: string) => undefined),
   reportError: vi.fn(async (_message: string) => undefined),
-  openBrowserTab: vi.fn(async (_url: string) => undefined),
+  openBrowserTab: vi.fn(async (_url: string, _options?: { external?: boolean }) => undefined),
   clipboard: { writeText: vi.fn(async (_text: string) => undefined) },
   files: {
     openWith: vi.fn(async (_file: unknown, _options?: unknown) => undefined),
@@ -28,9 +28,9 @@ function rendered(text: string, options?: unknown): HTMLElement {
   return box;
 }
 
-const click = (element: Element | null) => {
+const click = (element: Element | null, modifiers: MouseEventInit = {}) => {
   if (!element) throw new Error('nothing to click');
-  const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+  const event = new MouseEvent('click', { bubbles: true, cancelable: true, ...modifiers });
   element.dispatchEvent(event);
   return event;
 };
@@ -193,7 +193,25 @@ describe('gugu.markdown(): links, the ways an App page has out', () => {
     expect(click(link(root, '跳')).defaultPrevented).toBe(true);
     expect(scrolled).toHaveBeenCalledOnce();
     expect(click(link(root, '网')).defaultPrevented).toBe(true);
-    expect(gugu.openBrowserTab).toHaveBeenCalledWith('https://example.com/x');
+    expect(gugu.openBrowserTab).toHaveBeenCalledExactlyOnceWith('https://example.com/x');
+  });
+
+  it.each([{ metaKey: true }, { ctrlKey: true }])('a modified web click opens the system browser: %j', (modifiers) => {
+    const root = box();
+    expect(click(link(root, '网'), modifiers).defaultPrevented).toBe(true);
+    expect(gugu.openBrowserTab).toHaveBeenCalledExactlyOnceWith('https://example.com/x', { external: true });
+  });
+
+  it.each([{ metaKey: true }, { ctrlKey: true }])('modified resource/file/anchor links keep their own routing: %j', (modifiers) => {
+    const root = box();
+    const scrolled = vi.spyOn(root.querySelector('h2')!, 'scrollIntoView');
+    click(link(root, '跳'), modifiers);
+    click(link(root, '群文件'), modifiers);
+    click(link(root, '旁边'), modifiers);
+    expect(scrolled).toHaveBeenCalledOnce();
+    expect(gugu.openLink).toHaveBeenCalledExactlyOnceWith('gugu-file://0b6d3a52-5a3e-4b70-9f0e-1d2c3b4a5f60');
+    expect(gugu.files.openWith).toHaveBeenCalledExactlyOnceWith({ chat: 'chat-1', name: 'notes/todo.md' });
+    expect(gugu.openBrowserTab).not.toHaveBeenCalled();
   });
 
   it('a resource link uses openLink; relative files still open beside this file', () => {

@@ -214,6 +214,8 @@ function openDatabase(indexedDb: IDBFactory): Promise<IDBDatabase> {
 function createNormalizedStores(db: IDBDatabase): void {
   for (const name of IM_STORE_NAMES) {
     if (db.objectStoreNames.contains(name)) continue
+    // Nothing reads these indexes any more (@@@account-key-range); dropping them is #3967 — Chromium deletes
+    // an index entry by entry inside the upgrade (90 s for 1.3M entries), so it needs its own migration.
     const store = db.createObjectStore(name, { keyPath: KEY_PATHS[name] })
     store.createIndex('accountId', 'accountId')
     if (name === 'membership') store.createIndex('accountChat', ['accountId', 'chatId'])
@@ -343,7 +345,7 @@ function createIndexedDbAdapter(handle: IndexedDbHandle): LocalImDbAdapter {
       const done = transactionDone(transaction)
       const retired = requestResult(transaction.objectStore(RETIRED_ACCOUNTS).get(accountId))
       const entries = await Promise.all(IM_STORE_NAMES.map(async (name) => {
-        const values = await requestResult<LocalImRow[]>(transaction.objectStore(name).index('accountId').getAll(accountId))
+        const values = await requestResult<LocalImRow[]>(transaction.objectStore(name).getAll(accountRange(accountId)))
         return [name, values] as const
       }))
       const isRetired = await retired
@@ -371,20 +373,14 @@ function createIndexedDbAdapter(handle: IndexedDbHandle): LocalImDbAdapter {
       const db = await handle.get()
       const transaction = db.transaction([...touched, RETIRED_ACCOUNTS], 'readwrite')
       let enqueueError: unknown
-      // A clear's cursor must finish BEFORE replacement puts: an advancing
-      // IndexedDB cursor would otherwise visit and delete the new rows too.
-      const enqueue = (offset: number): void => {
+      // Requests in one transaction run in the order they were placed, so a clear's range delete lands before the
+      // replacement puts that follow it.
+      const enqueue = (): void => {
         try {
-          for (let index = offset; index < operations.length; index += 1) {
-            const operation = operations[index]!
+          for (const operation of operations) {
             if (operation.type === 'clearAccount') {
               assertId(operation.accountId, 'accountId')
-              let remaining = IM_STORE_NAMES.length
-              for (const store of IM_STORE_NAMES) deleteAccountRows(transaction.objectStore(store), operation.accountId, () => {
-                remaining -= 1
-                if (remaining === 0) enqueue(index + 1)
-              })
-              return
+              for (const store of IM_STORE_NAMES) deleteAccountRows(transaction.objectStore(store), operation.accountId)
             } else if (operation.type === 'put') {
               assertId(operation.value.accountId, 'row.accountId')
               transaction.objectStore(operation.store).put(operation.value)
@@ -400,7 +396,7 @@ function createIndexedDbAdapter(handle: IndexedDbHandle): LocalImDbAdapter {
       const done = transactionDone(transaction)
       const owners = writeOwners(operations)
       let pending = owners.length, refused = false
-      if (!pending) enqueue(0)
+      if (!pending) enqueue()
       for (const owner of owners) {
         const check = transaction.objectStore(RETIRED_ACCOUNTS).get(owner)
         check.onsuccess = () => {
@@ -408,7 +404,7 @@ function createIndexedDbAdapter(handle: IndexedDbHandle): LocalImDbAdapter {
           if (check.result) {
             refused = true; enqueueError = new Error('Account cache is retired'); transaction.abort(); return
           }
-          if (--pending === 0) enqueue(0)
+          if (--pending === 0) enqueue()
         }
       }
       await done.catch((error) => { throw enqueueError ?? error })
@@ -420,7 +416,7 @@ function createIndexedDbAdapter(handle: IndexedDbHandle): LocalImDbAdapter {
       const done = transactionDone(transaction)
       try {
         transaction.objectStore(RETIRED_ACCOUNTS).put({ accountId, protocolVersion: 2 })
-        for (const name of IM_STORE_NAMES) deleteAccountRows(transaction.objectStore(name), accountId, () => {})
+        for (const name of IM_STORE_NAMES) deleteAccountRows(transaction.objectStore(name), accountId)
       } catch (error) { transaction.abort(); await done.catch(() => undefined); throw error }
       await done
     },
@@ -428,14 +424,17 @@ function createIndexedDbAdapter(handle: IndexedDbHandle): LocalImDbAdapter {
   }
 }
 
-function deleteAccountRows(store: IDBObjectStore, accountId: string, done: () => void): void {
-  const cursor = store.index('accountId').openKeyCursor(IDBKeyRange.only(accountId))
-  cursor.onsuccess = () => {
-    const current = cursor.result
-    if (!current) { done(); return }
-    store.delete(current.primaryKey)
-    current.continue()
-  }
+// @@@account-key-range - every store's primary key starts with accountId (KEY_PATHS), so one account's rows are exactly
+// this primary-key range: arrays sort above strings, so [accountId, []] is above every [accountId, <string>, ...].
+// (#3956) Reads and clears use it, never the `accountId` index: Chromium leaves a deleted row's index entry behind and
+// only a readwrite cursor or a close-time sweep removes it, so a readonly index read walks every row ever deleted —
+// one per account revision (`view` operation rows), 1.3M on one install, 6.7 s at every start.
+function accountRange(accountId: string): IDBKeyRange {
+  return IDBKeyRange.bound([accountId], [accountId, []])
+}
+
+function deleteAccountRows(store: IDBObjectStore, accountId: string): void {
+  store.delete(accountRange(accountId))
 }
 
 function keyForRow(store: ImStoreName, row: LocalImRow): IDBValidKey {

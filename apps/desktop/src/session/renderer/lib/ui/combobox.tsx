@@ -10,6 +10,7 @@ import {
   InputGroupInput,
 } from '@renderer/lib/ui/input-group';
 import { cn } from '@renderer/utils/utils';
+import { useProbedRef } from '@/lib/overlayOcclusion';
 
 const Combobox = ComboboxPrimitive.Root;
 
@@ -99,6 +100,7 @@ function ComboboxContent({
   anchor,
   collisionAvoidance,
   finalFocus = false,
+  ref,
   ...props
 }: ComboboxPrimitive.Popup.Props &
   Pick<
@@ -114,11 +116,12 @@ function ComboboxContent({
         alignOffset={alignOffset}
         anchor={anchor}
         collisionAvoidance={collisionAvoidance}
-        className="isolate z-50"
+        className="isolate z-[var(--z-menu)]"
         style={{ zIndex: useUiPopupZIndex() }}
       >
         <OpenLayer />
         <ComboboxPrimitive.Popup
+          ref={useProbedRef('session-combobox', ref)}
           data-slot="combobox-content"
           data-chips={!!anchor}
           finalFocus={finalFocus}

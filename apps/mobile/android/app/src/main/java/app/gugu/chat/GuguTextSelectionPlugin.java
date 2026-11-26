@@ -23,18 +23,23 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
-/** A real selectable TextView owns the highlight, handles, action mode and clipboard. */
+/**
+ * A real selectable TextView owns the highlight, handles, action mode and clipboard. With a comment label the action mode
+ * also offers Comment: pressed, the page closes and the call resolves with the selected words ({ comment }).
+ */
 @CapacitorPlugin(name = "GuguTextSelection")
 public class GuguTextSelectionPlugin extends Plugin {
+    private static final int COMMENT = 0x67756775;
     private Dialog dialog;
     private PluginCall pending;
     private String selectionId;
+    private String comment;
 
     @PluginMethod
     public void open(PluginCall call) {
         String id = call.getString("id"), text = call.getString("text");
         Integer start = call.getInt("start"), end = call.getInt("end");
-        String title = call.getString("title"), closeLabel = call.getString("closeLabel");
+        String title = call.getString("title"), closeLabel = call.getString("closeLabel"), commentLabel = call.getString("commentLabel");
         JSObject appearance = call.getObject("appearance");
         final NativeRichText rich;
         try { rich = new NativeRichText(text, call.getArray("runs"), call.getArray("paragraphs"), call.getArray("blocks")); }
@@ -47,7 +52,7 @@ public class GuguTextSelectionPlugin extends Plugin {
             if (dialog != null) { call.reject("Text selection is already open"); return; }
             boolean dark = Boolean.TRUE.equals(call.getBoolean("dark"));
             Dialog page = new Dialog(getActivity(), dark ? R.style.GuguTextSelectionOverlayDark : R.style.GuguTextSelectionOverlay);
-            dialog = page; pending = call; selectionId = id;
+            dialog = page; pending = call; selectionId = id; comment = null;
             FrameLayout root = new FrameLayout(page.getContext());
             root.setOnClickListener(view -> page.dismiss());
             float scale = getBridge().getWebView().getWidth() / (float) appearance.optDouble("viewportWidth");
@@ -64,9 +69,18 @@ public class GuguTextSelectionPlugin extends Plugin {
                 call.reject("Cannot style native text selection", error); return;
             }
             body.setCustomSelectionActionModeCallback(new ActionMode.Callback() {
-                @Override public boolean onCreateActionMode(ActionMode mode, Menu menu) { return true; }
+                @Override public boolean onCreateActionMode(ActionMode mode, Menu menu) {
+                    if (commentLabel != null && !commentLabel.isEmpty()) menu.add(Menu.NONE, COMMENT, 0, commentLabel);
+                    return true;
+                }
                 @Override public boolean onPrepareActionMode(ActionMode mode, Menu menu) { return false; }
-                @Override public boolean onActionItemClicked(ActionMode mode, MenuItem item) { return false; }
+                @Override public boolean onActionItemClicked(ActionMode mode, MenuItem item) {
+                    if (item.getItemId() != COMMENT) return false;
+                    int from = Math.min(body.getSelectionStart(), body.getSelectionEnd()), to = Math.max(body.getSelectionStart(), body.getSelectionEnd());
+                    if (from >= 0 && to > from) comment = body.getText().subSequence(from, to).toString();
+                    mode.finish();
+                    return true;
+                }
                 @Override public void onDestroyActionMode(ActionMode mode) { body.post(page::dismiss); }
             });
             FrameLayout.LayoutParams placement = new FrameLayout.LayoutParams(
@@ -145,8 +159,13 @@ public class GuguTextSelectionPlugin extends Plugin {
     private void finish(String id) {
         if (!id.equals(selectionId)) return;
         PluginCall completion = pending;
-        dialog = null; pending = null; selectionId = null;
-        if (completion != null) completion.resolve();
+        String words = comment;
+        dialog = null; pending = null; selectionId = null; comment = null;
+        if (completion == null) return;
+        if (words == null) { completion.resolve(); return; }
+        JSObject result = new JSObject();
+        result.put("comment", words);
+        completion.resolve(result);
     }
 
     @Override protected void handleOnDestroy() {

@@ -16,7 +16,8 @@
  * head and front matter as properties — `rehypeDocumentBlocks`):
  *  - mention chips, carrying the attributes hover and click read;
  *  - images as link chips: a picture's box is unknown until it loads, and a row's
- *    height has to be known before it paints; nothing is fetched on render;
+ *    height has to be known before it paints (a transcript link's site icon is a fixed box, so it may load: the shared
+ *    `rehypeLinkIcons`; a whole document fetches nothing);
  *  - a scroll box around each table, so a wide table scrolls instead of being
  *    clipped at the row's edge.
  *
@@ -27,6 +28,7 @@ import {
   createMarkdownParser,
   markdownRehypePlugins,
   normalizeMarkdownSourceWithLines,
+  rehypeLinkIcons,
   type MarkdownDialectOptions,
 } from '@gugu/session-shared/markdown/dialect';
 import { fileLabelParts } from '@gugu/session-shared/markdown';
@@ -199,7 +201,7 @@ export function treeToBlocks(tree: Root, nextId: () => BlockId): Block[] {
       },
     } as never,
   }) as HastRoot;
-  const rehype = unified().use(markdownRehypePlugins(TRANSCRIPT_DIALECT, [rehypeChips(mentions)])).freeze();
+  const rehype = unified().use(markdownRehypePlugins(TRANSCRIPT_DIALECT, [rehypeChips(mentions), rehypeLinkIcons])).freeze();
 
   // Which markdown nodes each html run came from (by source offset): their text feeds find and screen readers.
   const byOffset = new Map<number, RootContent>();

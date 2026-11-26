@@ -150,6 +150,8 @@ export const sessionUsageSchema = z.object({
   contextSize: z.number().int(),
   /** Tokens currently consumed in the active session context. */
   contextUsed: z.number().int(),
+  /** Model descriptor and engine limits from the runtime currently reporting this usage. */
+  autoCompact: z.object({ defaultTokens: z.number().int().positive(), ceiling: z.number().int().positive() }).optional(),
   /** Cumulative provider-reported cost, or null when the provider omits cost. */
   cost: z.object({ amount: z.number(), currency: z.string() }).nullable(),
   /**

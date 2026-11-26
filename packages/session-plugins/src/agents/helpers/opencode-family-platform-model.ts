@@ -6,7 +6,6 @@ import {
   type SessionModelCapability,
 } from '@gugu/session-core/agents/plugins';
 import { openCodeFamilyProvider, openCodeFamilyReasoningEntry } from './opencode-family-model-config';
-import { customModelThinks } from '@gugu/session-core/models/custom-model';
 
 /** The id Gugu gives the provider block it injects into an opencode session. */
 export const OPENCODE_PLATFORM_PROVIDER_ID = 'gugu-platform'
@@ -60,10 +59,19 @@ export function openCodeFamilyConfigContent(
   const modelEntry = (id: string, window: number | null | undefined) => {
     const custom = model.customModels?.entries.find((entry) => entry.id === id)
     const context = custom?.contextWindow ?? window
+    const reasoningEntry = !model.customModels ? openCodeFamilyReasoningEntry(reasoning, model.reasoningEffort) : {};
+    const catalog = custom?.effortCatalog;
+    const variants = reasoning.reasoningVariants;
+    const armed = model.reasoningEffort;
+    if (catalog?.kind === 'found' && variants && armed && catalog.efforts.includes(armed) && Object.hasOwn(variants, armed)) {
+      const supported = Object.fromEntries(catalog.efforts.filter(effort => effort !== 'default' && Object.hasOwn(variants, effort))
+        .map(effort => [effort, variants[effort]]));
+      Object.assign(reasoningEntry, openCodeFamilyReasoningEntry({ ...reasoning, reasoningVariants: supported }, armed));
+    }
     return {
       ...(positiveWindow(context) ? { limit: { output: custom?.maxOutput ?? OPENCODE_PLATFORM_OUTPUT_LIMIT, context } } : {}),
       // 自定义模型在「默认」档整个不声明 variants:opencode 的 ACP 腿会把第一个 variant(low)当成当前档送出去。
-      ...(!model.customModels || (customModelThinks(custom) && model.reasoningEffort) ? openCodeFamilyReasoningEntry(reasoning, model.reasoningEffort) : {}),
+      ...reasoningEntry,
     }
   }
   /**

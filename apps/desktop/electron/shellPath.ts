@@ -1,18 +1,15 @@
-import { execFile, execFileSync, windowsSystemProgram } from '@gugu/core/local/childProcess'
-import fs from 'node:fs/promises'
-import os from 'node:os'
-import path, { win32 as winPath } from 'node:path'
+import { execFile, execFileSync } from '@gugu/core/local/childProcess'
+import { expandWindowsEnvStrings, exportWindowsRegistryKey, parseRegExportValue } from '@gugu/core/local/windowsRegistry'
+import { win32 as winPath } from 'node:path'
 import { promisify } from 'node:util'
 import {
   buildExternalToolEnv,
   SHELL_ENV_CAPTURE_GUARD,
 } from './session/main/utils/childProcessEnv'
 import {
-  expandWindowsEnvStrings,
   getWindowsEnvValue,
   getWindowsPathEnvKey,
   mergeWindowsPath,
-  parseRegExportValue,
   prependWindowsPathEntry,
 } from './session/main/utils/windows-env'
 
@@ -289,19 +286,7 @@ const WINDOWS_PATH_KEYS = [
 ] as const
 
 /** 一个注册表键 `reg export` 出来的整份文本。 */
-export type RegistryKeyExporter = (key: string, env: NodeJS.ProcessEnv) => Promise<string>
-
-const exportRegistryKey: RegistryKeyExporter = async (key, env) => {
-  const reg = windowsSystemProgram('reg.exe', env)
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'gugu-reg-'))
-  try {
-    const file = path.join(dir, 'env.reg')
-    await execFileAsync(reg, ['export', key, file, '/y'], { encoding: 'utf8', timeout: SHELL_TIMEOUT_MS, env, windowsHide: true })
-    return await fs.readFile(file, 'utf16le')
-  } finally {
-    await fs.rm(dir, { recursive: true, force: true })
-  }
-}
+export type RegistryKeyExporter = typeof exportWindowsRegistryKey
 
 async function readWindowsRegistryPath(env: NodeJS.ProcessEnv, exportKey: RegistryKeyExporter): Promise<UserPathRead> {
   const started = Date.now()
@@ -336,7 +321,7 @@ export async function refreshUserPath({
   platform = process.platform,
   env = process.env,
   probe = probeAsync,
-  exportKey = exportRegistryKey,
+  exportKey = exportWindowsRegistryKey,
 }: {
   platform?: NodeJS.Platform
   env?: NodeJS.ProcessEnv

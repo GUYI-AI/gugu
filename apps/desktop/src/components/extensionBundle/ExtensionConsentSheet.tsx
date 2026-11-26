@@ -18,7 +18,7 @@ import { remoteHostsStore } from '../../session/renderer/features/remote-hosts/r
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
 import { Check } from '../../lib/icons'
 import { DispatchSheet } from '../chat/DispatchSheet'
-import { FileSelectionLayer } from '../../session/renderer/features/sessions/annotations/file-selection-overlay'
+import { SelectionLineLayer } from '../../session/renderer/features/sessions/annotations/selection-line'
 
 type Ask = Extract<ExtensionConsentEventDetail, { type: 'ask' }>
 
@@ -58,7 +58,7 @@ export function ExtensionConsentSheet() {
     <>
       <InstallConsentSheet />
       <DispatchSheet />
-      <FileSelectionLayer />
+      <SelectionLineLayer />
     </>
   )
 }

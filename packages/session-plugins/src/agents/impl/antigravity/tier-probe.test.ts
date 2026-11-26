@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { AgentAuthContext } from '@gugu/session-core/agents/plugins';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readAntigravityPlan, readAntigravityUsage } from './subscription';
+import { readAntigravityPlan, readAntigravityUsage, windowsFromAgyUsage } from './subscription';
 import { bindAgyTierObservation, tierNameFromAcpResponse } from './acp-tier';
 import { antigravityCliAuthStatus, execAntigravityCli } from './auth';
 
@@ -46,7 +46,7 @@ rl.on('line', line => {
   if (process.platform === 'win32') await writeFile(cli, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
   const ctx = {
     cli,
-    env: { ...process.env, HOME: root, GEMINI_HOME: home },
+    env: { ...process.env, SSH_CONNECTION: '', HOME: root, GEMINI_HOME: home },
     fsFollowsConfigRoot: true,
     fs: { read: vi.fn().mockResolvedValue(null) },
     exec: vi.fn().mockResolvedValue({ stdout: 'gemini-4-carbon-high\tGemini 4 Carbon (High)\n', stderr: '' }),
@@ -61,6 +61,27 @@ function useTrackedCachePlatform() {
 }
 
 describe('Antigravity subscription comes from the signed-in CLI ACP response', () => {
+  it('reads an isolated saved account without querying models or another account’s keyring', async () => {
+    const { ctx } = await fixture({ name: 'Google AI Pro' });
+    ctx.env.SSH_CONNECTION = '127.0.0.1 1 127.0.0.1 2';
+    vi.mocked(ctx.fs.read).mockImplementation(async path => path.endsWith('antigravity-oauth-token')
+      ? JSON.stringify({ token: { refresh_token: 'fixture-refresh', id_token: `h.${Buffer.from(JSON.stringify({ email: 'account@example.test' })).toString('base64url')}.s` } }) : null);
+    expect(await antigravityCliAuthStatus(ctx)).toEqual({ kind: 'authenticated', credentialKind: 'subscription', account: 'account@example.test' });
+    expect(ctx.exec).not.toHaveBeenCalled();
+    vi.mocked(ctx.fs.read).mockResolvedValue(null);
+    expect(await antigravityCliAuthStatus(ctx)).toEqual({ kind: 'unauthenticated' });
+    expect(ctx.exec).not.toHaveBeenCalled();
+  });
+
+  it('keeps every vendor quota group and never substitutes missing fractions with zero', () => {
+    expect(windowsFromAgyUsage(JSON.stringify({ command: { data: { groups: [{ name: 'Gemini Models', buckets: [
+      { window: 'weekly', remaining_fraction: 0, reset_time: '2026-12-01T00:00:00Z' },
+      { window: '5h', remaining_fraction: 0.75 }, { window: '5h' },
+    ] }, { name: 'Claude and GPT models', buckets: [{ window: 'weekly', remaining_fraction: 1 }] }] } } })))
+      .toEqual([{ group: 'Gemini Models', windowMinutes: 10_080, usedPercent: 100, resetsAt: Date.parse('2026-12-01T00:00:00Z') },
+        { group: 'Gemini Models', windowMinutes: 300, usedPercent: 25 },
+        { group: 'Claude and GPT models', windowMinutes: 10_080, usedPercent: 0 }]);
+  });
   it('recognizes Ultra without an IDE installation and sends no model prompt or authenticate request', async () => {
     useTrackedCachePlatform();
     const { ctx, transcript } = await fixture({ id: 'g1-ultra-lite-tier', name: 'Google AI Ultra', upgradeUri: 'https://antigravity.google/g1-upgrade' });
@@ -69,7 +90,7 @@ describe('Antigravity subscription comes from the signed-in CLI ACP response', (
     const requests = (await readFile(transcript, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
     expect(requests.map(request => request.method)).toEqual(['initialize', 'initialized', 'session/new']);
     expect(requests.at(-1).params.mcpServers).toEqual([]);
-    expect(vi.mocked(ctx.exec).mock.calls.filter(([, args]) => args?.includes('models'))).toHaveLength(1);
+    expect(vi.mocked(ctx.exec).mock.calls.filter(([, args]) => args?.includes('models'))).toHaveLength(process.platform === 'darwin' ? 0 : 1);
   });
 
   it('does not infer Ultra from Carbon access if the server reports no tier', async () => {

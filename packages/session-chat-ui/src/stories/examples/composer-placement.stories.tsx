@@ -71,7 +71,6 @@ function ComposerPlacementDemo() {
       composer: 'slot',
       composerPlacement: 'center',
       stickToBottom: true,
-      pinUserMessages: true,
       onViewMounted(v) {
         if (v.heroSlot) {
           heroEl = document.createElement('div');

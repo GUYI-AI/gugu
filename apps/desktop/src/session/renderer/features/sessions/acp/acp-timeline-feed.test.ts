@@ -44,11 +44,10 @@ describe('local session history', () => {
     expect(vi.getTimerCount()).toBe(0);
     feed.close();
   });
-  it('stays subscribed while the file is absent and opens on the readiness push', async () => {
+  it('stays subscribed, asking for nothing again, until the host pushes the first snapshot', async () => {
     const feed = new AcpTimelineFeed('S', vi.fn(), vi.fn(), () => true);
     const opening = feed.open();
     const id = host.subscribe.mock.calls[0][0].subscriptionId;
-    push({ subscriptionId: id, waiting: true });
     await vi.advanceTimersByTimeAsync(60_000);
     expect(feed.opened).toBe(false);
     expect(host.subscribe).toHaveBeenCalledOnce();
@@ -94,7 +93,6 @@ describe('local session history', () => {
     const next = host.subscribe.mock.calls[1][0];
     expect(next).toMatchObject({ cursor: null, recordEvents: true });
     expect(next.subscriptionId).not.toBe(firstId);
-    push({ subscriptionId: next.subscriptionId, waiting: true });
     await vi.advanceTimersByTimeAsync(60_000);
     expect(feed.state.cursor).toEqual(snapshot.cursor);
     expect(host.snapshot).not.toHaveBeenCalled();

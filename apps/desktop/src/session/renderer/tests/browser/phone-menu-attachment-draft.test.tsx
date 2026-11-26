@@ -130,24 +130,24 @@ it('opens the selected draft file and leaves both attachments queued after closi
   expect(send).not.toHaveBeenCalled()
 })
 
-it('opens the draft photo in the shared image viewer with the selected bytes', async () => {
+it('opens the draft photo in the shared image viewer out of its chip, with the pixels the chip already shows', async () => {
   const view = vi.fn<(request: ImageViewerRequest) => void>()
   const unregister = registerImageViewerHost(view)
   try {
     await mount(<ChatMessageComposer chatId="attachment-preview-image" isGroupChat onSend={vi.fn(async () => {})} />)
     await pick('photo', ['picked.png'])
-    await act(async () => (tiles()[0] as HTMLElement).click())
+    const chip = tiles()[0] as HTMLElement
+    await act(async () => chip.click())
     expect(view).toHaveBeenCalledOnce()
     const image = view.mock.calls[0]![0].items[0]!
     expect(image.alt).toBe('picked.png')
-    try {
-      const url = await image.preview!()
-      const file = await (await fetch(url)).blob()
-      expect(file.type).toBe('image/png')
-      expect(file.size).toBeGreaterThan(0)
-    } finally {
-      image.release?.()
-    }
+    // As a message's thumbnail opens (`openImageFromThumb`): from the drawn element, no second read of the bytes.
+    expect(image.thumb).toBe(chip)
+    expect(image.url).toBe(chip.querySelector('img')!.getAttribute('src'))
+    expect(image.preview).toBeUndefined()
+    const file = await (await fetch(image.url)).blob()
+    expect(file.type).toBe('image/png')
+    expect(file.size).toBeGreaterThan(0)
   } finally {
     unregister()
   }
@@ -161,8 +161,7 @@ it('an edited draft image takes the original\'s place, and its marker notes join
     await pick('photo', ['first.png', 'second.png'])
     await act(async () => (tiles()[0] as HTMLElement).click())
     const image = view.mock.calls[0]![0].items[0]!
-    const edited = new File([await (await fetch(await image.preview!())).blob()], 'first-annotated.png', { type: 'image/png' })
-    image.release?.()
+    const edited = new File([await (await fetch(image.url)).blob()], 'first-annotated.png', { type: 'image/png' })
     await act(async () => image.replace!(edited, '① 这里'))
     await vi.waitFor(() => expect([...tiles()].map(tile => tile.getAttribute('title'))).toEqual([expect.stringContaining('first-annotated.png'), expect.stringContaining('second.png')]))
     expect(editor().textContent).toContain('① 这里')

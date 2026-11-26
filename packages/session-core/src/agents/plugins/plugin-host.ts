@@ -562,9 +562,10 @@ export class AgentPluginHost {
           message: `Auth method '${methodId}' of provider '${providerId}' has no headless sign-in`,
         });
       }
-      return ok({ command: cli.data, args: method.headlessArgs, env });
+      const override = programAuth.data.behavior?.buildHeadlessLoginCommand?.({ cli: cli.data, env }, methodId);
+      return ok({ command: override?.command ?? cli.data, args: override?.args ?? method.headlessArgs, env });
     }
-    const override = programAuth.data.behavior?.buildLoginCommand?.({ cli: cli.data }, methodId);
+    const override = programAuth.data.behavior?.buildLoginCommand?.({ cli: cli.data, env }, methodId);
     return ok({
       command: override?.command ?? cli.data,
       args: override?.args ?? method.args,

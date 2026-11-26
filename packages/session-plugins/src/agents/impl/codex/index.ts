@@ -119,6 +119,8 @@ export const plugin = definePlugin(
           busy: 'queue-next-turn',
           reloadRequired: false,
           recovery: 'none',
+          // Codex Fast uses twice the tokens (owner 2026-11-25).
+          tokenMultiplier: 2,
         },
         model: {
           channel: 'provider-thread-settings',

@@ -70,3 +70,30 @@ it('keeps every formula of a phone message reachable inside its bubble', async (
 
   expect(harness.container.scrollWidth, 'the message made the phone page scroll sideways').toBeLessThanOrEqual(viewportWidth)
 })
+
+it('sets an equation number at the right of the line, clear of its formula', async () => {
+  const viewportWidth = 390
+  await page.viewport(viewportWidth, 844)
+  harness = createReactHarness()
+  harness.container.className = 'gugu-skin emlight'
+  harness.container.style.cssText = `position:fixed;inset:0 auto auto 0;width:${viewportWidth}px`
+  await renderWithAppProviders(harness, <MessageBubble
+    msg={message({ id: 'tagged', is_mine: false, content: '$$E = mc^2 \\tag{1}$$' })}
+    isGroup
+    compactMobile
+    onReaction={vi.fn()}
+    onQuote={vi.fn()}
+    onForward={vi.fn()}
+    onDelete={vi.fn()}
+  />)
+  await until('formula typeset', () => harness.container.querySelector('.gg-md .katex-display .tag') !== null)
+  await document.fonts.ready
+
+  const display = harness.container.querySelector<HTMLElement>('.katex-display')!
+  const box = display.getBoundingClientRect()
+  const tag = display.querySelector<HTMLElement>('.tag')!.getBoundingClientRect()
+  const formulaRight = Math.max(...[...display.querySelectorAll<HTMLElement>('.katex-html > .base')].map((base) => base.getBoundingClientRect().right))
+  expect(tag.left, 'the equation number is drawn over its formula').toBeGreaterThanOrEqual(formulaRight)
+  expect(Math.abs(box.right - tag.right), 'the equation number is not at the right of the line').toBeLessThanOrEqual(1)
+  expect(display.scrollWidth, 'a formula that fits became a scroll box').toBe(display.clientWidth)
+})

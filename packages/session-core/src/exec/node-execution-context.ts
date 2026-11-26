@@ -1,3 +1,4 @@
+import { findWindowsRegisteredPaths } from '@gugu/core/local/windowsRegistry';
 import { execFile } from '@gugu/core/local/childProcess';
 import { promisify } from 'node:util';
 import type { ExecContextOptions, IExecutionContext } from './execution-context';
@@ -25,6 +26,11 @@ export class NodeExecutionContext implements IExecutionContext {
   async findWindowsCommandPaths(command: string, env?: Record<string, string>): Promise<string[] | null> {
     if (process.platform !== 'win32') return null;
     return findWindowsCommandPaths(command, { env: env ?? this.env, cwd: this.root || undefined });
+  }
+
+  async findWindowsRegisteredPaths(registryKey: string, relativePath: string, env?: Record<string, string>): Promise<string[]> {
+    if (process.platform !== 'win32') return [];
+    return findWindowsRegisteredPaths(registryKey, relativePath, env ?? this.env);
   }
 
   exec(command: string, args: string[] = [], opts: ExecContextOptions = {}): Promise<ExecResult> {
