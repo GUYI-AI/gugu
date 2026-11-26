@@ -110,13 +110,16 @@ export function normalizeMessage(item: ChatMessage, deliveredMessage?: (id: stri
   const sent = item.files ?? [];
   const isSent = (itemId: string) => sent.some(file => file.itemId === itemId);
   if (fileImageLinks(normalized.text).some(link => isSent(link.itemId))) normalized.text = withoutFileImages(normalized.text, isSent);
-  const sizeOf = (name: string) => sent.find(file => file.name === name)?.imageDimensions;
+  // An attachment the agent echoes back (a replayed turn) names no folder file, only the file's name: it is the first sent
+  // file of that name not taken yet. Echoes come in the turn's order, so two pastes both called `image.png` keep their own.
+  const unmatched = [...sent];
   normalized.attachments = normalized.attachments?.map(file => {
-    const size = (file.kind ?? 'image') === 'image' ? sizeOf(file.name) : undefined;
-    return size ? { ...file, imageDimensions: size } : file;
+    const at = unmatched.findIndex(each => each.name === file.name);
+    if (at < 0) return file;
+    const [match] = unmatched.splice(at, 1);
+    return (file.kind ?? 'image') === 'image' && match.imageDimensions ? { ...file, imageDimensions: match.imageDimensions } : file;
   });
-  const imageNames = new Set(normalized.attachments?.map(file => file.name) ?? []);
-  const files = sent.filter(file => !imageNames.has(file.name)).map(file => {
+  const files = unmatched.map(file => {
     const href = `gugu-file://${file.itemId}?v=${file.version}`;
     return { id: href, href, name: file.name, kind: attachmentKind({ fileName: file.name, mimeType: file.mimeType }),
       ...(file.imageDimensions ? { imageDimensions: file.imageDimensions } : {}) };

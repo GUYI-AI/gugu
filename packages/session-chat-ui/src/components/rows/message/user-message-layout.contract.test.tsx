@@ -276,6 +276,25 @@ describe('a cite stays in the words; the strip draws attachments only', () => {
     expect(unsent.text).toBe('See ![Image 1](gugu-file://other?v=1)');
   });
 
+  it('two pastes of one name each keep their own size, echoed or not', () => {
+    const file = (itemId: string, width: number, height: number) =>
+      ({ itemId, version: 1, name: 'image.png', mimeType: 'image/png', sizeBytes: 1, imageDimensions: { width, height } });
+    const files = [file('wide', 1600, 900), file('tall', 300, 1200)];
+    const text = '![Image 1](gugu-file://wide?v=1)![Image 2](gugu-file://tall?v=1)';
+    const echoed = normalizeMessage({ kind: 'message', id: 'u-echo', role: 'user', text, files,
+      attachments: [{ id: 'acp-0', name: 'image.png' }, { id: 'acp-1', name: 'image.png' }] });
+    expect(echoed.attachments?.map(each => [each.id, each.imageDimensions])).toEqual([
+      ['acp-0', { width: 1600, height: 900 }], ['acp-1', { width: 300, height: 1200 }]]);
+    // One echo of the two: the other file is still drawn, with its own size.
+    const half = normalizeMessage({ kind: 'message', id: 'u-half', role: 'user', text, files, attachments: [{ id: 'acp-0', name: 'image.png' }] });
+    expect(half.attachments?.map(each => [each.id, each.imageDimensions])).toEqual([
+      ['acp-0', { width: 1600, height: 900 }], ['gugu-file://tall?v=1', { width: 300, height: 1200 }]]);
+    const live = normalizeMessage({ kind: 'message', id: 'u-live', role: 'user', text, files });
+    expect(live.attachments?.map(each => [each.id, each.imageDimensions])).toEqual([
+      ['gugu-file://wide?v=1', { width: 1600, height: 900 }], ['gugu-file://tall?v=1', { width: 300, height: 1200 }]]);
+    expect(live.text).toBe('');
+  });
+
   it('draws each comment sent beside the words as a row naming its place and comment; measure === offsetHeight', async () => {
     const annotations = [{ number: 1, target: 'docs/index.html', comment: 'Make it red', promptText: 'SELECTOR #hero VIEWPORT 800x600' },
       { number: 2, target: 'https://example.org/', comment: 'Shorter', promptText: 'PAGE URL https://example.org/' }];
