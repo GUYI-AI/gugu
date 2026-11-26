@@ -43,3 +43,8 @@ it('strips filesystem roots once from changes paths', () => {
   expect(displayPathForChange('/src/main.ts', '/')).toBe('src/main.ts')
   expect(displayPathForChange('C:/src/main.ts', 'C:/')).toBe('src/main.ts')
 })
+
+it('keeps drive-root workspaces available to remote HTML preview', () => {
+  expect(remotePageRoot('C:/')).toEqual({ kind: 'workspace', prefix: 'C:/', segments: [] })
+  expect(remotePageRoot('C:\\')).toEqual({ kind: 'workspace', prefix: 'C:/', segments: [] })
+})
