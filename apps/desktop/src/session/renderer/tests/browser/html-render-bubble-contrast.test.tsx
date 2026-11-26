@@ -11,6 +11,7 @@ import { Markdown } from '@/components/markdown/Markdown';
 import { buildBubbleStyle } from '@/components/chat/messageBubbleStyle';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it } from 'vitest';
+import { page } from 'vitest/browser';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
@@ -100,19 +101,40 @@ function contrast(fg: string, bg: string) {
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
+/** A pixel in the frame's bottom-left padding as painted (no page content there): the bubble shows through a transparent canvas. */
+async function framePixel(frame: HTMLIFrameElement): Promise<number[]> {
+  const shot = await page.screenshot({ element: frame, base64: true, save: false });
+  const image = new Image();
+  image.src = `data:image/png;base64,${shot}`;
+  await image.decode();
+  const canvas = document.createElement('canvas');
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(image, 0, 0);
+  return [...ctx.getImageData(3, image.height - 3, 1, 1).data].slice(0, 3);
+}
+
+async function expectOnBubble(result: Awaited<ReturnType<typeof pageColors>>, where: string) {
+  expectReadable(result, where);
+  const fill = rgba(result.background).slice(0, 3);
+  const pixel = await framePixel(result.frame);
+  pixel.forEach((channel, index) => expect(Math.abs(channel - fill[index]!), `${where}: frame pixel ${pixel} on fill ${fill}`).toBeLessThanOrEqual(3));
+}
+
 function expectReadable({ colors, frame, background }: Awaited<ReturnType<typeof pageColors>>, where: string) {
   expect(rgba(background)[3], `${where}: the bubble has a fill`).toBe(255);
   expect(contrast(colors.fg, background), `${where}: page text ${colors.fg} on ${background}`).toBeGreaterThanOrEqual(4.5);
   expect(contrast(colors.muted, background), `${where}: muted text ${colors.muted} on ${background}`).toBeGreaterThanOrEqual(3);
   expect(contrast(colors.accent, background), `${where}: accent ${colors.accent} on ${background}`).toBeGreaterThanOrEqual(3);
-  // The frame stays transparent over the bubble only while it and its page share a scheme.
+  // The frame stays transparent over the bubble only while it and its page are both light (page.ts).
   expect(getComputedStyle(frame).colorScheme, where).toBe(colors.scheme);
 }
 
 it.each(['light', 'dark'] as const)('reads on the transcript bubbles in the %s theme', async theme => {
-  for (const role of ['user', 'assistant'] as const) expectReadable(await transcript(theme, role), `${theme} ${role}`);
+  for (const role of ['user', 'assistant'] as const) await expectOnBubble(await transcript(theme, role), `${theme} ${role}`);
 });
 
 it.each(['light', 'dark'] as const)('reads on my own chat bubble in the %s theme', async theme => {
-  expectReadable(await chatBubble(theme), `${theme} own chat bubble`);
+  await expectOnBubble(await chatBubble(theme), `${theme} own chat bubble`);
 });

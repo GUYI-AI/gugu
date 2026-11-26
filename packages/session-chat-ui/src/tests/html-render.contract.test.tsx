@@ -55,20 +55,20 @@ describe('html-render page expand', () => {
 });
 
 describe('html-render page scheme', () => {
-  it('gives the page and its frame the scheme of the surface it sits on, so the frame stays transparent there', async () => {
+  it('keeps the page and its frame light, the only pairing with a transparent canvas, and gives the page the surface text', async () => {
     const host = document.documentElement;
     const theme = host.dataset.theme;
-    const schemes: string[] = [];
+    const seen: { scheme: string; fg: string }[] = [];
     const onMessage = (event: MessageEvent) => {
-      if (typeof event.data?.scheme === 'string') schemes.push(event.data.scheme);
+      if (typeof event.data?.scheme === 'string') seen.push(event.data);
     };
     window.addEventListener('message', onMessage);
     host.dataset.theme = 'dark';
-    const source = "```html-render\n<script>parent.postMessage({ scheme: getComputedStyle(document.documentElement).colorScheme }, '*')</script>\n```";
+    const source = "```html-render\n<script>parent.postMessage({ scheme: getComputedStyle(document.documentElement).colorScheme, fg: getComputedStyle(document.documentElement).color }, '*')</script>\n```";
     const block = parseMarkdownToBlocks('t', source)[0] as HtmlRenderBlock;
     const ctx = makeContractCtx({ width: 480 });
     root = document.createElement('div');
-    root.style.color = '#f5f5f5'; // a dark surface paints light text; the page's scheme follows that text
+    root.style.color = 'rgb(245, 245, 245)'; // a dark surface paints light text; the page's text follows it
     document.body.appendChild(root);
     const Render = htmlRenderBlockDef.Render;
     const unrender = render(() => (
@@ -84,15 +84,16 @@ describe('html-render page scheme', () => {
       if (theme === undefined) delete host.dataset.theme;
       else host.dataset.theme = theme;
     };
-    await until('the page reports its scheme', () => schemes.length === 1);
-    const frame = root.querySelector('iframe')!;
-    expect(schemes).toEqual(['dark']);
-    expect(getComputedStyle(frame).colorScheme).toBe('dark');
 
-    root.style.color = '#111111';
+    await until('the page reports its scheme', () => seen.length === 1);
+    const frame = root.querySelector('iframe')!;
+    expect(seen).toEqual([{ scheme: 'light', fg: 'rgb(245, 245, 245)' }]);
+    expect(getComputedStyle(frame).colorScheme).toBe('light');
+
+    root.style.color = 'rgb(17, 17, 17)';
     host.dataset.theme = 'light';
-    await until('the page reloads on a light flip', () => schemes.length === 2);
-    expect(schemes).toEqual(['dark', 'light']);
+    await until('the page reloads on a light flip', () => seen.length === 2);
+    expect(seen[1]).toEqual({ scheme: 'light', fg: 'rgb(17, 17, 17)' });
     expect(getComputedStyle(frame).colorScheme).toBe('light');
   });
 });

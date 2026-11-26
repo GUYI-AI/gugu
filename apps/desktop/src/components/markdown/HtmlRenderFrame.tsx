@@ -75,12 +75,11 @@ function HtmlRenderDocument({ code, hostTheme, title, height, onContentHeight }:
   }, [])
   const style = getComputedStyle(document.documentElement)
   const srcDoc = surface && htmlRenderDocument(code, htmlRenderRootCss(
-    surface.palette,
+    surface,
     { sans: getComputedStyle(document.body).fontFamily, mono: style.getPropertyValue('--font-mono').trim() || 'ui-monospace, monospace' },
-    surface.scheme,
   ))
   // An opaque sandbox: scripts run, but the page reaches neither this window, its storage, popups nor top navigation.
-  return <iframe ref={frame} title={title} srcDoc={srcDoc} sandbox="allow-scripts" height={height} className={`block w-full border-0 bg-transparent ${surface?.scheme === 'dark' ? '[color-scheme:dark]' : '[color-scheme:light]'}`} />
+  return <iframe ref={frame} title={title} srcDoc={srcDoc} sandbox="allow-scripts" height={height} className="block w-full border-0 bg-transparent [color-scheme:light]" />
 }
 
 /**

@@ -2,7 +2,8 @@
 import { style } from '@vanilla-extract/css';
 import { vars } from '@session-chat/styles/theme.css';
 
-export const htmlRenderFrame = style({ display: 'block', border: 0, background: 'transparent' });
+// Light, as its page is: the only pairing that keeps the frame's canvas transparent (core/html-render/page.ts).
+export const htmlRenderFrame = style({ display: 'block', border: 0, background: 'transparent', colorScheme: 'light' });
 
 /** The expanded page: over the whole window, on the host's modal layer and scrim (tokens.css), as the chat bubble's dialog. */
 export const htmlRenderBackdrop = style({

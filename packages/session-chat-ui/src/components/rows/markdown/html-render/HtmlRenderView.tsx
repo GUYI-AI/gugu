@@ -51,10 +51,10 @@ function PageFrame(props: { source: string; themeFlips: () => number; title: str
     const theme = surface();
     if (!theme) return undefined;
     const mono = getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim() || 'ui-monospace, monospace';
-    return htmlRenderDocument(props.source, htmlRenderRootCss(theme.palette, { sans: getComputedStyle(document.body).fontFamily, mono }, theme.scheme));
+    return htmlRenderDocument(props.source, htmlRenderRootCss(theme, { sans: getComputedStyle(document.body).fontFamily, mono }));
   });
   // An opaque sandbox: scripts run, but the page reaches neither this window, its storage, popups nor top navigation.
-  return <iframe ref={frame} title={props.title} srcdoc={srcDoc()} sandbox="allow-scripts" width={props.width ?? '100%'} height={props.height} class={htmlRenderFrame} style={{ 'color-scheme': surface()?.scheme }} />;
+  return <iframe ref={frame} title={props.title} srcdoc={srcDoc()} sandbox="allow-scripts" width={props.width ?? '100%'} height={props.height} class={htmlRenderFrame} />;
 }
 
 export function HtmlRenderView(props: { block: HtmlRenderLeafLayout }) {

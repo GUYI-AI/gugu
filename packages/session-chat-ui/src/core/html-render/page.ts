@@ -114,24 +114,16 @@ const BASE_CSS =
   'html{box-sizing:border-box;padding:8px;color:var(--fg);font-family:var(--font-sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;scrollbar-width:none}' +
   'html::-webkit-scrollbar{display:none}body{margin:0}code,kbd,pre,samp{font-family:var(--font-mono)}'
 
-export type HtmlRenderScheme = 'light' | 'dark'
-
 /**
  * What a page takes from the surface its frame sits on (`element`, the frame's parent, as painted now): the host's
  * palette, with `--fg` the surface's own text colour, `--muted`, `--accent`, `--border` and `--surface` mixed from it as
- * the host mixes its own from its text (accent is ink, border and surface faint washes of it; tokens.css), and the
- * light/dark scheme that text implies. The chart colours `--c1`…`--c6` stay the host's: they read on either fill. An own-message bubble paints its own text (light on a dark fill in a light theme), so a page in it reads as
- * the bubble's words do, as a fill inside that bubble is mixed from its text (messageBubbleStyle.ts); the same page
- * expanded over the window takes the window's.
+ * the host mixes its own from its text (accent is ink, border and surface faint washes of it; tokens.css). The chart
+ * colours `--c1`…`--c6` stay the host's: they read on either fill. An own-message bubble paints its own text (light on a
+ * dark fill in a light theme), so a page in it reads as the bubble's words do, as a fill inside that bubble is mixed
+ * from its text (messageBubbleStyle.ts); the same page expanded over the window takes the window's.
  */
-export function htmlRenderSurface(element: Element, hostPalette: Record<string, string>): { palette: Record<string, string>; scheme: HtmlRenderScheme } {
-  const fg = getComputedStyle(element).color
-  // A computed colour from hex, rgb(), hsl() or a name reads `rgb(r, g, b)`; from color(srgb …) it keeps that form.
-  const rgb = /^rgba?\(([\d.]+), ([\d.]+), ([\d.]+)/.exec(fg)?.slice(1).map((channel) => Number(channel) / 255)
-    ?? /^color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)/.exec(fg)?.slice(1).map(Number)
-  if (!rgb) throw new Error(`html-render: cannot read the surface's text colour ${JSON.stringify(fg)}`)
-  const [r, g, b] = rgb as [number, number, number]
-  return { palette: htmlRenderPalette(fg, hostPalette), scheme: 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5 ? 'dark' : 'light' }
+export function htmlRenderSurface(element: Element, hostPalette: Record<string, string>): Record<string, string> {
+  return htmlRenderPalette(getComputedStyle(element).color, hostPalette)
 }
 
 /** The page's palette on a surface whose text is `fg`: the host's, with the text tokens mixed from `fg` (see above). */
@@ -147,15 +139,18 @@ export function htmlRenderPalette(fg: string, hostPalette: Record<string, string
 }
 
 /**
- * The page's `:root`: its light/dark scheme, the palette as `--token` variables, plus the host's fonts and corner
- * radius. A frame whose page has another `color-scheme` than the frame element is painted on an opaque canvas (white
- * on a dark host), so the page and its frame element (`style="color-scheme: …"`) both take the surface's scheme, and
- * the page sits on the message.
+ * The page's `:root`: the palette as `--token` variables, plus the host's fonts and corner radius, in the light scheme,
+ * as its frame element is (HTML_RENDER_FRAME_SCHEME). Only a light page in a light frame keeps the frame's canvas
+ * transparent, so the page sits on the message's own fill: a dark page is painted on an opaque dark canvas even in a
+ * dark frame, and a page whose scheme differs from its frame's on an opaque one too (Electron 45, mac1 11-26: a dark page
+ * on the dark theme's bubble drew a #121212 box). The page's colours come from the tokens, which follow the surface.
  */
-export function htmlRenderRootCss(palette: Record<string, string>, fonts: { sans: string; mono: string }, scheme: HtmlRenderScheme): string {
+export const HTML_RENDER_FRAME_SCHEME = 'light'
+
+export function htmlRenderRootCss(palette: Record<string, string>, fonts: { sans: string; mono: string }): string {
   const declarations = Object.entries(palette).map(([token, value]) => `--${token}:${value.replace(/[;{}<>]/g, '')};`).join('')
   const font = (value: string) => value.replace(/[;{}<>]/g, '')
-  return `:root{color-scheme:${scheme};${declarations}--font-sans:${font(fonts.sans)};--font-mono:${font(fonts.mono)};--radius:0.625rem}`
+  return `:root{color-scheme:${HTML_RENDER_FRAME_SCHEME};${declarations}--font-sans:${font(fonts.sans)};--font-mono:${font(fonts.mono)};--radius:0.625rem}`
 }
 
 /** The page's own height, as a script expression: what the bootstrap reports, and what html_preview measures. */

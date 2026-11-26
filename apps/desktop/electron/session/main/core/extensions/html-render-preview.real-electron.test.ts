@@ -69,8 +69,7 @@ app.whenReady().then(async () => {
     expect(preview.contentHeight).toBe(316);
     expect(preview.height).toBe(316);
     expect({ width: preview.picture.width, height: preview.picture.height }).toEqual({ width: 560, height: 316 });
-    // Near the theme's background (a dark page's canvas is Chromium's own #121212) and its first chart colour, in a
-    // JPEG: the page stayed on itself, themed.
+    // The theme's background and its first chart colour, within a JPEG's error: the page stayed on itself, themed.
     preview.picture.corner.forEach((channel, index) => expect(Math.abs(channel - background[index]!)).toBeLessThanOrEqual(4));
     preview.picture.bar.forEach((channel, index) => expect(Math.abs(channel - bar[index]!)).toBeLessThanOrEqual(4));
     expect(preview.consoleMessages).toContainEqual({ level: 'error', text: 'page says hi' });

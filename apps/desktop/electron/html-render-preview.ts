@@ -57,7 +57,8 @@ export async function previewHtmlRender({ html, width, appearance }: HtmlPreview
     success: '#16a34a', warning: '#f59e0b', error: '#ef4444',
     ...Object.fromEntries(theme.chart.map((colour, index) => [`c${index + 1}`, colour])),
   })
-  const page = htmlRenderDocument(html, htmlRenderRootCss(palette, FONTS, appearance))
+  // On the theme's own background, as on a message: the page itself stays light-scheme and transparent (page.ts).
+  const page = htmlRenderDocument(html, `${htmlRenderRootCss(palette, FONTS)}html{background:${theme.background}}`)
   const win = new BrowserWindow({
     show: false, width, height: 900, backgroundColor: theme.background,
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, session: previewSession() },
