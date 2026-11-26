@@ -49,7 +49,22 @@ function runWhenVisible(id: CommandId): void {
  * The one place a keydown becomes a command. Returns whether a command took the key; a command that has nothing to do
  * right now (`enabled: false`, or `execute` returning false) does not take it, so whatever is underneath still gets it.
  */
+let keyView: Window | null = null;
+/** The window the key being dispatched was pressed in (a popped-out window's own, or the main one); null between keys. */
+export function keyEventWindow(): Window | null {
+  return keyView;
+}
+
 export function dispatchKey(event: KeyboardEvent, source: KeySource): boolean {
+  keyView = event.view;
+  try {
+    return dispatchIn(event, source);
+  } finally {
+    keyView = null;
+  }
+}
+
+function dispatchIn(event: KeyboardEvent, source: KeySource): boolean {
   if (commandRegistry.shortcutsPaused || isImeComposing(event) || overrides === null) return false;
   const start = origin(event);
   const inEditor = !!start?.closest('.cm-editor');

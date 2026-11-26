@@ -1,3 +1,4 @@
+import { commandRegistry } from '@renderer/lib/commands/registry';
 import { followMovedFiles } from '@renderer/features/sessions/file-view/follow-moved-files';
 import { receivedCanonicalPath } from '@gugu/session-shared/canonical-path';
 import { findSessionAnywhere } from '@renderer/features/sessions/stores/session-selectors';
@@ -37,6 +38,7 @@ import { openShellFeedback } from '@renderer/lib/open-shell-feedback';
 import { openShellSettings } from '@renderer/lib/open-shell-settings';
 import {
   menuGiveFeedbackChannel,
+  menuCloseChannel,
   menuOpenSettingsChannel,
   menuQuitRequestedChannel,
   notificationFocusSessionChannel,
@@ -65,6 +67,11 @@ export function AppMenuEvents() {
   // 应用菜单「设置…」(⌘,):设置是壳的弹窗,在哪个 tab 上按都开它。本页常驻挂载(切走只是藏起来),
   // 所以这条 IPC 在「消息」「通讯录」上一样收得到。
   useEffect(() => events.on(menuOpenSettingsChannel, () => openShellSettings()), []);
+  // 应用菜单「关闭」(⌘W,mac 上菜单先于页面拿到它):同一份登记里 ⌘W 的两条,窄的先答 —— 拿着焦点的那块有页签就关页签,
+  // 否则关窗。和在页面里直接按 ⌘W 走的是同一个结果。
+  useEffect(() => events.on(menuCloseChannel, () => {
+    if (!commandRegistry.dispatch('session.tabClose')) commandRegistry.dispatch('app.closeWindow');
+  }), []);
 
   useEffect(() => {
     return events.on(menuQuitRequestedChannel, () => {

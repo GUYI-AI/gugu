@@ -594,7 +594,7 @@ import {
 import { installPageFullscreen, PAGE_FULLSCREEN_PREFERENCES } from './page-fullscreen'
 import { applyApplicationMenu } from './app-menu'
 import { createMainRendererGoneHandler, createMainRendererResponsivenessLog, type CrashDialogChoice } from './renderer-crash-recovery'
-import { menuOpenSettingsChannel } from '@shared/events/appEvents'
+import { menuCloseChannel, menuOpenSettingsChannel } from '@shared/events/appEvents'
 import { pinDesktopPointerMedia } from './linux-pointer-media'
 import {
   NOTIFICATION_BUS_NAME,
@@ -1414,6 +1414,11 @@ function refreshApplicationMenu(): void {
     locked: isDevtoolsLocked(),
     settingsLabel: hostCopy().appMenu.settings,
     // 设置是会话页那边的弹窗(product spec):主窗收在托盘里也先拉出来,再叫它打开。
+    // ⌘W / 菜单「关闭」:主窗交给渲染层的快捷键登记(有页签关页签,没有才关窗);别的窗口照旧直接关。
+    closeFromMenu: (window) => {
+      if (mainWindow && !mainWindow.isDestroyed() && window === mainWindow) mainWindow.webContents.send(menuCloseChannel.name)
+      else window?.close()
+    },
     openSettings: () => {
       if (!mainWindow || mainWindow.isDestroyed()) return
       focusMainWindow()

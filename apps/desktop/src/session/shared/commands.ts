@@ -583,6 +583,14 @@ export const COMMANDS = defineCommands({
     category: 'Tab Navigation',
     defaultHotkey: 'Mod+9',
   },
+  'app.closeWindow': {
+    defaultHotkey: 'Mod+W',
+    label: 'Close Window',
+    description: 'Close this window when no tab has the focus',
+    category: 'Navigation',
+    whenSessionPageHidden: 'run',
+    ignoreWhenBrowserFocused: true,
+  },
   'app.goMessages': {
     defaultHotkey: 'Mod+Alt+1',
     label: 'Go to Messages',

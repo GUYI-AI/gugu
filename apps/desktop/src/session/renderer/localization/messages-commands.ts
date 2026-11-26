@@ -177,4 +177,6 @@ export const zhCNCommandMessages: Record<CommandCopyKey, string> = {
   'commandHelp.chat.select7': '打开列表里第 7 个对话',
   'commandHelp.chat.select8': '打开列表里第 8 个对话',
   'commandHelp.chat.select9': '打开列表里第 9 个对话',
+  'command.app.closeWindow': '关闭窗口',
+  'commandHelp.app.closeWindow': '没有页签拿着焦点时，关闭这个窗口',
 };
