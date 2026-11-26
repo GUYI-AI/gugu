@@ -36,7 +36,7 @@ import { getSupabaseAnonKey, getSupabaseUrl } from '@gugu/core/cloud/config'
 import { platformModelsEnabled } from '@gugu/core/cloud/optionalServices'
 import { serverNow, withServerClock } from '@gugu/core/shared/serverClock'
 import { modelContextLengths } from '@gugu/session-core/models/context-threshold'
-import { parsePlatformCreditMultipliers, parsePlatformReasoningEfforts } from '../src/session/shared/core/agents/platform-model'
+import { parsePlatformCreditMultipliers, parsePlatformReasoningEfforts, platformDefaultReasoningEffort } from '../src/session/shared/core/agents/platform-model'
 
 // Protocol membership is decided by the shared protocol table, so adding a
 // protocol never means editing a literal union in this file.
@@ -71,6 +71,8 @@ export interface PlatformModelCatalogItem {
    * 取交集;null = 目录没有这条事实(旧服务端 / 还没从 models.dev 查过)⇒ 这个模型不画推理档。
    */
   reasoningEfforts: readonly string[] | null
+  /** 目录给的默认档(`default_reasoning_effort`,gugu-dev#1556),一定在 `reasoningEfforts` 里;旧服务端不带。 */
+  defaultReasoningEffort?: string
   /** 这一档用不了、要开会员(目录 `requires_membership`,#7056)。旧服务端不带 ⇒ false。 */
   requiresMembership: boolean
   /** 他在设置「模型」页关掉了这一条 —— 不进他的模型下拉(目录 `hidden`,#7056)。旧服务端不带 ⇒ false。 */
@@ -273,6 +275,7 @@ export async function listPlatformModels(authProvider: RuntimeAuthProvider): Pro
         contextWindow: positiveIntOrNull(row.context_window),
         ...modelContextLengths(row.context_lengths, row.default_context_length, positiveIntOrNull(row.context_window)),
         reasoningEfforts: parsePlatformReasoningEfforts(row.reasoning_efforts),
+        ...platformDefaultReasoningEffort(row.default_reasoning_effort, parsePlatformReasoningEfforts(row.reasoning_efforts)),
         requiresMembership: row.requires_membership === true,
         hidden: row.hidden === true,
       }]
