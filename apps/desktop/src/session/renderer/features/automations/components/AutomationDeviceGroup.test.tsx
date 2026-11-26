@@ -67,7 +67,7 @@ function button(container: ParentNode, label: string) {
 
 describe('automation device groups', () => {
   it('opens each device by default and collapses device and inactive sections independently', () => {
-    act(() => root.render(<><AutomationDeviceGroup label="Linux" search="" /><AutomationDeviceGroup label="Mac" search="" /></>));
+    act(() => root.render(<><AutomationDeviceGroup label="Linux" collapsible search="" /><AutomationDeviceGroup label="Mac" collapsible search="" /></>));
     const [linux, mac] = Array.from(container.querySelectorAll('section'));
     const linuxHeading = button(linux, 'Linux');
     const inactiveHeading = button(linux, 'automations.inactiveGroup2');
@@ -84,8 +84,20 @@ describe('automation device groups', () => {
     expect(button(mac, 'Mac').getAttribute('aria-expanded')).toBe('true');
   });
 
+  it('keeps the single device open with a plain heading and preserves the inactive count', () => {
+    act(() => root.render(<AutomationDeviceGroup label="Linux" collapsible search="" />));
+    act(() => button(container, 'Linux').click());
+    expect(button(container, 'Daily digest').closest('[hidden]')).not.toBeNull();
+
+    act(() => root.render(<AutomationDeviceGroup label="Linux" collapsible={false} search="" />));
+    expect(container.querySelector('h2')?.textContent).toBe('Linux');
+    expect(container.querySelector('h2 button')).toBeNull();
+    expect(button(container, 'Daily digest').closest('[hidden]')).toBeNull();
+    expect(button(container, 'automations.inactiveGroup2').getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('filters within the group and opens details with the owning device ID', () => {
-    act(() => root.render(<AutomationDeviceGroup label="Linux" search=" daily " />));
+    act(() => root.render(<AutomationDeviceGroup label="Linux" collapsible={false} search=" daily " />));
     expect(container.textContent).not.toContain('Weekly digest');
     act(() => button(container, 'Daily digest').click());
     expect(io.navigate).toHaveBeenCalledWith('automations', { automationId: 'daily', automationDeviceId: 'd22' });

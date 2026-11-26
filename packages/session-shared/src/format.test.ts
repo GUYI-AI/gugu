@@ -74,6 +74,7 @@ describe('local calendar and datetime-local values across DST', () => {
     expect(new Date(toLocalDateTimeInput(date)).getTime()).toBe(date.getTime());
     expect(formatCalendarDate(date, 'zh-CN', { now: date })).toBe('10月15日 07:07');
     expect(formatCalendarDate(date, 'en-US', { now: date })).toBe('Oct 15, 07:07 AM');
+    expect(formatCalendarDate(date, 'en-US', { now: date, showTimeZone: true })).toBe('Oct 15, 07:07 AM EDT');
     expect(formatCalendarDate(date, 'zh-CN', { now: new Date(2027, 0), includeTime: false })).toBe('2026年10月15日');
   });
 });

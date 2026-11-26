@@ -71,6 +71,7 @@ export function formatDate(value: DateValue, options: Intl.DateTimeFormatOptions
 
 // 12/24 小时跟 locale 默认走(❌ 指定 hourCycle / hour12):界面上的时刻只有这一种写法。
 const CLOCK: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
+const CLOCK_WITH_ZONE: Intl.DateTimeFormatOptions = { ...CLOCK, timeZoneName: 'short' };
 
 /** 界面上「几点」的唯一写法:中文 `17:06`,英文 `05:06 PM`。 */
 export function formatClock(value: DateValue, locale: string): string {
@@ -80,13 +81,18 @@ export function formatClock(value: DateValue, locale: string): string {
 export function formatCalendarDate(
   value: DateValue,
   locale: string,
-  { includeYear = false, includeTime = true, now = new Date() }: { includeYear?: boolean; includeTime?: boolean; now?: Date } = {},
+  { includeYear = false, includeTime = true, showTimeZone = false, now = new Date() }: {
+    includeYear?: boolean;
+    includeTime?: boolean;
+    showTimeZone?: boolean;
+    now?: Date;
+  } = {},
 ): string {
   const date = value instanceof Date ? value : new Date(value);
   const year = includeYear || date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined;
   const day = formatDate(date, { year, month: 'short', day: 'numeric' }, locale).replaceAll(', ', ' ');
   if (!includeTime) return day;
-  const clock = formatClock(date, locale);
+  const clock = formatDate(date, showTimeZone ? CLOCK_WITH_ZONE : CLOCK, locale);
   return `${day}${locale.startsWith('zh') ? ' ' : ', '}${clock}`;
 }
 
