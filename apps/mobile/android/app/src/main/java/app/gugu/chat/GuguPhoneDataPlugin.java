@@ -224,6 +224,38 @@ public class GuguPhoneDataPlugin extends Plugin {
         });
     }
 
+    private String mediaThumbnail(Uri uri, String kind, int edge) throws Exception {
+        Bitmap preview = null;
+        if (Build.VERSION.SDK_INT >= 29) {
+            preview = getContext().getContentResolver().loadThumbnail(uri, new Size(edge, edge), null);
+        } else if (kind.equals("image")) {
+            BitmapFactory.Options opts = new BitmapFactory.Options();
+            opts.inJustDecodeBounds = true;
+            try (java.io.InputStream in = getContext().getContentResolver().openInputStream(uri)) {
+                BitmapFactory.decodeStream(in, null, opts);
+            }
+            opts.inSampleSize = Math.max(1, (Math.max(opts.outWidth, opts.outHeight) + edge - 1) / edge);
+            opts.inJustDecodeBounds = false;
+            try (java.io.InputStream in = getContext().getContentResolver().openInputStream(uri)) {
+                preview = BitmapFactory.decodeStream(in, null, opts);
+            }
+        }
+        if (preview == null) return null;
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        preview.compress(Bitmap.CompressFormat.JPEG, 65, bytes);
+        preview.recycle();
+        return Base64.encodeToString(bytes.toByteArray(), Base64.NO_WRAP);
+    }
+
+    @PluginMethod public void recentPhotoThumbnail(PluginCall call) {
+        read(call, "image", () -> {
+            Uri uri = ContentUris.withAppendedId(collection("image"), id(call));
+            JSObject result = new JSObject();
+            result.put("jpeg", mediaThumbnail(uri, "image", 192));
+            return result;
+        });
+    }
+
     @PluginMethod public void mediaRead(PluginCall call) {
         String kind;
         try { kind = kind(call); } catch (Exception e) { call.reject(e.getMessage(), "invalid_args"); return; }
@@ -252,17 +284,9 @@ public class GuguPhoneDataPlugin extends Plugin {
             JSObject out = new JSObject(); out.put("phone_file_chunk", chunk);
             if (offset == 0 && !kind.equals("audio")) {
               try {
-                Bitmap preview = null;
-                if (Build.VERSION.SDK_INT >= 29) preview = getContext().getContentResolver().loadThumbnail(uri, new Size(384, 384), null);
-                else if (kind.equals("image")) {
-                    BitmapFactory.Options opts = new BitmapFactory.Options(); opts.inJustDecodeBounds = true;
-                    try (java.io.InputStream in = getContext().getContentResolver().openInputStream(uri)) { BitmapFactory.decodeStream(in, null, opts); }
-                    opts.inSampleSize = Math.max(1, (Math.max(opts.outWidth, opts.outHeight) + 383) / 384); opts.inJustDecodeBounds = false;
-                    try (java.io.InputStream in = getContext().getContentResolver().openInputStream(uri)) { preview = BitmapFactory.decodeStream(in, null, opts); }
-                }
+                String preview = mediaThumbnail(uri, kind, 384);
                 if (preview != null) {
-                    ByteArrayOutputStream bytes = new ByteArrayOutputStream(); preview.compress(Bitmap.CompressFormat.JPEG, 65, bytes); preview.recycle();
-                    JSObject picture = new JSObject(); picture.put("label", info.getString("name")); picture.put("mimeType", "image/jpeg"); picture.put("data", Base64.encodeToString(bytes.toByteArray(), Base64.NO_WRAP));
+                    JSObject picture = new JSObject(); picture.put("label", info.getString("name")); picture.put("mimeType", "image/jpeg"); picture.put("data", preview);
                     out.put("pictures", new JSArray().put(picture));
                 }
               } catch (Exception error) { out.put("preview_error", "原文件可读,缩略图不可用:" + error.getMessage()); }

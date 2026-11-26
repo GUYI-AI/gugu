@@ -480,6 +480,8 @@ export default {
     "replyUnavailable": "原消息不可用，取消回复后可发送新消息。",
     "file": "文件",
     "photos": "照片",
+    "recentPhotos": "最近照片",
+    "recentPhotoReadFailed": "无法读取这张照片",
     "camera": "拍摄",
     "memberType": {
       "agent": "Agent",

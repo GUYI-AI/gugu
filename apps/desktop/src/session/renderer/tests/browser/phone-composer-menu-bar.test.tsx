@@ -17,8 +17,21 @@ import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 
+const media = vi.hoisted(() => ({
+  available: false,
+  list: vi.fn(),
+  thumbnail: vi.fn(),
+  file: vi.fn(),
+}))
+vi.mock('@/mobile/phone-device/recentPhotos', () => ({
+  recentPhotosAvailable: () => media.available,
+  readRecentPhotos: media.list,
+  readRecentPhotoThumbnail: media.thumbnail,
+  readRecentPhotoFile: media.file,
+}))
+
 let harness: ReturnType<typeof createReactHarness> | undefined
-afterEach(() => { harness?.cleanup(); document.documentElement.removeAttribute('data-phone-shell') })
+afterEach(() => { harness?.cleanup(); media.available = false; document.documentElement.removeAttribute('data-phone-shell') })
 it.each([true])('group=%s: the input composer menu bar collapses fully without moving or replacing the input', async group => {
   await page.viewport(390, 844); setLocalePreference('zh-CN'); document.documentElement.dataset.theme = 'dark'; document.documentElement.setAttribute('data-phone-shell', '')
   harness = createReactHarness()
@@ -81,4 +94,50 @@ it('human direct messages keep the shared paperclip inside the input and open th
   await page.getByTestId('chat-composer-attach-menu').click()
   await expect.element(page.getByTestId('chat-composer-attach-panel')).toBeVisible()
   for (const name of ['photos', 'camera', 'file']) expect(harness.container.querySelector(`[data-testid="chat-composer-attach-${name}"]`)).not.toBeNull()
+})
+
+it('stages and removes a recent photo while sharing the existing ten-file limit', async () => {
+  await page.viewport(390, 844)
+  setLocalePreference('zh-CN')
+  document.documentElement.setAttribute('data-phone-shell', '')
+  media.available = true
+  const photos = Array.from({ length: 12 }, (_, index) => ({
+    id: String(index + 1), version: `photo-${index + 1}:1`, name: `photo-${index + 1}.png`, mime_type: 'image/png',
+  }))
+  media.list.mockResolvedValue(photos)
+  media.thumbnail.mockResolvedValue(null)
+  media.file.mockImplementation(async ({ name }: { name: string }) => new File(['fixture'], name, { type: 'image/png' }))
+  harness = createReactHarness()
+  await renderWithAppProviders(harness, <LocalizationProvider><ChatBottomDock reserve={false}>
+    <ChatMessageComposer chatId="recent-photo-test" currentUserId="owner" onSend={vi.fn(async () => {})} onSendAttachments={vi.fn(async () => {})} />
+  </ChatBottomDock></LocalizationProvider>)
+  const paperclip = page.getByTestId('chat-composer-attach-menu')
+  await paperclip.click()
+  const recent = page.getByRole('region', { name: '最近照片' })
+  await expect.element(recent).toBeVisible()
+  const first = recent.getByRole('button', { name: photos[0].name })
+  const last = recent.getByRole('button', { name: photos[11].name })
+  const staged = () => harness!.container.querySelectorAll('[data-slot="composer-attachment"]').length
+  await until('the visible thumbnail is loaded', () => media.thumbnail.mock.calls.some(([photo]) => photo.id === '1'))
+  expect(media.thumbnail.mock.calls.some(([photo]) => photo.id === '12')).toBe(false)
+  await first.click()
+  await expect.element(first).toHaveAttribute('aria-pressed', 'true')
+  expect(staged()).toBe(1)
+  await first.click()
+  await expect.element(first).toHaveAttribute('aria-pressed', 'false')
+  expect(staged()).toBe(0)
+  for (const photo of photos.slice(0, 10)) {
+    const tile = recent.getByRole('button', { name: photo.name, exact: true })
+    await tile.click()
+    await expect.element(tile).toHaveAttribute('aria-pressed', 'true')
+  }
+  await last.click()
+  await until('the scrolled thumbnail is loaded', () => media.thumbnail.mock.calls.some(([photo]) => photo.id === '12'))
+  await expect.element(last).toHaveAttribute('aria-pressed', 'false')
+  expect(staged()).toBe(10)
+  await paperclip.click()
+  media.list.mockResolvedValue([])
+  await paperclip.click()
+  await expect.element(page.getByTestId('chat-composer-attach-photos')).toBeVisible()
+  await expect.element(recent).not.toBeInTheDocument()
 })
