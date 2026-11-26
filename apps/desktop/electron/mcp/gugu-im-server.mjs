@@ -2859,7 +2859,7 @@ export const TOOL_DEFS = [
   {
     name: 'file_put',
     writer: true,
-    description: 'Put a file from this computer in a chat\'s folder, without a message: a new file, or with file its next version. Its name is its format (周报.md, data.json). To change a folder file: message_download_file, change your copy, then file_put it back with that file link; if someone changed it since, nothing is written.',
+    description: 'Put a file from this computer in a chat\'s folder, without a message: a new file, or with file its next version. Its name is its format: for Markdown end it in .md (no text suffix: a plain file). To change a folder file: message_download_file, change your copy, then file_put it back with that file link; if someone changed it since, nothing is written.',
     schema: z.object({
       chat_id: chatIdSchema,
       file_path: uploadFilePathSchema.describe('A file on this computer.'),
