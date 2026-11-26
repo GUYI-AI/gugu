@@ -11,7 +11,6 @@ import { DeviceRecoveryPanel, DeviceRecoveryStatus, type DeviceRecoveryProps } f
 import { Popover } from '@/components/ui/Popover';
 import { IconButton } from '@/components/ui/IconButton';
 import { ChevronRight, X } from '@/lib/icons';
-import { focusSessionComposer } from '@renderer/features/sidebar/session-keyboard-nav';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { headerConnectionState } from '@renderer/features/remote-hosts/header-connection-state';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
@@ -20,7 +19,7 @@ import { useSessionViewContext } from '../session-view-context';
 import { TabBarActionRow } from '../titlebar-actions';
 
 export const SessionMachineStatus = observer(function SessionMachineStatus() {
-  const { projectId } = useSessionViewContext();
+  const { projectId, sessionId } = useSessionViewContext();
   const deviceId = machineRegistry.machineOf(projectId);
   const device = deviceId ? remoteHostsStore.device(deviceId) : null;
   const connection = deviceId ? remoteHostsStore.connectionState(deviceId) : null;
@@ -34,7 +33,7 @@ export const SessionMachineStatus = observer(function SessionMachineStatus() {
       : connection === 'reconnecting' ? 'unreachable' : connection === 'sign-in' || device.signInExpiredAt !== undefined ? 'notSignedIn'
       : connection === 'update-failed' ? 'updateFailed' : connection === 'outdated' || connection === 'updating' ? connection : 'offline');
     const lastSync = connection === 'connected' ? undefined : remoteHostsStore.hosts.get(deviceId)?.lastTaskListAt;
-    return <TaskDeviceRecovery key={deviceId} deviceId={deviceId} name={device.label} state={reason}
+    return <TaskDeviceRecovery key={deviceId} sessionId={sessionId} deviceId={deviceId} name={device.label} state={reason}
       lastSync={lastSync ?? undefined} version={device.version} />;
   }
   const word = connection === 'updating' ? translate('machinePicker.updating') : undefined;
@@ -43,11 +42,19 @@ export const SessionMachineStatus = observer(function SessionMachineStatus() {
 
 const STATE_WORD_KEY = { online: 'connection.online', connecting: 'connection.connecting', device_offline: 'connection.deviceOffline' } as const;
 
-function TaskDeviceRecovery(props: Omit<DeviceRecoveryProps, 'onDone'>) {
+function TaskDeviceRecovery({ sessionId, ...props }: Omit<DeviceRecoveryProps, 'onDone'> & { sessionId: string }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [open, setOpen] = useState(false);
   const compact = useCompactWhenTabsSqueezed(ref);
   const { t } = useTranslation('settings');
+  function composer() {
+    const element = ref.current;
+    if (!element) return null;
+    const local = element.closest('[data-screen-block]')?.querySelector<HTMLElement>('[data-region="composer"] [contenteditable="true"]');
+    if (local) return local;
+    const task = element.ownerDocument.querySelector(`[data-session-chat-session-id="${CSS.escape(sessionId)}"] [data-region="composer"] [contenteditable="true"]`);
+    return task instanceof HTMLElement ? task : null;
+  }
   return <span ref={ref} data-slot="session-machine-status" data-compact={compact ? '' : undefined}
     className="window-no-drag-region inline-flex min-w-min items-center text-xs" data-testid="session-machine-status">
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -57,14 +64,12 @@ function TaskDeviceRecovery(props: Omit<DeviceRecoveryProps, 'onDone'>) {
       <Popover.Portal><Popover.Positioner side="bottom" align="end" sideOffset={6}>
         <Popover.Popup className="gg-recovery-popover" finalFocus={interaction => {
           if (interaction === 'mouse' || interaction === 'touch') return true;
-          const block = ref.current?.closest('[data-screen-block]') ?? ref.current?.closest('[data-slot="cold-session-strip"]');
-          return block?.querySelector<HTMLElement>('[data-region="composer"] [contenteditable="true"]') ?? true;
+          return composer() ?? true;
         }}>
-          <header><Popover.Title>{props.name}</Popover.Title><Popover.Close render={<IconButton size="sm" aria-label={t('devices.recovery.dismiss')} />}><X size={14} /></Popover.Close></header>
+          <header><Popover.Title>{props.name}</Popover.Title><Popover.Close render={<IconButton size="sm" aria-label={t('devices.recovery.dismiss')}><X size={14} /></IconButton>} /></header>
           <DeviceRecoveryPanel key={props.state} {...props} onDone={() => {
             setOpen(false);
-            const block = ref.current?.closest('[data-screen-block]');
-            if (block) requestAnimationFrame(() => focusSessionComposer(block));
+            requestAnimationFrame(() => composer()?.focus());
           }} />
         </Popover.Popup>
       </Popover.Positioner></Popover.Portal>

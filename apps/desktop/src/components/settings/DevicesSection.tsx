@@ -652,7 +652,7 @@ function DeviceRow({
             {/* 状态点:在线 = connected = live 蓝(design.md 唯一的 accent);离线退成墨色最淡一档。 */}
             <span
               aria-hidden
-              className={cn('size-[7px] shrink-0 rounded-[var(--radius-circle)]', (sshLink === null || device.is_online) && !link && sshLink !== 'checking' ? 'bg-live' : 'bg-[var(--faint-fg)]')}
+              className={cn('size-[7px] shrink-0 rounded-[var(--radius-circle)]', device.is_online ? 'bg-live' : 'bg-[var(--faint-fg)]')}
             />
             {failedUpdate !== null ? (
               <span className={retrying || restarting ? undefined : 'text-[var(--danger-fg)]'} data-testid="settings-device-match-failed">
@@ -676,10 +676,8 @@ function DeviceRow({
                   >{t('devices.loginState.retryUpdate')}</InlineAction></>
                 )}
               </span>
-            ) : sshLink === 'checking' && !signedOutText ? (
-              <>{translate('remoteHost.ssh.checking')}{lastSeen && <> · {t('devices.lastSeen', { time: lastSeen })}</>}</>
-            ) : device.is_online || sshLink === null ? (
-              sshLink === null ? translate('remoteHost.ssh.connected') : t('devices.online')
+            ) : device.is_online ? (
+              t('devices.online')
             ) : signedOutText ? (
               <span className="text-[var(--danger-fg)]" data-testid="settings-device-signed-out">{signedOutText}</span>
             ) : signInPending ? (
