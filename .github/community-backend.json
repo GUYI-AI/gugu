@@ -1,5 +1,5 @@
 {
   "repository": "GUYI-AI/gugu-supabase",
-  "ref": "35baf6a587257acdee2b3c534697c2578a89d170",
-  "status": "Backend #422 merged on dev: a document's content type comes from its name, and a name without a text suffix is refused; retains #421 (agent presence carries model_name) and #413."
+  "ref": "497873bf4b647b039417dc1e481d296cb77665ac",
+  "status": "Backend #426 merged on dev: identity.purge_owned_agent_history(p_agent_user_ids text[]) for permanently deleting archived sessions; two ahead of the #422 pin (35baf6a5), so it also carries #424 (attachment GC lease reclaim), #422 (a document name without a text suffix is refused), #421 and #413."
 }
