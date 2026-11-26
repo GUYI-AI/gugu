@@ -12,6 +12,7 @@ import { fmtMsgTime } from './messageRowTime'
 import './messageBubbleChrome.css'
 import { useMessageSenderTarget } from './MessageSenderContext'
 import { openMessageSender } from '../../lib/openMessageSender'
+import { shownMemberName } from '../../lib/memberFallbackName'
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
 
 // 气泡自己的「谁说的 / 什么时候」(owner 10-25「名字进气泡、时间进右下角」,照 Telegram):
@@ -42,6 +43,7 @@ function ownerLabelOverflows(row: HTMLElement): boolean {
 }
 
 /** 群里收到的消息、组首那一条:名字 + 归属小标签(「我的 agent」「Alice 的 agent」),标签悬停在这条消息上才浮出(设计稿 #67)。
+ *  已移除的身份:名字本身一直带「（已移除）」(#4028),不靠悬停标签说。
  *  桌面上点名字和点头像一样,打开这个人的名片(名片里写着主人);手机上点名字仍是原来的跳转。
  *  色相来自头像实际身体色;助理沿已保存的形象,亮度/彩度随主题(tokens.css)。 */
 export function BubbleSender({ member, displayName, senderId, replyMark, profile }: { member: MemberProfileCardModel | null; displayName?: string; senderId: string | null; replyMark?: ReactNode; profile?: { handle: MemberProfileHandle; payload: ActiveMemberProfile } | null }) {
@@ -50,11 +52,11 @@ export function BubbleSender({ member, displayName, senderId, replyMark, profile
   const target = useMessageSenderTarget()
   const rowRef = useRef<HTMLDivElement>(null)
   const hasReply = Boolean(replyMark)
-  const name = displayName ?? member?.displayName ?? ''
+  const name = shownMemberName(displayName ?? member?.displayName ?? '', member?.removedAt)
   const assistant = useIsAssistantAvatar(senderId ?? '')
   const assistantLook = useAgentLook(assistant ? senderId ?? '' : '', undefined, member?.avatar)
   const hue = memberNameHue({ id: senderId, avatar: member?.avatar, isAgent: member?.type === 'agent', assistantLook: assistant ? assistantLook : undefined })
-  const tag = member?.removedAt ? t('message.removedIdentityTag') : member?.type !== 'agent' ? null
+  const tag = member?.removedAt || member?.type !== 'agent' ? null
     : member.ownerUserId && member.ownerUserId === user?.id ? t('message.myAgentTag')
     : member.ownerDisplayName ? t('message.agentOwnerTag', { owner: member.ownerDisplayName })
     : t('message.agentOwnerUnavailableTag')

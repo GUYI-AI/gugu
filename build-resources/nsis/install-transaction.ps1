@@ -1,5 +1,5 @@
 param(
-  [Parameter(Mandatory=$true)][ValidateSet('prepare','commit','finish','rollback')][string]$Phase,
+  [Parameter(Mandatory=$true)][ValidateSet('prepare','extract','commit','finish','rollback')][string]$Phase,
   [Parameter(Mandatory=$true)][string]$Target,
   [Parameter(Mandatory=$true)][string]$AppId,
   [Parameter(Mandatory=$true)][string]$Executable,
@@ -8,6 +8,7 @@ param(
   [Parameter(Mandatory=$true)][string]$UninstallKey,
   [Parameter(Mandatory=$true)][ValidateSet('all','CurrentUser')][string]$Mode,
   [string]$LinkManifest,
+  [string]$Package,
   [string]$DiagnosticLog,
   # @@@install-failure-log — keep the application-readable failure log in addition
   # to the NSIS diagnostic directory shown before an installation aborts.
@@ -21,7 +22,7 @@ $Target = [IO.Path]::GetFullPath($Target).TrimEnd('\')
 if ($Target -eq [IO.Path]::GetPathRoot($Target).TrimEnd('\')) { throw 'Cannot install at a volume root' }
 $journal = "$Target.gugu-install-$AppId"
 $statePath = Join-Path $journal 'transaction.json'
-# @@@short-stage - every packaged file is written below the stage (nsisunz) and deleted below the backup, and neither
+# @@@short-stage - every packaged file is written below the stage (extract) and deleted below the backup, and neither
 # works past MAX_PATH. So both are short siblings on their tree's volume (commit is a directory rename): the stage
 # "<target>.new", each backup "<old root>.old-<6 hex>". Earlier installers used ".gugu-install-<appId>\stage" and
 # ".gugu-backup-<appId>", which pushed the deepest packaged file past 259 characters; their journals are still
@@ -94,11 +95,49 @@ function Move-Tree([string]$from, [string]$to) {
       if ($cause -isnot [IO.IOException] -and $cause -isnot [UnauthorizedAccessException]) { throw }
       if ($attempt -ge $delays.Count) {
         $script:moveFailure = [ordered]@{ step="$from -> $to"; attempts=$attempt+1; holders=@(Get-TreeHolders $from) }
-        throw
+        throw (Held-Message $cause.Message $script:moveFailure.holders)
       }
       Start-Sleep -Milliseconds $delays[$attempt]
     }
   }
+}
+# The failure text the installer dialog shows: the cause, then each holding process by name, once.
+function Held-Message([string]$cause, $holders) {
+  $names = @($holders | Where-Object { $_ -match '^(\d+) (\S+)' } | ForEach-Object { "$($Matches[2]) (pid $($Matches[1]))" } | Select-Object -Unique)
+  if ($names.Count) { return "$cause Held by: $($names -join ', ')" }
+  return $cause
+}
+# @@@extract-diagnostics - nsisunz reported any per-file failure as the bare "Error opening output file(s)": no path, no
+# cause, no retry. In the field a game anti-cheat or antivirus blocks a freshly written file, so each file gets a bounded
+# retry for a transient block; one that stays blocked fails the install naming the file, the cause and the holders.
+$script:extractFailure = $null
+function Expand-Package([string]$zip, [string]$into) {
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $delays = @(250,500,1000,2000,4000)  # about 8 s per file
+  $prefix = [IO.Path]::GetFullPath($into).TrimEnd('\') + '\'
+  $archive = [IO.Compression.ZipFile]::OpenRead($zip)
+  try {
+    foreach ($item in $archive.Entries) {
+      $path = [IO.Path]::GetFullPath([IO.Path]::Combine($into, $item.FullName))
+      if (-not $path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { throw "Package entry escapes the stage: $($item.FullName)" }
+      if ($item.FullName.EndsWith('/') -or $item.FullName.EndsWith('\')) { [IO.Directory]::CreateDirectory($path) | Out-Null; continue }
+      for ($attempt=0; ; $attempt++) {
+        try {
+          [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path)) | Out-Null
+          [IO.Compression.ZipFileExtensions]::ExtractToFile($item, $path, $true)
+          break
+        } catch {
+          $cause = $_.Exception.GetBaseException()
+          if ($cause -isnot [IO.IOException] -and $cause -isnot [UnauthorizedAccessException]) { throw }
+          if ($attempt -ge $delays.Count) {
+            $script:extractFailure = [ordered]@{ step="extract $path"; attempts=$attempt+1; holders=@(Get-TreeHolders $into) }
+            throw (Held-Message "Could not write $path after $($attempt+1) attempts: $($cause.Message)" $script:extractFailure.holders)
+          }
+          Start-Sleep -Milliseconds $delays[$attempt]
+        }
+      }
+    }
+  } finally { $archive.Dispose() }
 }
 function Get-TreeHolders([string]$dir) {
   # Every open handle whose object lies under the tree, from the system handle table: files, directories and working
@@ -348,6 +387,10 @@ try {
     $s.shortcuts = Snapshot-Shortcuts
     Save-State $s
     New-Item -ItemType Directory -Path $stage | Out-Null
+  } elseif ($Phase -eq 'extract') {
+    $s = Load-State
+    if (-not [IO.Directory]::Exists($stage)) { throw 'Staging folder is missing' }
+    Expand-Package $Package $stage
   } elseif ($Phase -eq 'rollback') {
     if (Test-Path -LiteralPath $statePath) { $s = Load-State; if (-not $s.completed) { Restore-State $s } }
   } elseif ($Phase -eq 'commit') {
@@ -402,14 +445,17 @@ try {
   }
   try {
     $roots = @($Target) + @(if ($s) { $s.roots | ForEach-Object { $_.root } })
+    $failed = if ($script:moveFailure) { $script:moveFailure } else { $script:extractFailure }
     $entry = [ordered]@{ time=[DateTime]::UtcNow.ToString('o'); phase=$Phase; version=$Version; mode=$Mode; target=$Target; error=$failure.Message; cause=$failure.GetBaseException().Message
-      # Which rename was refused and who held that tree when the retries ran out (see @@@commit-holders).
-      step=$(if ($script:moveFailure) { $script:moveFailure.step }); holders=$(if ($script:moveFailure) { $script:moveFailure.holders } else { @() })
+      # Which rename or extracted file was refused and who held that tree when the retries ran out
+      # (see @@@commit-holders, @@@extract-diagnostics).
+      step=$(if ($failed) { $failed.step }); holders=$(if ($failed) { $failed.holders } else { @() })
       # What still runs from the trees being replaced: the usual reason a directory rename is refused.
       running=@(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $path = $_.ExecutablePath; $path -and @($roots | Where-Object { $path.StartsWith("$_\", [StringComparison]::OrdinalIgnoreCase) }).Count } | ForEach-Object { "$($_.ProcessId) $($_.ExecutablePath)" }) }
     Write-InstallerLog $entry
   } catch { [Console]::Error.WriteLine("Could not record the failure in ${FailureLog}: $($_.Exception.Message)") }
   if ($script:moveFailure -and @($script:moveFailure.holders | Where-Object { $_ -match '^\d+ ' }).Count) { exit 3 }
   if ($script:unrecognizedTarget) { exit 4 }
+  if ($script:extractFailure) { exit 5 }
   exit 2
 }

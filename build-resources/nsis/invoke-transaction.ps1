@@ -5,7 +5,7 @@ $ErrorActionPreference = 'Stop'
 $diagnostic = Join-Path ([IO.Path]::GetTempPath()) 'gugu-installer\transaction-errors.jsonl'
 $arguments = @{}
 try {
-  $allowed = @('Phase','Target','AppId','Executable','Version','InstallKey','UninstallKey','Mode','LinkManifest','FailureLog')
+  $allowed = @('Phase','Target','AppId','Executable','Version','InstallKey','UninstallKey','Mode','LinkManifest','Package','FailureLog')
   foreach ($line in [IO.File]::ReadAllLines($env:GUGU_INSTALLER_REQUEST, [Text.Encoding]::Unicode)) {
     if ($line -match '^([^=]+)=(.*)$' -and $allowed -contains $Matches[1]) {
       $arguments[$Matches[1]] = $Matches[2]

@@ -6,9 +6,14 @@ import { useAttachmentObjectUrl } from '@/lib/attachmentBytes'
 import { IconButton } from '../ui/IconButton'
 import type { ChatMessageComposerProps } from './chatComposerModels'
 import { FileStorageNotice } from './FileStorageNotice'
+import { useChatStore } from '../../store/chatContext'
+import { shownMemberName } from '../../lib/memberFallbackName'
 
 export function ChatComposerContextBands({ chatId, isGroupChat, hidden, quoteContent, onQuoteConsumed, whisperTarget, onExitWhisper }: ChatMessageComposerProps) {
   const { t } = useTranslation('messaging')
+  const { identitiesById } = useChatStore('identitiesById')
+  // The band shows a removed sender marked (#4028); the draft keeps the bare name, which an excerpt quote sends as text.
+  const quotedRemovedAt = quoteContent?.source?.sender_user_id ? identitiesById[quoteContent.source.sender_user_id]?.removed_at : null
   return <>
     {chatId && isGroupChat && !hidden && <FileStorageNotice chatId={chatId} />}
     {whisperTarget && <div className="flex items-center gap-2 rounded-[var(--radius-control)] bg-[var(--bg-primary)] px-2 py-1">
@@ -16,7 +21,7 @@ export function ChatComposerContextBands({ chatId, isGroupChat, hidden, quoteCon
       <IconButton size="sm" aria-label={t('composer.exitWhisper')} onClick={onExitWhisper}><X /></IconButton>
     </div>}
     {/* 回复条浮在消息流上,底只给它自己这张卡(owner 10-25)。 */}
-    {quoteContent && <MessageQuotePreview quote={quoteContent} onClear={onQuoteConsumed} />}
+    {quoteContent && <MessageQuotePreview quote={{ ...quoteContent, senderName: shownMemberName(quoteContent.senderName, quotedRemovedAt) }} onClear={onQuoteConsumed} />}
   </>
 }
 
