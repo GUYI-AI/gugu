@@ -44,11 +44,13 @@ function replaceInlineLinks(text: string): string {
 
 function plainSegment(text: string): string {
   const literals: string[] = [];
+  let marker = '\uE000';
+  while (text.includes(marker)) marker += '\uE000';
   // A backslash escape and a numeric character reference (`&#91;`, markdownLiteral) both stand for the bare character.
   const escaped = text.replace(/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])|&#(\d{1,7}|[xX][0-9a-fA-F]{1,6});/g, (_, char: string | undefined, code: string | undefined) => {
     const point = char === undefined ? (code![0] === 'x' || code![0] === 'X' ? parseInt(code!.slice(1), 16) : Number(code)) : null;
     literals.push(char ?? String.fromCodePoint(point === 0 || point! > 0x10ffff || (point! >= 0xd800 && point! <= 0xdfff) ? 0xfffd : point!));
-    return `\uE000${literals.length - 1}\uE000`;
+    return `${marker}${literals.length - 1}${marker}`;
   });
   return replaceInlineLinks(escaped)
     .replace(/^[ \t]{0,3}#{1,6}[ \t]+(.+?)[ \t]+#+[ \t]*$/gm, '$1')
@@ -59,5 +61,5 @@ function plainSegment(text: string): string {
     .replace(/(?<![\w*])(\*|_)(?=\S)([^*_\n]*?\S)\1(?![\w*])/g, '$2')
     .replace(/~~(?=\S)([\s\S]*?\S)~~/g, '$1')
     .replace(/\*\*|__|~~/g, '')
-    .replace(/\uE000(\d+)\uE000/g, (_, index: string) => literals[Number(index)])
+    .replace(new RegExp(`${marker}(\\d+)${marker}`, 'g'), (_, index: string) => literals[Number(index)])
 }

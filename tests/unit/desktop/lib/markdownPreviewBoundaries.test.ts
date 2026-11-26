@@ -12,3 +12,8 @@ it('replaces NUL numeric references with the replacement character', () => {
 it('replaces numeric surrogate references and keeps supplementary characters', () => {
   expect(markdownPlainText('&#55296; &#xDFFF; &#128512;')).toBe('� � 😀')
 })
+
+it('preserves private-use text even when escapes need placeholders', () => {
+  expect(markdownPlainText('\uE0000\uE000 **bold**')).toBe('\uE0000\uE000 bold')
+  expect(markdownPlainText('\uE0000\uE000 \\*x\\*')).toBe('\uE0000\uE000 *x*')
+})
