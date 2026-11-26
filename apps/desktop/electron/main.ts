@@ -595,7 +595,8 @@ import {
 import { installPageFullscreen, PAGE_FULLSCREEN_PREFERENCES } from './page-fullscreen'
 import { applyApplicationMenu } from './app-menu'
 import { createMainRendererGoneHandler, createMainRendererResponsivenessLog, type CrashDialogChoice } from './renderer-crash-recovery'
-import { menuCloseChannel, menuOpenSettingsChannel } from '@shared/events/appEvents'
+import { menuCloseChannel, menuCloseHandlerChannel, menuOpenSettingsChannel } from '@shared/events/appEvents'
+import { createMenuCloseRouting } from './menu-close-routing'
 import { pinDesktopPointerMedia } from './linux-pointer-media'
 import {
   NOTIFICATION_BUS_NAME,
@@ -1409,6 +1410,10 @@ function publishWindowChromeLabels(): void {
   )
 }
 
+// ⌘W 交给主窗渲染层的前提是它认领了「关闭」(menu-close-routing.ts);认领随那一页的文档与进程走。
+const menuCloseRouting = createMenuCloseRouting()
+ipcMain.on(menuCloseHandlerChannel.name, (event, handles: unknown) => menuCloseRouting.claim(event.sender.id, handles === true))
+
 /** 应用菜单跟着宿主语言走(「设置…」是自己的字,换语言要重装一次)。 */
 function refreshApplicationMenu(): void {
   applyApplicationMenu({
@@ -1417,8 +1422,8 @@ function refreshApplicationMenu(): void {
     // 设置是会话页那边的弹窗(product spec):主窗收在托盘里也先拉出来,再叫它打开。
     // ⌘W / 菜单「关闭」:主窗交给渲染层的快捷键登记(有页签关页签,没有才关窗);别的窗口照旧直接关。
     closeFromMenu: (window) => {
-      if (mainWindow && !mainWindow.isDestroyed() && window === mainWindow) mainWindow.webContents.send(menuCloseChannel.name)
-      else window?.close()
+      const main = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+      menuCloseRouting.route(window, main, () => main?.webContents.send(menuCloseChannel.name), () => window?.close())
     },
     openSettings: () => {
       if (!mainWindow || mainWindow.isDestroyed()) return
@@ -1738,6 +1743,16 @@ function createWindow(loadContents = true): void {
   mainWindow.webContents.on('did-finish-load', () => mainWindow?.webContents.setZoomFactor(1))
   // 页面正被导航换掉时报上来的「会话页资源没载入」不是资源坏了(sessionpage/fatal-boot.ts)。
   watchNavigations(mainWindow.webContents)
+  {
+    const contents = mainWindow.webContents
+    const id = contents.id
+    // A new document, a crashed renderer or a destroyed page has not claimed ⌘W (yet): the menu closes the window.
+    contents.on('did-start-navigation', (details: { isMainFrame?: boolean; isSameDocument?: boolean }) => {
+      if (details?.isMainFrame !== false && details?.isSameDocument !== true) menuCloseRouting.release(id)
+    })
+    contents.on('render-process-gone', () => menuCloseRouting.release(id))
+    contents.once('destroyed', () => menuCloseRouting.release(id))
+  }
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     void handleMainRendererGone(details.reason, details.exitCode)
   })

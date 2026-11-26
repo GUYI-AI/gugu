@@ -39,6 +39,7 @@ import { openShellSettings } from '@renderer/lib/open-shell-settings';
 import {
   menuGiveFeedbackChannel,
   menuCloseChannel,
+  menuCloseHandlerChannel,
   menuOpenSettingsChannel,
   menuQuitRequestedChannel,
   notificationFocusSessionChannel,
@@ -69,9 +70,17 @@ export function AppMenuEvents() {
   useEffect(() => events.on(menuOpenSettingsChannel, () => openShellSettings()), []);
   // 应用菜单「关闭」(⌘W,mac 上菜单先于页面拿到它):同一份登记里 ⌘W 的两条,窄的先答 —— 拿着焦点的那块有页签就关页签,
   // 否则关窗。和在页面里直接按 ⌘W 走的是同一个结果。
-  useEffect(() => events.on(menuCloseChannel, () => {
-    if (!commandRegistry.dispatch('session.tabClose')) commandRegistry.dispatch('app.closeWindow');
-  }), []);
+  // 认领「关闭」:主进程只在有人认领时才把 ⌘W 交过来,否则自己关窗(登录页、崩溃、重载时 ⌘W 照样能关)。
+  useEffect(() => {
+    const stop = events.on(menuCloseChannel, () => {
+      if (!commandRegistry.dispatch('session.tabClose')) commandRegistry.dispatch('app.closeWindow');
+    });
+    events.emit(menuCloseHandlerChannel, true);
+    return () => {
+      stop();
+      events.emit(menuCloseHandlerChannel, false);
+    };
+  }, []);
 
   useEffect(() => {
     return events.on(menuQuitRequestedChannel, () => {
