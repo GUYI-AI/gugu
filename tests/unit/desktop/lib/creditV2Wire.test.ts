@@ -177,6 +177,8 @@ describe('actual PostgREST request builders', () => {
     expect(ledger.rows[0].creditsCharged).toBe(0.0001)
     expect(ledger.total).toBe(1)
     expect(h.calls[1].url.searchParams.get('referrer_user_id')).toBe('eq.current-user')
+    // The owner filter is what lets the database use the (user_id, created_at) index instead of every account's rows.
+    expect(h.calls[2].url.searchParams.get('user_id')).toBe('eq.current-user')
     expect(h.calls[2].url.searchParams.get('order')).toBe('created_at.desc,id.desc')
     expect(h.calls[2].url.searchParams.get('offset')).toBe('10')
     expect(h.calls[2].url.searchParams.get('limit')).toBe('10')
