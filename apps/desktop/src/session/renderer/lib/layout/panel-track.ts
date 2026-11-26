@@ -7,13 +7,17 @@ import { playSpring } from './panel-clock';
  *  · The size is the state: every frame each slot is laid out at the size it is drawn at (❌ transforms over a layout that
  *    already landed), and the fill, in the flow, takes what is left — what is beside a moving panel re-lays out with it.
  *  · A slot or the fill going to or from nothing keeps its content at its open size and moves with its edge, as a sheet
- *    pulled out (a slot's far edge on its drawn edge, the fill's near edge), fading behind a soft edge (owner 11-21). A slot
+ *    pulled out (a slot's far edge on its drawn edge, the fill's near edge), fading behind a soft edge (owner 11-21); at
+ *    nothing it stays laid out at that size (a page kept off screen is measured as it will be shown, ❌ at nothing). A slot
  *    that stays and holds its content (the list through a fold) keeps it where it is laid out, clipped at the drawn edge:
  *    its avatars do not move, a rail fades its own text. Any other slot's content is its drawn size.
  */
 
 /** Every edge this close to where it goes ends the move: the spring's sub-pixel tail would hold the landing layout back. */
 export const PANEL_LANDED_PX = 0.5;
+
+/** Where a slot at nothing is drawn: far outside any window, at its own size. */
+const OUT_OF_WINDOW = 'translate(-100000px, -100000px)';
 
 /** A fading slot's soft edge: transparent at its drawn edge, opaque this far in. */
 export const PANEL_SOFT_EDGE_PX = 24;
@@ -43,10 +47,10 @@ export interface SlotPaint {
   opacity: number;
   soft: boolean;
   /**
-   * Drawn at nothing: inert, and scaled to nothing (❌ visibility, which would restyle its whole subtree). Its content is
-   * still laid out at its open size, off to the side under its neighbour, and inert does not take back the window
-   * app-region rects it hands the window (a folded inner sidebar's drag band swallowed the click on the rail's 「»」 under
-   * it); scale(0) collapses them, as a retained page does (MainLayout).
+   * Drawn at nothing: inert, and moved out of the window (❌ visibility, which would restyle its whole subtree). Its content
+   * is still laid out at its open size, and inert does not take back the window app-region rects it hands the window (a
+   * folded inner sidebar's drag band swallowed the click on the rail's 「»」 under it): moved away, they cover nothing.
+   * ❌ scale(0): what is sized from its box (a page anchored to a pane's cell) would be laid out at nothing.
    */
   hidden: boolean;
 }
@@ -96,6 +100,8 @@ export class PanelTrack {
   /** The track's length (px), when its owner measures it: what the fill's two ends are. */
   private extent = 0;
   private fillFrom = 0;
+  /** The fill's size the last time it was open: its content's size while it is at nothing. */
+  private fillOpen = 0;
   private running: { stop: () => void } | null = null;
   private readonly listeners = new Set<PanelTrackListener>();
 
@@ -154,7 +160,7 @@ export class PanelTrack {
   jump(targets: Readonly<Record<string, SlotTarget>>): void {
     this.stop();
     for (const slot of this.slots) {
-      const target = targets[slot.id] ? full(targets[slot.id]) : slot.target;
+      const target = targets[slot.id] ? full(targets[slot.id], slot.target) : slot.target;
       slot.target = target;
       slot.from = { size: target.size, content: target.content };
       slot.geometry = { drawn: target.size, content: target.content };
@@ -167,7 +173,7 @@ export class PanelTrack {
   to(targets: Readonly<Record<string, SlotTarget>>): void {
     // Reduced motion is the track's to honour, ❌ each caller's.
     if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return this.jump(targets);
-    const next = this.slots.map((slot) => (targets[slot.id] ? full(targets[slot.id]) : slot.target));
+    const next = this.slots.map((slot) => (targets[slot.id] ? full(targets[slot.id], slot.target) : slot.target));
     if (this.slots.every((slot, at) => same(slot.target, next[at]))) return;
     this.stop();
     this.fillFrom = this.fillAt('drawn');
@@ -238,12 +244,13 @@ export class PanelTrack {
       nodes.window.style.opacity = p.opacity < 1 ? String(p.opacity) : '';
       nodes.window.style.maskImage = p.soft ? SOFT_EDGE[this.axis] : '';
       nodes.window.inert = p.hidden;
-      nodes.window.style.transform = p.hidden ? 'scale(0)' : '';
+      nodes.window.style.transform = p.hidden ? OUT_OF_WINDOW : '';
     });
     if (this.fill) {
       // A fill coming from or going to nothing keeps its open size, its near edge on the last slot's edge.
       const ends = [this.fillFrom, this.fillAt('target')];
-      const held = this.running && this.extent > 0 && Math.min(...ends) < PANEL_LANDED_PX ? Math.max(...ends) : 0;
+      if (!this.running && ends[1] >= PANEL_LANDED_PX) this.fillOpen = ends[1];
+      const held = this.extent > 0 && Math.min(...ends) < PANEL_LANDED_PX ? Math.max(...ends) || this.fillOpen : 0;
       this.fill.content.style[size] = held ? `${held}px` : '';
     }
     const drawn = new Map(this.slots.map((slot) => [slot.id, slot.geometry.drawn]));
@@ -252,8 +259,10 @@ export class PanelTrack {
   }
 }
 
-function full(target: SlotTarget): Required<SlotTarget> {
-  return { size: target.size, content: target.content ?? target.size, reflows: target.reflows ?? false };
+/** A target's content: what it says, else its size — or, going to nothing, the content it was open at. */
+function full(target: SlotTarget, was?: Required<SlotTarget>): Required<SlotTarget> {
+  const content = target.content ?? (target.size < PANEL_LANDED_PX && was ? was.content : target.size);
+  return { size: target.size, content, reflows: target.reflows ?? false };
 }
 
 function same(a: Required<SlotTarget>, b: Required<SlotTarget>): boolean {

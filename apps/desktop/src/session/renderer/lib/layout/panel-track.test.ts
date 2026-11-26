@@ -88,6 +88,25 @@ describe('PanelTrack', () => {
     expect(content.style.left).toBe('');
   });
 
+  it('a slot or the fill at nothing stays laid out at its open size, landed and after a jump', () => {
+    const track = new PanelTrack([{ id: 'chat', at: { size: 600 } }], 'x', 1000);
+    const chat = nodes();
+    track.attach('chat', chat);
+    const place = document.createElement('div');
+    const content = document.createElement('div');
+    track.attachFill(place, content);
+    // the fill shut: it keeps the 400 it was open at
+    track.to({ chat: { size: 1000 } });
+    expect(content.style.width).toBe('400px');
+    track.jump({ chat: { size: 1000 } });
+    expect(content.style.width).toBe('400px');
+    // the slot shut: it keeps the 1000 it was open at
+    track.to({ chat: { size: 0 } });
+    expect(chat.content.style.width).toBe('1000px');
+    track.jump({ chat: { size: 0 } });
+    expect(chat.content.style.width).toBe('1000px');
+  });
+
   it('a move to where it already goes does nothing; a jump stops a move and writes the target at once', () => {
     frames.hold = true;
     const track = new PanelTrack([{ id: 'list', at: { size: 240 } }]);
@@ -101,13 +120,13 @@ describe('PanelTrack', () => {
     expect(track.drawn('list')).toBe(300);
   });
 
-  it('a slot closed to nothing is inert and scaled to nothing (its window drag rects collapse), and comes back within reach', () => {
+  it('a slot closed to nothing is inert and moved out of the window at its open size (its drag rects cover nothing), and comes back within reach', () => {
     const track = new PanelTrack([{ id: 'inner', at: { size: 260 } }]);
     const inner = nodes();
     track.attach('inner', inner);
     track.to({ inner: { size: 0, content: 260 } });
     expect(inner.window.inert).toBe(true);
-    expect(inner.window.style.transform).toBe('scale(0)');
+    expect(inner.window.style.transform).toBe('translate(-100000px, -100000px)');
     expect(inner.content.style.width).toBe('260px');
     track.to({ inner: { size: 260 } });
     expect(inner.window.inert).toBe(false);
