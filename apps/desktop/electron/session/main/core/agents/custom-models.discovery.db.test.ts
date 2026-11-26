@@ -283,3 +283,14 @@ it('merging legacy connections with the same key retains both protocol routes', 
   expect(listed).toHaveLength(1);
   expect(listed[0]!.routes).toEqual(expect.arrayContaining([routeA, routeB]));
 });
+
+it('a connection added anyway stays unverified until a save the address answers', async () => {
+  const added = await saveCustomModel({ ...atAcme, apiKey: KEY, unverified: true, models: [{ id: 'a' }] });
+  expect(added.unverified).toBe(true);
+  // Switching a model off says nothing about the key: the mark stays.
+  const toggled = await saveCustomModel({ ...atAcme, id: added.id, models: [{ id: 'b' }], disabledModels: [{ id: 'a' }] });
+  expect(toggled.unverified).toBe(true);
+  const checked = await saveCustomModel({ ...atAcme, id: added.id, unverified: false, models: [{ id: 'b' }] });
+  expect(checked.unverified).toBeUndefined();
+  expect((await listCustomModels()).find(({ id }) => id === added.id)?.unverified).toBeUndefined();
+});
