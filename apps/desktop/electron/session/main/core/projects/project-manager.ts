@@ -5,7 +5,7 @@ import { log } from '@main/lib/logger';
 import type { LocalProject } from '@shared/projects';
 import { createProvider } from './create-project-provider';
 import type { ProjectProvider } from './project-provider';
-import { TimeoutSignal, withTimeout } from './utils';
+import { TimeoutSignal, withTimeout } from './timeout';
 
 const LOCAL_PROVIDER_TIMEOUT_MS = 20_000;
 const TEARDOWN_PROVIDER_TIMEOUT_MS = 60_000;

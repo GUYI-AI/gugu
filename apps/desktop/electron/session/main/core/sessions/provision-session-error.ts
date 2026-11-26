@@ -1,6 +1,6 @@
 import { match, P } from 'ts-pattern';
 import type { ProvisionStep } from '@shared/core/sessions/provisionEvents';
-import { TimeoutSignal } from '../projects/utils';
+import { TimeoutSignal } from '../projects/timeout';
 
 export const SESSION_TIMEOUT_MS = 600_000;
 export const TEARDOWN_SCRIPT_WAIT_MS = 10_000;

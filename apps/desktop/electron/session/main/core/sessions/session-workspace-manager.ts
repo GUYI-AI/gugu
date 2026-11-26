@@ -14,7 +14,7 @@ import type {
   ProvisionResult,
   SessionMount,
 } from '../projects/project-provider';
-import { withTimeout } from '../projects/utils';
+import { withTimeout } from '../projects/timeout';
 import {
   formatProvisionSessionError,
   formatTeardownSessionError,

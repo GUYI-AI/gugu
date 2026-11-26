@@ -95,13 +95,8 @@ export const sessionLibraryMcpFactSchema = z.object({
 
 export type SessionLibraryMcpFact = z.infer<typeof sessionLibraryMcpFactSchema>;
 
-const ptyConfigV1 = z.object({
-  subscriptionConnectionId: z.string().optional(),
-  version: z.literal('1'),
-  type: z.literal('pty'),
-  permissionMode: z.enum(GUGU_PERMISSION_MODES).optional(),
-  /** Initial prompt to deliver on first spawn (delivered once, gated on sessionId === null). */
-  initialPrompt: z.string().optional(),
+/** Fields the pty and ACP configs share, in the same order in both (the parsed object keeps this order). */
+const sessionConfigSharedFields = {
   /** Model to pass to the agent CLI. Empty string or absent = CLI default. */
   model: z.string().optional(),
   /** Reasoning-effort level for the model above. Absent = the CLI's own default for it. */
@@ -129,7 +124,7 @@ const ptyConfigV1 = z.object({
   taskChatId: z.string().optional(),
   /** #2599 the group this agent was created in (it joined it at birth): where it lives, whatever groups it joins later. */
   birthChatId: z.string().optional(),
-  /** Typed session messages queued through sessions.sendMessage before the process is ready. */
+  /** Typed session messages queued through sessions.sendMessage before the process / runtime is ready. */
   messageOutbox: z.array(sessionMessageSchema).optional(),
   /** Provider-neutral spawn lifecycle. Present only while a gugu_session spawn is starting. */
   spawnStartupState: spawnStartupStateSchema.optional(),
@@ -145,6 +140,16 @@ const ptyConfigV1 = z.object({
   forkedFrom: z.object({ sessionId: z.string() }).optional(),
   /** Host-owned provider control endpoint for native session-TUI sessions. */
   providerSessionEndpoint: z.string().url().optional(),
+};
+
+const ptyConfigV1 = z.object({
+  subscriptionConnectionId: z.string().optional(),
+  version: z.literal('1'),
+  type: z.literal('pty'),
+  permissionMode: z.enum(GUGU_PERMISSION_MODES).optional(),
+  /** Initial prompt to deliver on first spawn (delivered once, gated on sessionId === null). */
+  initialPrompt: z.string().optional(),
+  ...sessionConfigSharedFields,
   /** 换计费路的重开留下的待办,与 ACP 那份同义(见 ACP 配置的同名字段)。 */
   forkOnStartProviderSessionId: z.string().optional(),
   /**
@@ -168,44 +173,7 @@ const acpConfigV1 = z.object({
   initialPrompt: z.string().optional(),
   /** Initial queued prompts to deliver on first spawn (delivered once, gated on sessionId === null). */
   initialQueue: z.array(initialQueuePromptSchema).optional(),
-  /** Model to pass to the agent CLI. Empty string or absent = CLI default. */
-  model: z.string().optional(),
-  /** Reasoning-effort level for the model above. Absent = the CLI's own default for it. */
-  effort: z.string().optional(),
-  /** Per-session Fast intent; absent means off. */
-  fastMode: z.boolean().optional(),
-  /**
-   * The task's name until it is bound to an agent identity (its pending-bind record, task-name.ts):
-   * written at creation, consumed by provisioning, and the permanent name of a session that never
-   * gets an identity. Optional only for rows written before 0043; the migration filled every one.
-   */
-  agentDisplayName: z.string().optional(),
-  providerSessionState: providerSessionStateSchema.optional(),
-  pendingRestart: pendingRestartSchema.optional(),
-  /** spec session-resume:口径与 pty 那份完全一致 —— 咕咕记着的那句首轮。 */
-  firstUtterance: z.string().optional(),
-  startupOrigin: z.enum(['chat-page', 'session-page']).optional(),
-  /** Stable id for a startup-delivered first user message. */
-  initialMessageId: z.string().optional(),
-  /** gugu-dev#181: the chat whose composer dispatched this task — its first turn lands there as a task card. */
-  taskChatId: z.string().optional(),
-  /** #2599 the group this agent was created in (it joined it at birth): where it lives, whatever groups it joins later. */
-  birthChatId: z.string().optional(),
-  /** Typed session messages queued through sessions.sendMessage before the runtime is ready. */
-  messageOutbox: z.array(sessionMessageSchema).optional(),
-  /** Provider-neutral spawn lifecycle. Present only while a gugu_session spawn is starting. */
-  spawnStartupState: spawnStartupStateSchema.optional(),
-  /** 由另一台机器上的会话派出来的(见 spawnedByRemoteSchema)。Additive optional。 */
-  spawnedByRemote: spawnedByRemoteSchema.optional(),
-  /** Original requests for delegated work, including reuse of this agent. No chat content is copied. */
-  activitySourceLinks: z.array(z.string()).optional(),
-  /** 父会话在别的机器上(见 parentRemoteSchema)。Additive optional。 */
-  parentRemote: parentRemoteSchema.optional(),
-  /** spec session-fork-share:谱系标记 —— 口径与 pty 那份完全一致。 */
-  // The parent's name is read live from the parent; rows written before carry a `title` copy, stripped on parse.
-  forkedFrom: z.object({ sessionId: z.string() }).optional(),
-  /** Host-owned provider control endpoint for native session-TUI sessions. */
-  providerSessionEndpoint: z.string().url().optional(),
+  ...sessionConfigSharedFields,
   /**
    * spec session-fork-share:要分叉的**来源 provider 会话 id**,首次启动时用它走 ACP 的
    * `session/fork`,拿回一个独立的新 provider 会话 id 落进 `session_id`,此后这条会话就是
