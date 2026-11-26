@@ -11,7 +11,7 @@ const FAMILIES = [
   ['image', /^(a?png|jpe?g|jfif|gif|webp|bmp|svg|heic|heif|tiff?|avif|ico)$/, /^image\//],
   ['video', /^(mp4|mov|webm|mkv|avi|m4v)$/, /^video\//],
   ['audio', /^(mp3|wav|m4a|aac|flac|ogg|opus)$/, /^audio\//],
-  ['code', /^(js|mjs|cjs|ts|mts|cts|tsx|jsx|py|go|rs|java|c|cpp|h|sh|rb|php|swift|kt|sql|css|scss|sass|less|vue|svelte)$/, /javascript|typescript|x-python|x-sh/],
+  ['code', /^(js|mjs|cjs|ts|mts|cts|tsx|jsx|py|go|rs|java|c|cc|cpp|h|hpp|cs|sh|rb|php|swift|kt|sql|css|scss|sass|less|vue|svelte)$/, /javascript|typescript|x-python|x-sh/],
   ['text', /^(md|txt|json|ya?ml|xml|html?|log)$/, /^text\/|json/],
 ]
 

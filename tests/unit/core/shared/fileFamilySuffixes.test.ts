@@ -12,3 +12,9 @@ it("classifies animated PNG and JFIF images by their suffix", () => {
     expect(fileFamily(name, mime)).toBe(family)
   }
 })
+
+it("recognizes C++ headers and source aliases already supported by the MIME table", () => {
+  for (const [name, mime, family] of [["main.cc", "", "code"], ["api.hpp", "", "code"], ["Program.cs", "", "code"]]) {
+    expect(fileFamily(name, mime)).toBe(family)
+  }
+})
