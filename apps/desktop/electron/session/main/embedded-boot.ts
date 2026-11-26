@@ -1269,8 +1269,8 @@ async function reloadEmdashSessionNow(input: {
   resetModel?: boolean
   /**
    * 思考档位,三态:字符串 = 换成这一档;`null` = 删键、回 harness 默认;缺席 = 不碰。
-   * 只收终端会话 —— 终端的档位在 spawn 那一刻进 argv(claude `--effort`、codex
-   * `model_reasoning_effort`),活进程改不了;通用模式在活会话里当场改,不走重开。
+   * ACP accepts an effort when changing the model on reload. Effort-only changes still use the live setting.
+   * Terminal sessions apply either change through their launch configuration.
    */
   effort?: string | null
   /**
@@ -1466,11 +1466,8 @@ async function reloadEmdashSessionNow(input: {
     }
   }
 
-  if (input.effort !== undefined) {
-    throw new Error(
-      `session ${sessionId} ACP reload does not take an effort change; `
-      + 'set it on the live session instead',
-    )
+  if (input.effort !== undefined && !nextModel) {
+    throw new Error(`session ${sessionId} ACP effort must accompany a model change on reload`)
   }
   // ① 先把新选择落进会话记录 —— 重开时宿主按记录重算整份注入,记录没变就等于白重开。
   //    ❌ 不由渲染层代劳:那条路要么走活 ACP(必然失败,见 `model` 字段的注释),要么多一次
@@ -1494,6 +1491,7 @@ async function reloadEmdashSessionNow(input: {
    *    而那正说明摊平之后我们已经不知道自己在写什么了。
    */
   let configBeforePatch: typeof sessions.$inferSelect.config | null = null
+  let configAfterPatch: typeof sessions.$inferSelect.config | null = null
   const providerSessionIdBeforeReload = session.providerSessionId
   if (Object.keys(configPatch).length > 0 || (nextModel && input.modelSource === 'platform')) {
     // ⚠️ 模型**不是 conversations 的列**,它住在 `config` 那份 JSON 里(见 build-session-row:121)。
@@ -1507,6 +1505,10 @@ async function reloadEmdashSessionNow(input: {
     }
     configBeforePatch = current
     const nextConfig = { ...current, ...configPatch }
+    if (input.effort !== undefined) {
+      if (input.effort) nextConfig.effort = input.effort
+      else delete nextConfig.effort
+    }
     if (nextModel && input.modelSource === 'platform') {
       // `config.model` is the harness-native half of the record; the platform model lives only in
       // the per-conversation platform KV below. The host hands that KV to the runtime as
@@ -1514,6 +1516,7 @@ async function reloadEmdashSessionNow(input: {
       // addressing (#6196) — a platform id left here would be sent un-addressed as a native id.
       delete nextConfig.model
     }
+    configAfterPatch = nextConfig
     await db.update(sessions)
       .set({ config: nextConfig })
       .where(eq(sessions.id, sessionId))
@@ -1615,9 +1618,7 @@ async function reloadEmdashSessionNow(input: {
   if (sourceChanged || needsNewThread) {
     // Clear transient provider state before the source-change reload. The descriptor decides
     // whether the provider session id is retained or replaced by the new billing route.
-    const currentConfig = configBeforePatch
-      ? { ...configBeforePatch, ...configPatch }
-      : null
+    const currentConfig = configAfterPatch ?? configBeforePatch
     if (currentConfig) {
       const { providerSessionState: _cleared, ...configWithoutProviderState } = currentConfig
       if (input.resetModel || (nextModel && input.modelSource === 'platform')) delete configWithoutProviderState.model

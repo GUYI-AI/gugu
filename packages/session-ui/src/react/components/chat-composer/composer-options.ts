@@ -92,6 +92,9 @@ export interface ComposerModelOption {
   /** Optional capability metadata shown in the hover card detail. */
   modelFeatures?: {
     contextWindowSize?: number;
+    contextLengths?: readonly number[];
+    defaultContextLength?: number;
+    defaultEffortId?: string;
     speed?: number;
     intelligence?: number;
   };

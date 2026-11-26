@@ -71,6 +71,8 @@ export const customModelEntrySchema = z.object({
   /** An explicitly selected models.dev ID for a relay ID that cannot be resolved directly. */
   modelsDevId: z.string().trim().min(1).max(200).optional(),
   contextWindow: z.number().int().positive().optional(),
+  contextLengths: z.array(z.number().int().positive()).max(20).optional(),
+  defaultContextLength: z.number().int().positive().optional(),
   maxOutput: z.number().int().positive().optional(),
 });
 

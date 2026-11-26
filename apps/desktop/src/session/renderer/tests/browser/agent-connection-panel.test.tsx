@@ -2,7 +2,6 @@ import { QueryClientProvider, type QueryClient } from '@tanstack/react-query'
 import { followRendererSession, queryClient, refreshTag } from '@/lib/replica'
 import { createRoot, type Root } from 'react-dom/client'
 import { useState } from 'react'
-import { ComposerModelMenu } from '@gugu/session-ui/react/components'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import type { AgentPayload } from '@shared/core/agents/agent-payload'
@@ -313,13 +312,9 @@ function TaskDraft({ id = 'codex', machine = null }: { id?: string; machine?: st
   return (
     <>
       <input aria-label="Task draft" value={prompt} onChange={(e) => setPrompt(e.target.value)} />
-      <ComposerModelMenu
-        panel={{ kind: 'shown', modelRow: 'list' }}
-        modelItems={[]}
-        effortItems={[]}
-        modelUnlock={{ groupLabel: `Your ${NAMES[id]} models`, label: 'Go sign in' }}
-        onModelUnlock={(anchor) => panel.show(agent(id), machine, anchor)}
-      />
+      <button type="button" onClick={event => panel.show(agent(id), machine, event.currentTarget)}>
+        Manage connection
+      </button>
       {panel.panel}
     </>
   )
@@ -329,8 +324,7 @@ it('with nothing configured, Codex opens the account form directly and keeps the
   render(<TaskDraft id="codex" />)
   const href = location.href
   await userEvent.fill(page.getByRole('textbox', { name: 'Task draft' }), 'Keep this draft')
-  await userEvent.click(page.getByTestId('composer-model-trigger'))
-  await userEvent.click(page.getByRole('button', { name: 'Go sign in', exact: true }))
+  await userEvent.click(page.getByRole('button', { name: 'Manage connection', exact: true }))
   const dialog = page.getByRole('dialog', { name: 'Add a Codex connection', exact: true })
   await expect.element(dialog).toBeVisible()
   expect(document.querySelector('[data-testid="connection-native"]')).toBeNull()
@@ -349,8 +343,7 @@ it('a task panel shows the busy refusal of its first vendor key with Close and s
   control.rejectSelect = true
   control.busy = true
   render(<TaskDraft id="kilocode" />)
-  await userEvent.click(page.getByTestId('composer-model-trigger'))
-  await userEvent.click(page.getByRole('button', { name: 'Go sign in', exact: true }))
+  await userEvent.click(page.getByRole('button', { name: 'Manage connection', exact: true }))
   await expect.element(page.getByRole('dialog', { name: 'Add a Kilo Code connection', exact: true })).toBeVisible()
   expect(document.querySelector('.subscription-connection-form input[type="url"], .subscription-connection-form input[name="models"]')).toBeNull()
   await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'fixture-key')
@@ -369,8 +362,7 @@ it('a rejected task connection remains visible with its cause and keeps the orig
   control.rejectSelect = true
   control.connections.push({ id: 'api', kind: 'account', name: 'Saved API', current: false })
   render(<TaskDraft />)
-  await userEvent.click(page.getByTestId('composer-model-trigger'))
-  await userEvent.click(page.getByRole('button', { name: 'Go sign in', exact: true }))
+  await userEvent.click(page.getByRole('button', { name: 'Manage connection', exact: true }))
   await userEvent.click(page.getByTestId('connection-use-api'))
   await until('the host refused the switch', () => control.selected === 'rejected')
   await until(
@@ -452,8 +444,7 @@ it('working sessions refuse a task connection switch with a calm status and keep
   control.busy = true
   control.connections.push({ id: 'api', kind: 'account', name: 'Saved API', current: false })
   render(<TaskDraft />)
-  await userEvent.click(page.getByTestId('composer-model-trigger'))
-  await userEvent.click(page.getByRole('button', { name: 'Go sign in', exact: true }))
+  await userEvent.click(page.getByRole('button', { name: 'Manage connection', exact: true }))
   await userEvent.click(page.getByTestId('connection-use-api'))
   await until(
     'the busy refusal is rendered',
@@ -556,8 +547,7 @@ it('a task on another machine signs in that machine\'s own CLI from Add connecti
   )
   try {
     render(<TaskDraft id="opencode" machine="dev-walk" />)
-    await userEvent.click(page.getByTestId('composer-model-trigger'))
-    await userEvent.click(page.getByRole('button', { name: 'Go sign in', exact: true }))
+    await userEvent.click(page.getByRole('button', { name: 'Manage connection', exact: true }))
     await expect.element(page.getByRole('dialog', { name: 'Add a OpenCode connection', exact: true })).toBeVisible()
     await userEvent.click(page.getByRole('button', { name: 'Sign in', exact: true }))
     expect(modalStore.activeModalId).toBe('agentSignInModal')

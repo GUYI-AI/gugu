@@ -754,24 +754,38 @@ export const usageRing = style({ color: vars.foregroundMuted });
 export const usageRingTrack = style({ stroke: vars.border });
 export const usageRingWarn = style({ color: vars.surfaceWarningForeground });
 export const usageHeader = style({ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' });
+export const usageTitle = style({ color: vars.foregroundMuted, fontSize: tokenVars.textTiny });
+export const usageHeaderActions = style({ display: 'flex', alignItems: 'center', gap: '0.25rem', minWidth: 0 });
 export const usageHarness = style({
   display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: vars.foregroundMuted,
   fontSize: tokenVars.textTiny, whiteSpace: 'nowrap',
 });
 globalStyle(`${usageHarness} svg, ${usageHarness} img`, { width: 14, height: 14, flexShrink: 0 });
+export const usageClose = style({
+  display: 'grid', placeItems: 'center', width: '1.5rem', height: '1.5rem',
+  borderRadius: tokenVars.radiusMd, color: vars.foregroundMuted,
+  selectors: { '&:hover, &:focus-visible': { backgroundColor: vars.surfaceHover } },
+});
 
 export const contextUsageFooter = style({
   marginTop: '0.75rem', paddingTop: '0.375rem', borderTop: `1px solid ${vars.border}`,
   textAlign: 'center', color: vars.foregroundMuted, fontSize: tokenVars.textSm,
 });
-export const contextThresholdTrigger = style({
+export const modelDetailRow = style({
   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', width: '100%',
-  padding: '0.375rem 0.5rem', borderRadius: tokenVars.radiusMd, color: vars.foreground,
+  padding: '0.375rem 0.5rem', color: vars.foreground,
   fontSize: tokenVars.textSm, textAlign: 'left',
-  selectors: { '&:hover:not(:disabled), &[data-popup-open]': { backgroundColor: vars.surfaceHover } },
 });
+export const contextThresholdTrigger = style([modelDetailRow, {
+  borderRadius: tokenVars.radiusMd,
+  selectors: { '&:hover:not(:disabled), &[data-popup-open]': { backgroundColor: vars.surfaceHover } },
+}]);
 export const modelSelectedCheck = style({ color: vars.foregroundSuccess, flexShrink: 0, marginLeft: 'auto' });
 export const modelDetailControlValue = style({ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: vars.foregroundMuted });
+export const modelDetailRateValue = style([modelDetailControlValue, {
+  // Align the text with the tip of the adjacent 14px chevron.
+  paddingInlineEnd: '0.375rem',
+}]);
 export const modelDetailFastSwitch = style({
   display: 'inline-flex', alignItems: 'center', flexShrink: 0, width: '1.5rem', height: '0.875rem',
   border: `1px solid ${vars.borderPrimary}`, borderRadius: tokenVars.radiusFull, backgroundColor: vars.background,
@@ -791,6 +805,7 @@ export const modelDetailFastThumb = style({
   },
 });
 export const contextThresholdContent = style({ width: '11rem', padding: '0.25rem' });
+export const modelDetailSubmenu = style([contextThresholdContent, { width: '11.5rem', gap: 0 }]);
 export const contextThresholdInput = style({
   width: '100%', minHeight: '2rem', borderRadius: tokenVars.radiusMd, background: 'transparent',
   padding: '0.375rem 0.5rem', fontSize: tokenVars.textSm,
@@ -799,7 +814,14 @@ export const contextThresholdInput = style({
 export const contextThresholdError = style({
   padding: '0.25rem 0.5rem', color: vars.foregroundDestructive, fontSize: tokenVars.textTiny,
 });
+export const contextThresholdHeading = style({
+  color: vars.foregroundMuted,
+  fontSize: tokenVars.textTiny,
+  minHeight: '2rem',
+  padding: '0.375rem 0.5rem',
+});
 export const contextThresholdOption = style([contextThresholdTrigger, {
+  minHeight: '2.3125rem',
   selectors: {
     '&[aria-pressed="true"]': { backgroundColor: vars.surfaceHover },
     '&:disabled': { opacity: 0.55, cursor: 'not-allowed' },
@@ -817,20 +839,18 @@ export const usageCostRow = style({
   color: vars.foregroundMuted,
 });
 
-export const usagePopoverBody = style({
-  width: '16rem',
-});
+export const usagePopover = style({ width: '16rem', padding: '0.75rem', gap: '0.375rem' });
+export const usagePopoverBody = style({ minWidth: 0 });
 
 export const usageStatsRow = style({
   display: 'flex',
   alignItems: 'baseline',
-  justifyContent: 'space-between',
-  gap: '1rem',
+  gap: '0.5rem',
   fontSize: tokenVars.textTiny,
 });
 
 export const usagePercent = style({
-  fontSize: '1.75rem',
+  fontSize: '1.375rem',
   fontWeight: 600,
   color: vars.foreground,
 });
@@ -937,11 +957,7 @@ export const modelTriggerLabel = style({
   lineHeight: 1.25,
 });
 
-export const modelTriggerEffort = style({
-  flexShrink: 0,
-  color: vars.foregroundMuted,
-  lineHeight: 1.25,
-});
+export const modelTriggerChevron = style({ flexShrink: 0, color: vars.foregroundMuted });
 
 // ❌ 这里曾有 modelTriggerChevron —— 底排三枚下拉箭头一并撤,见
 // composer-model-menu.tsx 的 @@@composer-no-chevron。样式跟着它的唯一消费方一起删,
@@ -1596,9 +1612,9 @@ export const modelPanelContent = style({
   // 于是一个超长模型名会把面板按 max-content 撑开 —— 实测 1372px 的横幅
   // (`Some Vendor Very Long Model Name …` 那种 harness 真报得出的名字)。
   // 这个洞是 #5082 那条排版守卫移植过来之后当场抓到的,不是推理出来的。
-  width: '18rem',
-  minWidth: '18rem',
-  maxWidth: '18rem',
+  width: '19.5rem',
+  minWidth: 'min(19.5rem, var(--available-width))',
+  maxWidth: 'var(--available-width)',
   padding: 0,
 });
 
@@ -1697,6 +1713,7 @@ export const modelPanelItemCompact = style({
   selectors: {
     '&[data-disabled][role="option"]': { pointerEvents: 'auto' },
     '&[data-selected]': { fontWeight: 600 },
+    '&:focus-visible': { backgroundColor: vars.surfaceHover },
     '&[data-route-repair-target]': { backgroundColor: vars.surfaceHover },
   },
 });
@@ -1739,9 +1756,8 @@ export const modelPanelItemTag = style({
 
 /** 悬浮详情卡本体。宽度随内容、但夹在一个窄区间里:卡跟着鼠标换行时不该忽宽忽窄得太厉害。 */
 export const modelDetailCard = style({
-  width: 'max-content',
-  minWidth: '11rem',
-  maxWidth: '16rem',
+  width: '16rem',
+  maxWidth: 'var(--available-width)',
   padding: '0.625rem 0.75rem',
   display: 'flex',
   flexDirection: 'column',
@@ -1749,15 +1765,26 @@ export const modelDetailCard = style({
   color: vars.foreground,
 });
 
+export const modelDetailBody = style({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 'inherit',
+  outline: 'none',
+});
+
 export const modelDetailHead = style({
   display: 'flex',
-  alignItems: 'center',
-  gap: '0.5rem',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
+  gap: '0.25rem',
   minWidth: 0,
+  paddingBottom: '0.375rem',
+  borderBottom: `1px solid ${vars.border}`,
 });
 
 export const modelDetailName = style({
   minWidth: 0,
+  maxWidth: '100%',
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
@@ -1765,7 +1792,7 @@ export const modelDetailName = style({
   fontSize: fallbackVar(tokenVars.textSm, '13px'),
 });
 
-/** 「这条是谁的」那一句(组头原文),卡里的第二行。 */
+/** The provider's model description when the catalog supplies one. */
 export const modelDetailTier = style({
   fontSize: tokenVars.textTiny,
   lineHeight: tokenVars.textTinyLineHeight,
@@ -1809,15 +1836,11 @@ export const modelDetailFactValue = style({
   overflowWrap: 'anywhere',
 });
 
-/**
- * 清单末尾的两条去路(「升级解锁更多模型」、最后一行「配置模型」):在清单的滚动区里、跟着清单滚
- * (owner 11-25:「配置模型」不是钉死的一栏)。和模型之间不画分隔线(owner 11-25 22:45:「那个分隔线没必要」)。
- */
+/** The custom-model action scrolls with the list, following its divider. */
 export const modelPanelActions = style({
-  display: 'flex',
-  flexDirection: 'column',
   marginTop: '0.25rem',
   paddingTop: '0.25rem',
+  borderTop: `1px solid ${vars.border}`,
 });
 
 /** 详情卡里那枚动作(「添加路由」):纯文字按钮,悬停给底色,与菜单项同一种手感。 */
@@ -1890,7 +1913,7 @@ export const modelTriggerIcon = style({
 // 档 6(见 @@@composer-toolbar-disclosure):模型名与强度让位,只剩厂商图形。写在 modelTriggerIcon 定义之后 ——
 // 模块按顺序求值,引用它的规则写在前面会读到未初始化的常量。
 globalStyle(
-  `[data-slot="composer-toolbar"][data-disclosure="6"] [data-testid="composer-model-trigger"]:has(${modelTriggerIcon}) :is(${modelTriggerLabel}, ${modelTriggerEffort})`,
+  `[data-slot="composer-toolbar"][data-disclosure="6"] [data-testid="composer-model-trigger"]:has(${modelTriggerIcon}) :is(${modelTriggerLabel}, ${modelTriggerChevron})`,
   { display: 'none' },
 )
 

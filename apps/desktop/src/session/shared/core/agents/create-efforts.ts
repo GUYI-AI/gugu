@@ -38,7 +38,7 @@ export function resolveInitialEffort(
 ): string | null {
   if (!efforts || override === null || override?.toLowerCase() === 'default') return null;
   const desired = override ?? DEFAULT_INITIAL_EFFORT;
-  return efforts.options[desired] ? desired : null;
+  return efforts.options[desired] ? desired : efforts.defaultId ?? null;
 }
 
 export function resolveEffortCatalog(

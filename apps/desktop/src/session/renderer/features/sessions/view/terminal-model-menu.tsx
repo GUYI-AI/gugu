@@ -7,14 +7,16 @@ import {
   type ComposerModelItem,
 } from '@gugu/session-ui/react/components';
 import { platformModelIdFromOption } from '@/session/shared/platform-model-id';
-import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
+import { useReplica } from '@/lib/replica';
+import { machineRegistry } from '@renderer/lib/machine-routing';
+import { customModels } from '../session-config/custom-models';
 import { requestSessionReload } from '@renderer/features/sessions/request-session-reload';
 import { SessionReloadConfirm } from '@renderer/features/sessions/session-reload-confirm';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { findSessionHostBridge } from '@renderer/lib/electron-api';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { localizeEffortOptions } from '../session-config/effort-options';
+import { localizeEffortOptions, resolveComposerTargetEfforts } from '../session-config/effort-options';
 import { sessionStartupFailures } from '../stores/session-startup-failures';
 import { requestTerminalModelMenu, useTerminalModelMenuRequest } from './terminal-model-menu-request';
 import { codexStartupKind, isCodexProviderStartupKind } from '@gugu/core/local/codex-startup-failure.mjs';
@@ -110,20 +112,24 @@ export function TerminalModelMenu({
   const currentEffort =
     applied.effort !== undefined ? applied.effort : recordedEffort?.trim() || null;
 
+  const customReading = useReplica(customModels, [machineRegistry.machineOf(sessionId) ?? null]);
+  const customConnections = customReading.state === 'value' ? customReading.value : undefined;
   const effortsFor = useCallback(
     (optionId: string | undefined) => {
       const platformId = optionId ? platformModelIdFromOption(optionId) : null;
-      return resolveCreateEfforts({
+      return resolveComposerTargetEfforts({
         state: harnessCatalog.state,
         effortCapability: capabilities?.effort,
         staticModelsCapability:
           capabilities?.models.kind === 'selectable' ? capabilities.models : undefined,
         model: platformId === null ? (optionId ?? null) : null,
-        platformModel: platformEffortFacts(platformId, platformCatalog.models),
+        platformModel: platformId,
+        platformModels: platformCatalog.models,
+        customModels: customConnections,
         leg: 'tui',
       });
     },
-    [capabilities, harnessCatalog.state, platformCatalog.models]
+    [capabilities, harnessCatalog.state, platformCatalog.models, customConnections]
   );
   const efforts = useMemo(() => effortsFor(selectedOptionId), [effortsFor, selectedOptionId]);
   // 档名走词表 —— 插件那份是硬编码中文,原样摆出来英文壳里就漏中文(见 effort-options.ts)。
@@ -208,18 +214,21 @@ export function TerminalModelMenu({
   );
 
   const handleModelChange = useCallback(
-    (optionId: string) => {
+    (optionId: string, effortId?: string) => {
+      const targetEfforts = effortsFor(optionId)?.options;
+      if (effortId !== undefined && !targetEfforts?.[effortId]) return;
       const plan = planTerminalModelSwitch({
         optionId,
         selectedOptionId,
         options: options ?? null,
         recordedEffort: currentEffort,
-        targetEffortIds: Object.keys(effortsFor(optionId)?.options ?? {}),
+        targetEffortIds: Object.keys(targetEfforts ?? {}),
       });
       if (plan.kind === 'none' || !plan.model) return;
+      const effort = effortId ?? plan.effort;
       propose({
         model: { ...plan.model, optionId },
-        ...(plan.effort !== undefined ? { effort: plan.effort } : {}),
+        ...(effort !== undefined ? { effort } : {}),
         label: plan.label,
       });
     },
@@ -261,6 +270,7 @@ export function TerminalModelMenu({
         selectedModel={selectedOptionId}
         modelUnknown={options === undefined || !platformCatalog.known}
         onModelChange={handleModelChange}
+        effortOptionsForModel={id => localizeEffortOptions(effortsFor(id)?.options ?? null, translate)}
         openRequest={menuRequests - menuRequestsAtMount.current}
         // 底部「管理模型 / 升级解锁更多模型」(#7056),三个模型菜单同一份。
         {...composerModelFooter(platformCatalog.models)}

@@ -17,16 +17,7 @@ import '@gugu/session-ui/styles/overflow-fade.css'
 import '@/styles/tokens.css'
 import '@renderer/index.css'
 
-/**
- * #7056 owner 2026-10-10 看着 Cursor 的模型下拉提的三件事,这里钉住面板上的两件:
- *  ① 单行清单 + 悬浮详情卡 —— 行里只有名字,说明 / 倍率 / 上下文 / 推理档在悬停出来的卡里;
- *  ③ 底部「升级解锁更多模型」—— 用不了的模型不进清单,悬停这一条看得到是哪几个,点它走宿主的升级去路。
- * 还有「管理模型」:点了收起面板、交给宿主开设置里的「模型」页(② 的入口)。
- *
- * 同日看实机后又提的三处也钉在这里:行尾不再写倍率、厂商过滤片一样大、「思考」那一段收紧。
- * owner 11-25 改了两处:顶上那排厂商过滤片撤掉;「升级解锁更多模型」「配置模型」挪进清单末尾、跟着清单滚,
- * 「配置模型」是最后一行。
- */
+/** The model menu exposes one row per model, with settings in its detail card. */
 const MODELS = {
   'opus': {
     name: 'Opus 5.5',
@@ -39,8 +30,7 @@ const MODELS = {
     name: 'GLM 5.3 Flash',
     groupLabel: '咕咕模型按积分计费',
     providerLabel: '智谱',
-    description: '相对倍率 ×0.04',
-    facts: [{ label: '思考', value: '低 · 高' }],
+    creditRate: '0.04x',
     modelFeatures: { contextWindowSize: 200_000 },
   },
   'platform:deepseek-v4-flash': {
@@ -68,7 +58,6 @@ const EFFORTS = {
 let root: Root | null = null
 let container: HTMLDivElement | null = null
 const onManageModels = vi.fn()
-const onModelUpgrade = vi.fn()
 const onModelChange = vi.fn()
 
 const panel = () => document.querySelector<HTMLElement>('[data-slot="combobox-content"]')
@@ -90,7 +79,6 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
   beforeEach(async () => {
     await page.viewport(1400, 800)
     onManageModels.mockReset()
-    onModelUpgrade.mockReset()
     onModelChange.mockReset()
     container = document.createElement('div')
     container.className = 'emlight gugu-skin bg-background'
@@ -104,9 +92,8 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
           modelOptions={MODELS}
           selectedModel="platform:glm-5.3-flash"
           onModelChange={onModelChange}
+          effortOptionsForModel={id => id === 'opus' ? EFFORTS : null}
           onManageModels={onManageModels}
-          modelUpgrade={{ label: '升级解锁更多模型', title: '开通会员后可用', models: ['Claude Opus 5', 'GPT-5.6 Sol'] }}
-          onModelUpgrade={onModelUpgrade}
           effortOptions={EFFORTS}
           selectedEffort="high"
           onEffortChange={() => {}}
@@ -129,33 +116,25 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
     container = null
   })
 
-  it('draws one line per model: just the name — no rate, no description line', () => {
+  it('shows the model name and the rate on one line', () => {
     const row = rowByName('GLM 5.3 Flash')
-    // owner 2026-10-10:「卡片里已经展示过了,右侧就不要再展示相对倍率了」。
-    expect(row.textContent).not.toContain('×0.04')
-    expect(row.textContent).not.toContain('相对倍率')
+    expect(row.querySelector('[data-slot="composer-model-rate"]')?.textContent).toBe('0.04x')
     expect(rowByName('Opus 5.5').textContent).not.toContain('Best for everyday tasks')
   })
 
-  it('has no vendor filter row; the upgrade row and then 「配置模型」 end the list, inside its scroll area', () => {
-    // owner 11-25:「删掉模型选择列表头上的分组」;「配置模型」不是钉死的一栏,是清单最后一行。
+  it('ends the flat list with a divider and the custom-model action', () => {
+    expect(panel()!.querySelector('[data-testid="composer-model-search"]')).toBeNull()
     expect(panel()!.querySelector('[data-testid^="composer-model-provider-"]')).toBeNull()
+    expect(panel()!.querySelector('[data-testid="composer-model-upgrade"]')).toBeNull()
     const scroller = scrollArea()
-    const upgrade = panel()!.querySelector<HTMLElement>('[data-testid="composer-model-upgrade"]')!
     const manage = panel()!.querySelector<HTMLElement>('[data-testid="composer-model-manage"]')!
-    expect(scroller.contains(upgrade), '升级那一行不在清单的滚动区里').toBe(true)
-    expect(scroller.contains(manage), '「配置模型」不在清单的滚动区里').toBe(true)
-    // 顺序:模型 → 升级 → 配置模型,配置模型之后什么都没有。
+    expect(scroller.contains(manage)).toBe(true)
     const rows = [...scroller.querySelectorAll<HTMLElement>('[role="option"], button')]
-    expect(rows.at(-1), '「配置模型」不是最后一行').toBe(manage)
-    expect(rows.at(-2)).toBe(upgrade)
-    expect(rows.slice(0, -2).every((row) => row.getAttribute('role') === 'option')).toBe(true)
-    // 与模型行同宽:读起来是清单的一行,不是一条底栏。
-    const option = rowByName('Opus 5.5').getBoundingClientRect()
-    expect(Math.abs(manage.getBoundingClientRect().width - option.width), '「配置模型」和模型行不一样宽').toBeLessThan(1)
-    // owner 11-25 22:45:「那个分隔线没必要」—— 模型和这两条去路之间不画横线。
-    const footer = panel()!.querySelector<HTMLElement>('[data-slot="composer-model-footer"]')!
-    for (const el of [footer, upgrade, manage]) expect(getComputedStyle(el).borderTopWidth, '模型和底部去路之间画了分隔线').toBe('0px')
+    expect(rows.at(-1)).toBe(manage)
+    expect(rows.slice(0, -1).every(row => row.getAttribute('role') === 'option')).toBe(true)
+    expect(manage.getBoundingClientRect().width).toBeCloseTo(rowByName('Opus 5.5').getBoundingClientRect().width, 0)
+    const footer = panel()!.querySelector('[data-slot="composer-model-footer"]')!
+    expect(getComputedStyle(footer).borderTopWidth).toBe('1px')
   })
 
   it('opens an explicit thinking submenu from the selected model detail', async () => {
@@ -168,32 +147,56 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
     expect(page.getByRole('button', { name: 'Default', exact: true }).query()).toBeNull()
   })
 
-  it('shows a detail card for the hovered model: who it belongs to, what it is, context and thinking levels', async () => {
+  it('selects an unselected model and its thinking level from the left-opening submenu', async () => {
+    const target = rowByName('Opus 5.5')
+    await page.elementLocator(target).hover()
+    await until('Opus detail opens', () => detail()?.textContent?.includes('Opus 5.5') === true)
+    const thinking = detail()!.querySelector<HTMLButtonElement>('button')!
+    await page.elementLocator(thinking).hover()
+    const low = page.getByRole('button', { name: '低', exact: true })
+    await expect.element(low).toBeVisible()
+    const card = detail()!.closest('[data-hover-card]')!.getBoundingClientRect()
+    const submenu = low.element().closest('[data-hover-card]')!.getBoundingClientRect()
+    expect(submenu.right).toBeLessThanOrEqual(card.left + 1)
+    await low.click()
+    expect(onModelChange).toHaveBeenCalledExactlyOnceWith('opus', 'low')
+    await until('model picker closes', () => panel() === null)
+    await expect.element(page.getByTestId('composer-model-trigger')).toHaveFocus()
+  })
+
+  it('returns from the thinking options to the highlighted model and confirms with Enter', async () => {
+    const opus = page.elementLocator(rowByName('Opus 5.5'))
+    const low = page.getByRole('button', { name: '低', exact: true })
+    const high = page.getByRole('button', { name: '高', exact: true })
+    await expect.element(page.elementLocator(rowByName('GLM 5.3 Flash'))).toHaveFocus()
+    await userEvent.keyboard('{Home}')
+    await expect.element(opus).toHaveFocus()
+    await userEvent.keyboard('{ArrowRight}')
+    await expect.element(low).toHaveFocus()
+    await userEvent.keyboard('{ArrowLeft}')
+    await expect.element(opus).toHaveFocus()
+    await userEvent.keyboard('{ArrowRight}')
+    await expect.element(low).toHaveFocus()
+    await userEvent.keyboard('{ArrowDown}')
+    await expect.element(high).toHaveFocus()
+    expect(onModelChange).not.toHaveBeenCalled()
+    await userEvent.keyboard('{Enter}')
+    expect(onModelChange).toHaveBeenCalledExactlyOnceWith('opus', 'high')
+    await until('model picker closes', () => panel() === null)
+    await expect.element(page.getByTestId('composer-model-trigger')).toHaveFocus()
+  })
+
+  it('shows a rate and thinking in the card and hides a single context window', async () => {
     await page.elementLocator(rowByName('GLM 5.3 Flash')).hover()
     await until('detail card opens on hover', () => detail()?.textContent?.includes('GLM 5.3 Flash') === true)
-    const text = detail()!.textContent!
-    expect(text).toContain('咕咕模型按积分计费')
-    expect(text).toContain('相对倍率 ×0.04')
-    expect(text).toContain('200K tokens')
-    expect(text).toContain('低 · 高')
-    // 卡开着,面板还在:鼠标移向卡不能把清单关掉。
+    expect(detail()!.querySelector('[data-slot="composer-model-detail-rate"]')?.textContent).toContain('0.04x')
+    expect(detail()!.querySelectorAll('button')).toHaveLength(1)
     expect(panel()).not.toBeNull()
 
     await page.elementLocator(rowByName('Opus 5.5')).hover()
     await until('detail card follows the pointer', () => detail()?.textContent?.includes('Opus 5.5') === true)
     expect(detail()!.textContent).toContain('Best for everyday tasks')
-    expect(detail()!.textContent).toContain('1M tokens')
-  })
-
-  it('lists what an upgrade unlocks on hover and hands the click to the host', async () => {
-    const upgrade = document.querySelector<HTMLElement>('[data-testid="composer-model-upgrade"]')!
-    expect(upgrade.textContent).toBe('升级解锁更多模型')
-    await page.elementLocator(upgrade).hover()
-    await until('upgrade card opens', () => detail()?.textContent?.includes('开通会员后可用') === true)
-    // 一行一个,好扫。
-    expect([...detail()!.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Claude Opus 5', 'GPT-5.6 Sol'])
-    upgrade.click()
-    expect(onModelUpgrade).toHaveBeenCalledTimes(1)
+    expect(detail()!.querySelectorAll('button')).toHaveLength(1)
   })
 
   it('opens a disabled model’s reason on pointer hover and keeps the selection unchanged', async () => {
@@ -212,7 +215,7 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
   })
 })
 
-describe('#7123 英文界面:底部「Upgrade to unlock more models」整句都在面板里', () => {
+describe('The English custom-model action fits in the footer', () => {
   const en = (key: string, values: Readonly<Record<string, string | number>> = {}) =>
     String((enUSMessages as Record<string, string>)[key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) => String(values[name] ?? ''))
 
@@ -231,8 +234,6 @@ describe('#7123 英文界面:底部「Upgrade to unlock more models」整句都�
           selectedModel="platform:glm-5.3-flash"
           onModelChange={() => {}}
           onManageModels={() => {}}
-          modelUpgrade={{ label: en('composer.platformModelUpgrade'), title: en('composer.platformModelUpgradeTitle'), models: ['Claude Opus 5'] }}
-          onModelUpgrade={() => {}}
           onSubmit={() => {}}
           onStop={() => {}}
         />
@@ -251,16 +252,16 @@ describe('#7123 英文界面:底部「Upgrade to unlock more models」整句都�
   })
 
   it('不被面板裁掉:按钮在底栏的内容区之内,字没有溢出按钮', () => {
-    const upgrade = document.querySelector<HTMLElement>('[data-testid="composer-model-upgrade"]')!
-    expect(upgrade.textContent).toBe('Upgrade to unlock more models')
-    const box = upgrade.getBoundingClientRect()
+    const manage = document.querySelector<HTMLElement>('[data-testid="composer-model-manage"]')!
+    expect(manage.textContent).toBe('Configure custom models')
+    const box = manage.getBoundingClientRect()
     // 判的是清单滚动区的内容区(右缘减去右内边距),❌ 只看面板:测试里字体比实机窄,旧写法也只伸进内边距、还没出面板;
     // 实机上同一份溢出就到了面板外被裁掉(#7123,约 19px)。
     const scroller = scrollArea()
     const contentRight = scroller.getBoundingClientRect().right - parseFloat(getComputedStyle(scroller).paddingRight)
     expect(box.right, '按钮伸出了清单的内容区').toBeLessThanOrEqual(contentRight + 0.5)
     expect(scroller.scrollWidth, '清单被它撑出了横向滚动').toBeLessThanOrEqual(scroller.clientWidth)
-    expect(upgrade.scrollWidth, '字在按钮里被截断了').toBeLessThanOrEqual(upgrade.clientWidth)
+    expect(manage.scrollWidth, '字在按钮里被截断了').toBeLessThanOrEqual(manage.clientWidth)
     expect(document.querySelector('[data-testid="composer-model-manage"]')!.textContent).toBe('Configure custom models')
   })
 })
@@ -392,15 +393,15 @@ describe('owner 11-25:「配置模型」跟着清单滚,❌ 钉在面板底上',
 })
 
 it.each([
-  { id: 'codex', name: 'Codex', invalid: '7k', range: '8k–200k' },
-  { id: 'claude', name: 'Claude Code', invalid: '64k', range: '100k–200k' },
-])('uses the same $name threshold and minimum in the ring and the model detail', async ({ id, name, invalid, range }) => {
+  { id: 'codex', name: 'Codex', invalid: '7k', range: '8k–199999' },
+  { id: 'claude', name: 'Claude Code', invalid: '64k', range: '100k–199999' },
+])('uses the $name minimum and changes the threshold without changing context usage', async ({ id, name, invalid, range }) => {
   const mount = document.createElement('div')
   mount.style.cssText = 'position:fixed;right:24px;bottom:24px;width:640px'
   document.body.appendChild(mount)
   const composer = createRoot(mount)
   function Fixture() {
-    const [value, setValue] = useState<number | null>(null)
+    const [value, setValue] = useState<number | null>(150_000)
     return (
       <SessionLocalizationProvider>
         <ChatComposer modelOptions={MODELS} selectedModel="platform:glm-5.3-flash"
@@ -419,10 +420,10 @@ it.each([
     await ring.click()
     await expect.element(page.getByText('Context usage', { exact: true })).toBeVisible()
     await expect.element(page.getByText('20.0%', { exact: true })).toBeVisible()
-    const footer = page.getByRole('button', { name: /200.* context/ })
-    await expect.element(footer).not.toHaveTextContent('Default')
+    const footer = page.getByRole('button', { name: /Auto.?compact/i })
+    await expect.element(footer).toHaveTextContent('150K')
     await footer.click()
-    const input = page.getByRole('textbox', { name: 'Context window', exact: true })
+    const input = page.getByRole('textbox', { name: 'Enter a custom threshold', exact: true })
     await input.fill(invalid)
     await userEvent.keyboard('{Enter}')
     await expect.element(input).toHaveAttribute('aria-invalid', 'true')
@@ -430,17 +431,10 @@ it.each([
     await expect.element(page.getByText('20.0%', { exact: true })).toBeVisible()
     await input.fill('100k')
     await userEvent.keyboard('{Enter}')
-    await expect.element(page.getByText('40.0%', { exact: true })).toBeVisible()
-    await ring.click()
-    await page.getByTestId('composer-model-trigger').click()
-    await page.elementLocator(rowByName('GLM 5.3 Flash')).hover()
-    const threshold = page.getByRole('button', { name: /Context window.*100K/ })
-    await expect.element(threshold).toBeVisible()
-    await threshold.hover()
-    await expect.element(input).toBeVisible()
-    await input.fill(invalid)
-    await userEvent.keyboard('{Enter}')
-    await expect.element(page.getByRole('alert')).toHaveTextContent(`Enter ${range} tokens.`)
+    await expect.element(page.getByText('20.0%', { exact: true })).toBeVisible()
+    await expect.element(footer).toHaveTextContent('100K')
+    await footer.click()
+    await expect.element(page.getByRole('button', { name: '100K', exact: true })).toHaveAttribute('aria-pressed', 'true')
   } finally {
     composer.unmount()
     mount.remove()

@@ -9,7 +9,7 @@ const noticeLog = rendererLogger('notice')
 
 /**
  * 全 app 唯一的提示出口(#137)。谁调都落到 NoticeHost.tsx 那一处,位置只由寿命决定(owner 11-22 选的 B):
- *  · 转瞬(默认):一条确认,到点消失,画在提示条上 —— composer 上方居中,一次一条(sonner,两个 React 根共用一份状态)。
+ *  · 转瞬(默认):一条确认,到点消失,画在提示条上。通常在 composer 上方居中，也可指定右下角。
  *    `duration: Infinity` 是「要你当场看到、处理了才走」的提醒(会议即将开始):同一个位置,不自己消失,带关闭钮。
  *  · 常驻(`ongoing`):「这件事还没完、要你做个决定」,画在右上角那一叠卡上 —— 窗口按钮那条车道下面,浮在内容上、
  *    在所有弹窗之下(--z-notice),一次露一张,「‹ 1/N ›」翻其余。用户点「以后再说」= 收进铃铛(NeedsYou 列表),
@@ -44,6 +44,7 @@ export interface Notice {
   icon?: ReactNode
   /** 转瞬的:带一次性动作(撤销)的要留够点它的时间;不给就是档位的停留。 */
   duration?: number
+  position?: 'bottom-right'
   /**
    * 用户亲手关掉了这一条(关闭钮 / 滑走)。`dismissNotice` 收的、同 key 换内容 / 换位置的都**不**算 ——
    * sonner 对程序收的那条也会回调,而且晚一帧:那时同 key 可能已经是新的一条,调用方按 key 记的状态分不出是哪一条。
@@ -82,7 +83,7 @@ export function notify(notice: Notice): string | number {
   return showToast(notice)
 }
 
-function showToast({ key, title, description, tier, variant, waiting, action, icon, duration, onDismiss, onAutoClose }: Notice): string | number {
+function showToast({ key, title, description, tier, variant, waiting, action, icon, duration, position, onDismiss, onAutoClose }: Notice): string | number {
   // 转瞬的确认(成功 / 提示、没有动作)点击穿透,别挡住下面的按钮一个停留周期。
   const passthrough = !action && (tier === 'success' || tier === 'info')
   // 每个字段都显式给(没有就是 undefined):sonner 更新同 id 的提示时是 `{...旧的, ...新的}`,省略的字段会沿用上一次。
@@ -111,6 +112,7 @@ function showToast({ key, title, description, tier, variant, waiting, action, ic
     },
     className: passthrough ? 'gugu-notice-passthrough' : undefined,
     duration,
+    position,
     // 不自己消失的(提醒)一定能当场关掉。
     closeButton: duration === Infinity ? true : undefined as boolean | undefined,
     // A new toast shows in the window it was asked from (aux-layers; NoticeHost draws a strip in each pop-out). One

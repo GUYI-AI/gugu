@@ -12,6 +12,12 @@ export function contextThresholdMinimum(harness: string): number {
   return harness === 'claude' ? 100_000 : 8_000;
 }
 
+export function modelContextLengths(lengths: unknown, defaultLength: unknown, maximum?: number | null) {
+  if (!Array.isArray(lengths) || !lengths.length || typeof defaultLength !== 'number' || !lengths.includes(defaultLength)) return null;
+  if (lengths.some(value => !Number.isSafeInteger(value) || value <= 0 || (maximum != null && value > maximum))) return null;
+  return { contextLengths: [...new Set(lengths as number[])], defaultContextLength: defaultLength };
+}
+
 export const CONTEXT_THRESHOLD_ENV = 'GUGU_MODEL_CONTEXT_THRESHOLD';
 
 export interface ContextThresholdPreference {
@@ -19,11 +25,22 @@ export interface ContextThresholdPreference {
   maximum: number;
 }
 
+/** A smaller window preserves an existing threshold as far as the new strict bound permits. */
+export function contextThresholdForWindow(
+  previous: ContextThresholdPreference,
+  maximum: number,
+): ContextThresholdPreference {
+  return { tokens: Math.min(previous.tokens, maximum - 1), maximum };
+}
+
 export const CONTEXT_WINDOW_ENV = 'GUGU_MODEL_CONTEXT_WINDOW';
 
 export function contextCompactionSettings(env: Record<string, string | undefined>, currentWindow?: number | null) {
   const tokens = Number(env[CONTEXT_THRESHOLD_ENV]);
-  const maximum = currentWindow || Number(env[CONTEXT_WINDOW_ENV]);
-  if (!Number.isSafeInteger(tokens) || !Number.isSafeInteger(maximum) || tokens <= 0 || tokens >= maximum) return undefined;
+  const configuredWindow = Number(env[CONTEXT_WINDOW_ENV]);
+  const maximum = currentWindow || configuredWindow;
+  const selectedLimit = configuredWindow > 0 ? Math.min(maximum, configuredWindow) : maximum;
+  if (!Number.isSafeInteger(tokens) || !Number.isSafeInteger(selectedLimit) || !Number.isSafeInteger(maximum)
+    || tokens <= 0 || tokens >= selectedLimit) return undefined;
   return { tokens, reserve: maximum - tokens };
 }

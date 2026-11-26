@@ -49,7 +49,7 @@ export interface SessionReloadRequest {
   modelSource?: 'platform' | 'own';
   /**
    * 思考档位,三态:字符串 = 换成这一档;`null` = 清掉、回 harness 默认;**缺席 = 不碰**。
-   * 只给终端会话用 —— 通用模式的档位在活会话里当场改,不需要重开。
+   * ACP 重开只在同时换模型时携带档位。单独换档通过现有的活会话设置写入。
    * 与 `model` 同一条纪律:由宿主先写进会话记录、再重开,spawn 按记录重算。
    */
   effort?: string | null;

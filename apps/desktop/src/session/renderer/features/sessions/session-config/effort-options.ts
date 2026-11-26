@@ -1,3 +1,5 @@
+import { customModelEfforts, customModelRefFromOption, runtimeModelId, type CustomModelConnection } from '@gugu/session-core/models/custom-model';
+import { platformEffortFacts, resolveCreateEfforts, type CreateEffortsInput } from '@shared/core/agents/create-efforts';
 import { metadataSeparator } from '@/i18n/format'
 import type { ComposerEffortOption } from '@gugu/session-ui/react/components';
 import type { SessionMessageValues } from '@renderer/localization/locale-store';
@@ -9,6 +11,28 @@ type Options = Record<string, ComposerEffortOption>;
 
 // resolveEffortCatalog 搬去了 shared(主进程为手机端算推理档时要同一份);这里只保旧 import 路径。
 export { effortSourceFor, platformEffortFacts, resolveEffortCatalog } from '@shared/core/agents/create-efforts';
+
+/** Resolve the levels a destination model accepts using the same catalog as task creation. */
+export function resolveComposerTargetEfforts(
+  input: Omit<CreateEffortsInput, 'model' | 'platformModel'> & {
+    model: string | null;
+    platformModel: string | null;
+    platformModels: Parameters<typeof platformEffortFacts>[1];
+    customModels?: readonly CustomModelConnection[];
+  }
+) {
+  const { model, platformModel, platformModels, customModels, ...harness } = input;
+  const custom = customModelRefFromOption(model);
+  const entry = custom ? customModels?.find(connection => connection.id === custom.connectionId)
+    ?.models.find(choice => choice.id === custom.modelId) : undefined;
+  const customEfforts = customModelEfforts(entry, harness.effortCapability);
+  if (custom && !customEfforts) return null;
+  return resolveCreateEfforts({
+    ...harness,
+    model: runtimeModelId(model) ?? null,
+    platformModel: customEfforts ? { reasoningEfforts: customEfforts } : platformEffortFacts(platformModel, platformModels),
+  });
+}
 
 /**
  * 推理档的**规范阶梯**。档名的取值域全库就这一条有序阶梯(`none < minimal < low < medium <

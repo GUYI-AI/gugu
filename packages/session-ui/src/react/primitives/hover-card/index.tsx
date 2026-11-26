@@ -72,10 +72,14 @@ export interface HoverCardController {
 }
 
 /** Returns true while the user is actively engaged inside the hover card. */
-function isHoverCardEngaged(): boolean {
-  const card = document.querySelector(`[${HOVER_CARD_ATTR}]`);
+function isHoverCardEngaged(card: HTMLElement | null): boolean {
   if (!card) return false;
-  if (card.querySelector('[aria-expanded="true"]')) return true;
+  const document = card.ownerDocument;
+  const expanded = card.querySelector('[aria-expanded="true"]');
+  const controls = expanded?.getAttribute('aria-controls');
+  const childPopup = controls && document.getElementById(controls);
+  if (childPopup && (childPopup.matches(':hover') || childPopup.contains(document.activeElement))) return true;
+  if (expanded && !controls) return true;
   const active = document.activeElement;
   return (
     active instanceof HTMLElement &&
@@ -91,8 +95,8 @@ function isHoverCardEngaged(): boolean {
  * open and close delays so the card doesn't flicker on quick mouse moves.
  */
 export function useHoverCard({
-  openDelay = OPEN_DELAY_MS, closeDelay = CLOSE_DELAY_MS, safeTriangle = false,
-}: { openDelay?: number; closeDelay?: number; safeTriangle?: boolean } = {}): HoverCardController {
+  openDelay = OPEN_DELAY_MS, closeDelay = CLOSE_DELAY_MS, safeTriangle = false, delaySwitch = false,
+}: { openDelay?: number; closeDelay?: number; safeTriangle?: boolean; delaySwitch?: boolean } = {}): HoverCardController {
   const [open, setOpen] = useState(false);
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const openRef = useRef(false);
@@ -100,7 +104,8 @@ export function useHoverCard({
   const closeTimer = useRef<number | null>(null);
   const popup = useRef<HTMLElement | null>(null);
   const popupRef = useCallback((element: HTMLElement | null) => { popup.current = element; }, []);
-  const aim = useRef<{ x: number; y: number; edge: number; top: number; bottom: number; until: number } | null>(null);
+  const rowPointer = useRef<{ key: string; x: number; y: number } | null>(null);
+  const aim = useRef<{ horizontal: boolean; start: number; cross: number; edge: number; min: number; max: number; until: number } | null>(null);
   const deferred = useRef<number | null>(null);
   const clearAim = useCallback(() => {
     aim.current = null;
@@ -140,60 +145,81 @@ export function useHoverCard({
     clearCloseTimer();
     closeTimer.current = window.setTimeout(() => {
       closeTimer.current = null;
-      if (popup.current?.matches(':hover') || isHoverCardEngaged()) return;
+      if (popup.current?.matches(':hover') || isHoverCardEngaged(popup.current)) return;
       setOpenState(false);
     }, closeDelay);
   }, [clearCloseTimer, closeDelay, setOpenState]);
 
   const handleRowEnter = useCallback(
-    (key: string) => {
+    (key: string, activate: () => void) => {
       clearCloseTimer();
-      setActiveKey(key);
-      // While warm: swap content instantly without reopening.
-      if (openRef.current) return;
+      if (openRef.current && (!delaySwitch || key === activeKey)) {
+        activate();
+        return;
+      }
       if (openTimer.current === null) {
         openTimer.current = window.setTimeout(() => {
           openTimer.current = null;
+          activate();
           setOpenState(true);
         }, openDelay);
       }
     },
-    [clearCloseTimer, openDelay, setOpenState]
+    [activeKey, clearCloseTimer, delaySwitch, openDelay, setOpenState]
   );
 
   const getRowHoverProps = useCallback(
     (key: string, onActivate?: (element: HTMLElement) => void): HoverCardRowProps => {
       const enter = (event: React.MouseEvent<HTMLElement>) => {
         const element = event.currentTarget;
+        const { clientX: x, clientY: y } = event;
         const activate = () => {
-          clearAim();
+          setActiveKey(key);
           onActivate?.(element);
-          handleRowEnter(key);
+        };
+        const enterRow = () => {
+          rowPointer.current = { key, x, y };
+          clearAim();
+          handleRowEnter(key, activate);
         };
         const triangle = aim.current;
         if (triangle && Date.now() < triangle.until) {
-          const ratio = (event.clientX - triangle.x) / (triangle.edge - triangle.x);
-          const lower = triangle.y + (triangle.top - triangle.y) * ratio;
-          const upper = triangle.y + (triangle.bottom - triangle.y) * ratio;
-          if (ratio > 0 && ratio <= 1 && event.clientY >= lower && event.clientY <= upper) {
+          const coordinate = triangle.horizontal ? x : y;
+          const cross = triangle.horizontal ? y : x;
+          const ratio = (coordinate - triangle.start) / (triangle.edge - triangle.start);
+          const lower = triangle.cross + (triangle.min - triangle.cross) * ratio;
+          const upper = triangle.cross + (triangle.max - triangle.cross) * ratio;
+          if (ratio > 0 && ratio <= 1 && cross >= lower && cross <= upper) {
             if (deferred.current !== null) window.clearTimeout(deferred.current);
-            deferred.current = window.setTimeout(activate, triangle.until - Date.now());
+            deferred.current = window.setTimeout(enterRow, triangle.until - Date.now());
             clearCloseTimer();
             return;
           }
         }
-        activate();
+        enterRow();
       };
       return {
         onMouseEnter: enter,
-        onMouseMove: (event) => { if (deferred.current !== null) enter(event); },
-        onMouseLeave: (event) => {
+        onMouseMove: (event) => {
+          if (deferred.current !== null) enter(event);
+          else rowPointer.current = { key, x: event.clientX, y: event.clientY };
+        },
+        onMouseLeave: () => {
           clearOpenTimer();
           if (deferred.current !== null) { window.clearTimeout(deferred.current); deferred.current = null; }
-          if (safeTriangle && openRef.current && activeKey === key && popup.current) {
+          const point = rowPointer.current;
+          if (safeTriangle && openRef.current && activeKey === key && point?.key === key && popup.current) {
             const box = popup.current.getBoundingClientRect();
-            const edge = event.clientX <= box.left ? box.left : box.right;
-            aim.current = { x: event.clientX, y: event.clientY, edge, top: box.top - 4, bottom: box.bottom + 4, until: Date.now() + closeDelay };
+            const side = popup.current.dataset.side;
+            const horizontal = side !== 'bottom' && side !== 'top';
+            const start = horizontal ? point.x : point.y;
+            const cross = horizontal ? point.y : point.x;
+            const from = horizontal ? box.left : box.top;
+            const to = horizontal ? box.right : box.bottom;
+            // Mouseleave reports the new coordinates, which can already be over a neighboring row.
+            aim.current = { horizontal, start, cross, edge: start <= from ? from : to,
+              min: (horizontal ? box.top : box.left) - 4, max: (horizontal ? box.bottom : box.right) + 4,
+              until: Date.now() + closeDelay };
           }
           scheduleClose();
         },
@@ -226,13 +252,13 @@ export function useHoverCard({
     setOpenState(false);
   }, [clearOpenTimer, clearCloseTimer, clearAim, setOpenState]);
 
-  const show = (key: string) => {
+  const show = useCallback((key: string) => {
     clearAim();
     clearOpenTimer();
     clearCloseTimer();
     setActiveKey(key);
     setOpenState(true);
-  };
+  }, [clearAim, clearCloseTimer, clearOpenTimer, setOpenState]);
   return { open, activeKey, getRowHoverProps, popupHoverProps, popupRef, handleOpenChange, close, show };
 }
 
@@ -249,9 +275,11 @@ export interface HoverCardProps {
   children: React.ReactNode;
   side?: 'top' | 'bottom' | 'left' | 'right';
   align?: 'start' | 'center' | 'end';
+  collisionAvoidance?: React.ComponentProps<typeof Popover.Content>['collisionAvoidance'];
   sideOffset?: number;
   className?: string;
-  initialFocus?: boolean;
+  id?: string;
+  initialFocus?: React.ComponentProps<typeof Popover.Content>['initialFocus'];
 }
 
 /**
@@ -270,8 +298,10 @@ export function HoverCard({
   children,
   side = 'right',
   align = 'start',
+  collisionAvoidance,
   sideOffset = 8,
   className,
+  id,
   initialFocus = false,
 }: HoverCardProps) {
   const { open, popupHoverProps, handleOpenChange } = controller;
@@ -293,11 +323,13 @@ export function HoverCard({
     <Popover.Root open={open} onOpenChange={onOpenChange}>
       <Popover.Content
         {...{ [HOVER_CARD_ATTR]: '' }}
+        id={id}
         ref={controller.popupRef}
         initialFocus={initialFocus}
         anchor={anchor}
         side={side}
         align={align}
+        collisionAvoidance={collisionAvoidance}
         sideOffset={sideOffset}
         className={className ?? hoverCardDefault}
         onMouseEnter={popupHoverProps.onMouseEnter}

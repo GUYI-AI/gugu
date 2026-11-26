@@ -372,7 +372,7 @@ it('repairs a missing model route from its disabled row and returns to the picke
   });
   await page.screenshot({ path: '../../../../../../../test-results/custom-route-repair-save.png' });
   await userEvent.click(page.getByTestId('custom-model-save'));
-  await expect.element(page.getByTestId('composer-model-search')).toBeVisible();
+  await expect.element(row).toBeVisible();
   await expect.element(row).toHaveAttribute('data-route-repair-target', 'true');
   const routes = state.saved?.routes;
   expect(routes).toMatchObject([{ incoming: 'anthropic-messages', outgoing: 'openai-chat-completions', modelId: 'repair-target' }, fallback]);
