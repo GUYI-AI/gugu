@@ -147,7 +147,7 @@ export function Hint({ label, children, side = 'right', sideOffset = 8, withArro
               <TooltipPrimitive.Arrow
                 aria-hidden="true"
                 className={cn(
-                  'size-2 rounded-br-[1px] border-r border-b border-[var(--border)] bg-[var(--popover)]',
+                  'size-2 rounded-br-[var(--radius-xs)] border-r border-b border-[var(--border)] bg-[var(--popover)]',
                   'data-[side=top]:-bottom-1 data-[side=top]:rotate-45',
                   'data-[side=bottom]:-top-1 data-[side=bottom]:rotate-[225deg]',
                   'data-[side=left]:-right-1 data-[side=left]:-rotate-45',
