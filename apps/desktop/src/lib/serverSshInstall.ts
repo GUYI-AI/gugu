@@ -163,7 +163,7 @@ export type ServerSshInstallFailure = {
   reason: ServerSshInstallFailureReason
   detail?: string
   /** hostKeyChanged:要删掉旧记录的那台主机(`ssh-keygen -R` 的参数)与它现在报的新指纹。 */
-  hostKey?: { host: string; fingerprint: string | null }
+  hostKey?: { host: string; fingerprint: string | null; location?: string }
   /** machineLimit:哪条上限(总数 / 远程隧道)、除这台外已经连着几台、上限几台。 */
   machineLimit?: MachineLimitRefusal
   /** accountMismatch:那台机器上登着的账号,只到最小可识别形态(邮箱首字 + id 前缀),❌ 完整邮箱或凭据。 */
