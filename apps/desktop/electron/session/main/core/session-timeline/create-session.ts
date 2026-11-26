@@ -276,6 +276,20 @@ const defaultCreateModelsDeps: CreateModelsDeps = {
   readAuth: async (providerId) => (await import('@main/core/agent-config/runtime-process/host')).readAgentAuthStatus(providerId),
 };
 
+/**
+ * Why Auto mode is off on the create menu (a message key). A gateway session's reviewer is the host's verdict: the native
+ * login (signed out on a machine that only uses Gugu models) and the native reviewer say nothing about it, so only the
+ * CLI version comes before the host's reason (#3940).
+ */
+export function autoReviewOffReason(input: { cliVersion: string | undefined; versionTooOld: boolean; hostVerdict: boolean;
+  hostReason: string | undefined; nativeReady: boolean; nativeReviewer: boolean }): string {
+  if (!input.cliVersion) return 'taskConfig.reviewEligibilityUnknown';
+  if (input.versionTooOld) return 'taskConfig.reviewVersionUnsupported';
+  if (input.hostVerdict) return input.hostReason ?? 'taskConfig.reviewUnavailable';
+  if (!input.nativeReady) return 'taskConfig.reviewEligibilityUnknown';
+  return input.nativeReviewer ? 'taskConfig.reviewUnavailable' : 'taskConfig.reviewNativeUnavailable';
+}
+
 export async function createModels(
   request: SessionpageSessionCreateModelsRequest,
   deps: CreateModelsDeps = defaultCreateModelsDeps
@@ -350,9 +364,8 @@ export async function createModels(
       leg: sessionpageLegOfView(view.view),
       review: { allowed: reviewAllowed, byHaiku: reviewByHaiku,
         ...(hostReviewer ? { reviewer: { label: hostReviewer.label, kind: hostReviewer.kind } } : {}),
-        reason: !cliVersion ? 'taskConfig.reviewEligibilityUnknown' : versionTooOld ? 'taskConfig.reviewVersionUnsupported'
-          : state.kind !== 'ready' ? 'taskConfig.reviewEligibilityUnknown' : !state.reviewerAvailable ? 'taskConfig.reviewNativeUnavailable'
-            : reviewReason ?? 'taskConfig.reviewUnavailable' },
+        reason: autoReviewOffReason({ cliVersion, versionTooOld: !!versionTooOld, hostVerdict: hostReview !== null, hostReason: reviewReason,
+          nativeReady: state.kind === 'ready', nativeReviewer: state.kind === 'ready' && state.reviewerAvailable === true }) },
     });
     return {
       ok: true,
