@@ -27,8 +27,8 @@ export const SessionMachineStatus = observer(function SessionMachineStatus() {
   const state = headerConnectionState(connection) ?? (ssh && connection ? 'device_offline' : null);
   if (!state) return null;
   const attention = isSshAttention(connection);
-  const lastList = remoteHostsStore.hosts.get(deviceId)?.lastTaskListAt;
   const interrupted = ssh && state !== 'online';
+  const lastList = interrupted ? remoteHostsStore.hosts.get(deviceId)?.lastTaskListAt : undefined;
   const detail = interrupted ? [translate('remoteHost.ssh.taskUnknown'), lastList
     ? translate('remoteHost.ssh.lastSync', { time: new Date(lastList).toLocaleString(locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) })
     : null].filter(Boolean).join(' · ') : null;
