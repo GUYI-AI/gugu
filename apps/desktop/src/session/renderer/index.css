@@ -1516,8 +1516,8 @@ html[data-gugu-dragging] :is(webview, iframe) {
   .screen-block-close {
     opacity: 0;
   }
-  .session-tab-bar:hover .screen-block-close,
-  .session-tab-bar[data-grip-shown] .screen-block-close,
+  :is(.session-tab-bar, [data-chat-workspace-header]):hover .screen-block-close,
+  [data-screen-block]:has(.session-tab-bar[data-grip-shown]) .screen-block-close,
   .screen-block-close:focus-visible:not([data-pointer-focus]) {
     opacity: 1;
   }
