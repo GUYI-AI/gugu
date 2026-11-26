@@ -1016,13 +1016,13 @@ async function runGoalCommand(command, insertion) {
     const goal = goalNotices === seen ? answered : latestGoal
     if (goal) noticeGoalStatus(goal, true)
     else sessionUpdate({ sessionUpdate: 'notice', severity: 'info', title: 'No goal set' })
-    return
+    return null
   }
   if (command.kind === 'clear') {
     const { cleared } = await goalRequest('thread/goal/clear', { origin: 'user' })
     lastGoalLine = null
     sessionUpdate({ sessionUpdate: 'notice', severity: 'info', title: cleared ? 'Goal cleared' : 'No goal set' })
-    return
+    return null
   }
   const params = command.kind === 'set'
     ? { origin: 'user', objective: command.objective, status: 'active', ...(command.tokenBudget === null ? {} : { tokenBudget: command.tokenBudget }) }
@@ -1030,6 +1030,7 @@ async function runGoalCommand(command, insertion) {
   const seen = goalNotices
   const { goal } = await goalRequest('thread/goal/set', params)
   if (goalNotices === seen) noticeGoalStatus(goal)
+  return goal
 }
 
 /**
@@ -2670,8 +2671,13 @@ async function handleAcpRequest(message) {
     const lead = params.prompt?.[0]
     const goalCommand = lead?.type === 'text' ? parseGoalCommand(String(lead.text ?? '')) : null
     if (goalCommand) {
-      await runGoalCommand(goalCommand, insertion)
+      const goal = await runGoalCommand(goalCommand, insertion)
       await receipt(id, insertion)
+      // @@@goal-command-ends - a goal command is not a turn. The host holds this input's work open until the agent
+      // reports idle; Codex opens a turn of its own only for a goal left active (set, resume), and a running turn reports
+      // its own idle. Anything else (show, clear, pause) ends here as a finished turn does, or the session stays working
+      // with nothing for Stop to cancel and every later message waits behind it.
+      if (!activeCycle && goal?.status !== 'active') sessionUpdate({ sessionUpdate: 'state_update', state: 'idle', stopReason: 'end_turn' })
       return
     }
     if (joinPromptText(params.prompt).trim() === '/compact') {
@@ -2852,6 +2858,10 @@ function handleAcpNotification(message) {
     void cancelTurn(activeCycle.turnId).catch((error) => {
       process.stderr.write(`[codex-app-server-acp] cancel failed: ${error.message}\n`)
     })
+  } else if (message.method === 'session/cancel') {
+    // No native turn to interrupt, so none will report the end the host's Stop waits for: report it here (a host that
+    // is not working ignores it). Without this a session held working by input that started no turn never comes back.
+    sessionUpdate({ sessionUpdate: 'state_update', state: 'idle', stopReason: 'cancelled' })
   }
 }
 

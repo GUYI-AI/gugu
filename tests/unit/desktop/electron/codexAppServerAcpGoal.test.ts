@@ -42,13 +42,21 @@ rl.on('line', (line) => {
     if (process.env.LATE_SET) out(answer)
     return
   }
+  if (m.method === 'turn/start') {
+    const turn = { id: 'turn-' + m.id, status: 'inProgress' }
+    out({ id: m.id, result: { turn } })
+    out({ method: 'turn/started', params: { threadId: thread, turn } })
+    out({ method: 'item/started', params: { threadId: thread, turnId: turn.id, item: { type: 'userMessage', id: 'user-' + m.id, clientId: m.params.clientUserMessageId, content: m.params.input } } })
+    out({ method: 'item/completed', params: { threadId: thread, turnId: turn.id, item: { type: 'agentMessage', id: 'answer-' + m.id, text: 'answered' } } })
+    return out({ method: 'turn/completed', params: { threadId: thread, turn: { ...turn, status: 'completed' } } })
+  }
   if (m.method === 'thread/goal/get') return out({ id: m.id, result: { goal } })
   if (m.method === 'thread/goal/clear') { const cleared = !!goal; goal = null; out({ id: m.id, result: { cleared } }); return out({ method: 'thread/goal/cleared', params: { threadId: thread } }) }
   out({ id: m.id, result: { data: [] } })
 })
 `
 
-type Update = { sessionUpdate: string; title?: string; description?: string; availableCommands?: { name: string; input?: { type?: string; hint?: string } }[]; content?: unknown }
+type Update = { sessionUpdate: string; state?: string; stopReason?: string; title?: string; description?: string; availableCommands?: { name: string; input?: { type?: string; hint?: string } }[]; content?: unknown }
 
 let dir = ''
 let adapter: ChildProcessWithoutNullStreams | null = null
@@ -102,7 +110,10 @@ function start(extraEnv: Record<string, string> = {}) {
     .map((line) => JSON.parse(line) as { method: string; params: Record<string, unknown> })
     .filter((entry) => entry.method.startsWith('thread/goal/') || entry.method === 'turn/start')
   const notices = () => updates.filter((update) => update.sessionUpdate === 'notice').map((update) => update.title)
-  return { send, reply, updates, errors, goalWire, notices }
+  // What the host's work state follows (cell `onAgentState`): the agent's own running / idle reports.
+  const states = () => updates.filter((update) => update.sessionUpdate === 'state_update').map((update) => `${update.state}:${update.stopReason ?? ''}`)
+  const notify = (method: string, params: unknown) => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method, params }) + '\n')
+  return { send, notify, reply, updates, errors, goalWire, notices, states }
 }
 
 async function openSession(rig: ReturnType<typeof start>) {
@@ -159,6 +170,44 @@ describe('Codex ACP /goal is codex thread goal', () => {
       { threadId: 'th-goal', origin: 'user' },
     ])
     expect(rig.notices()).toEqual(['Goal active: 0 tokens used', 'Goal paused: 0 tokens used', 'Goal cleared'])
+  })
+
+  // A goal command is not a turn. The host holds the input's work open until the agent reports idle (#4023 follow-up:
+  // bare /goal and /goal clear left a session working for good, with every later message waiting behind them).
+  it('ends show, clear and pause where they are, so the next message is answered', async () => {
+    const rig = start()
+    const sessionId = await openSession(rig)
+    for (const [line, ended] of [['/goal', 1], ['/goal clear', 2]] as const) {
+      await rig.reply(rig.send('session/prompt', { sessionId, prompt: prompt(line) }), line)
+      await awaitFact(`${line} ends`, () => rig.states().filter((state) => state === 'idle:end_turn').length === ended || undefined)
+    }
+    expect(rig.notices()).toEqual(['No goal set', 'No goal set'])
+    const next = await rig.reply(rig.send('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'AFTER_GOAL_SHOW_OK' }] }), 'next message')
+    expect(next).toEqual({ messageId: expect.stringMatching(/^user-/) })
+    await awaitFact('answer', () => rig.updates.find((update) => update.sessionUpdate === 'agent_message_chunk'))
+    await awaitFact('next turn ends', () => rig.states().length === 4 || undefined)
+    expect(rig.states()).toEqual(['idle:end_turn', 'idle:end_turn', 'running:', 'idle:end_turn'])
+
+    await rig.reply(rig.send('session/prompt', { sessionId, prompt: prompt('/goal ship it') }), 'set')
+    await rig.reply(rig.send('session/prompt', { sessionId, prompt: prompt('/goal pause') }), 'pause')
+    await awaitFact('pause ends', () => rig.states().length === 5 || undefined)
+    // set left the goal active: Codex opens that turn itself and it reports its own end, so set adds none here.
+    expect(rig.states()).toEqual(['idle:end_turn', 'idle:end_turn', 'running:', 'idle:end_turn', 'idle:end_turn'])
+    await rig.reply(rig.send('session/prompt', { sessionId, prompt: prompt('/goal resume') }), 'resume')
+    await rig.reply(rig.send('session/prompt', { sessionId, prompt: prompt('/goal') }), 'show active goal')
+    await awaitFact('show ends', () => rig.states().length === 6 || undefined)
+    expect(rig.notices().slice(-3)).toEqual(['Goal paused: 0 tokens used', 'Goal active: 0 tokens used', 'Goal active: 0 tokens used'])
+  })
+
+  it('a Stop with no native turn running ends the work it holds', async () => {
+    const rig = start()
+    const sessionId = await openSession(rig)
+    rig.notify('session/cancel', { sessionId })
+    await awaitFact('stop ends', () => rig.states().find((state) => state === 'idle:cancelled'))
+    const next = await rig.reply(rig.send('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'after stop' }] }), 'next message')
+    expect(next).toEqual({ messageId: expect.stringMatching(/^user-/) })
+    await awaitFact('next turn ends', () => rig.states().length === 3 || undefined)
+    expect(rig.states()).toEqual(['idle:cancelled', 'running:', 'idle:end_turn'])
   })
 
   it('refuses a malformed budget without touching codex', async () => {
