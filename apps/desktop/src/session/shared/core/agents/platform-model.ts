@@ -59,6 +59,8 @@ export interface PlatformModelOption {
    * (assistant-ui 那版 model picker 的「能力说明」对位物;矩阵 #82。)
    */
   contextWindow: number | null;
+  contextLengths?: readonly number[];
+  defaultContextLength?: number;
   /**
    * `billing.platform_models.reasoning_efforts`:这个模型认的推理档(#6447)。取不到 = null。
    *

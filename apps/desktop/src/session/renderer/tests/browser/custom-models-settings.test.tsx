@@ -93,7 +93,13 @@ it('proposes the default from the checked levels and lists only Automatic and th
   await userEvent.click(page.getByTestId('custom-model-default-effort'));
   await until('the default menu lists its options', () => document.querySelectorAll('[role=option]').length > 0);
   expect([...document.querySelectorAll('[role=option]')].map(option => option.textContent)).toEqual(['自动', '低', '超高']);
+  const selected = page.getByRole('option', { name: '超高', exact: true });
+  await until('the open default menu finishes entering', () => {
+    const popup = selected.query()?.closest('[data-slot="select-content"]');
+    return popup != null && !popup.hasAttribute('data-starting-style') && popup.getAnimations().every(animation => animation.playState === 'finished');
+  });
   await userEvent.keyboard('{Escape}');
+  await expect.element(page.getByTestId('custom-model-default-effort')).toHaveAttribute('aria-expanded', 'false');
   await level('low'); await level('xhigh'); await defaultIs('自动');
   await expect.element(page.getByTestId('custom-model-effort-hint')).toBeVisible();
 });
@@ -372,7 +378,7 @@ it('repairs a missing model route from its disabled row and returns to the picke
   });
   await page.screenshot({ path: '../../../../../../../test-results/custom-route-repair-save.png' });
   await userEvent.click(page.getByTestId('custom-model-save'));
-  await expect.element(page.getByTestId('composer-model-search')).toBeVisible();
+  await expect.element(row).toBeVisible();
   await expect.element(row).toHaveAttribute('data-route-repair-target', 'true');
   const routes = state.saved?.routes;
   expect(routes).toMatchObject([{ incoming: 'anthropic-messages', outgoing: 'openai-chat-completions', modelId: 'repair-target' }, fallback]);

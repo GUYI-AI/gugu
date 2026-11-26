@@ -35,6 +35,7 @@ import { createLogger } from './lib/logger'
 import { getSupabaseAnonKey, getSupabaseUrl } from '@gugu/core/cloud/config'
 import { platformModelsEnabled } from '@gugu/core/cloud/optionalServices'
 import { serverNow, withServerClock } from '@gugu/core/shared/serverClock'
+import { modelContextLengths } from '@gugu/session-core/models/context-threshold'
 import { parsePlatformCreditMultipliers, parsePlatformReasoningEfforts } from '../src/session/shared/core/agents/platform-model'
 
 // Protocol membership is decided by the shared protocol table, so adding a
@@ -63,6 +64,8 @@ export interface PlatformModelCatalogItem {
    * CLAUDE_CODE_AUTO_COMPACT_WINDOW —— null 就不注入,让 harness 用默认。display 侧也可用它标注窗口。
    */
   contextWindow: number | null
+  contextLengths?: readonly number[]
+  defaultContextLength?: number
   /**
    * 这个模型认的推理档(`billing.platform_models.reasoning_efforts`,#6447)。选档那一步与 harness 的清单
    * 取交集;null = 目录没有这条事实(旧服务端 / 还没从 models.dev 查过)⇒ 这个模型不画推理档。
@@ -268,6 +271,7 @@ export async function listPlatformModels(authProvider: RuntimeAuthProvider): Pro
         enabled: row.enabled === true,
         creditMultipliers: parsePlatformCreditMultipliers(row.credit_multipliers),
         contextWindow: positiveIntOrNull(row.context_window),
+        ...modelContextLengths(row.context_lengths, row.default_context_length, positiveIntOrNull(row.context_window)),
         reasoningEfforts: parsePlatformReasoningEfforts(row.reasoning_efforts),
         requiresMembership: row.requires_membership === true,
         hidden: row.hidden === true,

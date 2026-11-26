@@ -119,6 +119,8 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
   });
   const [advanced, setAdvanced] = useState<Advanced>(() => advancedOf(editedModel, routes));
   const [limits, setLimits] = useState({ contextWindow: editedModel?.contextWindow, maxOutput: editedModel?.maxOutput });
+  const [contextLengths, setContextLengths] = useState(editedModel?.contextLengths?.join(', ') ?? '');
+  const [defaultContextLength, setDefaultContextLength] = useState<number | undefined>(editedModel?.defaultContextLength);
   const [test, setTest] = useState<ConnectionTest>({ kind: 'idle' });
   const [busy, setBusy] = useState<'save' | null>(null);
   const [accountCreating, setAccountCreating] = useState(false);
@@ -270,11 +272,17 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
       const { customProtocol: _shown, efforts, defaultEffort, ...declared } = advanced;
       declared.fast = declared.fast && fastCarried(saved);
       const stored = ({ effortCatalog: _catalog, ...rest }: CustomModelEntry) => rest;
+      const lengths = contextLengths.trim() ? [...new Set(contextLengths.split(',').map(value => Number(value.trim())))] : undefined;
+      if (lengths && (!defaultContextLength || !lengths.includes(defaultContextLength) ||
+        lengths.some(value => !Number.isSafeInteger(value) || value <= 0 || (limits.contextWindow != null && value > limits.contextWindow)))) {
+        throw new Error(translate('customModels.contextLengthsInvalid'));
+      }
       const entry = {
         ...(editedModel && stored(editedModel)), ...declared, id: model,
         efforts: advanced.thinking ? efforts : undefined,
         defaultEffort: advanced.thinking ? defaultEffort ?? undefined : undefined,
-        contextWindow: limits.contextWindow, maxOutput: limits.maxOutput,
+        contextWindow: limits.contextWindow ?? (lengths ? Math.max(...lengths) : undefined), maxOutput: limits.maxOutput,
+        contextLengths: lengths, defaultContextLength: lengths ? defaultContextLength : undefined,
       };
       // The edited model keeps its place; the connection's other models are saved as they are.
       const models = (connection?.models ?? []).flatMap(item => item.id === editedModel?.id ? [entry] : item.id === model ? [] : [stored(item)]);
@@ -448,6 +456,15 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
             <div className="gg-model-limits">
               {limitField('contextWindow', INPUT_LIMITS)}
               {limitField('maxOutput', OUTPUT_LIMITS)}
+            </div>
+            <div className="gg-model-limits">
+              <label className="gg-model-field"><span className="gg-model-field-label">{translate('customModels.contextLengths')}</span>
+                <Input data-testid="custom-model-context-lengths" value={contextLengths} onChange={event => setContextLengths(event.target.value)} />
+              </label>
+              <label className="gg-model-field"><span className="gg-model-field-label">{translate('customModels.defaultContextLength')}</span>
+                <Input data-testid="custom-model-default-context-length" type="number" min={1} step={1} value={defaultContextLength ?? ''}
+                  onChange={event => setDefaultContextLength(event.target.value ? Number(event.target.value) : undefined)} />
+              </label>
             </div>
           </div>
           {failure && <p className="subscription-error" role="alert">{failure}</p>}

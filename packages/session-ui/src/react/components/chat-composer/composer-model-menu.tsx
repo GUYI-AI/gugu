@@ -1,6 +1,6 @@
 /** Composer model list and its anchored model details. */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, ChevronRight, Pencil, Search, Sparkles } from '../../../icons';
+import { Check, ChevronDown, ChevronRight, Pencil, Sparkles } from '../../../icons';
 import { Combobox } from '@session-ui/react/primitives/combobox/combobox';
 // 「思考」那一段是**一条有序标尺**,所以是 Slider 而不是一组单选药丸 ——
 // 见 chat-composer.css.ts 的 modelEffortRow 抬头(owner 2026-09-17 指定)。
@@ -13,24 +13,20 @@ import {
   useHoverCard,
 } from '@session-ui/react/primitives/hover-card';
 import { useMessages } from '../../localization/message-provider';
+import { modelContextLengths } from '@gugu/session-core/models/context-threshold';
 import * as styles from './chat-composer.css';
 // 圆钮直径的**唯一真源** —— 填充末端要落在圆心上,这里跟着它算,❌ 别再写一遍字面量。
 import { ComposerFastMode, type RenderFastModeHint } from './composer-fast-mode';
-import { sideAwayFromPicker } from './detail-card-side';
 import { ComposerThinking } from './composer-thinking';
-import { Popover } from '@session-ui/react/primitives/popover';
-import { ContextThresholdMenu, type ComposerContextThresholds } from './context-threshold';
+import { ContextThresholdChoices, formatModelContextLength, type ComposerContextThresholds } from './context-threshold';
 
 import type {
   ComposerEffortItem,
-  ComposerModelGroup,
+  ComposerEffortOption,
   ComposerModelItem,
   ComposerModelUnlock,
   ComposerModelUpgrade,
 } from './composer-options';
-
-/** 底部「升级解锁」那一条在悬浮卡控制器里的 key —— 模型 id 都不会是这个串。 */
-const UPGRADE_DETAIL_KEY = '\u0000upgrade';
 
 /**
  * @@@composer-model-trigger-label — 常驻触发器上剥掉括号,清单里保留全名。
@@ -67,27 +63,6 @@ export function composerModelTriggerLabel(label: string, siblings: readonly stri
     if (sharing >= 2) return label;
   }
   return stripped;
-}
-
-// ── Model groups ──────────────────────────────────────────────────────────────
-
-/**
- * 把模型条目按**相邻**的同组头切成若干段。
- *
- * ❌ 不照 buildAgentGroups 用 Map 按 label 收集:那会把不相邻的同名条目搬到一起,悄悄改掉
- * 调用方给的顺序。加个小标题不该有重排的副作用 —— 顺序是宿主排的,这里只切段。
- *
- * 一条都没有 groupLabel 时结果是「一段、label 为空」,渲染成原来的平铺列表(零回归)。
- */
-export function buildComposerModelGroups(items: ComposerModelItem[]): ComposerModelGroup[] {
-  const groups: ComposerModelGroup[] = [];
-  for (const item of items) {
-    const label = item.groupLabel ?? '';
-    const last = groups[groups.length - 1];
-    if (last && last.label === label) last.items.push(item);
-    else groups.push({ label, items: [item] });
-  }
-  return groups;
 }
 
 // ── Model panel shape ─────────────────────────────────────────────────────────
@@ -161,96 +136,152 @@ export function modelTitle(item: ComposerModelItem, locale = 'en-US'): string | 
  * 事实里上下文、速度、智能来自 `modelFeatures`(插件 / 目录真声明过的),其余由宿主翻好递进来(`facts`)。
  * 什么都没有的那几格就不画 —— ❌ 写「未知」占位。
  */
-function ModelDetail({ item, picker, contextThresholds, efforts, effort, onEffortChange, fastControl, onDisabledAction }: {
+function ModelDetail({ item, contextThresholds, efforts, effort, onEffortChange, onContextCommit,
+  keyboardEntry, onReturn, fastControl, onDisabledAction }: {
   item: ComposerModelItem;
-  picker: HTMLElement | null;
   contextThresholds?: ComposerContextThresholds;
   efforts?: ComposerEffortItem[];
   effort?: ComposerEffortItem;
   onEffortChange?: (id: string) => void;
+  onContextCommit: () => void;
+  keyboardEntry: number;
+  onReturn: () => void;
   fastControl?: React.ReactNode;
   onDisabledAction?: () => void;
 }) {
   const { translate } = useMessages();
   const f = item.modelFeatures;
-  const threshold = !item.disabled ? contextThresholds?.(item.id, f?.contextWindowSize) : undefined;
-  const [effortMenuOpen, setEffortMenuOpen] = useState(false);
-  const [effortMenuSide, setEffortMenuSide] = useState<'left' | 'right' | 'bottom'>('left');
+  const detail = useRef<HTMLDivElement>(null);
   const effortTrigger = useRef<HTMLButtonElement>(null);
-  const canEditEffort = !!efforts?.length && !!onEffortChange;
-  const effortLabel = translate('composer.effort');
+  const [submenuAnchor, setSubmenuAnchor] = useState<HTMLElement | null>(null);
+  const submenu = useHoverCard({ openDelay: 100, closeDelay: 300, safeTriangle: true, delaySwitch: true });
+  const submenuId = React.useId();
+  const focusSubmenu = useRef(false);
+  const showSubmenu = submenu.show;
+  const canEditEffort = (efforts?.length ?? 0) > 1 && !!onEffortChange;
+  const canChooseEffort = canEditEffort && !!efforts?.some(level => !level.disabled);
+  const context = modelContextLengths(f?.contextLengths, f?.defaultContextLength, f?.contextWindowSize);
+  const threshold = !item.disabled ? contextThresholds?.(item.id, context?.defaultContextLength ?? f?.contextWindowSize) : undefined;
+  const canSetThreshold = !!threshold?.selectWindow && !!context && context.contextLengths.length > 1 &&
+    context.contextLengths.every(value => value > threshold.minimum);
+  const effortLabel = translate('composer.thinkingStrength');
   const lockedEffortReasonId = React.useId();
   const lockedEffortReason = efforts?.length && efforts.every(level => level.disabled)
     ? efforts[0]?.disabledReason ?? translate('composer.effortLocked') : undefined;
-  const facts = [
-    ...(!threshold && f?.contextWindowSize !== undefined
-      ? [{ label: translate('composer.modelDetailContext'), value: formatContextWindow(f.contextWindowSize) }]
-      : []),
-    ...(item.facts ?? []).filter(({ label }) => !canEditEffort || label !== effortLabel),
-    ...(f?.speed !== undefined ? [{ label: translate('composer.modelDetailSpeed'), value: `${f.speed}/5` }] : []),
-    ...(f?.intelligence !== undefined
-      ? [{ label: translate('composer.modelDetailIntelligence'), value: `${f.intelligence}/5` }]
-      : []),
-  ];
+
+  useEffect(() => {
+    if (!keyboardEntry) return;
+    if (effortTrigger.current && canChooseEffort) {
+      focusSubmenu.current = true;
+      setSubmenuAnchor(effortTrigger.current);
+      showSubmenu('effort');
+    } else {
+      const current = detail.current;
+      (current?.querySelector<HTMLElement>('button:enabled') ?? current)?.focus({ preventScroll: true });
+    }
+  }, [keyboardEntry, canChooseEffort, showSubmenu]);
+
+  const submenuTrigger = (key: 'effort' | 'context') => {
+    const open = submenu.open && submenu.activeKey === key;
+    const show = (button: HTMLButtonElement, keyboard: boolean) => {
+      focusSubmenu.current = keyboard;
+      setSubmenuAnchor(button);
+      showSubmenu(key);
+    };
+    return {
+      'aria-haspopup': 'dialog' as const, 'aria-expanded': open, 'aria-controls': open ? submenuId : undefined,
+      ...submenu.getRowHoverProps(key, element => {
+        focusSubmenu.current = false;
+        setSubmenuAnchor(element);
+      }),
+      onClick: (event: React.MouseEvent<HTMLButtonElement>) => show(event.currentTarget, event.detail === 0),
+      onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
+        if (event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        show(event.currentTarget, true);
+      },
+    };
+  };
   return (
-    <div data-slot="composer-model-detail" style={{ display: 'contents' }}>
+    <div ref={detail} data-slot="composer-model-detail" className={styles.modelDetailBody} tabIndex={-1}
+      onKeyDown={event => {
+        if (!(event.target instanceof HTMLElement) || event.nativeEvent.isComposing) return;
+        if (event.key === 'ArrowLeft' || event.key === 'Escape') {
+          if (event.key === 'ArrowLeft' && event.target instanceof HTMLInputElement && event.target.selectionStart !== 0) return;
+          event.preventDefault();
+          event.stopPropagation();
+          submenu.close();
+          onReturn();
+          return;
+        }
+        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+        const scope = event.target.closest('[data-slot="popover-content"]');
+        const controls = [...(scope?.querySelectorAll<HTMLElement>('button:enabled, input:enabled') ?? [])];
+        if (!controls.length) return;
+        const index = controls.indexOf(event.target);
+        const next = event.key === 'ArrowDown' ? (index + 1) % controls.length : index <= 0 ? controls.length - 1 : index - 1;
+        event.preventDefault();
+        event.stopPropagation();
+        controls[next]?.focus({ preventScroll: true });
+      }}>
       <div className={styles.modelDetailHead}>
-        {item.icon && (
-          <span className={styles.modelTriggerIcon} aria-hidden="true">
-            {item.icon}
-          </span>
-        )}
         <span className={styles.modelDetailName}>{item.name}</span>
-        {item.tag && <span className={styles.modelPanelItemTag}>{item.tag}</span>}
+        {item.description && !item.creditRate && <div className={styles.modelDetailTier}>{item.description}</div>}
       </div>
-      {item.groupLabel && <div className={styles.modelDetailTier}>{item.groupLabel}</div>}
-      {item.description && <p className={styles.modelDetailSummary}>{item.description}</p>}
-      {facts.length > 0 && (
-        <dl className={styles.modelDetailFacts}>
-          {facts.map((fact) => (
-            <React.Fragment key={fact.label}>
-              <dt className={styles.modelDetailFactLabel}>{fact.label}</dt>
-              <dd className={styles.modelDetailFactValue}>{fact.value}</dd>
-            </React.Fragment>
-          ))}
-        </dl>
-      )}
+      {item.creditRate && <div className={styles.modelDetailRow}>
+        <span>{translate('composer.modelDetailRate')}</span>
+        <span className={styles.modelDetailRateValue} data-slot="composer-model-detail-rate">
+          {translate('composer.modelDetailRateValue', { rate: item.creditRate })}
+        </span>
+      </div>}
       {canEditEffort && (
-        <Popover.Root open={effortMenuOpen} onOpenChange={open => {
-          if (open) {
-            const side = sideAwayFromPicker(effortTrigger.current, picker, 192);
-            if (side) setEffortMenuSide(side);
-          }
-          setEffortMenuOpen(open);
+        <button ref={effortTrigger} type="button" data-slot="popover-trigger" className={styles.contextThresholdTrigger}
+          {...submenuTrigger('effort')}>
+          <span>{effortLabel}</span>
+          <span className={styles.modelDetailControlValue}>{effort?.name}<ChevronRight size={14} aria-hidden /></span>
+        </button>
+      )}
+      {fastControl}
+      {canSetThreshold && <button type="button" data-slot="popover-trigger" className={styles.contextThresholdTrigger}
+        {...submenuTrigger('context')}>
+        <span>{translate('composer.contextWindowThreshold')}</span>
+        <span className={styles.modelDetailControlValue}>
+          {formatModelContextLength(threshold.selectedWindow ?? context.defaultContextLength)}<ChevronRight size={14} aria-hidden />
+        </span>
+      </button>}
+      <HoverCard id={submenuId} anchor={submenuAnchor} ownPopup={submenuAnchor?.closest<HTMLElement>('[data-hover-card]')}
+        controller={submenu} side="left" align="start" sideOffset={({ side }) => {
+          const row = submenuAnchor?.getBoundingClientRect();
+          const card = submenuAnchor?.closest('[data-hover-card]')?.getBoundingClientRect();
+          if (!row || !card) return 0;
+          return side === 'left' ? row.left - card.left : card.right - row.right;
+        }}
+        collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}
+        className={styles.modelDetailSubmenu}
+        initialFocus={() => {
+          if (!focusSubmenu.current) return false;
+          const popup = detail.current?.ownerDocument.getElementById(submenuId);
+          return popup?.querySelector<HTMLElement>('button[aria-pressed="true"]:enabled')
+            ?? popup?.querySelector<HTMLElement>('button:enabled, input:enabled') ?? true;
         }}>
-          <Popover.Trigger ref={effortTrigger} openOnHover delay={100} closeDelay={300} className={styles.contextThresholdTrigger}>
-            <span>{effortLabel}</span>
-            <span className={styles.modelDetailControlValue}>{effort?.name}<ChevronRight size={14} aria-hidden /></span>
-          </Popover.Trigger>
-          <Popover.Content side={effortMenuSide} sideOffset={effortMenuSide === 'bottom' ? 4 : 16} align="start" className={styles.contextThresholdContent}>
-            {efforts.map(level => (
+        {submenu.open && (submenu.activeKey === 'context' ? (
+          canSetThreshold && <ContextThresholdChoices threshold={threshold} onCommit={onContextCommit}
+            lengths={context.contextLengths} defaultLength={context.defaultContextLength} />
+        ) : (
+          <>
+            <div className={styles.contextThresholdHeading}>{effortLabel}</div>
+            {efforts?.map(level => (
               <button type="button" key={level.id} disabled={level.disabled} aria-pressed={effort?.id === level.id}
                 className={styles.contextThresholdOption} title={level.disabledReason}
                 aria-describedby={lockedEffortReason ? lockedEffortReasonId : undefined}
-                onClick={() => { onEffortChange(level.id); setEffortMenuOpen(false); }}>
-                {level.name}{effort?.id === level.id && <Check size={14} aria-hidden />}
+                onClick={() => onEffortChange?.(level.id)}>
+                {level.name}{effort?.id === level.id && <Check className={styles.modelSelectedCheck} size={14} aria-hidden />}
               </button>
             ))}
             {lockedEffortReason && <p id={lockedEffortReasonId} className={styles.effortMenuLockedReason}>{lockedEffortReason}</p>}
-          </Popover.Content>
-        </Popover.Root>
-      )}
-      {fastControl}
-      {threshold?.unsupported && (
-        <div className={styles.contextThresholdTrigger}>
-          <span>{translate('composer.contextWindowThreshold')}</span>
-          <span className={styles.modelDetailControlValue}>{translate('composer.contextThresholdUnsupported')}</span>
-        </div>
-      )}
-      {threshold?.set && <ContextThresholdMenu threshold={threshold} hover label={
-        <><span>{translate('composer.contextWindowThreshold')}</span>
-          <span className={styles.modelDetailControlValue}>{formatContextWindow(threshold.value ?? threshold.maximum)}</span></>
-      } />}
+          </>
+        ))}
+      </HoverCard>
       {item.disabled && item.disabledReason && (
         <p className={styles.modelDetailSummary}>{item.disabledReason}</p>
       )}
@@ -281,7 +312,8 @@ export interface ComposerModelMenuProps {
    * (@@@unknown-slot), ❌ the literal "Model", ❌ `selectedModel` (a guess until then).
    */
   modelUnknown?: boolean;
-  onModelChange?: (modelId: string) => void;
+  onModelChange?: (modelId: string, effortId?: string) => void;
+  effortOptionsForModel?: (modelId: string) => Record<string, ComposerEffortOption> | null;
   /**
    * 宿主要把模型面板打开(例如「这个模型要会员」那一行上的「换模型」,#7056)。每变一次开一次;0 / 缺省 = 不开。
    * ❌ 宿主去 DOM 里找触发器 click —— 那是拿测试锚点当产品接口。
@@ -316,6 +348,9 @@ const UNKNOWN_MODEL_NAME = {
   borderRadius: 'var(--radius-control)', background: 'var(--muted)',
 } as const;
 
+const modelOptions = (panel: HTMLElement | null) =>
+  [...(panel?.querySelectorAll<HTMLElement>('[data-model-option-id]:not([data-disabled])') ?? [])];
+
 export function ComposerModelMenu({
   panel,
   disabled = false,
@@ -324,15 +359,12 @@ export function ComposerModelMenu({
   selectedModel,
   modelUnknown = false,
   onModelChange,
+  effortOptionsForModel,
   openRequest,
   settingNotice,
   menuNotice,
   onOpen,
-  modelUnlock,
-  onModelUnlock,
   onManageModels,
-  modelUpgrade,
-  onModelUpgrade,
   contextThresholds,
   effortItems: allEffortItems,
   selectedEffort,
@@ -349,9 +381,11 @@ export function ComposerModelMenu({
   const [modelPanelOpen, setModelPanelOpen] = useState(false);
   const onOpenRef = useRef(onOpen);
   const modelTrigger = useRef<HTMLButtonElement>(null);
+  const focusListOnOpen = useRef(false);
   onOpenRef.current = onOpen;
   const openModelPanel = useCallback(() => {
     onOpenRef.current?.();
+    focusListOnOpen.current = true;
     setModelPanelOpen(true);
   }, []);
   useEffect(() => {
@@ -363,7 +397,7 @@ export function ComposerModelMenu({
    */
   const detailCard = useHoverCard({ openDelay: 100, closeDelay: 300, safeTriangle: true });
   const [detailAnchor, setDetailAnchor] = useState<HTMLElement | null>(null);
-  const focusDetail = useRef(false);
+  const [keyboardEntry, setKeyboardEntry] = useState(0);
   const [panelEl, setPanelEl] = useState<HTMLElement | null>(null);
   const [repairTarget, setRepairTarget] = useState<string | null>(null);
   useEffect(() => {
@@ -371,90 +405,130 @@ export function ComposerModelMenu({
     panelEl.querySelector(`[data-model-option-id="${CSS.escape(repairTarget)}"]`)?.scrollIntoView({ block: 'nearest' });
   }, [panelEl, modelPanelOpen, repairTarget]);
 
-  if (panel.kind !== 'shown') return null;
 
   /**
    * 一行的悬停:记下贴哪一条,再交给控制器去延时开卡。
    * ⚠️ 卡贴的必须是**和面板一样宽**的那一条(整行)—— 末尾那两条去路也是整行宽的按钮,同样贴它自己。
    */
   const detailHoverProps = (key: string) => detailCard.getRowHoverProps(key, (element) => {
-    focusDetail.current = false;
+    setKeyboardEntry(0);
     setDetailAnchor(element);
   });
-  const detailItem =
-    detailCard.activeKey && detailCard.activeKey !== UPGRADE_DETAIL_KEY
-      ? (modelItems.find((m) => m.id === detailCard.activeKey) ?? null)
-      : null;
-  const showUpgradeDetail = detailCard.activeKey === UPGRADE_DETAIL_KEY && !!modelUpgrade;
+  const detailItem = modelItems.find(item => item.id === detailCard.activeKey) ?? null;
 
   // While what decides the model is unknown, the selected id is only a guess (the harness default before the remembered
   // choice is read): the trigger holds the name's place, ❌ draws the guess and then switches (@@@unknown-slot).
   const selectedModelItem = selectedModel && !modelUnknown
     ? (modelItems.find((m) => m.id === selectedModel) ?? null)
     : null;
+  const detailIsSelected = !!detailItem && detailItem.id === (selectedModelItem?.aliasOf ?? selectedModelItem?.id);
+  const targetOptions = detailItem && !detailItem.disabled && !detailIsSelected && onModelChange
+    ? effortOptionsForModel?.(detailItem.id) : null;
+  const detailEfforts = detailIsSelected ? effortItems : targetOptions ? Object.entries(targetOptions)
+    .filter(([id]) => id.toLowerCase() !== 'default')
+    .map(([id, option]) => ({ id, ...option })) : undefined;
   const selectedEffortItem = effortItems.find(item => item.id === selectedEffort);
   const defaultEffortItem = effortItems.find(item => item.id === defaultEffort);
   const effectiveEffortItem = selectedEffortItem ?? defaultEffortItem;
 
-  // 选中项要**从清单里取同一个对象**递给 Combobox:它按 isItemEqualToValue 比,
-  // 但触发器上的回显走的是这个值 —— 现拼一个新对象会让「当前选中」在重渲染间抖。
-  const selectedModelEntry = selectedModelItem
-    ? { ...selectedModelItem, id: selectedModelItem.id }
-    : null;
+  const effortForModelSwitch = (item: ComposerModelItem) => {
+    if (item.id === (selectedModelItem?.aliasOf ?? selectedModelItem?.id)) return undefined;
+    const options = effortOptionsForModel?.(item.id);
+    if (!options) return undefined;
+    const current = effectiveEffortItem?.id;
+    if (current && options[current] && !options[current].disabled) return current;
+    const fallback = item.modelFeatures?.defaultEffortId;
+    return fallback && options[fallback] && !options[fallback].disabled ? fallback : undefined;
+  };
+  const selectModel = (item: ComposerModelItem) => {
+    const effort = effortForModelSwitch(item);
+    if (effort === undefined) onModelChange?.(item.id);
+    else onModelChange?.(item.id, effort);
+  };
+
+  const visibleModels = modelItems.filter(item => !item.hiddenFromPicker);
+  const selectedRowId = selectedModelItem?.aliasOf ?? selectedModel;
+  const selectedModelEntry = visibleModels.find(item => item.id === selectedRowId) ?? null;
 
   /**
    * 每一行都有图标(owner 11-25):认得出厂商画厂商 logo,认不出的画一枚通用的 ✦ 兜底(淡色,`data-fallback`)。
    * 以前认不出就留空位 —— 名字不错位,但那一行左边是个洞,看着像没做完。
    */
 
-  /**
-   * 一张平的清单:❌ 组头、❌ 顶上那排厂商筛选块(owner 11-25:「删掉模型选择列表头上的分组」)。
-   * 每行是谁的由行尾的标签说(咕咕的不带),找某一家用搜索框 —— 它照样匹配厂商名(`providerLabel`)。
-   */
-  const visibleModels = modelItems.filter((item) => !item.hiddenFromPicker);
-  const visibleModelGroups = [{ label: '', items: visibleModels }];
+  useEffect(() => {
+    if (!modelPanelOpen || !panelEl || !focusListOnOpen.current) return;
+    const options = modelOptions(panelEl);
+    const initial = options.find(option => option.dataset.modelOptionId === selectedRowId) ?? options[0];
+    const target = initial ?? panelEl.querySelector<HTMLElement>('[data-testid="composer-model-manage"]');
+    if (!target) return;
+    focusListOnOpen.current = false;
+    target.focus();
+  }, [modelPanelOpen, panelEl, selectedRowId, modelItems.length]);
 
-  const modelPanelEnd = (
-    <>
-      <Combobox.Empty>{translate('composer.noMatchingModels')}</Combobox.Empty>
-      {/* 末尾两条去路(#7056):「升级解锁更多模型」只给免费档,悬停看得到开会员后多出哪几个;
-          「配置模型」开设置里的「模型」页,永远是最后一行。 */}
-      {(onManageModels || modelUpgrade) && (
-        <div className={styles.modelPanelActions} data-slot="composer-model-footer">
-          {modelUpgrade && (
-            <button
-              type="button"
-              className={styles.modelPanelUpgrade}
-              onClick={() => {
-                detailCard.close();
-                onModelUpgrade?.();
-              }}
-              data-testid="composer-model-upgrade"
-              {...detailHoverProps(UPGRADE_DETAIL_KEY)}
-            >
-              <span className={styles.composerPanelItemIcon} aria-hidden="true" />
-              {modelUpgrade.label}
-            </button>
-          )}
-          {onManageModels && (
-            <button
-              type="button"
-              className={styles.modelPanelActionRow}
-              onClick={() => {
-                detailCard.close();
-                setModelPanelOpen(false);
-                onManageModels();
-              }}
-              data-testid="composer-model-manage"
-            >
-              <span className={styles.composerPanelItemIcon} aria-hidden="true"><Pencil size={14} /></span>
-              {translate('composer.manageModels')}
-            </button>
-          )}
-        </div>
-      )}
-    </>
+  if (panel.kind !== 'shown') return null;
+
+  const closeAfterSelection = () => {
+    modelTrigger.current?.focus({ preventScroll: true });
+    detailCard.close();
+    setRepairTarget(null);
+    setKeyboardEntry(0);
+    setModelPanelOpen(false);
+  };
+
+  const modelPanelEnd = onManageModels && (
+    <div className={styles.modelPanelActions} data-slot="composer-model-footer">
+      <button
+        type="button"
+        className={styles.modelPanelActionRow}
+        onClick={() => {
+          closeAfterSelection();
+          onManageModels();
+        }}
+        data-testid="composer-model-manage"
+      >
+        <span className={styles.composerPanelItemIcon} aria-hidden="true"><Pencil size={14} /></span>
+        {translate('composer.manageModels')}
+      </button>
+    </div>
   );
+
+  const handleListKey = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.nativeEvent.isComposing || !(event.target instanceof HTMLElement)) return;
+    const option = event.target.closest<HTMLElement>('[data-model-option-id]');
+    if (!option || !event.currentTarget.contains(option)) return;
+    const options = modelOptions(event.currentTarget);
+    const index = options.indexOf(option);
+    if (index < 0) return;
+
+    switch (event.key) {
+      case 'ArrowDown':
+      case 'ArrowUp': {
+        const step = event.key === 'ArrowDown' ? 1 : -1;
+        options[(index + step + options.length) % options.length]?.focus();
+        break;
+      }
+      case 'Home':
+        options[0]?.focus();
+        break;
+      case 'End':
+        options.at(-1)?.focus();
+        break;
+      case 'Enter':
+      case ' ':
+        option.click();
+        break;
+      case 'ArrowRight':
+        if (phoneActions) return;
+        setKeyboardEntry(previous => previous + 1);
+        setDetailAnchor(option);
+        detailCard.show(option.dataset.modelOptionId!);
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
   return (
     // `display:contents` —— 这层只为寻址存在,不参与布局(工具栏是 flex,
@@ -463,16 +537,14 @@ export function ComposerModelMenu({
     // FixedDataSlotProps),所以那个名字落在外面这一层。
     <span data-slot="composer-model" style={{ display: 'contents' }}>
       <Combobox.Root
-        // items 必须传:Combobox 的 filter 只作用于它自己持有的 items。
-        // 同 agent 选择器踩过的那个坑(能打字、一行都不过滤)。
-        items={visibleModelGroups}
+        items={visibleModels}
         value={selectedModelEntry}
+        filter={null}
+        itemToStringLabel={item => item.name}
         onValueChange={(item: ComposerModelItem | null) => {
           if (!item) return;
-          detailCard.close();
-          setRepairTarget(null);
-          onModelChange?.(item.id);
-          setModelPanelOpen(false);
+          selectModel(item);
+          closeAfterSelection();
         }}
         open={modelPanelOpen}
         onOpenChange={(next: boolean, details: ComboboxRootChangeEventDetails) => {
@@ -481,25 +553,18 @@ export function ComposerModelMenu({
             details.cancel();
             return;
           }
-          if (!next) { detailCard.close(); setRepairTarget(null); }
+          if (!next) {
+            detailCard.close();
+            setRepairTarget(null);
+            setKeyboardEntry(0);
+            if (details.reason === 'escape-key' || details.reason === 'item-press') {
+              modelTrigger.current?.focus({ preventScroll: true });
+            }
+          }
           if (next) openModelPanel();
           else setModelPanelOpen(false);
         }}
         isItemEqualToValue={(a: ComposerModelItem, b: ComposerModelItem) => a.id === b.id}
-        // 上游:匹配 id、name 与 keywords(它的 demo 正是把厂商名放在 keywords 里)。
-        // 本仓没有 keywords 字段,同一职责由这几格承担 —— 打「咕咕」筛得出平台那一档,打「智谱」筛得出那一家,
-        // 打行尾标签上的字(「ChatGPT」「deepseek」)筛得出那一份登录 / 那条连接。
-        filter={(item: ComposerModelItem, query: string) => {
-          const q = query.toLowerCase();
-          return (
-            item.name.toLowerCase().includes(q) ||
-            item.id.toLowerCase().includes(q) ||
-            (item.groupLabel ?? '').toLowerCase().includes(q) ||
-            (item.providerLabel ?? '').toLowerCase().includes(q) ||
-            (item.tag ?? '').toLowerCase().includes(q)
-          );
-        }}
-        autoHighlight
       >
         <Combobox.Trigger
           ref={modelTrigger}
@@ -527,141 +592,70 @@ export function ComposerModelMenu({
               ? `${settingNotice}: ${translate('composer.changeModel')}`
               : selectedModelItem
               ? composerModelTriggerLabel(
-                  selectedModelItem.shortName ?? selectedModelItem.name,
-                  modelItems.map((m) => m.shortName ?? m.name)
+                  selectedModelItem.name,
+                  modelItems.map(model => model.name)
                 )
               : modelUnknown
               ? <span aria-busy="true" data-unknown="" className="gg-unknown" style={UNKNOWN_MODEL_NAME} />
               : translate('composer.model')}
           </span>
-          {/* 强度就地显示(如「5.6 Sol 轻度」)。armed 的用 muted;
-              没 armed 时退回该模型自己的默认档,再压一档不透明度 —— 那是目录里的出厂
-              默认,用户写在 ~/.codex/config.toml 里的值会盖过它,我们读不到。 */}
-          {effectiveEffortItem && !modelUnknown ? (
-            <span
-              data-slot="composer-effort"
-              className={styles.modelTriggerEffort}
-              style={{ opacity: selectedEffortItem ? 1 : 0.6 }}
-            >
-              {effectiveEffortItem.name}
-            </span>
-          ) : null}
-          {/* @@@composer-no-chevron — ❌ 不画下拉箭头(owner 2026-09-07:「下拉按钮这个 icon
-              都删除」,底排三枚一并撤)。三枚箭头本身不携带信息:一个 hover 会变底色的药丸,
-              点开就是清单,箭头只是把同一件事再说一遍,却占掉三份横向空间 ——
-              而这一排正是「放不下」压力最大的地方(见 use-toolbar-disclosure)。
-              ⚠️ 09-05 owner 曾就**渐进披露把箭头当一档收掉**判过「箭头收了不合适」;
-              09-07 是看着去箭头的设计稿定的「都删除」,按新的来。要翻回去,这三处一起加回。 */}
+          <ChevronDown size={11} className={styles.modelTriggerChevron} aria-hidden />
         </Combobox.Trigger>
-        {/* 定宽 18rem = 上游 `w-72`(288px)。
-            ⚠️ 这里替掉的是 #5082 的 `width="content"` —— 那条修的是「面板跟着**触发器**宽度
-            走」(`--anchor-width`,只有十几个字符宽,于是标签折两行、模型名折行被下沿裁掉)。
-            288px 比触发器宽得多,同一个病照样治好;差别只在超长名字是省略号还是把面板撑宽,
-            而上游那版就是省略号(`truncate`)。owner 2026-09-06 在实机上看过这一版并认可。
-            ⇒ 换了机制、没丢那条修复;要回到「按内容撑宽」,改这一个 className 即可。 */}
         <Combobox.Content ref={setPanelEl} className={styles.modelPanelContent} side="top" align="end" sideOffset={8}
-          onKeyDown={(event) => {
-            if (event.key !== 'ArrowRight' || !event.altKey) return;
-            const active = event.currentTarget.querySelector<HTMLElement>('[role="option"][data-highlighted], [role="option"][data-selected]');
-            const key = active?.dataset.modelOptionId;
-            if (!active || !key) return;
-            event.preventDefault();
-            focusDetail.current = true;
-            setDetailAnchor(active);
-            detailCard.show(key);
-          }}>
+          initialFocus={false} onKeyDownCapture={handleListKey}>
           {(settingNotice || menuNotice) && (
             <div role="status" className={styles.modelSettingNotice} data-testid="composer-model-setting-notice">
               {settingNotice || menuNotice}
             </div>
           )}
-          {panel.modelRow === 'list' ? (
+          {panel.modelRow === 'list' && (
             <>
-              <Combobox.Input
-                showTrigger={false}
-                // 上游的 CommandInput 自带一枚放大镜,少了它这一格看着像个普通文本框。
-                leftAddon={<Search />}
-                aria-label={translate('composer.searchModels')}
-                placeholder={translate('composer.searchModels')}
-                data-testid="composer-model-search"
-              />
-              {/* 「去登录」排在清单**最前面**(owner 2026-08-28:放末尾时它躺在咕咕那
-                  15 个模型下面,「我翻了半天才找到」)。
-                  ❌ 不进 Combobox.List:它不是这份清单里的一个取值,选了它不会变成
-                  「当前模型」;放在 List 外面才不会被读屏器报成一个可选项,也不会被
-                  搜索过滤掉 —— 正在找模型的人更需要看见它。 */}
-              {modelUnlock ? (
-                <div className={styles.modelFilterRow}>
-                  <span className={styles.modelEffortLabel}>{modelUnlock.groupLabel}</span>
-                  <button
-                    type="button"
-                    className={styles.settingRowUnlock}
-                    title={modelUnlock.title}
-                    // 这颗钮跟着清单一起收走;登录菜单贴在常驻的模型触发器上,❌ 贴在一个马上离开页面的元素上。
-                    onClick={event => { onModelUnlock?.(modelTrigger.current ?? event.currentTarget); setModelPanelOpen(false); }}
-                    data-testid="composer-model-unlock"
-                  >
-                    {modelUnlock.label}
-                    {modelUnlock.detail ? <span className={styles.modelEffortLabel}>{modelUnlock.detail}</span> : null}
-                  </button>
-                </div>
-              ) : null}
-              {/* 清单与末尾两条去路在**同一个**滚动区里(owner 11-25:「配置模型」不是钉死的一栏,
-                  是列表最后一行、跟着列表滚)。去路走 `after`:在滚动区里、在 List 元素外 ——
-                  它们不是取值,不该被读屏器报成可选项,也不该被搜索滤掉。 */}
               <Combobox.List className={styles.modelPanelList} after={modelPanelEnd}>
-                {(group: ComposerModelGroup) => (
-                  // key 用首条的模型 id,不用 label:同一个 label 可以出现在两段不相邻
-                  // 的条目上(宿主的顺序说了算),用 label 当 key 就会撞。
-                  <Combobox.Group key={group.items[0]?.id} items={group.items} label={group.label}>
-                    <Combobox.Collection>
-                      {(m: ComposerModelItem) => (
-                        <Combobox.Item
-                          key={m.id}
-                          value={m}
-                          showCheck={false}
-                          data-model-option-id={m.id}
-                          data-route-repair-target={m.id === repairTarget || undefined}
-                          // 置灰时 title 挂**原因** —— 那一刻用户要问的是「为什么不能选」
-                          // (owner 2026-08-21:选不了的那一头要说明原因)。能选的行不挂 title:
-                          // 规格在悬浮详情卡里,原生提示再弹一遍就是同一件事说两次。
-                          title={m.disabled ? (m.disabledReason ?? modelTitle(m, locale)) : undefined}
-                          disabled={m.disabled}
-                          className={`${styles.composerPanelItem} ${styles.modelPanelItemCompact}`}
-                          {...detailHoverProps(m.id)}
-                        >
-                          {/* 上游每一行左边是**厂商 logo**(`ModelIcon`,14px 见方)。宿主给成品节点 —— 这个包够不到
-                              app 的图片资源。认不出厂商的行画通用兜底(见上面 owner 11-25),❌ 留空位。 */}
-                          <span
-                            className={m.icon ? styles.composerPanelItemIcon : `${styles.composerPanelItemIcon} ${styles.modelPanelItemIconFallback}`}
-                            data-slot="composer-model-icon"
-                            data-fallback={m.icon ? undefined : ''}
-                            aria-hidden="true"
-                          >
-                            {m.icon ?? <Sparkles size={14} />}
-                          </span>
-                          <span data-slot="composer-model-name" className={styles.modelPanelItemName}>
-                            {m.name}
-                          </span>
-                          {m.tag && (
-                            <span data-slot="composer-model-tag" className={styles.modelPanelItemTag}>
-                              {m.tag}
-                            </span>
-                          )}
-                          <span className={styles.modelPanelItemTrailing}>
-                            {m.creditRate && <span className={styles.modelPanelItemRate} data-slot="composer-model-rate">{m.creditRate}</span>}
-                            <span className={styles.modelPanelItemCheck} data-slot="composer-model-check" aria-hidden="true">
-                              {m.id === (selectedModelItem?.aliasOf ?? selectedModel) && <Check className={styles.modelSelectedCheck} size={14} />}
-                            </span>
-                          </span>
-                        </Combobox.Item>
-                      )}
-                    </Combobox.Collection>
-                  </Combobox.Group>
+                {(m: ComposerModelItem) => (
+                  <Combobox.Item
+                    key={m.id}
+                    value={m}
+                    tabIndex={-1}
+                    showCheck={false}
+                    data-model-option-id={m.id}
+                    data-route-repair-target={m.id === repairTarget || undefined}
+                    // 置灰时 title 挂**原因** —— 那一刻用户要问的是「为什么不能选」
+                    // (owner 2026-08-21:选不了的那一头要说明原因)。能选的行不挂 title:
+                    // 规格在悬浮详情卡里,原生提示再弹一遍就是同一件事说两次。
+                    title={m.disabled ? (m.disabledReason ?? modelTitle(m, locale)) : undefined}
+                    disabled={m.disabled}
+                    className={`${styles.composerPanelItem} ${styles.modelPanelItemCompact}`}
+                    {...detailHoverProps(m.id)}
+                  >
+                    {/* 上游每一行左边是**厂商 logo**(`ModelIcon`,14px 见方)。宿主给成品节点 —— 这个包够不到
+                        app 的图片资源。认不出厂商的行画通用兜底(见上面 owner 11-25),❌ 留空位。 */}
+                    <span
+                      className={m.icon ? styles.composerPanelItemIcon : `${styles.composerPanelItemIcon} ${styles.modelPanelItemIconFallback}`}
+                      data-slot="composer-model-icon"
+                      data-fallback={m.icon ? undefined : ''}
+                      aria-hidden="true"
+                    >
+                      {m.icon ?? <Sparkles size={14} />}
+                    </span>
+                    <span data-slot="composer-model-name" className={styles.modelPanelItemName}>
+                      {m.name}
+                    </span>
+                    {m.tag && (
+                      <span data-slot="composer-model-tag" className={styles.modelPanelItemTag}>
+                        {m.tag}
+                      </span>
+                    )}
+                    <span className={styles.modelPanelItemTrailing}>
+                      {m.creditRate && <span className={styles.modelPanelItemRate} data-slot="composer-model-rate">{m.creditRate}</span>}
+                      <span className={styles.modelPanelItemCheck} data-slot="composer-model-check" aria-hidden="true">
+                        {m.id === selectedRowId && <Check className={styles.modelSelectedCheck} size={14} />}
+                      </span>
+                    </span>
+                  </Combobox.Item>
                 )}
               </Combobox.List>
             </>
-          ) : null}
+          )}
           {/* 上游那段叫 **Thinking**,在 Content 最底下、清单之外,滚动列表时不跟着走。
               档位有几档、按什么顺序,都由 harness 说了算 —— codex 报 6 档、claude 活会话 7 档,
               ❌ 别按「Low/Med/High 三档」去裁:那是上游 demo 的取值,不是产品的。 */}
@@ -670,22 +664,29 @@ export function ComposerModelMenu({
             fastMode={fastMode} onFastModeChange={onFastModeChange} renderFastModeHint={renderFastModeHint}
             disabled={disabled} phoneActions={phoneActions} onCommit={() => setModelPanelOpen(false)} />
         </Combobox.Content>
-        {(detailItem || showUpgradeDetail) && (
+        {detailItem && (
           <HoverCard
             anchor={detailAnchor}
             ownPopup={panelEl}
             controller={detailCard}
-            // 面板贴着底排右侧往上开,右边常常没地方 —— 卡放左边,与 Cursor 同侧;贴不下时定位器自己翻。
             side="right"
             align="start"
-            sideOffset={8}
+            sideOffset={0}
             className={styles.modelDetailCard}
-            initialFocus={focusDetail.current}
           >
-            {detailItem ? (
-              <ModelDetail key={detailItem.id} item={detailItem} picker={panelEl} contextThresholds={contextThresholds}
-                efforts={detailItem.id === selectedModel ? effortItems : undefined} effort={effectiveEffortItem}
-                fastControl={detailItem.id === selectedModel && panel.modelRow === 'list' && !phoneActions && fastMode !== undefined
+            <ModelDetail key={detailItem.id} item={detailItem} contextThresholds={contextThresholds}
+                efforts={detailEfforts} effort={detailIsSelected ? effectiveEffortItem
+                  : detailEfforts?.find(level => level.id === detailItem.modelFeatures?.defaultEffortId)} keyboardEntry={keyboardEntry}
+                onReturn={() => {
+                  detailAnchor?.focus({ preventScroll: true });
+                  detailCard.close();
+                  setKeyboardEntry(0);
+                }}
+                onContextCommit={() => {
+                  closeAfterSelection();
+                  if (!detailIsSelected) selectModel(detailItem);
+                }}
+                fastControl={detailIsSelected && panel.modelRow === 'list' && !phoneActions && fastMode !== undefined
                   ? <ComposerFastMode detailRow picker={panelEl} enabled={fastMode} disabled={disabled} onChange={onFastModeChange} renderHint={renderFastModeHint} />
                   : undefined}
                 onDisabledAction={() => {
@@ -696,17 +697,11 @@ export function ComposerModelMenu({
                     openModelPanel();
                   });
                 }}
-                onEffortChange={onEffortChange} />
-            ) : modelUpgrade ? (
-              <div data-slot="composer-model-detail" style={{ display: 'contents' }}>
-                <div className={styles.modelDetailName}>{modelUpgrade.title}</div>
-                <ul className={styles.modelDetailList}>
-                  {modelUpgrade.models.map((name) => (
-                    <li key={name}>{name}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
+                onEffortChange={detailIsSelected && !onEffortChange ? undefined : effortId => {
+                  closeAfterSelection();
+                  if (detailIsSelected) onEffortChange?.(effortId);
+                  else onModelChange?.(detailItem.id, effortId);
+                }} />
           </HoverCard>
         )}
       </Combobox.Root>

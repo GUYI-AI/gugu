@@ -88,7 +88,8 @@ function platformComposerOption(model: PlatformModelRow): ComposerModelOption {
     // ❌ 不另做一套展示:上游(assistant-ui model picker)与本仓 harness 侧用的都是这一格。
     ...(model.contextWindow === null
       ? {}
-      : { modelFeatures: { contextWindowSize: model.contextWindow } }),
+      : { modelFeatures: { contextWindowSize: model.contextWindow,
+        contextLengths: model.contextLengths, defaultContextLength: model.defaultContextLength } }),
     groupLabel: translateSessionMessage(PLATFORM_GROUP_HEADING_KEY),
     // 底栏那颗按钮和设置面板的「模型」行都用 shortName,那两处看不见组头;留一个「咕咕」
     // 前缀,收起状态下也看得出这条会话在花积分。

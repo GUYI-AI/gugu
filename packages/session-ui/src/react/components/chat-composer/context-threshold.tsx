@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { ChevronRight, Check } from '../../../icons';
+import { Check } from '../../../icons';
 import { Popover } from '@session-ui/react/primitives/popover';
 import { formatTokenCount } from '@gugu/session-shared/format';
 import { useMessages } from '../../localization/message-provider';
@@ -11,12 +11,29 @@ export interface ContextThreshold {
   value: number | null;
   unsupported?: boolean;
   set?: (value: number | null) => Promise<void>;
+  setMaximum?: (window: number) => Promise<void>;
+  selectedWindow?: number;
+  selectWindow?: (window: number) => Promise<void>;
 }
 
 export type ComposerContextThresholds = (
   modelId: string,
   window: number | undefined
 ) => ContextThreshold | undefined;
+
+export interface AutoCompactLimits {
+  defaultTokens: number;
+  ceiling: number;
+}
+
+export function effectiveAutoCompactThreshold(threshold: ContextThreshold, limits?: AutoCompactLimits): number | null {
+  const tokens = threshold.value ?? limits?.defaultTokens;
+  return tokens == null ? null : Math.min(tokens, limits?.ceiling ?? tokens, threshold.maximum - 1);
+}
+
+export function formatAutoCompactThreshold(tokens: number | null): string | null {
+  return tokens == null ? null : `${tokens / 1000}K`;
+}
 
 const PRESETS = [64_000, 128_000, 200_000, 300_000, 600_000, 1_000_000];
 
@@ -25,27 +42,33 @@ function parseContextThreshold(text: string, minimum: number, maximum: number): 
   if (!match) return null;
   const factor = { k: 1_000, m: 1_000_000, 万: 10_000 }[match[2]!.toLowerCase()] ?? 1;
   const tokens = Number(match[1]) * factor;
-  return Number.isSafeInteger(tokens) && tokens >= minimum && tokens <= maximum ? tokens : null;
+  return Number.isSafeInteger(tokens) && tokens >= minimum && tokens < maximum ? tokens : null;
 }
 
-export function ContextThresholdMenu({
-  threshold, label, hover = false,
-}: { threshold: ContextThreshold; label: ReactNode; hover?: boolean }) {
+export function ContextThresholdChoices({ threshold, onCommit, lengths, defaultLength, autoCompact }: {
+  threshold: ContextThreshold;
+  onCommit: () => void;
+  lengths?: readonly number[];
+  defaultLength?: number;
+  autoCompact?: AutoCompactLimits;
+}) {
   const { translate } = useMessages();
-  const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const [error, setError] = useState<'input' | 'save' | null>(null);
   const [saving, setSaving] = useState(false);
-  const [editing, setEditing] = useState(false);
   const { minimum, maximum } = threshold;
-  const current = threshold.value ?? maximum;
-  const options = [...PRESETS.filter(value => value >= minimum && value < maximum), maximum];
-  const commit = async (value: number) => {
-    if (!threshold.set || saving) return;
+  const current = lengths ? threshold.selectedWindow ?? defaultLength : effectiveAutoCompactThreshold(threshold, autoCompact);
+  const defaultValue = effectiveAutoCompactThreshold({ ...threshold, value: null }, autoCompact);
+  const presets = PRESETS.filter(value => value >= minimum && value < maximum && value <= (autoCompact?.ceiling ?? value) && value !== defaultValue);
+  if (!lengths && current != null && current !== defaultValue && !presets.includes(current)) presets.push(current);
+  const options = lengths ?? presets.sort((a, b) => a - b);
+  const commit = async (value: number | null) => {
+    if (saving) return;
     setSaving(true);
     try {
-      await threshold.set(value === maximum ? null : value);
-      setOpen(false);
+      if (lengths && value != null) await threshold.selectWindow?.(value);
+      else await threshold.set?.(value);
+      onCommit();
     } catch {
       setError('save');
     } finally {
@@ -54,23 +77,10 @@ export function ContextThresholdMenu({
   };
 
   return (
-    <Popover.Root open={open} onOpenChange={(next, details) => {
-      if (!next && details.reason === 'trigger-hover' && editing) {
-        details.cancel();
-        return;
-      }
-      setOpen(next);
-      if (next) { setText(''); setError(null); }
-    }}>
-      <Popover.Trigger openOnHover={hover} delay={100} closeDelay={300}
-        disabled={!threshold.set} className={styles.contextThresholdTrigger}>
-        {label}<ChevronRight size={14} aria-hidden />
-      </Popover.Trigger>
-      <Popover.Content side="left" align="end" sideOffset={4} className={styles.contextThresholdContent}
-        onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setEditing(false); }}>
-        {minimum < maximum && <input className={styles.contextThresholdInput} aria-label={translate('composer.contextWindowThreshold')}
-          placeholder={translate('composer.contextWindowThreshold')} value={text} aria-invalid={error ? true : undefined}
-          onFocus={() => setEditing(true)}
+    <>
+        {lengths && <div className={styles.contextThresholdHeading}>{translate('composer.contextWindowThreshold')}</div>}
+        {!lengths && minimum < maximum && <input className={styles.contextThresholdInput} aria-label={translate('composer.autoCompactCustom')}
+          placeholder={translate('composer.autoCompactCustom')} value={text} aria-invalid={error ? true : undefined}
           onChange={event => { setText(event.target.value); setError(null); }}
           onKeyDown={event => {
             if (event.key !== 'Enter') return;
@@ -81,14 +91,43 @@ export function ContextThresholdMenu({
             else void commit(value);
           }} />}
         {error === 'input' && <div role="alert" className={styles.contextThresholdError}>
-          {translate('composer.contextThresholdRange', { minimum: formatTokenCount(minimum), maximum: formatTokenCount(maximum) })}
+          {translate('composer.contextThresholdRange', { minimum: formatTokenCount(minimum), maximum: formatExactThreshold(maximum - 1) })}
         </div>}
+        {error === 'save' && <div role="alert" className={styles.contextThresholdError}>{translate('taskError.settingFailedRetry')}</div>}
         {options.map(value => (
           <button type="button" key={value} disabled={saving} className={styles.contextThresholdOption}
             aria-pressed={current === value} onClick={() => void commit(value)}>
-            {formatTokenCount(value)}{current === value && <Check size={14} aria-hidden />}
+            {lengths ? formatModelContextLength(value) : formatAutoCompactThreshold(value)}
+            {current === value && <Check className={styles.modelSelectedCheck} size={14} aria-hidden />}
           </button>
         ))}
+        {!lengths && <button type="button" disabled={saving} className={styles.contextThresholdOption}
+          aria-pressed={current === defaultValue} onClick={() => void commit(null)}>
+          {formatAutoCompactThreshold(defaultValue) ?? translate('composer.clearAutoCompactThreshold')}
+          {current === defaultValue && <Check className={styles.modelSelectedCheck} size={14} aria-hidden />}
+        </button>}
+    </>
+  );
+}
+
+export function formatModelContextLength(value: number): string {
+  return formatTokenCount(value).replace(/k$/, 'K').replace(/\.0M$/, 'M');
+}
+
+export function formatExactThreshold(value: number): string {
+  return value % 1000 === 0 ? formatModelContextLength(value) : String(value);
+}
+
+export function ContextThresholdMenu({ threshold, label, autoCompact }: { threshold: ContextThreshold; label: ReactNode; autoCompact?: AutoCompactLimits }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger disabled={!threshold.set} className={styles.contextThresholdTrigger}>
+        {label}
+      </Popover.Trigger>
+      <Popover.Content side="left" align="start" sideOffset={12} className={styles.modelDetailSubmenu}
+        collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}>
+        {open && <ContextThresholdChoices threshold={threshold} autoCompact={autoCompact} onCommit={() => setOpen(false)} />}
       </Popover.Content>
     </Popover.Root>
   );

@@ -6,9 +6,10 @@
  * **整份** catalog,那条会话上的每个平台模型一起起不来。
  *
  * 标签用中文与工具栏其余控件(询问/完全访问)一致;描述译自 codex 目录里该档的原文。
- * 六档标签互不重名 —— codex 自己的中文包把 xhigh 和 max 都译成「极高」,别照抄。
+ * 各档标签互不重名 —— codex 自己的中文包把 xhigh 和 max 都译成「极高」,别照抄。
  */
 export const CODEX_EFFORT_OPTIONS = {
+  none: { name: '关闭', description: '回复时不做额外推理' },
   low: { name: '低', description: '快速回应，推理较浅' },
   medium: { name: '中', description: '兼顾速度与推理深度，适合日常任务' },
   high: { name: '高', description: '更深的推理，适合复杂问题' },

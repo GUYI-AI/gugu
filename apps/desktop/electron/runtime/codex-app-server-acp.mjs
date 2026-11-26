@@ -1375,7 +1375,8 @@ function emitUsageUpdate(params) {
   if (!Number.isFinite(size) || size <= 0 || !Number.isFinite(used) || used < 0) {
     return warnUnusableTokenUsage('unusable modelContextWindow or last.totalTokens', params)
   }
-  sessionUpdate({ sessionUpdate: 'usage_update', used, size })
+  const autoCompact = appModelCatalog?.autoCompactLimits?.(selectedModel, declaredContextWindow)
+  sessionUpdate({ sessionUpdate: 'usage_update', used, size, ...(autoCompact && { _meta: { 'gugu/autoCompact': autoCompact } }) })
 }
 
 /**
