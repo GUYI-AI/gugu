@@ -496,6 +496,46 @@ describe('TextModelRegistry', () => {
     expect(registry.isDirty(uri)).toBe(false);
   });
 
+  it('serializes repeated saves while allowing another file to save independently', async () => {
+    fileMocks.writeFile.mockClear();
+    const { registry, uri } = await openDirty('ordered.md', 'original\n', 'first\n');
+    let complete!: (value: unknown) => void;
+    fileMocks.writeFile.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const first = registry.saveFileToDisk(uri);
+    await vi.waitFor(() => expect(complete).toBeDefined());
+    registry.getModelByUri(uri)!.edit({ from: 0, to: registry.getModelByUri(uri)!.doc.length, insert: 'second\n' });
+    const second = registry.saveFileToDisk(uri);
+    const other = await registry.registerModel('project', 'workspace', '/ws', 'other.md', 'markdown', 'disk');
+    await registry.registerModel('project', 'workspace', '/ws', 'other.md', 'markdown', 'buffer');
+    expect(await registry.saveFileToDisk(other)).toBe('in the workspace');
+    const whileFirstPending = fileMocks.writeFile.mock.calls.filter(call => call[2] === 'ordered.md');
+    complete({ success: true, data: { success: true, bytesWritten: 6 } });
+    await first;
+    expect(await second).toBe('second\n');
+    expect(whileFirstPending).toHaveLength(1);
+    expect(registry.getDiskValue(uri)).toBe('second\n');
+    expect(registry.isDirty(uri)).toBe(false);
+  });
+
+  it('waits for a pending save before reading a disk change', async () => {
+    const { registry, uri } = await openDirty('watched.md', 'original\n', 'first\n');
+    let complete!: (value: unknown) => void;
+    fileMocks.writeFile.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const saving = registry.saveFileToDisk(uri);
+    await vi.waitFor(() => expect(complete).toBeDefined());
+    registry.getModelByUri(uri)!.edit({ from: registry.getModelByUri(uri)!.doc.length, insert: 'later\n' });
+    fileMocks.readFile.mockClear();
+    fileMocks.readFile.mockImplementationOnce(async () => disk('first\n'));
+    const reading = registry.invalidateModel(registry.toDiskUri(uri));
+    const readsDuringWrite = fileMocks.readFile.mock.calls.length;
+    complete({ success: true, data: { success: true, bytesWritten: 6 } });
+    await saving;
+    await reading;
+    expect(readsDuringWrite).toBe(0);
+    expect(registry.getValue(uri)).toBe('first\nlater\n');
+    expect(registry.isDirty(uri)).toBe(true);
+  });
+
   it('a disk reload is not an undo step: undo takes back only your own edit', async () => {
     const registry = new TextModelRegistry();
     fileMocks.readFile.mockImplementationOnce(async () => disk('one\n'));

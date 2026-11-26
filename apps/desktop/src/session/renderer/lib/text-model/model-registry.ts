@@ -112,6 +112,8 @@ export class TextModelRegistry {
 
   /** The disk read under way for each disk:// URI, and whether the file changed since it began: see `readDiskInTurn`. */
   private diskReads = new Map<string, { again: boolean; done: Promise<void> }>();
+  /** 同一文件的保存和重读依次执行，避免晚到的旧内容覆盖保存回执。 */
+  private fileOperations = new Map<string, Promise<void>>();
 
   /**
    * 盘上这份文件已经没了(外部删掉)的缓冲区 URI:页签标「已删除」、正文留着,存一下就重新建出来(照 VS Code)。
@@ -219,6 +221,15 @@ export class TextModelRegistry {
     const p = fn().finally(() => this.pendingFetches.delete(key));
     this.pendingFetches.set(key, p);
     return p;
+  }
+
+  private inFileTurn<T>(uri: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.fileOperations.get(uri) ?? Promise.resolve();
+    const result = previous.then(operation);
+    const done = result.then(() => undefined, () => undefined);
+    this.fileOperations.set(uri, done);
+    void done.then(() => { if (this.fileOperations.get(uri) === done) this.fileOperations.delete(uri); });
+    return result;
   }
 
   // ---------------------------------------------------------------------------
@@ -742,7 +753,11 @@ export class TextModelRegistry {
    *
    * @returns the saved content string on success, or `null` on failure.
    */
-  async saveFileToDisk(uri: string, merged = false): Promise<string | null> {
+  saveFileToDisk(uri: string): Promise<string | null> {
+    return this.inFileTurn(uri, () => this.writeModelToDisk(uri));
+  }
+
+  private async writeModelToDisk(uri: string, merged = false): Promise<string | null> {
     const buf = this.modelMap.get(uri);
     if (!buf || buf.type !== 'buffer') return null;
 
@@ -758,8 +773,10 @@ export class TextModelRegistry {
         // 盘上那份在你上次读到之后被别人改过(别的机器的写入带着版本标记,对不上就拒):重读一次,那边的改动
         // 并进你的缓冲区(与本机外部改动同一条路,两边都留),再把并好的写下去 —— 这就是你按的那一下 ⌘S。
         if ((result.error as { code?: string }).code === 'conflict' && !merged) {
-          await this.invalidateModel(this.toDiskUri(uri));
-          return this.saveFileToDisk(uri, true);
+          const disk = this.modelMap.get(this.toDiskUri(uri));
+          if (disk?.type !== 'disk') throw new Error('The saved file has no disk model');
+          await this.readDisk(this.toDiskUri(uri), disk);
+          return this.writeModelToDisk(uri, true);
         }
         throw new Error(result.error.type === 'not_found' ? translateSessionMessage('taskError.fileNotFound', { path: '[path]' }) : result.error.message);
       }
@@ -838,7 +855,7 @@ export class TextModelRegistry {
     }
     const turn = { again: false, done: Promise.resolve() };
     this.diskReads.set(uri, turn);
-    turn.done = (async () => {
+    turn.done = this.inFileTurn(uri.replace(/^disk:\/\//, 'file://'), async () => {
       try {
         do {
           turn.again = false;
@@ -847,7 +864,7 @@ export class TextModelRegistry {
       } finally {
         this.diskReads.delete(uri);
       }
-    })();
+    });
     return turn.done;
   }
 
