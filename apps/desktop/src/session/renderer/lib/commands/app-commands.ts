@@ -9,6 +9,7 @@ import { revealSessionpage } from '@/hooks/useSessionpageReveal';
 import { requestShellChatAction } from '@/lib/sidebarChatsBridge';
 import { rpc } from '@renderer/lib/ipc';
 import { keyEventWindow } from './keyboard-dispatcher';
+import { aModalIsOpen, dismissOpenModal } from '@renderer/features/sidebar/session-keyboard-nav-listener';
 import { commandRegistry } from './registry';
 import type { AppCommand, CommandProvider } from './types';
 
@@ -154,7 +155,9 @@ function createAppCommandProvider(): CommandProvider {
         { id: 'app.resourceMonitor', execute: () => openShellSettings('resource-monitor') },
         // The last answer to ⌘W: a focused pane with tabs takes it first (session.tabClose, a narrower scope).
         { id: 'app.closeWindow', hideFromPalette: true, execute: () => {
-          // A popped-out window closes itself; the main window goes through the host (it may hide to the tray).
+          // A modal up front is what ⌘W closes, as its Escape would. Then a popped-out window closes itself; the main
+          // window goes through the host (it may hide to the tray).
+          if (aModalIsOpen()) { dismissOpenModal(); return; }
           const view = keyEventWindow();
           if (view && view !== window) view.close();
           else void rpc.app.closeWindow();

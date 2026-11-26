@@ -6,6 +6,8 @@ import { KeyboardDispatcher } from '@renderer/lib/commands/keyboard-dispatcher';
 import { commandRegistry } from '@renderer/lib/commands/registry';
 import type { CommandProvider } from '@renderer/lib/commands/types';
 import { setEmbedVisible } from '@renderer/lib/portal-container';
+import { useTabShortcuts } from '@renderer/features/tabs/hooks/useTabShortcuts';
+import { dismissOpenModal } from '@renderer/features/sidebar/session-keyboard-nav-listener';
 
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } });
 
@@ -128,5 +130,38 @@ describe('the registry', () => {
     focus('editor');
     await userEvent.keyboard('{Control>}{Tab}{/Control}');
     expect(next).toHaveBeenCalledOnce();
+  });
+});
+
+describe('⌘W over a modal', () => {
+  function Pane({ close }: { close: () => void }) {
+    useTabShortcuts({ setNextTabActive: vi.fn(), setPreviousTabActive: vi.fn(), setTabActiveIndex: vi.fn(), closeActiveTab: close });
+    return null;
+  }
+
+  it('the pane keeps its tab while a modal is up; without one it closes it', async () => {
+    const close = vi.fn();
+    const paneRoot = createRoot(document.body.appendChild(document.createElement('div')));
+    await act(async () => paneRoot.render(<Pane close={close} />));
+    const sheet = document.body.appendChild(Object.assign(document.createElement('div'), { tabIndex: -1 }));
+    sheet.setAttribute('aria-modal', 'true');
+    expect(commandRegistry.dispatch('session.tabClose')).toBe(false);
+    expect(close).not.toHaveBeenCalled();
+    sheet.remove();
+    expect(commandRegistry.dispatch('session.tabClose')).toBe(true);
+    expect(close).toHaveBeenCalledOnce();
+    await act(async () => paneRoot.unmount());
+  });
+
+  it('dismissing the modal is its own Escape, delivered where the focus is', async () => {
+    const sheet = document.body.appendChild(document.createElement('div'));
+    sheet.setAttribute('aria-modal', 'true');
+    const field = sheet.appendChild(document.createElement('input'));
+    const escape = vi.fn((event: KeyboardEvent) => event.key);
+    sheet.addEventListener('keydown', escape);
+    field.focus();
+    dismissOpenModal();
+    expect(escape).toHaveBeenCalledOnce();
+    expect(escape.mock.results[0]!.value).toBe('Escape');
   });
 });

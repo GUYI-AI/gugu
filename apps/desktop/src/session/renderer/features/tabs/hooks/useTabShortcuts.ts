@@ -1,3 +1,4 @@
+import { aModalIsOpen } from '@renderer/features/sidebar/session-keyboard-nav-listener';
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
 
 /**
@@ -31,7 +32,8 @@ export function useTabShortcuts(store: TabNavigationProvider | undefined, option
     getCommands: () => !enabled || !store ? [] : [
       { id: 'session.tabNext', execute: () => store.setNextTabActive() },
       { id: 'session.tabPrev', execute: () => store.setPreviousTabActive() },
-      { id: 'session.tabClose', execute: () => store.closeActiveTab() },
+      // A modal over the pane owns ⌘W (app.closeWindow closes it): the tab behind it stays.
+      { id: 'session.tabClose', execute: () => { if (aModalIsOpen()) return false; store.closeActiveTab(); } },
       { id: 'session.tabReopen', execute: () => { store.reopenClosedTab?.(); } },
       { id: 'session.tabRename', enabled: !!store.renameActiveTab, execute: () => { store.renameActiveTab?.(); } },
       ...([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map((n) => ({
