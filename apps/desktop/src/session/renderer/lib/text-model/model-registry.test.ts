@@ -24,6 +24,8 @@ const fileMocks = vi.hoisted(() => ({
     data: { content: '<h1>outside</h1>', binary: false, truncated: false, totalSize: 16 },
   })),
   writeFile: vi.fn(async (..._args: unknown[]): Promise<unknown> => ({ success: true, data: { success: true, bytesWritten: 1 } })),
+  saveBuffer: vi.fn(async (..._args: unknown[]): Promise<void> => {}),
+  clearBuffer: vi.fn(async (..._args: unknown[]): Promise<void> => {}),
   fileExists: vi.fn(async (..._args: unknown[]): Promise<unknown> => ({ success: true, data: { exists: true, isDirectory: false } })),
 }));
 
@@ -53,8 +55,8 @@ vi.mock('@renderer/lib/ipc', () => ({
         fileExists: fileMocks.fileExists,
       },
       editor: {
-        saveBuffer: vi.fn(),
-        clearBuffer: vi.fn(),
+        saveBuffer: fileMocks.saveBuffer,
+        clearBuffer: fileMocks.clearBuffer,
       },
     },
   },
@@ -456,6 +458,26 @@ describe('TextModelRegistry', () => {
     expect(registry.isDirty(uri)).toBe(true);
     return { registry, uri };
   };
+
+  it('keeps edits made during a pending save dirty and does not lose them on reload', async () => {
+    fileMocks.clearBuffer.mockClear();
+    const { registry, uri } = await openDirty('pending.md', 'original\n', 'saved\n');
+    let complete!: (value: unknown) => void;
+    fileMocks.writeFile.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const saving = registry.saveFileToDisk(uri);
+    await vi.waitFor(() => expect(complete).toBeDefined());
+    const model = registry.getModelByUri(uri)!;
+    model.edit({ from: model.doc.length, insert: 'still unsaved\n' });
+    complete({ success: true, data: { success: true, bytesWritten: 6 } });
+    expect(await saving).toBe('saved\n');
+    expect(registry.getDiskValue(uri)).toBe('saved\n');
+    expect(registry.isDirty(uri)).toBe(true);
+    expect(fileMocks.clearBuffer).not.toHaveBeenCalled();
+    fileMocks.readFile.mockImplementationOnce(async () => disk('saved\n'));
+    await registry.invalidateModel(registry.toDiskUri(uri));
+    expect(registry.getValue(uri)).toBe('saved\nstill unsaved\n');
+    expect(registry.isDirty(uri)).toBe(true);
+  });
 
   it('a CRLF file stays CRLF through an edit, a disk merge and the save', async () => {
     const registry = new TextModelRegistry();

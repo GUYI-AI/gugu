@@ -671,16 +671,16 @@ export class TextModelRegistry {
   }
 
   /**
-   * Mark the current buffer content as saved.
-   * Syncs the disk model to match the buffer so isDirty() returns false.
+   * 保存回执只确认实际写下的文本；写入期间新增的编辑仍然是未保存内容。
    */
-  markSaved(uri: string): void {
+  markSaved(uri: string, content: string): void {
     const buf = this.modelMap.get(uri);
     const disk = this.modelMap.get(this.toDiskUri(uri));
     if (buf?.type === 'buffer' && disk?.type === 'disk') {
-      disk.model.setValue(buf.model.getValue());
+      disk.model.setValue(content);
       runInAction(() => {
-        this.dirtyUris.delete(uri);
+        if (this.computeIsDirtyRaw(uri)) this.dirtyUris.add(uri);
+        else this.dirtyUris.delete(uri);
       });
     }
   }
@@ -764,9 +764,9 @@ export class TextModelRegistry {
         throw new Error(result.error.type === 'not_found' ? translateSessionMessage('taskError.fileNotFound', { path: '[path]' }) : result.error.message);
       }
 
-      this.markSaved(uri);
+      this.markSaved(uri, content);
       runInAction(() => this.deletedOnDisk.delete(uri));
-      void workspaceRpc(buf.projectId).editor.clearBuffer(buf.projectId, buf.workspaceId, buf.filePath);
+      if (!this.isDirty(uri)) void workspaceRpc(buf.projectId).editor.clearBuffer(buf.projectId, buf.workspaceId, buf.filePath);
       return content;
     } catch (error) {
       log.error('Failed to save file', { path: buf.filePath, error });
