@@ -67,11 +67,11 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
     const rosterRecipientIds = undirected ? resolveOpeningAgentCall(rosterNameIndex, typed) : []
     sendingRef.current = true
     setSending(true)
-    // A message that cites chat files or comments on members' messages, and names no one, goes to the members who made
-    // those files and wrote those messages.
+    // A message that cites chat files or comments on members' messages or files, and names no one, goes to the members who
+    // made those files and wrote those messages.
     const memberIds = (props.groupMembers ?? []).map((member) => member.id)
     const citedRecipientIds = undirected && rosterRecipientIds.length === 0 && currentUserId && chatId
-      ? [...await citeRecipientIds(chatId, typed, currentUserId, memberIds), ...annotated.flatMap((item) =>
+      ? [...await citeRecipientIds(chatId, [typed, ...annotated.flatMap((item) => item.kind === 'file' ? [item.file.target] : [])].join('\n'), currentUserId, memberIds), ...annotated.flatMap((item) =>
         item.kind === 'message' && item.authorId && item.authorId !== currentUserId && memberIds.includes(item.authorId) ? [item.authorId] : [])]
       : []
     const sendOptions = whisperTarget
