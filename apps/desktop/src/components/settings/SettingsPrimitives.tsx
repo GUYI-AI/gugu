@@ -14,15 +14,18 @@ export function Toggle({
   checked,
   onChange,
   ariaLabel,
+  disabled,
 }: {
   checked: boolean
   onChange: (value: boolean) => void
   ariaLabel: string
+  disabled?: boolean
 }) {
   return (
     <Switch
       data-window-no-drag="true"
       checked={checked}
+      disabled={disabled}
       onCheckedChange={onChange}
       aria-label={ariaLabel}
     />

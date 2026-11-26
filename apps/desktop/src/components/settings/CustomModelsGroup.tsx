@@ -17,7 +17,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { refreshModelSubscriptions, subscriptionPlan, useSubscriptionPlan, errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
-import { customModelApiUrl, type CustomModelConnection, type CustomModelEntry } from '@gugu/session-core/models/custom-model';
+import { customModelApiUrl, type CustomModelConnection } from '@gugu/session-core/models/custom-model';
 import { providerPresets } from '@gugu/session-core/models/provider-presets';
 import { vendorName } from '@/i18n/vendorName';
 import { modelProviderIcon } from '@renderer/features/sessions/session-config/model-provider-icon';
@@ -95,21 +95,6 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
     } catch (error) { setFeedback({ group: 'custom', text: errorText(error) }); }
     finally { setBusy(null); }
   };
-  const setModelEnabled = async (connection: CustomModelConnection, modelId: string, enabled: boolean) => {
-    setBusy(connection.id); setFeedback(null);
-    try {
-      const entries = [...connection.models, ...(connection.disabledModels ?? [])].map(({ effortCatalog: _catalog, ...entry }: CustomModelEntry) => entry);
-      const selected = new Set(connection.models.map(model => model.id));
-      if (enabled) selected.add(modelId); else selected.delete(modelId);
-      const client = await getAgentConfigRuntimeClient(machine);
-      const result = await client.saveCustomModel({ id: connection.id, name: connection.name, apiUrl: customModelApiUrl(connection),
-        preset: connection.preset, endpoints: connection.endpoints, routes: connection.routes, harnessProtocols: connection.harnessProtocols,
-        models: entries.filter(model => selected.has(model.id)), disabledModels: entries.filter(model => !selected.has(model.id)) });
-      if (!result.success) throw new Error(errorText(result.error));
-      await customModels.refresh(machine);
-    } catch (error) { setFeedback({ group: 'custom', text: errorText(error) }); }
-    finally { setBusy(null); }
-  };
   const testConnection = async (connection: CustomModelConnection) => {
     setBusy(connection.id); setFeedback(null);
     try {
@@ -141,7 +126,7 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
         key={connection.id} data-custom-connection={connection.id} title={connection.name}
         description={!connection.keySaved ? translate('customModels.keyMissing') : undefined}
         control={<div className="flex items-center gap-1">
-          <Button className="gg-model-icon-button" size="icon" variant="ghost" aria-label={translate('customModels.edit')} onClick={() => setEditing(connection)}><Pencil className="size-4" /></Button>
+          <Button className="gg-model-icon-button" size="icon" variant="ghost" aria-label={translate('customModels.edit')} onClick={() => editModel(connection)}><Pencil className="size-4" /></Button>
           <Button className="gg-model-icon-button" size="icon" variant="ghost" aria-label={translate('customModels.remove')} disabled={busy === connection.id} onClick={() => void removeConnection(connection)}><Trash2 className="size-4" /></Button>
         </div>}
       />;
@@ -155,7 +140,7 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
           <Plus aria-hidden="true" className="size-4" />
         </Button>
       </span>
-    </span>} note={group === 'coding-plan' ? translate('customModels.planDescription') : undefined} footer={feedback?.group === group ? <SettingsNote role="status">{feedback.text}</SettingsNote> : undefined}>
+    </span>} footer={feedback?.group === group ? <SettingsNote role="status">{feedback.text}</SettingsNote> : undefined}>
       {group === 'coding-plan' && accountAgents.sort((a, b) => Number(a.id === 'claude') - Number(b.id === 'claude')).map(agent => (
         <SubscriptionConnections key={agent.id} agent={agent} machine={machine} modelRows />
       ))}
@@ -174,10 +159,8 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
           }) : connectionGroups.filter(([, connections]) => connections.length > 1 || groupOf(connections[0]!) === group).map(([apiUrl, connections]) => {
             const actions = (connection: CustomModelConnection) => ({
               busy: busy === connection.id,
-              onEdit: () => editModel(connection, ""),
-              onEditModel: (modelId: string) => editModel(connection, modelId),
+              onEdit: () => editModel(connection, connection.keySaved ? undefined : connection.models[0]?.id ?? ""),
               onTest: () => void testConnection(connection),
-              onToggleModel: (modelId: string, enabled: boolean) => void setModelEnabled(connection, modelId, enabled),
               onRemove: () => void removeConnection(connection),
             });
             if (connections.length === 1) {
@@ -196,6 +179,7 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
       initialAccount={'group' in editing ? editing.account : undefined}
       connection={'group' in editing ? undefined : editing}
       modelId={'group' in editing ? undefined : editingModel}
+      manageCatalog={!('group' in editing) && groupOf(editing) !== 'coding-plan' && editing.keySaved && editingModel === undefined}
       onClose={() => { setEditing(null); onAddClose?.(); }}
     />}
   </>;
@@ -214,19 +198,15 @@ type ConnectionActions = {
   busy: boolean;
   onEdit: () => void;
   onTest: () => void;
-  onEditModel: (modelId: string) => void;
-  onToggleModel: (modelId: string, enabled: boolean) => void;
   onRemove: () => void;
 };
 
-function ModelConnectionGroup({ connection, showAddress, busy, onEdit, onTest, onEditModel, onToggleModel, onRemove }: { connection: CustomModelConnection; showAddress: boolean } & ConnectionActions) {
+function ModelConnectionGroup({ connection, showAddress, busy, onEdit, onTest, onRemove }: { connection: CustomModelConnection; showAddress: boolean } & ConnectionActions) {
   const { translate } = useSessionMessages();
   const preset = providerPresets.find(({ id }) => id === connection.preset);
   const icon = preset ? modelProviderIcon({ id: preset.id, name: preset.name, iconKey: preset.icon }) : null;
   const name = preset ? vendorName(preset.name) : connection.name || endpointHost(connection) || customModelApiUrl(connection);
-  const [expanded, setExpanded] = useState(false);
-  const entries = [...connection.models, ...(connection.disabledModels ?? [])];
-  const count = entries.length;
+  const count = connection.models.length + (connection.disabledModels?.length ?? 0);
   const manageLabel = translate(!connection.keySaved ? 'customModels.enterKeyHere' : count ? 'customModels.manageConnectionModels' : 'customModels.selectModel');
   const details = [
     showAddress ? customModelApiUrl(connection) : null,
@@ -236,20 +216,11 @@ function ModelConnectionGroup({ connection, showAddress, busy, onEdit, onTest, o
   ].filter(Boolean).join(' · ');
   return <div data-custom-connection={connection.id}>
     <ModelProviderRow icon={icon ?? <Globe aria-hidden="true" />} name={name} description={details || undefined}
-      manageLabel={manageLabel} onManage={() => !connection.keySaved ? onEditModel(connection.models[0]?.id ?? "") : count ? setExpanded(value => !value) : onEdit()} endAction={<><Button className="gg-model-icon-button" size="icon" variant="ghost"
+      manageLabel={manageLabel} onManage={onEdit} endAction={<><Button className="gg-model-icon-button" size="icon" variant="ghost"
         aria-label={translate('customModels.test')} disabled={busy} onClick={onTest}><Link className="size-4" /></Button>
         <Button className="gg-model-icon-button" size="icon" variant="ghost"
         aria-label={translate('customModels.remove')} disabled={busy} onClick={onRemove}><Trash2 className="size-4" /></Button></>} />
-    {expanded && <div className="gg-connection-model-list">
-      {entries.map(model => <SettingsRow key={model.id} title={model.label || model.id}
-        control={<div className="flex items-center gap-2">
-          {connection.models.some(entry => entry.id === model.id) && <Button className="gg-model-icon-button" size="icon" variant="ghost" aria-label={translate('customModels.editModel', { model: model.label || model.id })}
-            onClick={() => onEditModel(model.id)}><Pencil className="size-4" /></Button>}
-          <Toggle checked={connection.models.some(entry => entry.id === model.id)}
-            ariaLabel={translate('customModels.enableModel', { model: model.label || model.id })} onChange={enabled => { if (!busy) onToggleModel(model.id, enabled); }} />
-        </div>} />)}
-      <SettingsRow control={<Button size="sm" variant="outline" onClick={onEdit}>{translate('customModels.add')}</Button>} />
-    </div>}
+
   </div>;
 }
 

@@ -86,9 +86,11 @@
 .gg-model-dialog input,
 .gg-model-dialog .gg-model-select-trigger,
 .gg-model-dialog [data-slot='select-trigger'] { min-height: 32px; height: 32px; }
+.gg-model-dialog .gg-model-picker [data-slot='combobox-chip-input'] { min-height: 22px; height: 22px; }
 .gg-model-select-trigger { gap: 6px; padding: 0 10px; }
 /* An unchecked box reads as something to check: a control edge one step above the hairline the shared checkbox uses. */
 .gg-model-dialog [data-slot='checkbox']:not([data-checked]) { border-color: color-mix(in oklab, var(--fg) 22%, transparent); }
+.gg-model-dialog .gg-model-check [data-slot='checkbox'][data-indeterminate] [data-slot='checkbox-indicator'] { display: none; }
 .gg-model-provider-option { display: flex; min-width: 0; align-items: center; gap: 6px; }
 .gg-model-provider-option > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gg-model-provider-icon { display: inline-flex; width: 16px; height: 16px; flex: none; }
@@ -98,6 +100,7 @@
 .gg-model-test-ok { display: flex; align-items: center; gap: 4px; margin-top: -4px; font-size: var(--font-caption); line-height: 18px; color: var(--ok-fg); }
 .gg-model-field .subscription-error { margin-top: -4px; }
 .gg-model-advanced { margin-top: 26px; }
+.gg-model-advanced-fields { margin: 12px 0 16px; }
 .gg-model-checks { display: flex; flex-wrap: wrap; column-gap: 12px; row-gap: 6px; margin-top: 7px; }
 .gg-model-check { display: inline-flex; height: 20px; align-items: center; gap: 8px; font-size: 14px; line-height: 20px; color: var(--text-primary); cursor: pointer; user-select: none; }
 .gg-model-check[data-disabled] { color: var(--text-tertiary); cursor: default; }
@@ -109,7 +112,7 @@
 .gg-model-thinking > .gg-model-field:first-of-type { margin-top: 11px; }
 .gg-model-thinking > .gg-model-field + .gg-model-field { margin-top: 12px; gap: 8px; }
 .gg-model-levels { display: grid; grid-template-columns: repeat(3, minmax(0, 200px)); row-gap: 6px; }
-.gg-model-routes { display: flex; min-width: 0; flex-direction: column; gap: 8px; margin: 12px 0 0; padding: 0; border: 0; }
+.gg-model-routes { display: flex; flex-basis: 100%; min-width: 0; flex-direction: column; gap: 8px; margin: 6px 0 0; padding: 0; border: 0; }
 .gg-model-routes > legend { margin-bottom: 8px; padding: 0; }
 .gg-model-route-cell { display: flex; min-width: 0; flex-direction: column; gap: 4px; font-size: var(--font-caption); line-height: 16px; color: var(--text-secondary); }
 .gg-model-limits { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 13px; margin-top: 12px; }

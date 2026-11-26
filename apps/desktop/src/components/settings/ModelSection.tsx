@@ -1,6 +1,5 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { platform } from '@/platform'
-import { SessionSettingsSection } from '../sessionpage/SessionSettingsSection'
 import { Crown } from '@/lib/icons'
 import { useTheme } from '@/store/theme'
 import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
@@ -51,7 +50,6 @@ export function ModelSection({ addRequested, onAddClose }: { addRequested?: bool
       </div>
       </SessionUiTheme>}
       <CustomModelsGroup addRequested={addRequested} onAddClose={onAddClose} providedModels={<ProvidedModels />} />
-      {platform.capabilities.modelSettings && <SessionSettingsSection section="auxiliary-models" />}
     </SettingsPage>
   )
 }

@@ -412,7 +412,7 @@ it('names only the bound model when reopening a migrated Pi task', async () => {
   await until('the trigger names the bound model', () => document.querySelector('[data-slot=composer-model-trigger-label]')?.textContent === 'glm-5.3-flash');
   expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent).not.toContain('provider');
 });
-it('a custom address shows no protocol and saves the addresses it recognized for the named model', async () => {
+it('saves only the models selected from a custom address catalog', async () => {
   state.probe = {
     endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }, { protocol: 'openai-responses', baseUrl: 'https://relay.test' }],
     models: ['model-a', 'model-b'], failures: [{ step: 'anthropic-messages', reason: 'refused' }],
@@ -420,12 +420,13 @@ it('a custom address shows no protocol and saves the addresses it recognized for
   render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
   await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test');
   await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-test');
-  await userEvent.fill(page.getByTestId('custom-model-name'), 'model-b');
   await until('the address is probed', () => state.probes.some(probe => JSON.stringify(probe) === JSON.stringify({ apiKey: 'sk-test', baseUrl: 'https://relay.test' })));
-  expect(document.querySelector('[data-testid^=custom-model-protocol]')).toBeNull();
+  await userEvent.click(page.getByPlaceholder('Search models'));
+  await userEvent.click(page.getByRole('option', { name: 'model-b', exact: true }));
+  await userEvent.keyboard('{Escape}');
   await userEvent.click(page.getByTestId('custom-model-save'));
   await until('the form saved', () => state.saved !== null);
-  expect(state.saved).toMatchObject({ endpoints: state.probe.endpoints, models: [{ id: 'model-b', toolCall: true, image: false, thinking: true, efforts: [] }], apiKey: 'sk-test', routes: [] });
+  expect(state.saved).toMatchObject({ endpoints: state.probe.endpoints, models: [{ id: 'model-b' }], apiKey: 'sk-test', routes: [] });
 });
 const failures = [
   ['unauthorized', 'This address refused the key.', '该地址拒绝了此 Key。'],
@@ -641,3 +642,98 @@ for (const theme of ['light', 'dark'] as const) {
     } finally { document.documentElement.dataset.theme = 'light'; }
   });
 }
+
+
+it('manages connection settings and stages catalog changes until the connection is saved', async () => {
+  const connection = { ...record(), keySaved: true, models: [{ id: 'enabled-model' }] };
+  state.rows = [connection];
+  state.testResult = { kind: 'listed', models: ['catalog-model', 'enabled-model'] };
+  render(<CustomModelsGroup />);
+  await userEvent.click(page.getByRole('button', { name: 'Manage models', exact: true }));
+  const dialog = page.getByTestId('custom-model-dialog');
+  await expect.element(dialog.getByTestId('custom-model-address-0')).toBeVisible();
+  await expect.element(dialog.getByTestId('custom-model-key')).toBeVisible();
+  const picker = dialog.getByTestId('custom-model-picker');
+  const search = picker.getByRole('combobox');
+  const existing = picker.getByRole('button', { name: 'Remove enabled-model' });
+  await expect.element(existing).toBeVisible();
+  const option = page.getByRole('option', { name: 'catalog-model', exact: true });
+  await search.hover();
+  expect(option.query()).toBeNull();
+  await expect.element(search).toHaveAttribute('aria-expanded', 'false');
+  await userEvent.click(search);
+  expect(document.activeElement).toBe(search.element());
+  await expect.element(option).toHaveAttribute('aria-selected', 'false');
+  await option.hover();
+  await dialog.getByTestId('custom-model-key').hover();
+  await until('the list closes after the pointer leaves the picker', () => option.query() === null);
+  await search.hover();
+  expect(option.query()).toBeNull();
+  await userEvent.click(search);
+  await userEvent.fill(search, 'catalog');
+  expect(page.getByRole('option', { name: 'enabled-model', exact: true }).query()).toBeNull();
+  await userEvent.click(option);
+  const chip = picker.getByRole('button', { name: 'Remove catalog-model' });
+  await expect.element(chip).toBeVisible();
+  await expect.element(option).toHaveAttribute('aria-selected', 'true');
+  await userEvent.click(chip);
+  expect(chip.query()).toBeNull();
+  await userEvent.click(search);
+  await expect.element(option).toHaveAttribute('aria-selected', 'false');
+  await userEvent.keyboard('{Escape}');
+  expect(dialog.getByRole('combobox', { name: 'Configure models' }).query()).toBeNull();
+  await userEvent.click(search);
+  await userEvent.click(option);
+  await userEvent.keyboard('{Escape}');
+  await expect.element(existing).toBeVisible();
+  expect(state.saved).toBeNull();
+  await userEvent.click(dialog.getByTestId('custom-model-save'));
+  await until('the connection editor closes', () => dialog.query() === null);
+  expect(state.saved?.models).toEqual([...connection.models, { id: 'catalog-model' }]);
+  expect(state.saved?.disabledModels).toEqual([]);
+  expect(state.probes).toEqual([]);
+});
+
+
+it('applies advanced changes to all selected models and preserves their other settings', async () => {
+  const connection = { ...record(), keySaved: true, models: [
+    { id: 'first', image: true, efforts: ['low'] as const, defaultEffort: 'low' as const },
+    { id: 'second', image: false, efforts: ['high'] as const, defaultEffort: 'high' as const },
+  ].map(model => ({ ...model, efforts: [...model.efforts] })), disabledModels: [{ id: 'disabled', image: false }] };
+  state.rows = [connection];
+  state.testResult = { kind: 'listed', models: ['first', 'second', 'disabled'] };
+  render(<CustomModelsGroup />);
+  await userEvent.click(page.getByRole('button', { name: 'Manage models', exact: true }));
+  const dialog = page.getByTestId('custom-model-dialog');
+  const advanced = dialog.getByTestId('custom-model-advanced');
+  await expect.element(advanced.getByText('Advanced configuration', { exact: true })).toBeVisible();
+  expect(advanced.element().querySelector('summary')).toBeNull();
+  expect(advanced.getByRole('combobox', { name: 'Model name' }).query()).toBeNull();
+  const protocol = advanced.getByTestId('custom-model-custom-protocol');
+  await expect.element(protocol).toBeVisible();
+  expect(protocol.element().previousElementSibling?.textContent).toBe(translateSessionMessage('customModels.thinkingOptional'));
+  await userEvent.click(protocol);
+  const routes = advanced.getByTestId('custom-model-routes');
+  await expect.element(routes).toBeVisible();
+  expect(protocol.element().nextElementSibling).toBe(routes.element());
+  await userEvent.click(protocol);
+  expect(routes.query()).toBeNull();
+  const image = advanced.getByRole('checkbox', { name: 'Image input', exact: true });
+  await expect.element(image).toHaveAttribute('aria-checked', 'mixed');
+  await userEvent.click(image);
+  await userEvent.click(advanced.getByRole('combobox', { name: translateSessionMessage('customModels.defaultEffort') }));
+  for (const level of ['auto', 'low', 'medium', 'high', 'xhigh', 'max'] as const) {
+    const name = translateSessionMessage(level === 'auto' ? 'customModels.effortAuto' : `customModels.effort.${level}`);
+    await expect.element(page.getByRole('option', { name, exact: true })).toBeVisible();
+  }
+  await userEvent.click(page.getByRole('option', { name: 'Medium', exact: true }));
+  await userEvent.click(advanced.getByRole('button', { name: '128K', exact: true }));
+  expect(state.saved).toBeNull();
+  await userEvent.click(dialog.getByTestId('custom-model-save'));
+  await until('the bulk configuration is saved', () => state.saved !== null);
+  expect(state.saved?.models).toMatchObject([
+    { id: 'first', image: true, contextWindow: 131_072, efforts: ['low', 'medium'], defaultEffort: 'medium' },
+    { id: 'second', image: true, contextWindow: 131_072, efforts: ['medium', 'high'], defaultEffort: 'medium' },
+  ]);
+  expect(state.saved?.disabledModels).toEqual(connection.disabledModels);
+});
