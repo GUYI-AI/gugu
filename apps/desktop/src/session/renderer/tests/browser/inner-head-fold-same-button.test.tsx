@@ -62,7 +62,7 @@ it('the head band and the tab strip line up, and the column toggle is the titleb
 
   expect(harness.container.querySelector('[data-inner-head-fold]'), 'no fold button in the head row').toBeNull();
   const toggle = box('[data-shell-restore-lane] button');
-  const toggleIcon = box('[data-shell-restore-lane] svg.lucide-panel-left');
+  const toggleIcon = box('[data-shell-restore-lane] svg[data-panel-toggle-icon]');
   expect([toggle.width, toggle.height]).toEqual([28, 28]);
   expect([toggleIcon.width, toggleIcon.height]).toEqual([TITLEBAR_ACTION_ICON_SIZE_PX, TITLEBAR_ACTION_ICON_SIZE_PX]);
   // Centred on the band's middle line, to the column's right.
