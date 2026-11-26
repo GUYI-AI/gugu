@@ -161,11 +161,20 @@ div.gg-settings-row {
 }
 
 /* 行内的原生下拉(语言、设备筛选同形)。触控高度与 ui/Button 同一条断点。 */
+.gg-settings-select-wrap {
+  position: relative;
+  display: inline-grid;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--fg);
+}
 select.gg-settings-select {
+  appearance: none;
   min-width: 0;
   max-width: 100%;
   min-height: var(--control-h-md);
-  padding: 0 28px 0 10px;
+  padding-block: 0;
+  padding-inline: 10px calc(2 * var(--spacing-2xl));
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
   background: var(--card);
@@ -173,6 +182,13 @@ select.gg-settings-select {
   font: inherit;
   font-size: var(--font-body);
   cursor: pointer;
+}
+.gg-settings-select-icon {
+  position: absolute;
+  inset-inline-end: var(--spacing-xs);
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 @media (max-width: 719px) {
   select.gg-settings-select { min-height: var(--control-h-touch); }

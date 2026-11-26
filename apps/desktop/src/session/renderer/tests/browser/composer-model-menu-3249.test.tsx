@@ -188,7 +188,7 @@ describe('#3249 composer 模型下拉', () => {
   })
 
   /**
-   * 打开模型面板。**没有二级了** —— 上游那版是一层:搜索框 → 厂商药丸 → 分组清单 → 底部 Thinking 行。
+   * Open the phone panel, which keeps its established Thinking controls.
    */
   async function openPanel(): Promise<void> {
     // @@@6301 前提:面板此刻是关着的。触发器是开关 —— 面板已开时再点一下是**关掉**它,而关闭动画期间
@@ -203,14 +203,9 @@ describe('#3249 composer 模型下拉', () => {
       'model panel lists options',
       () => document.querySelectorAll('[data-slot="combobox-content"] [role="option"]').length > 0
     )
-    // @@@6301 「打开」还包括打开时的**初始焦点落定**:Combobox 在弹层出现后的下一拍才把焦点交给搜索框。
-    // 不等它,后面的 `thumbInput.focus()` 会被这次迟到的交接抢走,方向键落进搜索框 —— 回调一次都不发。
-    // mac1 实测 50 次里 6 次(按键前焦点在滑杆 50/50,按键后在搜索框 43/50)。等的是这个事实,❌ 加时钟。
-    // 目录为空时没有搜索框,也就没有这次交接。
-    await until('initial focus lands on the search box', () => {
-      const search = document.querySelector('[data-slot="combobox-content"] [data-testid="composer-model-search"]')
-      return !search || document.activeElement === search
-    })
+    await until('initial focus lands on a model', () =>
+      document.activeElement?.hasAttribute('data-model-option-id') === true
+    )
   }
 
   /**
@@ -225,9 +220,6 @@ describe('#3249 composer 模型下拉', () => {
       )
     ].map((el) => el.textContent?.trim() ?? '')
 
-  const sameList = (actual: string[], expected: string[]): boolean =>
-    JSON.stringify(actual) === JSON.stringify(expected)
-
   /** 组头此刻是什么 —— 组头承载的是**一级分类**(这条是谁的)。 */
   const visibleGroups = (): string[] =>
     [
@@ -239,14 +231,14 @@ describe('#3249 composer 模型下拉', () => {
 
     await page.getByText('gpt-5.6-codex', { exact: true }).click()
 
-    expect(onModelChange.mock.calls).toEqual([['gpt-5.6-codex']])
+    expect(onModelChange).toHaveBeenCalledExactlyOnceWith('gpt-5.6-codex')
     await until('model panel closed', () => openMenuParts() === 0)
   })
 
   it('点已经选中的那条也收起(owner 截图里点的就是这条)', async () => {
     await openPanel()
 
-    await page.getByText('GLM 5.2', { exact: true }).click()
+    await page.elementLocator(document.querySelector('[data-model-option-id="platform:glm-5.2"]')!).click()
 
     // 值没变(本来就是它),但框必须回收 —— 坏版本在这条上表现得最刺眼:
     // 用户点了一下"确认",界面纹丝不动。
@@ -316,6 +308,7 @@ describe('#3249 composer 模型下拉', () => {
 
     MODELS = { ...claude }
     renderComposer('default')
+    await expect.element(page.getByTestId('composer-model-trigger')).toHaveTextContent('Opus 5')
     await openPanel()
     expect(visibleOptions().some((name) => /default|默认/i.test(name)), visibleOptions().join(' | ')).toBe(false)
     // The check sits on the concrete row the alias stands for.
@@ -460,17 +453,17 @@ describe('#3249 composer 模型下拉', () => {
     }
   })
 
-  it('触发器与面板说的是同一档 —— 模型默认档也算"当前生效"', async () => {
+  it('shows only the model in the trigger and retains the default effort in the phone controls', async () => {
     renderComposer('platform:glm-5.2', { default: 'xhigh' })
 
     await until(
-      'trigger shows the default effort',
-      () => document.querySelector<HTMLElement>('[data-slot="composer-effort"]')?.textContent?.trim() === '极高'
+      'trigger shows only the model name',
+      () => document.querySelector<HTMLElement>('[data-slot="composer-model-trigger-label"]')?.textContent?.trim() === 'GLM 5.2'
     )
 
     await openPanel()
 
-    // ① 读数说的是同一档。
+    // The phone control retains its established current-level readout.
     await until('panel readout shows the default effort', () => effortReadout() === '极高')
     // ② 圆钮停在那一档上 —— 判的是 `aria-valuetext`(读屏器听到的),不是序号。
     const thumbInput = effortRow().querySelector<HTMLInputElement>('input[type="range"]')!
@@ -633,32 +626,6 @@ describe('#3249 composer 模型下拉', () => {
     expect(onEffortChange).not.toHaveBeenCalled()
   })
 
-  it('搜索按名字过滤(照上游:清单一长就得找得到)', async () => {
-    await openPanel()
-    expect(visibleOptions().length).toBe(5)
-
-    await page.getByTestId('composer-model-search').fill('glm')
-
-    await until('search narrows to GLM 5.2', () => sameList(visibleOptions(), ['GLM 5.2']))
-    expect(visibleOptions()).toEqual(['GLM 5.2'])
-  })
-
-  it('搜索认一级也认二级 —— 打「智谱」筛厂商,打 Gugu 筛来源', async () => {
-    await openPanel()
-
-    await page.getByTestId('composer-model-search').fill('智谱')
-    // 上游把厂商名放在 `keywords` 里参与匹配;本仓没有那个字段,由二级的 providerLabel 承担。
-    await until('search narrows to GLM 5.2', () => sameList(visibleOptions(), ['GLM 5.2']))
-    expect(visibleOptions()).toEqual(['GLM 5.2'])
-
-    await page.getByTestId('composer-model-search').fill('Gugu')
-    // 一级组头同样进匹配面。⚠️ 打的是 `Gugu` 不是「咕咕」:平台那一级组头 #5082 之后走词表,
-    // 而语言由本文件 beforeEach 钉成 en-US(**钉死,不是假定** —— 见那里的说明)。
-    // 这条断言因此同时钉住「组头确实进了匹配面」和「它确实被翻译了」。
-    await until('search narrows to the Gugu group', () => sameList(visibleOptions(), ['GLM 5.2', 'GPT-5.6 Sol']))
-    expect(visibleOptions()).toEqual(['GLM 5.2', 'GPT-5.6 Sol'])
-  })
-
   it('咕咕模型优先，列表没有来源分组，也没有顶上那排厂商筛选块', async () => {
     await openPanel()
 
@@ -674,7 +641,7 @@ describe('#3249 composer 模型下拉', () => {
     expect(slots.filter((el) => el.hasAttribute('data-fallback')).map((el) =>
       el.closest('[role="option"]')?.querySelector('[data-slot="composer-model-name"]')?.textContent?.trim()
     )).toEqual(['Relay Model (preview)'])
-    // owner 11-25:「删掉模型选择列表头上的分组」—— 那排厂商块整个撤掉,找某一家用搜索框(下一条)。
+    expect(document.querySelector('[data-testid="composer-model-search"]')).toBeNull()
     expect(document.querySelector('[data-slot="combobox-content"] [data-testid^="composer-model-provider-"]')).toBeNull()
   })
 
@@ -691,36 +658,5 @@ describe('#3249 composer 模型下拉', () => {
     ].map((el) => Math.round(el.getBoundingClientRect().left))
     expect(lefts.length).toBe(5)
     expect(new Set(lefts).size, `各行名字左边缘: ${lefts.join(', ')}`).toBe(1)
-  })
-
-  it('按厂商找:搜索框打厂商名,两档里那一家都留下;清空回到全部', async () => {
-    await openPanel()
-
-    // 阳性对照:静息态五条都在 —— 否则下面「筛掉了」平凡为真。
-    expect(visibleOptions().length).toBe(5)
-
-    // 取证图:这是**唯一**带完整产品形状 fixture 的用例(厂商 logo + 六档 Thinking)。
-    // ⚠️ 先等弹层的入场动画走完再拍:点开就拍会拍到半透明的中间帧,那张图会让人以为
-    //    面板本身是灰的(第一版正是这么拍出一张"看着像坏了"的图)。
-    // 等的是「入场动画已播完」这件事:弹层带 data-open 时挂一段 `both` 填充的入场动画
-    // (packages/session-ui/src/styles/recipes/popup-surface.css.ts 的 `&[data-open]` 那几条),
-    // 播完后它仍在 getAnimations() 里、playState 为 finished。❌ 按固定毫秒等。
-    await until('panel entry animation finished', () => {
-      const popup = document.querySelector<HTMLElement>('[data-slot="combobox-content"][data-open]')
-      return popup != null && popup.getAnimations().every((a) => a.playState === 'finished')
-    })
-    await page.screenshot({ path: 'composer-model-panel.png' })
-
-    await page.getByTestId('composer-model-search').fill('OpenAI')
-    // 厂商横切在两档之上 ⇒ 两档里的 OpenAI 条目都留下。
-    // 三条:你自己的 codex 与 Sol,加上咕咕代付的那条 Sol —— 同名不同档,两条都得在。
-    await until('search narrows to OpenAI', () =>
-      sameList(visibleOptions(), ['GPT-5.6 Sol', 'gpt-5.6-codex', 'GPT-5.6 Sol'])
-    )
-    expect(visibleOptions()).toEqual(['GPT-5.6 Sol', 'gpt-5.6-codex', 'GPT-5.6 Sol'])
-    expect(visibleGroups()).toEqual([])
-
-    await page.getByTestId('composer-model-search').fill('')
-    await until('clearing the search restores all five', () => visibleOptions().length === 5)
   })
 })

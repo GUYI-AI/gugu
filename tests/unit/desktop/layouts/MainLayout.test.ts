@@ -17,6 +17,7 @@ import { createDraftWriter } from '../../../../apps/desktop/src/store/chatDraftW
 import { MainLayout } from '../../../../apps/desktop/src/layouts/MainLayout'
 import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automationDom'
 import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
+import { publishChatSummaries } from '../../../../apps/desktop/src/lib/chatSummariesBridge'
 import { openLinkTarget } from '../../../../apps/desktop/src/lib/guguLinks'
 import { conversationLink, parseGuguLink } from '@gugu/core/shared/ui/guguLink'
 import { ToastContext } from '../../../../apps/desktop/src/components/toastContext'
@@ -1232,6 +1233,25 @@ describe('MainLayout: files.openWith', () => {
     expect(takeChatAsk('topic-file')).toBeNull()
   })
 
+  // A file opened from a topic's message opens in that topic, on the phone as on the desktop: the topic stays the
+  // conversation on screen (closing the file returns to it), and its panel takes the request; the file is still the source's.
+  it.each(['phone', 'desktop'] as const)('a file opened from a topic message opens in that topic (%s)', async (shell) => {
+    if (shell === 'phone') { platformMock.kind = 'capacitor'; platformMock.capabilities.sessionHost = false }
+    takeChatAsk('source'); takeChatAsk('topic-file') // the chats' mailboxes outlive a case
+    chatStoreMock.chats = [{ id: 'source', kind: 'group' }, { id: 'topic-file', kind: 'topic', source_chat_id: 'source', name: 'Topic' }] as never
+    const message = { id: 'message-in-topic', chat_id: 'topic-file', content: 'page.html', retracted_at: null }
+    const restore = vi.fn()
+    await renderMainLayoutWithToast()
+    fileOwner.mockResolvedValue({ data: { chat_id: 'source' }, error: null })
+    await act(async () => { await openLinkTarget({ kind: 'file', itemId: 'F1' }, { message: message as never, restore }) })
+    if (shell === 'phone') {
+      expect(chatStoreMock.setActiveChatId, 'the topic stays on screen').toHaveBeenCalledWith('topic-file')
+      expect(chatStoreMock.setActiveChatId, 'never its source group').not.toHaveBeenCalledWith('source')
+    } else expect(sessionPageViewRequests.openChat).toHaveBeenCalledExactlyOnceWith('topic-file', false, 'resource')
+    expect(takeChatAsk('topic-file')).toMatchObject({ itemId: 'F1', opener: { itemId: 'F1', chatId: 'topic-file' }, message, restore })
+    expect(takeChatAsk('source')).toBeNull()
+  })
+
   it('the file\'s chat comes up and its panel is asked for the file, with the host\'s answer', async () => {
     chatStoreMock.chats = [{ id: 'g-open', kind: 'group', name: 'G' } as never]
     await renderMainLayoutWithToast()
@@ -1509,7 +1529,8 @@ it.each(['group', 'topic'] as const)('keeps a private annotated image private in
   expect(chatStoreMock.setDraftAttachments).toHaveBeenCalledWith(target, [expect.objectContaining({ file: expect.objectContaining({ name: 'edited.png' }) })])
 })
 
-// Links and notifications retain the topic address. Files open the shared source slot.
+// Links and notifications retain the topic address. A file with no conversation to open from opens in the shared source
+// slot; one opened from a conversation (a group or a topic, on the desktop and the phone) opens there.
 
 describe('MainLayout: opening a topic on the desktop', () => {
   // 对话链接只认 UUID 形的对话 id(真对话就是这样)。
@@ -1617,6 +1638,30 @@ describe('MainLayout: message link presentation identity', () => {
     await renderMainLayoutWithToast()
     await act(async () => { clickLink(conversationLink(topic, MESSAGE_ID)); for (let i = 0; i < 5; i++) await Promise.resolve() })
     expect(revealRoute.asked).toHaveBeenLastCalledWith(topic, MESSAGE_ID, phone ? 'chats' : `chat:${topic}`)
+  })
+  it('opens an activity address by public number and reveals only a live message belonging to that conversation', async () => {
+    const chat = '0b1e7c1a-0000-4000-8000-000000000001'
+    const target = { kind: 'chat', chatId: '123456' } as const
+    const chats = [{ id: chat, public_id: 123456, kind: 'group', unread_count: 0, is_marked_unread: false }]
+    chatStoreMock.chats = chats
+    await renderMainLayoutWithToast()
+    publishChatSummaries(chats)
+    try {
+      await act(async () => { await openLinkTarget(target) })
+      expect(sessionPageViewRequests.openChat).toHaveBeenLastCalledWith(chat, false)
+      chatServiceMock.getMessageById.mockResolvedValueOnce({ id: MESSAGE_ID, chat_id: chat })
+      await act(async () => { await openLinkTarget({ ...target, messageId: MESSAGE_ID }) })
+      expect(revealRoute.asked).toHaveBeenLastCalledWith(chat, MESSAGE_ID, `chat:${chat}`)
+      revealRoute.asked.mockClear()
+      for (const message of [{ chat_id: 'another-group' }, { chat_id: chat, retracted_at: '2026-01-01' }]) {
+        chatServiceMock.getMessageById.mockResolvedValueOnce({ id: MESSAGE_ID, ...message })
+        await act(async () => { await expect(openLinkTarget({ ...target, messageId: MESSAGE_ID })).rejects.toThrow() })
+      }
+      await act(async () => { await expect(openLinkTarget({ ...target, chatId: '987654' })).rejects.toThrow() })
+      expect(revealRoute.asked).not.toHaveBeenCalled()
+    } finally {
+      publishChatSummaries([])
+    }
   })
   it('routes a phone task message to the real task-chat slot', async () => {
     platformMock.kind = 'capacitor'; platformMock.capabilities.sessionHost = false

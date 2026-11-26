@@ -25,16 +25,18 @@ const picker = () => document.querySelector<HTMLElement>('[data-slot="composer-m
 const nextFrames = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
 
 describe('@ mention picker dismissal', () => {
+  const onSend = vi.fn(async () => {})
+  const render = (hidden: boolean) => root!.render(
+    <LocalizationProvider>
+      <ChatMessageComposer onSend={onSend} isGroupChat groupMembers={members} hidden={hidden} />
+    </LocalizationProvider>,
+  )
   beforeEach(() => {
     setLocalePreference('zh-CN')
     host = document.createElement('div')
     document.body.appendChild(host)
     root = createRoot(host)
-    root.render(
-      <LocalizationProvider>
-        <ChatMessageComposer onSend={vi.fn(async () => {})} isGroupChat groupMembers={members} />
-      </LocalizationProvider>,
-    )
+    render(false)
   })
 
   afterEach(() => {
@@ -54,6 +56,25 @@ describe('@ mention picker dismissal', () => {
     await nextFrames()
 
     expect(picker()).toBeNull()
+    expect((textarea.element() as HTMLElement).innerText).toBe('@')
+  })
+
+  // The picker is portaled out of the composer host. A phone chat left for the chat list stays mounted with its
+  // composer hidden; the open @ list used to stay on screen over the list. It hides with the composer, and comes back
+  // with it, the draft's @ still there.
+  it('hides with its composer and comes back with it', async () => {
+    const textarea = page.getByTestId('chat-composer')
+    await textarea.click()
+    await userEvent.keyboard('@')
+    await until('mention picker opens', () => picker() !== null)
+
+    render(true)
+    await until('picker hidden with the composer', () => picker() === null)
+    await nextFrames()
+    expect(picker()).toBeNull()
+
+    render(false)
+    await until('picker back with the composer', () => picker() !== null)
     expect((textarea.element() as HTMLElement).innerText).toBe('@')
   })
 })

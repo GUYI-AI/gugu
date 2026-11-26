@@ -6,19 +6,21 @@ import { openComposerImage, openImageViewer } from '@/lib/imageViewer'
 import { Sheet } from '../ui/Sheet'
 import { MessageFilePreview, type HostedPreviewFile } from './MessageFilePreview'
 
+export type DraftAttachmentReplace = (id: string, file: File, caption: string, original: File) => void | Promise<void>
+
 /** A picked file opens from the draft's own bytes, regardless of its upload state. An image edited there comes back through `replace`. */
 export function useDraftAttachmentPreview(
   scope: string | null | undefined, visible: boolean, fileOf: (id: string) => File | undefined,
-  replace?: (id: string, file: File, caption: string) => void,
+  replace?: DraftAttachmentReplace,
 ) {
   const [preview, setPreview] = useState<{ scope: typeof scope; file: HostedPreviewFile } | null>(null)
   const current = visible && preview?.scope === scope ? preview : null
   useEffect(() => { if (preview && !current) setPreview(null) }, [preview, current])
 
   function open(attachment: ComposerAttachment, cell?: HTMLElement) {
-    const edit = replace && ((edited: File, caption: string) => replace(attachment.id, edited, caption))
-    if (openComposerImage(attachment, cell, edit)) return
     const file = fileOf(attachment.id)
+    const edit = file && replace ? (edited: File, caption: string) => replace(attachment.id, edited, caption, file) : undefined
+    if (openComposerImage(attachment, cell, edit)) return
     if (!file) return
     const read = async () => file
     if (isRenderableImage(file.name, file.type)) {

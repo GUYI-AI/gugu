@@ -27,6 +27,10 @@ const state = vi.hoisted(() => ({
   hooks: {} as { afterAsk?: () => void }, bindingCalls: 0, flipAfter: 0,
 }));
 const denied = (message: string) => Object.assign(new Error(message), { code: 'denied' });
+const { servingOf } = await vi.hoisted(async () => await import('./test-support/binding-rpc'));
+vi.mock('./app-assistant-serving', () => ({
+  assistantServingChat: async (_token: string, ownerId: string, chatId: string) => servingOf(state.provisions as never[], ownerId, chatId, false),
+}));
 vi.mock('@gugu/core', () => ({ userIdFromSupabaseAccessToken: (token: string) => token || null }));
 vi.mock('./account-token', () => ({ currentAccountAccessToken: async () => state.owner || null }));
 vi.mock('./app-files', () => ({ unreadBindingChatChoices: async () => [], boundConversationFiles: {} }));

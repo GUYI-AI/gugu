@@ -110,6 +110,7 @@ import type {
   RenderMentionIcon,
 } from '../prompt-editor/types';
 import type { ComposerContextThresholds } from './context-threshold';
+import { modelContextLengths } from '@gugu/session-core/models/context-threshold';
 import { ContextUsageIndicator } from './context-usage-indicator';
 import type { ContextUsage } from './context-usage-indicator';
 import { PermissionBand } from './permission-band';
@@ -173,7 +174,6 @@ export {
 export type { AttachmentPreviewKind, AttachmentPreviewText } from './composer-attachment-preview';
 export {
   ComposerModelMenu,
-  buildComposerModelGroups,
   modelTitle,
   resolveComposerModelPanel,
 } from './composer-model-menu';
@@ -249,7 +249,8 @@ export interface ChatComposerProps {
   selectedModel?: string;
   /** The model options are not read yet: the model trigger holds the name's place (see ComposerModelMenu). */
   modelUnknown?: boolean;
-  onModelChange?: (modelId: string) => void;
+  onModelChange?: (modelId: string, effortId?: string) => void;
+  effortOptionsForModel?: (modelId: string) => Record<string, ComposerEffortOption> | null;
   /** 宿主要把模型面板打开:每变一次开一次(见 `ComposerModelMenu.openRequest`)。 */
   modelMenuOpenRequest?: number;
   /** Failure/recovery copy stays inside the model setting; other settings remain usable. */
@@ -308,6 +309,7 @@ export interface ChatComposerProps {
   /** Context-window usage data for the toolbar donut indicator. Hidden when null/undefined. */
   contextUsage?: ContextUsage | null;
   contextThresholds?: ComposerContextThresholds;
+  contextWindowTaskId?: string;
 
   /**
    * Host-controlled attachment list. By default the composer creates image
@@ -452,6 +454,7 @@ export function ChatComposer({
   modelOptions,
   selectedModel,
   onModelChange,
+  effortOptionsForModel,
   modelMenuOpenRequest,
   modelSettingNotice,
   modelUnknown,
@@ -482,6 +485,7 @@ export function ChatComposer({
   onAttach,
   contextUsage,
   contextThresholds,
+  contextWindowTaskId,
   attachments = [],
   attachmentStatus,
   attachmentExtra,
@@ -828,10 +832,31 @@ export function ChatComposer({
       : (placeholder ?? translate('composer.messagePlaceholder'));
 
   const renderHeader = mobile ? renderPhoneHeader : undefined;
-  const findContextThreshold: ComposerContextThresholds = (model, window) =>
-    contextThresholds?.(model, window ?? (model === selectedModel ? contextUsage?.size : undefined));
+  const [contextWindow, setContextWindow] = React.useState<{ model: string; size: number; task?: string }>();
+  React.useEffect(() => {
+    setContextWindow(previous => previous?.model === selectedModel && previous?.task === contextWindowTaskId
+      ? previous : undefined);
+  }, [selectedModel, contextWindowTaskId]);
+
+  const findContextThreshold: ComposerContextThresholds = (model, window) => {
+    const selectedWindow = contextWindow?.model === model && contextWindow.task === contextWindowTaskId
+      ? contextWindow.size : undefined;
+    const maximum = selectedWindow ?? window ?? (model === selectedModel ? contextUsage?.size : undefined);
+    const threshold = contextThresholds?.(model, maximum);
+    if (!threshold) return undefined;
+    const { setMaximum } = threshold;
+    return {
+      ...threshold, selectedWindow,
+      selectWindow: setMaximum && (async size => {
+        await setMaximum(size);
+        setContextWindow({ model, size, task: contextWindowTaskId });
+      }),
+    };
+  };
+  const features = selectedModel ? modelOptions?.[selectedModel]?.modelFeatures : undefined;
+  const defaultWindow = modelContextLengths(features?.contextLengths, features?.defaultContextLength, features?.contextWindowSize)?.defaultContextLength;
   const currentContextThreshold = selectedModel && !modelUnknown
-    ? findContextThreshold(selectedModel, modelOptions?.[selectedModel]?.modelFeatures?.contextWindowSize)
+    ? findContextThreshold(selectedModel, defaultWindow ?? features?.contextWindowSize)
     : undefined;
   const modelControl = (
               <ComposerModelMenu
@@ -842,6 +867,7 @@ export function ChatComposer({
                 selectedModel={selectedModel}
                 modelUnknown={modelUnknown}
                 onModelChange={onModelChange}
+                effortOptionsForModel={effortOptionsForModel}
                 openRequest={modelMenuOpenRequest}
                 settingNotice={modelSettingNotice}
                 menuNotice={modelMenuNotice}

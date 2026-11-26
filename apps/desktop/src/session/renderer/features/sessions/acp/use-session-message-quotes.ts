@@ -16,6 +16,7 @@ import { sessionForwardPieces } from './session-message-forward';
 import { openForward } from '@/components/chat/forwardToChats';
 import type { TranscriptTurn } from '@gugu/session-chat-ui';
 import { bindMessageQuoteTouchMenu } from './message-quote-touch-menu';
+import { openCommentLine } from '../annotations/selection-line';
 
 type Target = Parameters<NonNullable<ChatCommands['onMessageTextMount']>>[0];
 const log = rendererLogger('session/message-actions');
@@ -57,9 +58,10 @@ export function useSessionMessageQuotes(store: (Pick<AcpChatStore, 'sessionId' |
       });
     };
     // A right press selects the word under it (macOS) before the menu event: only what was selected before it counts.
-    let pressed: { selection: string | null | undefined } | null = null;
+    let pressed: { selection: string | null | undefined; at: DOMRect | null } | null = null;
+    const selectionAt = () => { const current = target.root.ownerDocument.getSelection(); return current?.rangeCount ? current.getRangeAt(0).getBoundingClientRect() : null; };
     const press = (event: PointerEvent) => {
-      if (event.button === 2) pressed = { selection: selectedMessageText(target.root, target.root.ownerDocument.getSelection()) };
+      if (event.button === 2) pressed = { selection: selectedMessageText(target.root, target.root.ownerDocument.getSelection()), at: selectionAt() };
     };
     const open = (event: MouseEvent) => {
       const current = latest.current.store;
@@ -67,6 +69,7 @@ export function useSessionMessageQuotes(store: (Pick<AcpChatStore, 'sessionId' |
       const before = pressed;
       pressed = null;
       const selection = before ? before.selection : selectedMessageText(target.root, target.root.ownerDocument.getSelection());
+      const at = before ? before.at : selectionAt();
       if (selection === null) return;
       const clicked = event.target instanceof Element ? event.target : null;
       const { actions: acts } = latest.current;
@@ -104,12 +107,17 @@ export function useSessionMessageQuotes(store: (Pick<AcpChatStore, 'sessionId' |
         x: event.clientX, y: event.clientY, isRetracted: false, content: text, hasSelection: selection !== undefined,
         ...(acts.phone ? { lift: { bubble: menuRoot, touchY: event.clientY, mine: message.role === 'user' } } : {}),
         onCopy: usable(() => copy(text)),
-        onQuoteToComposer: usable(() => {
+        // The whole message is quoted into the composer; a selection is commented on, at the selection, into the draft.
+        ...(selection === undefined ? { onQuoteToComposer: usable(() => {
           const quoted = quotedIntoDraft(editor.current?.getText() ?? '', text);
           current.setDraftText(quoted);
           editor.current?.setText(quoted);
           editor.current?.focus('end');
-        }),
+        }) } : at && !acts.phone ? { onCommentSelection: usable(() => openCommentLine({ kind: 'session', sessionId: current.sessionId }, at,
+          target.root.closest<HTMLElement>('[data-chat-scroll]') ?? target.root, {
+            kind: 'message', messageId: target.itemId, authorId: null, text: selection,
+            authorName: target.sender?.() ?? latest.current.translate(message.role === 'user' ? 'globalSearch.you' : 'globalSearch.agent'),
+          })) } : {}),
         ...(link ? {
           onCopyLink: usable(() => copy(link)),
           // The link's own click: a reference, a group file, a working-folder file and a web link each open their own way.

@@ -115,8 +115,13 @@ export function setSidebarNotificationsOpen(open: boolean): void {
   write(NOTIFICATIONS_KEY, NOTIFICATIONS_EVENT, open)
 }
 
+/** The same value, read without subscribing: for an event handler that only checks it when the event comes. */
+export function readSidebarNotificationsOpen(): boolean {
+  return read<boolean>(NOTIFICATIONS_KEY) ?? false
+}
+
 export function useSidebarNotificationsOpen(): boolean {
-  return useSyncExternalStore(subscribeNotifications, () => read<boolean>(NOTIFICATIONS_KEY) ?? false, () => false)
+  return useSyncExternalStore(subscribeNotifications, readSidebarNotificationsOpen, () => false)
 }
 
 const subscribeTour = subscribeTo(TOUR_EVENT)

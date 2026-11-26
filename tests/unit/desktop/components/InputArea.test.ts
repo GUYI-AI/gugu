@@ -12,7 +12,6 @@ import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automation
 import { appendToComposer, readComposer, writeComposer, selectComposer } from '../../../support/composerEditor'
 import type { GroupRosterCandidate } from '../../../../apps/desktop/src/lib/mention'
 // Opt-in contract for the follow-up rollout; production defaults are covered separately.
-vi.mock('../../../../apps/desktop/src/lib/messageQuoteRollout', () => ({ SELECTED_MESSAGE_QUOTES_ENABLED: true }))
 vi.mock('../../../../apps/desktop/src/components/markdown/Markdown', () => ({ Markdown: ({ content }: { content: string }) => createElement('span', null, content) }))
 const { noticeMock } = vi.hoisted(() => ({ noticeMock: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/notices', () => ({ notify: noticeMock, dismissNotice: vi.fn() }))
@@ -59,25 +58,13 @@ describe('ChatMessageComposer', () => {
     const range = document.createRange(); range.selectNodeContents(source)
     window.getSelection()!.removeAllRanges(); window.getSelection()!.addRange(range)
     await harness.render(createElement(ChatMessageComposer, { onSend,
-      quoteContent: { messageId: 'source-1', senderName: 'Ada', content: 'Beta', originalContent: 'Alpha Beta', source: message({ id: 'source-1' }) },
+      quoteContent: { messageId: 'source-1', senderName: 'Ada', content: 'Beta', source: message({ id: 'source-1' }) },
     }))
     const editor = container.querySelector('[contenteditable]')!
     await vi.waitFor(() => expect(document.activeElement).toBe(editor))
     source.remove()
   })
 
-  it.each([false, true])('sends a selected excerpt in the existing quote format while preserving its message ID (phone=%s)', async mobile => {
-    mobileShellState.enabled = mobile
-    const onSend = vi.fn(async () => {})
-    await harness.render(createElement(ChatMessageComposer, {
-      onSend,
-      quoteContent: { messageId: 'source-1', senderName: 'Ada', content: 'Beta paragraph\n\nFirst item', originalContent: 'Alpha paragraph\n\nBeta paragraph\n\nFirst item', source: message({ id: 'source-1' }) },
-    }))
-    await flush()
-    await typeInComposer('Please explain this part.')
-    await clickSend()
-    expect(onSend).toHaveBeenCalledWith('> [Ada]: Beta paragraph\n> \n> First item\n\nPlease explain this part.', expect.objectContaining({ replyToMessageId: 'source-1' }))
-  })
   it.each([false, true])('sends an image-only reply with its source message ID (phone=%s)', async mobile => {
     mobileShellState.enabled = mobile
     const onSend = vi.fn(async () => {})

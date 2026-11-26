@@ -226,17 +226,23 @@ export function createWorkspaceUploads(options: { idleMs?: number; maxBytes?: nu
 export const FILE_STREAM_PIECE_BYTES = 64 * 1024
 
 /**
- * The bytes of one version of a file (`size`, `etag`) from `offset`, in stream pieces, to a reader over the device link: a file
- * whose version is not that one, before, during or after, is refused ("changed"), never sent as a mix. One loop for every
- * stream a machine serves (`file.stream`, `files.stream`).
+ * The bytes of one version of a file from `offset`, in stream pieces, to a reader over the device link. The version is the
+ * one on disk when the stream opens, said to the reader before its first piece (`head`); a reader that names one (`pin`:
+ * a resumed or later range of the version it already has) is refused unless it is still that one. A file that moves
+ * while it streams is refused ("changed"), never sent as a mix. One loop for every stream a machine serves (`file.stream`,
+ * `files.stream`). Returns the version it streamed.
  */
-export async function streamFileRange(file: string, version: { size: number; etag: string }, offset: number,
-  context: { write(offset: number, bytes: Uint8Array): Promise<void>; signal: AbortSignal }, stillBound: () => Promise<boolean> = async () => true): Promise<void> {
-  if (!Number.isSafeInteger(offset) || offset < 0 || offset > version.size) throw new WorkspaceTransferError('invalid_payload', 'stream offset out of range');
+export async function streamFileRange(file: string, pin: { size?: number; etag?: string }, offset: number,
+  context: { head(version: { size: number; etag: string }): void; write(offset: number, bytes: Uint8Array): Promise<void>; signal: AbortSignal },
+  stillBound: () => Promise<boolean> = async () => true): Promise<{ size: number; etag: string }> {
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new WorkspaceTransferError('invalid_payload', 'stream offset out of range')
   const handle = await open(file, 'r')
   try {
-    const changed = async () => { const info = await handle.stat({ bigint: true }); return Number(info.size) !== version.size || etagOf(info) !== version.etag }
-    if (await changed()) throw new Error('Local file changed during read')
+    const versionOf = async () => { const info = await handle.stat({ bigint: true }); return { size: Number(info.size), etag: etagOf(info) } }
+    const version = await versionOf()
+    if ((pin.size !== undefined && pin.size !== version.size) || (pin.etag !== undefined && pin.etag !== version.etag)) throw new Error('Local file changed during read')
+    if (offset > version.size) throw new WorkspaceTransferError('invalid_payload', 'stream offset out of range')
+    context.head(version)
     for (let at = offset; at < version.size;) {
       context.signal.throwIfAborted()
       const bytes = Buffer.alloc(Math.min(FILE_STREAM_PIECE_BYTES, version.size - at))
@@ -245,7 +251,9 @@ export async function streamFileRange(file: string, version: { size: number; eta
       await context.write(at, bytes.subarray(0, bytesRead))
       at += bytesRead
     }
-    if (await changed() || !await stillBound()) throw new Error('Local file changed during read')
+    const after = await versionOf()
+    if (after.size !== version.size || after.etag !== version.etag || !await stillBound()) throw new Error('Local file changed during read')
+    return version
   } finally { await handle.close().catch(() => undefined) }
 }
 

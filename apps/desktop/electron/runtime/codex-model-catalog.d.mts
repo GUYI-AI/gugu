@@ -27,10 +27,19 @@ export declare function codexModelCatalog(
     supported_reasoning_levels: { effort: string; description: string }[]
   }>
 }
+export declare function codexAutoCompactLimits(
+  model: Record<string, unknown> | undefined,
+  configuredWindow: number | null,
+): { defaultTokens: number; ceiling: number } | undefined
 export declare function writeCodexModelCatalog(
   env: Readonly<Record<string, string | undefined>>,
   /** stdout of the launcher's own `codex debug models --bundled`. */
   readBundledCatalog: () => Promise<string>,
-): Promise<{ args: string[]; windowUnknown: string[]; dispose(): void }>
+): Promise<{
+  args: string[]
+  windowUnknown: string[]
+  autoCompactLimits?: (modelId: string | null, window: number | null) => { defaultTokens: number; ceiling: number } | undefined
+  dispose(): void
+}>
 /** Remember a read only once it succeeded; a rejection clears the memo so the next caller reads again. */
 export declare function memoizeSuccess<T>(read: () => Promise<T>): () => Promise<T>

@@ -36,6 +36,7 @@ const state = vi.hoisted(() => ({
   afterRead: undefined as (() => void) | undefined,
 }));
 const denied = (message: string) => Object.assign(new Error(message), { code: 'denied' });
+const { withBindingRpc } = await vi.hoisted(async () => await import('./test-support/binding-rpc'));
 vi.mock('@gugu/core', () => ({ userIdFromSupabaseAccessToken: (token: string) => token }));
 vi.mock('./account-token', () => ({ currentAccountAccessToken: async () => state.owner }));
 const manifestOf = (id: string) => ({ id, permissions: { bindings: [{ name: 'main', kind: 'conversation', actions: state.declared }] } });
@@ -47,7 +48,7 @@ vi.mock('./extensions-root', () => ({ extensionsService: () => ({
   },
   list: () => ({ extensions: state.installed ? [{ manifest: manifestOf(APP) }, { manifest: manifestOf(OTHER_APP) }, { manifest: { id: 'plain', permissions: {} } }] : [] }),
 }) }));
-vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: ({ schema }: { schema: string }) => ({ from: (table: string) => {
+vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: ({ schema }: { schema: string }) => withBindingRpc({ from: (table: string) => {
   const answer = () => {
     state.reads += 1;
     state.afterRead?.();

@@ -9,6 +9,7 @@ import { translateSessionMessage } from '@renderer/localization/locale-store'
 import '@/i18n'
 import { publishRendererSession } from '@/lib/sessionPublication'
 import { chatService } from '@/lib/chat'
+import { registerImageViewerHost, type ImageViewerItem } from '@/lib/imageViewer'
 import '@gugu/session-ui/styles/global'
 import '@gugu/session-ui/theme/theme.css'
 import '@gugu/session-ui/theme/semantic.css'
@@ -79,14 +80,57 @@ async function show(onBeforeSend?: () => void) {
 const picker = () => document.querySelector<HTMLInputElement>('input[type="file"][multiple]')!
 const status = () => document.querySelector<HTMLElement>('[data-slot="composer-attachment-status"]')
 const send = () => act(async () => { document.querySelector<HTMLButtonElement>('[data-slot="composer-actions-end"] > button')!.click() })
-async function pick(name: string) {
+async function pick(source: string | File) {
   await act(async () => {
     const files = new DataTransfer()
-    files.items.add(new File(['attachment'], name, { type: 'application/octet-stream' }))
+    files.items.add(typeof source === 'string' ? new File(['attachment'], source, { type: 'application/octet-stream' }) : source)
     picker().files = files.files
     picker().dispatchEvent(new Event('change', { bubbles: true }))
   })
 }
+
+it('uploads an edited image in the original draft slot and ignores the late original upload', async () => {
+  const original = new File(['original'], 'first.png', { type: 'image/png' })
+  const neighbor = new File(['neighbor'], 'second.png', { type: 'image/png' })
+  const edited = new File(['edited'], 'first-annotated.png', { type: 'image/png' })
+  const late = Promise.withResolvers<void>()
+  const current = Promise.withResolvers<void>()
+  place.mockImplementation(async (file: File) => {
+    if (file === original) await late.promise
+    if (file === edited) await current.promise
+    return placed(file)
+  })
+  const open = vi.fn<(item: ImageViewerItem) => void>()
+  const unregister = registerImageViewerHost(({ items, index }) => open(items[index]!))
+  const chips = () => [...document.querySelectorAll<HTMLElement>('[data-slot="composer-attachment"]')]
+  try {
+    const onSend = await show()
+    await pick(original)
+    await pick(neighbor)
+    await until('original upload pending and both images ready to preview', () => place.mock.calls.length === 2 && chips().length === 2 && chips().every(chip => chip.dataset.viewable))
+    await page.elementLocator(chips()[0]!).click()
+    const image = open.mock.lastCall?.[0]
+    expect(image?.alt).toBe(original.name)
+    const originalChip = chips()[0]
+    await act(async () => { await image!.replace!(edited, '') })
+    await until('edited upload started', () => place.mock.calls.length === 3)
+    expect(chips().map(chip => chip.title.split(',')[0])).toEqual([edited.name, neighbor.name])
+    expect(chips()[0]).toBe(originalChip)
+    await send()
+    await act(async () => { late.resolve() })
+    expect(status()).not.toBeNull()
+    expect(chips()[0]?.dataset.state).toBe('uploading')
+    expect(onSend).not.toHaveBeenCalled()
+    await act(async () => { current.resolve() })
+    await until('the edited file and its neighbor were sent', () => onSend.mock.calls.length === 1)
+    expect(sentNames(onSend.mock.calls[0])).toEqual([edited.name, neighbor.name])
+    expect(place.mock.calls.map(([file]) => file)).toEqual([original, neighbor, edited])
+  } finally {
+    unregister()
+    late.resolve()
+    current.resolve()
+  }
+})
 
 it('shows the phone waiting caption only after send, then automatically sends once and clears it', async () => {
   const onSend = await show()

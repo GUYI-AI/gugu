@@ -131,6 +131,24 @@ describe('a Codex record not written yet', () => {
     await shows('both turns from the record', [['continue', 'one'], ['continue', 'two']]);
   });
 
+  it('keeps the first of two turns opened by the same words when the second starts before the first was read', async () => {
+    directoryDelivery.enabled = false;
+    const s = await setup();
+    const { timeline, shows } = await awaitingTimeline(s, 'codex-same-words-queued');
+    // Each record line carries its agent's clock, as a real rollout does: that is what tells the turns apart here.
+    const stamped = (lines: string, at: number) => lines.trimEnd().split('\n')
+      .map(one => JSON.stringify({ timestamp: new Date(at).toISOString(), ...JSON.parse(one) }) + '\n').join('');
+    const T = Date.UTC(2026, 10, 24, 12, 0, 0);
+    timeline.syncActiveTurn(live('S:turn:A', 'continue', T));
+    await s.create(meta + stamped(turnLines('a', 'continue', 'one'), T + 200));
+    timeline.syncActiveTurn(live('S:turn:B', 'continue', T + 9_000));
+    // The record, read only now, has the first turn whole; the second is the runtime's.
+    await shows('the first turn from its record beside the running second', [['continue', 'one'], ['continue']]);
+    await appendFile(s.file, stamped(turnLines('b', 'continue', 'two'), T + 9_300));
+    timeline.syncActiveTurn(null);
+    await shows('both turns from the record', [['continue', 'one'], ['continue', 'two']]);
+  });
+
   it('goes on awaiting a file whose first line is still being written', async () => {
     directoryDelivery.enabled = false;
     const s = await setup();

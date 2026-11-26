@@ -35,6 +35,8 @@ const v1Schema = z.object({
    * device and is never part of what a renderer reads.
    */
   customModel: customModelMetaSchema.extend({
+    // Old session IDs retain their protocol routes and use the surviving connection’s key.
+    mergedInto: z.string().optional(),
     discovery: z.object({
       source: discoverySourceSchema,
       identity: z.string().regex(/^[\da-f]{64}$/),

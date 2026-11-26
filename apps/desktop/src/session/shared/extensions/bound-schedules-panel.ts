@@ -1,7 +1,7 @@
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
 import { createAssistantPanelClient, type AssistantPanelClient, type AssistantPanelItem } from '@gugu/core/cloud/assistantPanel';
 import { createAssistantPanelFiles } from '@gugu/core/cloud/assistantPanelFiles';
-import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision';
+import { ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC, pickAssistant } from '@gugu/core/shared/assistantProvision';
 import { encodeTypedId } from '@gugu/core/shared/typedId.mjs';
 import type { AppBoundSchedule, AppScheduleControl } from './bound-schedules';
 
@@ -35,13 +35,13 @@ export function panelAs(token: string, ownerId: string): AssistantPanelClient {
 }
 
 /** The person's assistant and its home device, as the built-in panel finds it (`personalAssistant`); null: none. */
-export async function personalAssistantOf(token: string, ownerId: string): Promise<{ agentId: string; deviceId: string } | null> {
+export async function personalAssistantOf(token: string, _ownerId: string): Promise<{ agentId: string; deviceId: string } | null> {
   const { data, error } = await createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } })
-    .from('agent_provisions').select(ASSISTANT_PROVISION_SELECT).eq('owner_user_id', ownerId).eq('member_key', 'assistant')
+    .rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS)
     .abortSignal(AbortSignal.timeout(10_000));
   if (error) throw coded('failed', 'Could not read the personal assistant');
   try {
-    return pickAssistant((data ?? []) as AssistantProvisionRow[]);
+    return pickAssistant(data);
   } catch {
     throw coded('failed', 'Could not verify the personal assistant');
   }

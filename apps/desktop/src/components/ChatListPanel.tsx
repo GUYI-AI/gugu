@@ -43,7 +43,7 @@ import { isOneListProjectLine, ONE_LIST_AVATAR_PX, oneListAgentRows, oneListShow
 import { usePublishOneListAgentRows } from '../lib/innerSidebarBridge'
 import { mobileListDiagnostics } from '@/mobile/mobileListDiagnostics'
 import { readShellSlots } from '../lib/shellSlots'
-import { installOneListNeighbour, oneListProjectSlotKey, subscribeShellChatActions, takeShellChatAction, useSidebarChatView, useSidebarNotificationsOpen, useSidebarPinnedAgents, type ShellChatDialog } from '../lib/sidebarChatsBridge'
+import { installOneListNeighbour, oneListProjectSlotKey, subscribeShellChatActions, takeShellChatAction, readSidebarNotificationsOpen, useSidebarChatView, useSidebarNotificationsOpen, useSidebarPinnedAgents, type ShellChatDialog } from '../lib/sidebarChatsBridge'
 import { NotificationSlot } from './needsYou/NotificationSlot'
 import { RETAINED_SURFACE_HIDDEN_STYLE } from '../lib/retainedSurface'
 import { blockKey, joinRows, type JoinedGroup, type SidebarJoin } from '../lib/sidebarJoinedGroups'
@@ -562,7 +562,6 @@ export function ChatListPanel({
   onNewProject,
 }: ChatListPanelProps) {
   const inSidebar = placement === 'sidebar'
-  const notificationsOpen = useSidebarNotificationsOpen()
   // The IM page's list (web / phone) is on screen when the shell shows 消息; the task page's sidebar copy never is.
   const chatsShown = useShellTabIs('chats')
   const tasksShown = useShellTabIs('tasks')
@@ -907,9 +906,10 @@ export function ChatListPanel({
   // page's copy, whose rows are the sidebar's conversations (the task page's own key chain then holds none of them).
   const walksListKeys = inSidebar ? agentHomes !== null && tasksShown : chatsShown
   useEffect(() => {
-    if (!walksListKeys || notificationsOpen) return
+    if (!walksListKeys) return
     const handleGlobalShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return
+      // Read when the key comes: the list does not re-render each time the bell opens or closes.
+      if (event.defaultPrevented || readSidebarNotificationsOpen()) return
       if (
         event.composedPath().some(
           (node) =>
@@ -952,7 +952,7 @@ export function ChatListPanel({
 
     window.addEventListener('keydown', handleGlobalShortcut)
     return () => window.removeEventListener('keydown', handleGlobalShortcut)
-  }, [selectedChatId, walksListKeys, inSidebar, chats, selectChat, visibleChatIds, notificationsOpen, focusChatRow])
+  }, [selectedChatId, walksListKeys, inSidebar, chats, selectChat, visibleChatIds, focusChatRow])
 
   // #2548 ⌃X⌃X on the task page archives the open task, then opens the row after the lit one as ⌘↓ does (the one before it
   // at the end); false = no other row, and the task page goes to New task (sidebarChatsBridge.installOneListNeighbour).
@@ -1134,7 +1134,7 @@ export function ChatListPanel({
       />
 
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <div data-notification-original-list="" className="flex min-h-0 flex-1 flex-col" style={notificationsOpen ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
+        <NotificationListSwap active={chatsShown && !hidden}>
           {!mobile && (
             <SearchField
               ref={searchInputRef}
@@ -1148,11 +1148,24 @@ export function ChatListPanel({
             />
           )}
           {list}
-        </div>
-        <NotificationSlot part="list" active={notificationsOpen && chatsShown && !hidden} />
+        </NotificationListSwap>
       </div>
       {dialogs}
 
     </Pane>
   )
+}
+
+/**
+ * The bell's list takes the conversation list's place while it is open. Only this part reads the bell: opening or closing
+ * it re-renders these two slots, never the whole list (its children are the list's elements, passed through unchanged).
+ */
+function NotificationListSwap({ active, children }: { active: boolean; children: ReactNode }) {
+  const open = useSidebarNotificationsOpen()
+  return <>
+    <div data-notification-original-list="" className="flex min-h-0 flex-1 flex-col" style={open ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
+      {children}
+    </div>
+    <NotificationSlot part="list" active={open && active} />
+  </>
 }

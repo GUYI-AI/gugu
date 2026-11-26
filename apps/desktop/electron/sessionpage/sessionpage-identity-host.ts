@@ -1,4 +1,5 @@
 import { egress } from '@gugu/core/shared/egress'
+import type { LocalDeviceIdResolver } from '@gugu/core/cloud/deviceRuntime'
 // @@@task-shell-port (#5012) — 「给会话开咕咕账号并绑到会话」这一套,桌面主进程与网页版无头宿主共用的口。
 //
 // 从前只在 electron/main.ts 里有(它同时握着登录态与本机 roster),网页版宿主里一个字都没有,于是网页版
@@ -59,7 +60,7 @@ export interface SessionpageSessionFacts {
 export interface SessionpageIdentityHostDeps {
   beforeIdentityRemoval?: (agentUserId: string) => ((removed: boolean) => void) | Promise<(removed: boolean) => void>
   getAuth: () => Promise<SessionpageIdentityAuthSnapshot | null>
-  resolveDeviceId: () => Promise<string | null>
+  resolveDeviceId: LocalDeviceIdResolver
   resolveProjectName: (projectId: string) => Promise<string | null>
   /** The chat a conversation's agent was born in (SessionpageProvisionDeps `takeBirthGroup`). */
   takeBirthGroup?: (sessionId: string) => Promise<BirthGroup | null>

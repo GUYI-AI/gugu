@@ -1122,6 +1122,7 @@ export default {
     "loadFailed": "Could not load the model list",
     "membersOnly": "Available with a membership",
     "noMatch": "No matching models",
+    "providerName": "Gugu",
     "provided": "Models provided by Gugu",
     "retry": "Retry",
     "saveFailed": "Could not save. Try again.",

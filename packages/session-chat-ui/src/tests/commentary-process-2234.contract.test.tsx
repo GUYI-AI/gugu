@@ -38,7 +38,7 @@ it.each(['light', 'dark'])('keeps ordinary progress in the process and only the 
   const host = document.body.appendChild(document.createElement('div'));
   host.className = appearance === 'dark' ? 'emdark' : 'emlight';
   host.style.cssText = 'position:fixed;left:0;top:0;width:390px;height:800px;background:var(--chat-bg)';
-  const view = createChatView({ context, state, parent: host, pinUserMessages: false,
+  const view = createChatView({ context, state, parent: host,
     commands: { conversationAgentName: () => 'hello' } });
   cleanup.push(() => { view.dispose(); state.dispose(); context.dispose(); host.remove(); });
   view.scrollToTop();

@@ -12,7 +12,8 @@
  * model swap. The reply item carries no `streaming` flag, as a host's transcript does not; the view marks the live
  * turn's reply itself. Control: a committed reply fades nothing.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { cdp } from 'vitest/browser';
 import { createChatContext } from '@session-chat/chat-context';
 import { createChatView } from '@session-chat/chat-view';
 import { createChatState } from '@session-chat/state/chat-state';
@@ -20,7 +21,15 @@ import type { TranscriptTurn } from '@session-chat/model';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
 
 const disposers: (() => void)[] = [];
-afterEach(() => disposers.splice(0).forEach(dispose => dispose()));
+beforeEach(async () => {
+  // The positive contract needs motion enabled, independent of the runner's system preference.
+  await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+  expect(matchMedia('(prefers-reduced-motion: reduce)').matches).toBe(false);
+});
+afterEach(async () => {
+  disposers.splice(0).forEach(dispose => dispose());
+  await cdp().send('Emulation.setEmulatedMedia', { features: [] });
+});
 
 const FIRST = '第一句话已经写好了。';
 
@@ -65,6 +74,19 @@ for (const agentConversation of [true, false]) {
       expect(freshText(host), 'the arriving words are wrapped to fade').toContain('GROWN-MARK');
       expect(freshText(host)).not.toContain('第一句话');
       expect(animations(host)).toEqual(animations(host).map(() => 'gg-md-fresh'));
+    });
+
+    it('keeps arriving words readable without animation under reduced motion', async () => {
+      await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+      expect(matchMedia('(prefers-reduced-motion: reduce)').matches).toBe(true);
+      const { state, host } = mount(agentConversation);
+      state.transcript.activeTurn.set(turn(FIRST));
+      await shows(host, '第一句话');
+      await untilStable('first words settle', () => host.textContent);
+      state.transcript.activeTurn.set(turn(`${FIRST}REDUCED-MARK 刚刚到达。`));
+      await shows(host, 'REDUCED-MARK');
+      expect(freshText(host)).toContain('REDUCED-MARK');
+      expect(animations(host)).toEqual(animations(host).map(() => 'none'));
     });
 
     it('does not replay the fade when the chat is switched away and back', async () => {

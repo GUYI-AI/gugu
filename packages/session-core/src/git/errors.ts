@@ -199,6 +199,9 @@ export function classifyPushError(error: unknown): PushError {
   ) {
     return { type: 'no_remote', message: commandError.message };
   }
+  if (message.includes('hook declined') || message.includes('pre-receive hook')) {
+    return { type: 'hook_rejected', message: commandError.message };
+  }
   if (message.includes('rejected') || message.includes('non-fast-forward')) {
     return { type: 'rejected', message: commandError.message };
   }
@@ -210,12 +213,10 @@ export function classifyPushError(error: unknown): PushError {
     message.includes('network is unreachable') ||
     message.includes('connection refused') ||
     message.includes('connection timed out') ||
+    message.includes('could not resolve proxy') ||
     message.includes('unable to connect')
   ) {
     return { type: 'network_error', message: commandError.message };
-  }
-  if (message.includes('hook declined') || message.includes('pre-receive hook')) {
-    return { type: 'hook_rejected', message: commandError.message };
   }
   return commandError;
 }
@@ -246,6 +247,7 @@ export function classifyPullError(error: unknown): PullError {
     message.includes('network is unreachable') ||
     message.includes('connection refused') ||
     message.includes('connection timed out') ||
+    message.includes('could not resolve proxy') ||
     message.includes('unable to connect')
   ) {
     return { type: 'network_error', message: commandError.message };
