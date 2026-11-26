@@ -259,7 +259,7 @@ export const passwordBetaAgent = Object.freeze({
     const { value, identity } = await caller(context)
     return { status: value.login.status(requestId, identity.sessionId) }
   },
-  /** 可写 on that credential: saved at once (blank keeps the stored value). Otherwise the person fills it in from a private message. */
+  /** 可写 on that credential: saved at once (blank keeps the stored value). Otherwise the person fills it in on the request in this Agent's session (beta-messages.ts). */
   async save(context: GuguMcpContext, input: SaveProposal & { origin: string; credentialId?: string }) {
     const { value, identity, subjects } = await caller(context)
     return agentSave(value, { agentId: identity.subjectId, sessionId: identity.sessionId }, subjects, input, context)
@@ -300,7 +300,7 @@ export function passwordBetaRemoteHandlers() {
             value.vault.releaseToServer(item.reference, plain => sealTo(op.serverKey, plain), { agentId: caller.agentId, sessionId: caller.sessionId, requestId: op.requestId })) } }
           case 'save': {
             const { op: _op, caller: _caller, ...input } = op
-            // The server posts the card from its own session; this desktop keeps the proposal for the person's form.
+            // The server opens the request in its own session; this desktop keeps the proposal for the person's form.
             return { result: await agentSave(value, { agentId: caller.agentId, sessionId: caller.sessionId }, subjects, input, null,
               { agentName: caller.agentName, sessionTitle: caller.sessionTitle, remote: caller.deviceId }) }
           }

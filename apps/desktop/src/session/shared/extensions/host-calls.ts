@@ -53,7 +53,7 @@ export const HOST_CALLS = {
   navigationClaimBack: { verb: 'navigationClaimBack', pack: (claimed: boolean) => ({ claimed }) },
   showContextMenu: { verb: 'showContextMenu' },
   getAppState: { verb: 'getAppState' },
-  openBrowserTab: { verb: 'openBrowserTab', pack: (url: string) => ({ url }) },
+  openBrowserTab: { verb: 'openBrowserTab', pack: (url: string, options?: { external?: boolean }) => ({ url, ...(options?.external === true ? { external: true } : {}) }) },
   /** `level: 'hint'` (摩擦单 F62): a note for the App's author, recorded, no red dot. */
   reportError: { verb: 'reportError', pack: (message: string, options?: { level?: 'error' | 'hint' }) => ({ message, ...(options?.level === 'hint' ? { level: 'hint' } : {}) }) },
   /** How wide the answer is was settled at install, never at the call: no scope argument (behavior tab-extensions). */
@@ -130,6 +130,8 @@ export const HOST_CALLS = {
   // `gugu.credentials` (61): a request sent by the host with the person's picked credential for that website.
   'credentials.read': { verb: 'credentialsRead', pack: (site: string, url: string, options?: { headers?: Record<string, string> }) => ({ site, url, ...(options?.headers ? { headers: options.headers } : {}) }) },
   'credentials.write': { verb: 'credentialsWrite', pack: (site: string, method: string, url: string, body?: unknown, options?: { headers?: Record<string, string> }) => ({ site, method, url, ...(body === undefined ? {} : { body }), ...(options?.headers ? { headers: options.headers } : {}) }) },
+  // 64: the host's dialog to pick or save the credential the App uses on that website.
+  'credentials.choose': { verb: 'credentialsChoose', pack: (site: string, options?: { hint?: string; help?: string }) => ({ site, ...options }) },
   pickAgent: { verb: 'pickAgent' },
   readData: { verb: 'readData', pack: (path: string) => ({ path }) },
   writeData: { verb: 'writeData', pack: (path: string, content: string) => ({ path, content }) },

@@ -2,7 +2,7 @@ import type { HarnessConnection } from '@gugu/session-core/workspace-server/agen
 import type { SubscriptionPayer } from '@gugu/session-core/agents/plugins'
 import { agentAccountForm, type AgentPayload } from '@shared/core/agents/agent-payload'
 import { resolveAccountTargets } from '../agents-page/agent-account'
-import { connectionDetails, harnessConnections } from './subscription-queries'
+import { connectionAvailability, connectionDetails, harnessConnections } from './subscription-queries'
 import { useReplica } from '@/lib/replica'
 
 /** Manages saved accounts for harnesses that declare account vaults or vendor keys. */
@@ -12,7 +12,10 @@ export function useSubscriptionConnections(machine: string | null, agent: Pick<A
 
 /** 一个连接的登录读数与套餐。菜单里的行、菜单外的「重新登录」与「现有 CLI 配置」列不列,读的是同一份。 */
 export function useConnectionDetails(machine: string | null, providerId: string, connectionId: string | undefined) {
-  return useReplica(connectionDetails, connectionId !== undefined ? [machine, providerId, connectionId] : null)
+  const details = useReplica(connectionDetails, connectionId !== undefined ? [machine, providerId, connectionId] : null)
+  // Google's first tier probe starts a CLI. Its local saved sign-in can render the account while that finishes.
+  const signIn = useReplica(connectionAvailability, providerId === 'antigravity' && connectionId !== undefined ? [machine, providerId, connectionId] : null)
+  return details.state === 'unknown' && signIn.state === 'value' ? { ...signIn, value: { status: signIn.value, plan: null, planError: undefined } } : details
 }
 
 export type ConnectionDetails = Extract<ReturnType<typeof useConnectionDetails>, { state: 'value' }>['value']

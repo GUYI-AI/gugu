@@ -21,7 +21,7 @@ export class BetaRemoteLogins {
   pending(): PasswordApproval[] { return [...this.requests.values()].filter(value => value.status === 'pending').map(value => value.view) }
 
   request(caller: RemoteCaller, item: PasswordItem, granted: boolean): { requestId: string; status: Status; view: PasswordApproval } {
-    // One open request per server session: a looping Agent cannot flood the person's private chat.
+    // One open request per server session: a looping Agent cannot stack requests in front of the person.
     if ([...this.requests.values()].some(value => ['pending', 'approved'].includes(value.status) && value.caller.deviceId === caller.deviceId
       && value.caller.sessionId === caller.sessionId)) throw new Error('password_remote_busy')
     const requestId = randomUUID(), ttl = granted ? APPROVED_MS : PENDING_MS

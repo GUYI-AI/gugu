@@ -34,6 +34,7 @@ import { continueSessionTurn } from './continue-session-turn';
 import { reloadWorkingModel } from './reload-working-model';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
 import { followConversationLink, noteDrawnPictureLink } from '@/lib/followConversationLink';
+import { useOpenWebLink } from '@/hooks/useOpenWebLink';
 import { openMessageSender } from '@/lib/openMessageSender';
 import { classifyFileLink } from '@gugu/core/shared/ui/guguLink';
 import {
@@ -122,6 +123,7 @@ import { useSessionSchedules } from '@renderer/features/automations/use-session-
 import { toComposerPermission } from './composer-permission';
 import { useHostAskBand } from '@renderer/features/extensions/use-session-host-ask';
 import { SessionHostQuestion } from '@renderer/features/extensions/session-host-question';
+import { SessionPasswordRequest } from '@renderer/features/extensions/session-password-request';
 import { useComposerAttachActions, useComposerAttachments } from './use-composer-attachments';
 import { useBirthGroupJoin } from './use-birth-group-join';
 import { useAgents } from '@renderer/lib/stores/use-agents';
@@ -1394,6 +1396,7 @@ const ComposerForStore = observer(function ComposerForStore({
       <SessionInputQueue sessionId={store.runtimeSessionId} waitingForConnection life={life}
         inTranscript={[...store.chatState.session.state.pendingMessages.map(input => input.id), store.transcriptPendingId, store.stoppedRowId, ...store.failedRowIds, ...life?.pending.items.filter(input => isTranscriptDelivery(input)).map(input => input.messageId) ?? []].filter((id): id is string => id !== null)} />
       <SessionHostQuestion sessionId={store.runtimeSessionId} session={hostSession} settlements={store.hostSettlements} />
+      <SessionPasswordRequest sessionId={store.runtimeSessionId} session={hostSession} settlements={store.hostSettlements} />
       <ChatComposer
         className={scheduleSlotShown(schedules) ? sessionComposerFrameLiftClassName : undefined}
         hideLockedAgent
@@ -2046,6 +2049,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     onEdit: (itemId) => store?.beginMessageEdit(itemId),
     ...(canForkTask ? { onForkTask: () => forkTask({ projectId: store.projectId, sessionId: store.sessionId, navigate, translate }) } : {}),
   });
+  const openWebLink = useOpenWebLink();
   const transcriptCommands = useMemo<ChatCommands>(
     () => ({
       ...outputMenu.commands,
@@ -2059,6 +2063,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       onOpenSender: openMessageSender,
       classifyLink: classifyFileLink,
       onOpenLink: followConversationLink,
+      onOpenWebLink: openWebLink,
       onDrawnPictureLink: noteDrawnPictureLink,
       // transcript 自己那颗停止按钮（用户消息卡右下角）一直**没有**接过宿主 ——
       // `commands().onStop?.()` 在 `?.` 上整条短路，按下去一个字节都不发（#3498 查出来的，
@@ -2209,7 +2214,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         if (store) dismissSubagent(store.sessionId, entryId);
       },
     }),
-    [store, translate, quotes.onMessageTextMount, quotes.restorePrompt, sourceMessage.reveal, sourceMessage.flashMessageId, conversationAgentName, historyActionsEnabled, messageEdit, messageEditPending, handleViewerOpen, translate, membershipLock?.modelName, outputMenu.commands]
+    [store, translate, quotes.onMessageTextMount, quotes.restorePrompt, sourceMessage.reveal, sourceMessage.flashMessageId, conversationAgentName, historyActionsEnabled, messageEdit, messageEditPending, handleViewerOpen, translate, membershipLock?.modelName, outputMenu.commands, openWebLink]
   );
 
   // A freshly-created task can publish its tab before the resource manager has finished attaching
