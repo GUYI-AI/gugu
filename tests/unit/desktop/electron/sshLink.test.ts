@@ -30,7 +30,7 @@ import {
   linkProtocolFromPreamble,
   sshLinkArgs,
 } from '../../../../apps/desktop/electron/server/ssh-link'
-import { classifySignInExit, registerSshLinkIpc } from '../../../../apps/desktop/electron/server/ssh-link-ipc'
+import { classifySignInExit, openOutcome, registerSshLinkIpc } from '../../../../apps/desktop/electron/server/ssh-link-ipc'
 import { SSH_LINK_CHANNELS } from '../../../../apps/desktop/src/lib/sshLink'
 import { writeServerConnectVia, type ServerAccount } from '../../../../apps/desktop/electron/server/server-layout'
 import { readServerConnectVia, serverDeviceLabel } from '../../../../packages/core/src/cloud/serverConnectVia'
@@ -492,6 +492,30 @@ describe('桌面主进程:每台机器一条设备连接', () => {
     expect(await legacy).toEqual({ ok: true })
 
     expect(linkProtocolFromPreamble(Buffer.from(`${LINK_PROTOCOL_MARK} garbage\n`))).toBeNull()
+  })
+
+  it('a server on protocol 19 (no stream head) is outdated, and opening its link asks for the upgrade at once', async () => {
+    const children: ReturnType<typeof fakeChild>[] = []
+    const links = createSshLinkManager({
+      machineFor: async () => ({ target, accountUserId: ACCOUNT }),
+      controlPath: () => null,
+      onMessage: () => undefined,
+      onClosed: () => undefined,
+      spawnSsh: () => {
+        const child = fakeChild()
+        children.push(child)
+        return child as unknown as ChildProcessWithoutNullStreams
+      },
+    })
+    const opening = links.open('box')
+    await flush()
+    // 19 streams files but refuses a stream with no etag; this desktop's first read names none.
+    children[0]!.stdout.write(`${LINK_PROTOCOL_MARK} 19\n${LINK_READY_MARK}\n`)
+    const opened = await opening
+    expect(opened).toMatchObject({ ok: false, reason: 'outdated', controlOnly: true })
+    const upgrader = { request: vi.fn(() => true) }
+    expect(openOutcome('box', opened as { ok: false; reason: 'outdated' }, upgrader)).toEqual({ ok: false, reason: 'updating' })
+    expect(upgrader.request).toHaveBeenCalledWith('box')
   })
 
   it('一直等不到「接上了」:超时收掉', async () => {

@@ -44,9 +44,9 @@ export function ownSshFileProvider(links: HeldFileSshLinks, tempRoot: string) {
         if (response.error) throw new Error(`File read refused: ${response.error.code}`)
         return response.result as ProjectFileChunk
       }
-      // Protocol 19+: one stream of raw bytes. Older servers answer parts until MIN_SERVER_PROTOCOL reaches FILE_STREAM_PROTOCOL.
+      // Protocol 19+: one stream of raw bytes. MIN_SERVER_PROTOCOL (20) is past FILE_STREAM_PROTOCOL: the part branch is left to delete.
       const source = (links.protocol(deviceId) ?? 0) >= FILE_STREAM_PROTOCOL
-        ? await openProjectFileStream(revision, read, { links, deviceId, accountId, signal: context.signal }, context.progress)
+        ? await openProjectFileStream(revision, { links, deviceId, accountId, signal: context.signal }, context.progress)
         : await openProjectFileSource(revision, read, context.download ? undefined : context.progress)
       // A snapshot is local once it is verified: the link is let go now. A download still reads the line until it is done.
       if (!context.download) return await snapshotProjectFile(revision, source, tempRoot, context.signal)
@@ -73,7 +73,7 @@ export function remoteFileStreams(links: () => HeldFileSshLinks | null, account:
   return {
     /**
      * A linked machine whose server streams (protocol 19+); it opens the link to ask, as the read will use it. A server
-     * below 19 is false: it still has the per-piece reader, over the same link (deleted at protocol 20).
+     * below 19 is false (the per-piece reader, left to delete now that MIN_SERVER_PROTOCOL is 20).
      */
     async linked(deviceId: string): Promise<boolean> {
       if (!await reaches(deviceId)) return false
@@ -83,12 +83,12 @@ export function remoteFileStreams(links: () => HeldFileSshLinks | null, account:
       if (protocol === null) throw new Error('The SSH connection to this machine closed while it was opened')
       return protocol >= FILE_STREAM_PROTOCOL
     },
-    async open(deviceId: string, type: string, request: (offset: number, stream: string) => Record<string, unknown>, size: number, from: number, signal?: AbortSignal): Promise<FileBytes> {
+    async open(deviceId: string, type: string, request: (offset: number, stream: string, etag?: string) => Record<string, unknown>, pin: { etag?: string }, from: number, signal?: AbortSignal): Promise<LinkStream> {
       const accountId = await account(), held = linkOf()
       const release = held.hold(deviceId)
       try {
         await openLink(held, deviceId)
-        const source = openLinkStream({ links: held, deviceId, accountId, signal }, type, request, size, undefined, from)
+        const source = await openLinkStream({ links: held, deviceId, accountId, signal }, type, request, pin, undefined, from)
         return { ...source, async dispose() { try { await source.dispose() } finally { release() } } }
       } catch (error) { release(); throw error }
     },
@@ -101,44 +101,69 @@ async function openLink(links: Pick<HeldFileSshLinks, 'open'>, deviceId: string)
 }
 
 /**
- * @@@file-stream - a held version as one stream of raw bytes over the device link (`file.stream`, protocol 19), anchored
- * to the etag `file.read` gives. The stream itself is `openLinkStream`.
+ * @@@file-stream - a held version as one stream of raw bytes over the device link (`file.stream`, protocol 19); the
+ * stream's head says its etag (a server without the head refuses a request with no etag), and a file of another size than the held one is refused. The stream itself
+ * is `openLinkStream`.
  */
-export async function openProjectFileStream(revision: FileRevision, read: ProjectFileReader,
-  line: StreamLine, progress?: FileContext['progress']): Promise<FileBytes> {
+export async function openProjectFileStream(revision: FileRevision, line: StreamLine, progress?: FileContext['progress']): Promise<FileBytes> {
   requireFileRevision(revision)
   const ref = { item_id: revision.item_id!, version: revision.version! }
-  const { etag } = await read({ ref, offset: 0, length: 0 })
-  return openLinkStream(line, PROJECT_FILE_STREAM, (offset, stream) => ({ ref, offset, etag, stream }), revision.size_bytes, progress)
+  return openLinkStream(line, PROJECT_FILE_STREAM, (offset, stream, etag) => ({ ref, offset, stream, ...(etag ? { etag } : {}) }), { size: revision.size_bytes }, progress)
 }
 
 export type StreamLine = { links: HeldFileSshLinks; deviceId: string; accountId: string; signal?: AbortSignal }
+export type StreamVersion = { size: number; etag: string }
+export type LinkStream = FileBytes & { etag: string }
 
 /**
- * A file on another machine as one stream of raw bytes over its device link, from `from` to `size`: the server pushes it
- * as fast as the line takes it, inside the window this reader acknowledges (`@@@stream-credit` in device-link-host.ts), so
- * the connection stays full the way scp keeps it. `request` names the file and the version the stream must be of (the
- * server refuses a file that changed); a link that drops, or a stream that stalls, starts again from the bytes already
- * here. Sequential reads only, as its consumers do.
+ * What a server from before the stream head answers a stream request that names no version (its streamers required an etag):
+ * read from that answer, not from the version number the link reports, so the read fails on what the machine said.
  */
-export function openLinkStream(line: StreamLine, type: string, request: (offset: number, stream: string) => Record<string, unknown>,
-  size: number, progress?: FileContext['progress'], from = 0): FileBytes {
+const OLD_SERVER_REFUSAL = /^Invalid (working copy |file )?stream request$/
+export function serverOutdated(): Error {
+  return Object.assign(new Error('Gugu on this machine is too old to stream its files: update it, then open the file again'), { code: 'server_outdated' })
+}
+
+/** A stream's head (`<type>.head`, device-link-host.ts): the version the machine streams, before its first piece. */
+function streamHead(message: unknown, type: string, stream: string): StreamVersion | null {
+  const outer = message && typeof message === 'object' ? message as { payload?: unknown } : null
+  const head = (outer?.payload && typeof outer.payload === 'object' ? outer.payload : outer) as { type?: unknown; stream?: unknown; size?: unknown; etag?: unknown } | null
+  if (head?.type !== `${type}.head` || head.stream !== stream) return null
+  if (!Number.isSafeInteger(head.size) || (head.size as number) < 0 || typeof head.etag !== 'string') throw new Error('Invalid file stream head')
+  return { size: head.size as number, etag: head.etag }
+}
+
+/**
+ * A file on another machine as one stream of raw bytes over its device link, from `from` to its end: the server pushes it
+ * as fast as the line takes it, inside the window this reader acknowledges (`@@@stream-credit` in device-link-host.ts), so
+ * the connection stays full the way scp keeps it. The machine says which version it streams before its first piece (its
+ * head), so a read costs one round trip and no call to learn the version first; it resolves with that head. `pin` is what
+ * the version must be (a later range of a version this reader has, a held file's size): another is refused ("changed").
+ * A link that drops, or a stream that stalls, starts again from the bytes already here, pinned to the head's version.
+ * Sequential reads only, as its consumers do.
+ */
+export function openLinkStream(line: StreamLine, type: string, request: (offset: number, stream: string, etag?: string) => Record<string, unknown>,
+  pin: { size?: number; etag?: string }, progress?: FileContext['progress'], from = 0): Promise<LinkStream> {
   const pieces: Buffer[] = []
-  let buffered = 0, received = from, consumed = from, failure: Error | null = null, finished = from >= size, stalled = false
-  const stuck = () => { if (!stalled) { stalled = true; progress?.(received, size, true) } }
+  let version: StreamVersion | null = null
+  let buffered = 0, received = from, consumed = from, failure: Error | null = null, finished = false, stalled = false
+  const size = () => version?.size ?? 0
+  const stuck = () => { if (!stalled) { stalled = true; progress?.(received, size(), true) } }
   let wake: (() => void) | null = null
   const notify = () => { const w = wake; wake = null; w?.() }
+  let headed: (value: StreamVersion) => void = () => undefined
+  const head = new Promise<StreamVersion>((resolve) => { headed = resolve })
   const send = (type: string, payload: unknown) => line.links.send(line.deviceId, { type: 'broadcast', event: 'broadcast',
     payload: createDeviceRpcRequestEnvelope(type, randomUUID(), line.accountId, payload) })
 
   const run = async () => {
-    for (let attempt = 1; received < size; attempt++) {
+    for (let attempt = 1; version === null || received < version.size; attempt++) {
       line.signal?.throwIfAborted()
       if (attempt > STREAM_ATTEMPTS) throw new Error('The connection to this machine kept dropping; the file could not be read. Read it again.')
       if (attempt > 1) { stuck(); await new Promise(resolve => setTimeout(resolve, Math.min(16_000, 1_000 * 2 ** (attempt - 2)))); await openLink(line.links, line.deviceId) }
       const stream = randomUUID().replace(/-/g, ''), requestId = randomUUID()
       const outcome = await new Promise<'done' | 'again'>((resolve, reject) => {
-        let lastAt = Date.now(), ackedAt = received, rateFrom = { at: Date.now(), bytes: received }, window = MIN_WINDOW * 4
+        let lastAt = Date.now(), ackedAt = received, rateFrom = { at: Date.now(), bytes: received }, window = MIN_WINDOW * 4, here: StreamVersion | null = null
         const stall = setInterval(() => {
           if (Date.now() - lastAt > STALL_NOTICE_MS) stuck()
           if (Date.now() - lastAt > STREAM_STALL_MS) finish('again')
@@ -146,21 +171,32 @@ export function openLinkStream(line: StreamLine, type: string, request: (offset:
         const untap = line.links.tap(line.deviceId, {
           onData(piece) {
             if (piece.stream !== stream) return
-            if (piece.offset !== received || received + piece.bytes.length > size) return finish(new Error('Invalid file stream piece'))
+            if (!here || piece.offset !== received || received + piece.bytes.length > here.size) return finish(new Error('Invalid file stream piece'))
             pieces.push(piece.bytes); buffered += piece.bytes.length; received += piece.bytes.length; lastAt = Date.now(); stalled = false
-            progress?.(received, size); notify()
+            progress?.(received, here.size); notify()
             const elapsed = Date.now() - rateFrom.at
             if (elapsed >= 500) { window = Math.max(MIN_WINDOW, Math.min(MAX_WINDOW, Math.round((received - rateFrom.bytes) / elapsed * WINDOW_MS))); rateFrom = { at: Date.now(), bytes: received } }
-            if (received - ackedAt >= ACK_EVERY_BYTES || received === size) { ackedAt = received; send(`${type}.ack`, { stream, received, window }) }
+            if (received - ackedAt >= ACK_EVERY_BYTES || received === here.size) { ackedAt = received; send(`${type}.ack`, { stream, received, window }) }
           },
           onMessage(message) {
+            let said: StreamVersion | null
+            try { said = streamHead(message, type, stream) } catch (error) { return finish(error as Error) }
+            if (said) {
+              const want = version ?? pin
+              if ((want.size !== undefined && want.size !== said.size) || (want.etag !== undefined && want.etag !== said.etag)) return finish(new Error('Local file changed during read'))
+              if (received > said.size) return finish(new Error('Invalid file stream head'))
+              here = said; lastAt = Date.now()
+              if (!version) { version = said; headed(said) }
+              return
+            }
             const reply = parseDeviceRpcReply(message)
             if (reply?.requestId !== requestId) return
             // An answer that is an error is the machine refusing this read (its streamer threw: changed, gone, outside,
             // denied): said at once, never retried as if the line had dropped. A dropped link answers nothing (onClosed).
             if (reply.error) return finish(/changed/i.test(reply.error.message ?? '')
-              ? new Error('Local file changed during read') : new Error(`The machine refused the file read: ${reply.error.message ?? reply.error.code}`))
-            finish(received === size ? 'done' : new Error('File stream ended before its size'))
+              ? new Error('Local file changed during read') : !here && OLD_SERVER_REFUSAL.test(reply.error.message ?? '') ? serverOutdated()
+                : new Error(`The machine refused the file read: ${reply.error.message ?? reply.error.code}`))
+            finish(here && received === here.size ? 'done' : new Error('File stream ended before its size'))
           },
           onClosed() { finish('again') },
         })
@@ -172,16 +208,16 @@ export function openLinkStream(line: StreamLine, type: string, request: (offset:
           if (result instanceof Error) reject(result); else resolve(result)
         }
         const sent = line.links.send(line.deviceId, { type: 'broadcast', event: 'broadcast',
-          payload: createDeviceRpcRequestEnvelope(type, requestId, line.accountId, request(received, stream)) })
+          payload: createDeviceRpcRequestEnvelope(type, requestId, line.accountId, request(received, stream, version?.etag ?? pin.etag)) })
         if (!sent) finish('again')
       })
       if (outcome === 'done') break
     }
   }
-  run().then(() => { finished = true; notify() }, (error: Error) => { failure = error; notify() })
+  const ran = run().then(() => { finished = true; notify() }, (error: Error) => { failure = error; notify(); throw error })
 
-  return { size, dispose: async () => { failure ??= new Error('File stream disposed'); pieces.length = 0 }, async read(offset, length) {
-    requireFileRange(size, offset, length)
+  const bytes: FileBytes = { size: 0, dispose: async () => { failure ??= new Error('File stream disposed'); pieces.length = 0 }, async read(offset, length) {
+    requireFileRange(size(), offset, length)
     if (offset !== consumed) throw new Error('A file stream is read front to back')
     while (buffered < length) {
       if (failure) throw failure
@@ -197,4 +233,9 @@ export function openLinkStream(line: StreamLine, type: string, request: (offset:
     buffered -= length; consumed += length
     return out
   } }
+  // Resolved by its head; a stream that fails before its head says why.
+  return Promise.race([head, ran.then(() => { throw new Error('File stream ended before its head') })]).then((said) => {
+    ran.catch(() => undefined)
+    return { ...bytes, size: said.size, etag: said.etag }
+  }, (error: unknown) => { ran.catch(() => undefined); throw error })
 }
