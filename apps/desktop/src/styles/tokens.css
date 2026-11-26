@@ -1911,7 +1911,7 @@ body.barcode-scanner-active #root {
   --pane-header-h: 52px;
   --pane-header-h-touch: 56px;
   --pane-pad-x: 12px;                 /* 导航列左右内距 */
-  --nav-col-w: 240px;                 /* 会话列表与通讯录同一列宽(JS 镜像 lib/uiRuler.ts,有 parity 测试钉住) */
+  --nav-col-w: 240px;                 /* 会话列表与通讯录同一列宽 */
   /* 控件高三档 + 触控档。Button sm/md/lg、IconButton、SearchField、Field 全部只取这四个值 */
   --control-h-sm: 28px;
   --control-h-md: 32px;
