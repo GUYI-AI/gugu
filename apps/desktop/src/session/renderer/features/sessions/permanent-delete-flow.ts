@@ -1,5 +1,5 @@
 import type { UnreachedMachine } from '@gugu/session-core/session-record/contract';
-import type { ArchivedSessionRef, PermanentDeleteOutcome } from '@shared/core/sessions/sessions';
+import type { ArchivedSessionRef, PermanentDeleteFailure, PermanentDeleteOutcome } from '@shared/core/sessions/sessions';
 
 /**
  * 「已归档」里的永久删除怎么跑完一次(owner 2026-11-26「怎么设计一个让用户舒服的删除」,2026-11-27 00:58 大批量)。
@@ -15,6 +15,8 @@ import type { ArchivedSessionRef, PermanentDeleteOutcome } from '@shared/core/se
  *
  * 一批的回执里既没说删了、也没说失败的那条按失败算(no_receipt),❌ 当成删了。一批整个调不通(机器掉线、
  * 版本太旧)= 这一批每条都失败,原因是那句错误,别的批照跑。
+ * 回执合同(B):一台机器只报它自己删掉的行(`withChildren` 只带那台上已归档的子会话);已经删掉的行再请求一次
+ * 照样回在 `deleted` 里 —— 所以这里不记「谁已经没了」,重跑、重试都照原样问。
  */
 
 export const PERMANENT_DELETE_UNDO_MS = 8000;
@@ -23,7 +25,13 @@ export const PERMANENT_DELETE_BATCH_MAX = 50;
 
 /** 要删的一行:它的会话、它在哪台机器(null = 本机),和调用方认它的 key(会话历史的行 key)。 */
 export type PermanentDeleteTarget = ArchivedSessionRef & { key: string; machine: string | null };
-export type FailedDeleteTarget = PermanentDeleteTarget & { reason: string };
+/**
+ * 一条没删成的原因(闭集):机器在回执里给的那几种(PermanentDeleteFailure),加上这边才看得到的两种 ——
+ * `no_receipt` 回执里没提到这一条;`unreachable` 这一批整个调不通(那台机器问不到 / 调用抛了)。界面按它说话。
+ */
+export type DeleteFailureReason = PermanentDeleteFailure | 'no_receipt' | 'unreachable';
+
+export type FailedDeleteTarget = PermanentDeleteTarget & { reason: DeleteFailureReason };
 
 /** 在一台机器上删一批;调用方给的实现是 `rpcOn(machine).sessions.permanentlyDeleteSessions`。 */
 export type DeleteOnMachine = (
@@ -90,7 +98,6 @@ export function planDeleteBatches(
 }
 
 const refKey = (ref: ArchivedSessionRef) => `${ref.projectId}\u0000${ref.sessionId}`;
-const machineRefKey = (machine: string | null, ref: ArchivedSessionRef) => `${machine ?? ''}\u0001${refKey(ref)}`;
 
 /** 一批的回执对回调用方给的行。回执里没提到的那条按失败算。 */
 export function settleDeleteBatch(
@@ -186,8 +193,8 @@ export type PermanentDeleteRunOptions = {
   undoMs?: number;
   batchSize?: number;
   clock?: Clock;
-  /** 一批整个调不通时,那句错误怎么写进每一条的原因。 */
-  describeError?: (error: unknown) => string;
+  /** 一批整个调不通时(这一批每条记 `unreachable`):原文交给调用方进日志,❌ 端给用户(user-copy-leak)。 */
+  onCallFailed?: (machine: string | null, error: unknown) => void;
   /** 状态变了(进入删除、每批之后、结束)。 */
   onChange?: (snapshot: PermanentDeleteSnapshot) => void;
   /**
@@ -207,8 +214,6 @@ export class PermanentDeleteRun {
   private readonly failed: FailedDeleteTarget[] = [];
   private readonly unreached: UnreachedMachine[] = [];
   private notAttempted: PermanentDeleteTarget[] = [];
-  /** 前面几批连带删掉的(机器 + 会话)。 */
-  private readonly goneElsewhere = new Set<string>();
   private started = false;
   private stopRequested = false;
   private settle!: (snapshot: PermanentDeleteSnapshot) => void;
@@ -306,27 +311,25 @@ export class PermanentDeleteRun {
     for (; next < batches.length; next++) {
       if (this.stopRequested) break;
       const { machine, targets } = batches[next];
-      // 前一批连带删掉的子会话也可能被单独勾了:它已经没了,算删了,不再问那台机器。
-      const gone = targets.filter((target) => this.goneElsewhere.has(machineRefKey(machine, target)));
-      const ask = targets.filter((target) => !this.goneElsewhere.has(machineRefKey(machine, target)));
+      // 前一批连带删掉的子会话又被单独勾了也照问:主进程幂等,已经删掉的行再请求一次照样回在 deleted 里(B 的回执合同)。
       let result: PermanentDeleteBatchResult;
-      if (ask.length === 0) {
-        result = { machine, deletedKeys: [], alsoDeleted: [], failed: [], unreached: [] };
-      } else {
-        try {
-          const outcome = await this.options.deleteOn(
-            machine,
-            ask.map(({ projectId, sessionId }) => ({ projectId, sessionId })),
-            { withChildren: this.options.withChildren }
-          );
-          result = settleDeleteBatch(machine, ask, outcome);
-        } catch (error) {
-          const reason = this.options.describeError?.(error) ?? (error instanceof Error ? error.message : String(error));
-          result = { machine, deletedKeys: [], alsoDeleted: [], failed: ask.map((target) => ({ ...target, reason })), unreached: [] };
-        }
+      try {
+        const outcome = await this.options.deleteOn(
+          machine,
+          targets.map(({ projectId, sessionId }) => ({ projectId, sessionId })),
+          { withChildren: this.options.withChildren }
+        );
+        result = settleDeleteBatch(machine, targets, outcome);
+      } catch (error) {
+        this.options.onCallFailed?.(machine, error);
+        result = {
+          machine,
+          deletedKeys: [],
+          alsoDeleted: [],
+          failed: targets.map((target) => ({ ...target, reason: 'unreachable' as const })),
+          unreached: [],
+        };
       }
-      result.deletedKeys.unshift(...gone.map((target) => target.key));
-      for (const ref of result.alsoDeleted) this.goneElsewhere.add(machineRefKey(machine, ref));
       this.processed += targets.length;
       this.deletedCount += result.deletedKeys.length;
       this.failed.push(...result.failed);

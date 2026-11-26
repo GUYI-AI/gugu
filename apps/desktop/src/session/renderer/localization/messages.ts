@@ -8,6 +8,7 @@ import { enUSRemotePortMessages, zhCNRemotePortMessages } from './messages-remot
 import { enUSSubscriptionMessages, zhCNSubscriptionMessages } from './messages-subscriptions';
 import { enUSSessionWorkflowMessages, zhCNSessionWorkflowMessages } from './messages-session-workflows';
 import { enUSLegacyDmMessages, zhCNLegacyDmMessages } from './messages-legacy-dm';
+import { enUSSessionHistoryBatchMessages, zhCNSessionHistoryBatchMessages } from './messages-session-history-batch';
 import { enUSSessionScheduleMessages, zhCNSessionScheduleMessages } from './messages-session-schedules';
 import { enUSAgentStatusMessages, zhCNAgentStatusMessages } from './messages-agent-status';
 import { enUSResourceKindMessages, zhCNResourceKindMessages } from './messages-resource-kinds';
@@ -2756,6 +2757,7 @@ export const enUSMessages = {
   ...enUSCoreMessages,
   ...enUSAnnotationMessages,
   ...enUSSessionWorkflowMessages,
+  ...enUSSessionHistoryBatchMessages,
   ...enUSLegacyDmMessages,
   ...enUSProjectMessages,
   ...enUSCapabilityMessages,
@@ -2784,6 +2786,7 @@ export const zhCNMessages: Record<SessionMessageKey, string> = {
   ...zhCNCoreMessages,
   ...zhCNAnnotationMessages,
   ...zhCNSessionWorkflowMessages,
+  ...zhCNSessionHistoryBatchMessages,
   ...zhCNLegacyDmMessages,
   ...zhCNProjectMessages,
   ...zhCNCapabilityMessages,

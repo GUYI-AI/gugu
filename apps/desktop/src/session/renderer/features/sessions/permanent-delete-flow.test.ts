@@ -231,8 +231,8 @@ describe('PermanentDeleteRun', () => {
     expect(end.deletedCount).toBe(5);
     expect(end.failed.map((f) => [f.key, f.reason])).toEqual([
       ['row-mac-a-0', 'not_archived'],
-      ['row-mac-down-0', 'machine offline'],
-      ['row-mac-down-1', 'machine offline'],
+      ['row-mac-down-0', 'unreachable'],
+      ['row-mac-down-1', 'unreachable'],
       ['row-local-0', 'not_archived'],
     ]);
 
@@ -258,7 +258,7 @@ describe('PermanentDeleteRun', () => {
     expect((await run.finished).unreached).toEqual([away]);
   });
 
-  it('a row already removed as a child in an earlier batch is not asked for again', async () => {
+  it('asks again for a row an earlier batch removed as a child: main answers it as deleted (idempotent receipt)', async () => {
     const all = targets(51);
     const lateChild = all[50];
     const { calls, deleteOn } = fakeMachines((_machine, asked) => ({
@@ -266,12 +266,10 @@ describe('PermanentDeleteRun', () => {
       failed: [],
       unreached: [],
     }));
-    const batches: string[][] = [];
-    const run = new PermanentDeleteRun({ targets: all, withChildren: true, deleteOn, undoMs: 0, onBatch: (r) => batches.push(r.deletedKeys) });
+    const run = new PermanentDeleteRun({ targets: all, withChildren: true, deleteOn, undoMs: 0 });
     run.start();
     const end = await run.finished;
-    expect(calls).toHaveLength(1);
-    expect(batches[1]).toEqual([lateChild.key]);
+    expect(calls.map((call) => call.asked.map((a) => a.sessionId))).toEqual([all.slice(0, 50).map((t) => t.sessionId), [lateChild.sessionId]]);
     expect(end).toMatchObject({ deletedCount: 51, failed: [] });
   });
 
