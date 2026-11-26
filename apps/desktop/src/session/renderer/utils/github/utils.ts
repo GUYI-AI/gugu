@@ -12,7 +12,8 @@ export function computeCheckBucket(check: CheckRun): CheckRunBucket {
     status === 'IN_PROGRESS' ||
     status === 'QUEUED' ||
     status === 'WAITING' ||
-    status === 'PENDING'
+    status === 'PENDING' ||
+    status === 'REQUESTED'
   ) {
     return 'pending';
   }
@@ -77,5 +78,5 @@ export function formatCheckDuration(startedAt?: string, completedAt?: string): s
 
   if (hours > 0) return `${hours}h ${minutes}m`;
   if (minutes > 0) return `${minutes}m ${totalSeconds % 60}s`;
-  return '<1m';
+  return `${totalSeconds}s`;
 }
