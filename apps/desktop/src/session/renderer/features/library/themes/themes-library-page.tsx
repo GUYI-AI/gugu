@@ -6,6 +6,8 @@ import { toast } from '@renderer/lib/hooks/use-toast';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import {
   chooseThemePack,
+  DEFAULT_THEME_PACK_ID,
+  readThemePackChoice,
   removeImportedThemePack,
   resetThemePacks,
   restoreThemePackChoice,
@@ -22,7 +24,7 @@ import {
   type ThemeSwatch,
 } from '@renderer/lib/theme/theme-packs';
 import { useThemePacks } from '@renderer/lib/theme/use-theme-packs';
-import { readEffectiveHostTheme, readThemePreference, subscribeToHostTheme } from '@renderer/lib/theme/host-theme';
+import { readEffectiveHostTheme, subscribeToHostTheme } from '@renderer/lib/theme/host-theme';
 import { Badge } from '@renderer/lib/ui/badge';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -60,7 +62,7 @@ function ThemeThumb({ colors, translate }: { colors: ThemeSwatch; translate: Tra
       <div className="flex min-w-0 flex-1 flex-col gap-2 bg-[var(--t-bg)] p-2 text-[9px] leading-3">
         <div className="max-w-[85%] self-start rounded-md bg-[color-mix(in_oklab,var(--t-bg),var(--t-fg)_6%)] px-2 py-1 text-[var(--t-fg)]">
           {translate('themes.preview.sample')}
-          <span className="block text-[var(--t-muted-fg)]">'Kip 13:05'</span>
+          <span className="block text-[var(--t-muted-fg)]">Kip 13:05</span>
         </div>
         <div className="self-end rounded-md bg-[color-mix(in_oklab,var(--t-bg),var(--t-fg)_11%)] px-2 py-1 text-[var(--t-live)]">
           {translate('themes.preview.reply')}
@@ -129,21 +131,28 @@ function ThemeCard({
 /**
  * 资源库「主题」(owner 2026-11-07)。点卡片 = 立即换,底下一条可撤销的提示。导入的主题卡片上有删除。
  * 这一格只作用于这台电脑(别的格分机器,这一格不分):页头不挂机器范围。
+ * 三处用同一份:资源库整页(page)、设置 → 界面最上面(settings,owner 11-26 从「通用」挪来)、
+ * 新用户第一次进主界面的选主题弹窗(firstRun:只要卡片,默认族排第一、咕咕默认排最后;
+ * 背后整个窗口就是预览,❌ 再弹撤销提示,跳过由弹窗自己回到打开时的选择)。
  */
-function ThemePackPicker({ embedded = false }: { embedded?: boolean }) {
+type PickerVariant = 'page' | 'settings' | 'firstRun';
+
+function ThemePackPicker({ variant }: { variant: PickerVariant }) {
   const { translate } = useSessionMessages();
   const { packs, slots } = useThemePacks();
   const effective = useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme, readEffectiveHostTheme);
   const showImport = useShowModal('themeImportModal');
   const resolved = useMemo(() => new Map(packs.map((pack) => [pack.id, resolvedModes(pack)])), [packs]);
 
-  const offerUndo = (title: string, before: ThemePackChoice) =>
+  const offerUndo = (title: string, before: ThemePackChoice) => {
+    if (variant === 'firstRun') return;
     toast({
       key: 'theme-pack-choice',
       title,
       action: { label: translate('themes.undo'), onClick: () => restoreThemePackChoice(before) },
       duration: 6000,
     });
+  };
 
   const choose = (pack: ThemePack) => {
     const before = chooseThemePack(pack.id);
@@ -156,14 +165,28 @@ function ThemePackPicker({ embedded = false }: { embedded?: boolean }) {
   };
 
   const reset = () => {
-    const before = { slots, preference: readThemePreference() };
+    const before = readThemePackChoice();
     resetThemePacks();
     offerUndo(translate('themes.reset'), before);
   };
 
+  const guguDefault = (
+    <ThemeCard
+      pack={null}
+      resolved={{}}
+      previewMode={effective}
+      selected={!slots[effective]}
+      onChoose={reset}
+      translate={translate}
+    />
+  );
+  const ordered = variant === 'firstRun'
+    ? [...packs].sort((a, b) => Number(b.id === DEFAULT_THEME_PACK_ID) - Number(a.id === DEFAULT_THEME_PACK_ID))
+    : packs;
+
   return (
     <div className="flex flex-col text-foreground">
-      {embedded ? (
+      {variant === 'firstRun' ? null : variant === 'settings' ? (
         <SectionLabel
           role="heading"
           aria-level={2}
@@ -191,17 +214,11 @@ function ThemePackPicker({ embedded = false }: { embedded?: boolean }) {
       )}
       <div className={cn(
         'grid gap-4 py-4',
-        embedded ? 'grid-cols-3' : 'grid-cols-[repeat(auto-fill,minmax(220px,1fr))]'
+        variant === 'page' ? 'grid-cols-[repeat(auto-fill,minmax(220px,1fr))]' : 'grid-cols-3',
+        variant === 'firstRun' && 'py-0'
       )}>
-        <ThemeCard
-          pack={null}
-          resolved={{}}
-          previewMode={effective}
-          selected={!slots[effective]}
-          onChoose={reset}
-          translate={translate}
-        />
-        {packs.map((pack) => (
+        {variant !== 'firstRun' && guguDefault}
+        {ordered.map((pack) => (
           <ThemeCard
             key={pack.id}
             pack={pack}
@@ -216,15 +233,21 @@ function ThemePackPicker({ embedded = false }: { embedded?: boolean }) {
             translate={translate}
           />
         ))}
+        {variant === 'firstRun' && guguDefault}
       </div>
     </div>
   );
 }
 
 export function ThemesLibraryPage() {
-  return <ThemePackPicker />;
+  return <ThemePackPicker variant="page" />;
 }
 
 export function ThemePackSettings() {
-  return <ThemePackPicker embedded />;
+  return <ThemePackPicker variant="settings" />;
+}
+
+/** 首次选主题弹窗里的那一格卡片(弹窗本身归壳:components/firstRun/FirstRunThemePicker.tsx)。 */
+export function FirstRunThemePackGrid() {
+  return <ThemePackPicker variant="firstRun" />;
 }

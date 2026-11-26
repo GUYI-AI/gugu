@@ -381,6 +381,8 @@ export const MARKDOWN_SANITIZE_SCHEMA = {
     href: [...(defaultSchema.protocols?.href ?? []), 'tel', 'gugu-file', 'gugu-chat', 'gugu-widget', guguLinkScheme({ tier: 'production', devLaunch: false }), guguLinkScheme({ tier: 'beta', devLaunch: false }), guguLinkScheme({ tier: undefined, devLaunch: true }), ...DRIVE_LETTERS],
     src: [...(defaultSchema.protocols?.src ?? []), 'gugu-file'],
   },
+  // A fence's header (```html-render height=320), which a code renderer reads as `meta`; text, never a URL.
+  attributes: { ...defaultSchema.attributes, code: [...(defaultSchema.attributes?.code ?? []), 'metastring'] },
 };
 
 // KaTeX renders top-level `\\` in display math but warns that it is not portable LaTeX. Gugu never compiles

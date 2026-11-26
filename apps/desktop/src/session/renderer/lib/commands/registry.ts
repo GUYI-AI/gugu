@@ -12,6 +12,7 @@ export class CommandRegistry {
   /**
    * Whether the task page is on screen. The gugu shell keeps it mounted but display-hidden on its other tabs; while hidden
    * only shell-surface providers answer, plus the commands whose definition says what to do then (`whenSessionPageHidden`).
+   * The shell's providers then answer first: what is on screen wins over the hidden page for a command both answer.
    */
   sessionPageVisible = true;
 
@@ -62,11 +63,12 @@ export class CommandRegistry {
   }
 
   get activeCommands(): AppCommand[] {
-    const providers = [...this.providers].sort((a, b) => SCOPE_LEVELS[b.scopeId] - SCOPE_LEVELS[a.scopeId]);
+    const onScreen = (provider: CommandProvider) => (this.sessionPageVisible || provider.surface === 'shell' ? 1 : 0);
+    const providers = [...this.providers].sort((a, b) => onScreen(b) - onScreen(a) || SCOPE_LEVELS[b.scopeId] - SCOPE_LEVELS[a.scopeId]);
     return providers.filter((provider) => !provider.isActive || provider.isActive(this.contextElement))
       .flatMap((provider) => {
         const commands = provider.getCommands();
-        if (this.sessionPageVisible || provider.surface === 'shell') return commands;
+        if (onScreen(provider)) return commands;
         return commands.filter((command) => isHostCommand(command.id) && COMMANDS[command.id].whenSessionPageHidden !== undefined);
       });
   }

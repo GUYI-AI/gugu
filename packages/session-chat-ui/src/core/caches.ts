@@ -32,6 +32,7 @@ import type { SessionPatch } from '@gugu/session-core/acp';
 import { parsePatchRows } from '@session-chat/components/rows/tools/diff/diff-lines';
 import type { DiffRow } from '@session-chat/components/rows/tools/diff/diff-lines';
 import { renderMermaidDiagram } from '@session-chat/core/mermaid/render';
+import { createSignal } from 'solid-js';
 import {
   createDefaultHighlighter,
   type ChatHighlighter,
@@ -174,6 +175,12 @@ export type SharedCaches = {
    * (measureEpoch|width|collapsed) already handles width invalidation.
    */
   clearTextMeasure(): void;
+  /**
+   * The height an ```html-render page last reported, by source; undefined before it has run once. A reactive read:
+   * a row measuring the page re-measures when its page reports (bounded LRU, 200 entries).
+   */
+  htmlRenderHeight(source: string): number | undefined;
+  setHtmlRenderHeight(source: string, height: number): void;
 };
 
 // ── ParseCaches ───────────────────────────────────────────────────────────────
@@ -230,6 +237,7 @@ export type ChatCaches = SharedCaches & ParseCaches;
 const HIGHLIGHT_CACHE_MAX = 200;
 const DIFF_CACHE_MAX = 100;
 const MERMAID_CACHE_MAX = 100;
+const HTML_RENDER_HEIGHTS_MAX = 200;
 
 // ── createSharedCaches ────────────────────────────────────────────────────────
 //
@@ -247,6 +255,10 @@ export function createSharedCaches(highlighter?: ChatHighlighter): SharedCaches 
 
   // Mermaid SVG LRU — keyed by source.
   const mermaidCache = new Map<string, string>();
+
+  // html-render page heights — keyed by source; one signal for all, since a page reports once per load or resize.
+  const htmlRenderHeights = new Map<string, number>();
+  const [htmlRenderReports, setHtmlRenderReports] = createSignal(0);
 
   function highlight(code: string, lang: string | undefined): HighlightResult | null {
     const key = `${lang ?? ''}\x00${code}`;
@@ -318,6 +330,17 @@ export function createSharedCaches(highlighter?: ChatHighlighter): SharedCaches 
       // out against whichever faces were resolved at the time, and the KaTeX
       // faces are among the ones that arrive late.
       clearMathMeasure();
+    },
+
+    htmlRenderHeight(source) {
+      htmlRenderReports();
+      return htmlRenderHeights.get(source);
+    },
+
+    setHtmlRenderHeight(source, height) {
+      if (htmlRenderHeights.get(source) === height) return;
+      lruSet(htmlRenderHeights, source, height, HTML_RENDER_HEIGHTS_MAX);
+      setHtmlRenderReports((n) => n + 1);
     },
   };
 }
