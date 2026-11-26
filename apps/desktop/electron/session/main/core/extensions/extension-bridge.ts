@@ -1284,9 +1284,9 @@ const chatIsRead = (binding: SurfaceBinding) => {
 
 /**
  * The folder's first reads belong to this binding, consumed once even on failure. Machine presence may move before that first call.
- * What the App reads first: the top and 「附件」 (whose files the top shows), one folder each — never the whole tree.
+ * What the App reads first: the top, one folder — never the whole tree.
  */
-const OPENING_FOLDERS = ['', '附件'] as const;
+const OPENING_FOLDERS = [''] as const;
 const openingFolders = new WeakMap<SurfaceBinding, { lists: Map<string, Promise<AppFileEntry[]>>; preferences?: Promise<{ showAppData: boolean }> }>();
 function preloadFolder(binding: SurfaceBinding, pageId: number): void {
   if (binding.extensionId !== 'workspace' || binding.tabName !== 'main' || !binding.resourceChat || binding.workspace || binding.itemId || binding.modal

@@ -3,6 +3,7 @@ import type { MessageItem } from '@gugu/core/shared/types/chat'
 import type { TurnAnnotation } from '@gugu/session-core/acp/client'
 import { formatAttachmentMetadata, inferAttachmentKind, resolveFileMimeType, sniffFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
 import { rendererLogger } from '../../lib/log'
+import { imageSize } from '../../lib/imagePreview'
 import { SEND_GROUP_MAX_FILES, type AttachmentsEndpoint } from '@gugu/core/cloud/attachmentsApi'
 import { attachmentsEndpoint, prepareChatAttachment, type PreparedChatAttachment } from '../../lib/attachmentsEndpoint'
 import { requireThreadCapableChat } from '../../lib/chatThreadGate'
@@ -26,13 +27,7 @@ function prepareAll(files: File[], endpoint: Promise<AttachmentsEndpoint>, scope
 type Words = { caption?: string; annotations?: TurnAnnotation[] }
 
 export async function placeholderRow(file: File, words: Words | undefined, args: { chatId: string; senderId: string; toUserIds: string[] | null; isWhisper?: boolean; replyToMessageId?: string | null; threadRootId?: string | null; isThreadRoot?: boolean }, sendGroup?: SendGroup) {
-  let dimensions: MessageItem['image_dimensions']
-  if (inferAttachmentKind(file) === 'image') {
-    try {
-      const image = await createImageBitmap(file)
-      try { dimensions = { width: image.width, height: image.height } } finally { image.close() }
-    } catch { /* A local decoder need not support every uploadable image format. */ }
-  }
+  const dimensions: MessageItem['image_dimensions'] = inferAttachmentKind(file) === 'image' ? await imageSize(file) : undefined
   const previewUrl = URL.createObjectURL(file)
   const message: MessageItem = {
     id: crypto.randomUUID(),

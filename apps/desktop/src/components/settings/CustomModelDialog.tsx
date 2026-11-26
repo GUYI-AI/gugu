@@ -221,8 +221,9 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
         const probe = await client.detectCustomModelProtocols({ ...keySource, baseUrl: address, ...named });
         if (!probe.success) throw new Error(errorText(probe.error));
         const reading = probeModelList(probe.data);
+        const reason = reading.kind === 'unlisted' ? reading.reason : 'unreachable';
         setTest(probe.data.models.length || probe.data.endpoints.length ? { kind: 'ok' }
-          : { kind: 'failed', message: translate(connectionProbeMessageKey(reading.kind === 'unlisted' ? reading.reason : 'unreachable', Boolean(preset))) });
+          : { kind: 'failed', message: translate(connectionProbeMessageKey(reason, Boolean(preset))) });
         return;
       }
       const result = await client.testCustomModel({ ...keySource, endpoints: normalized, ...named });
@@ -248,6 +249,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     try {
       const client = await getAgentConfigRuntimeClient(machine);
       let saved = normalized;
+      let unverified: boolean | undefined;
       if (address && keySource) {
         // What the background check found; an address with no model list is checked again with the model named here.
         saved = list.kind === 'listed' || list.kind === 'unlisted' ? list.endpoints ?? [] : [];
@@ -257,9 +259,16 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
           saved = probe.data.endpoints;
           if (!saved.length) {
             const reading = probeModelList(probe.data);
-            throw new Error(translate(connectionProbeMessageKey(reading.kind === 'unlisted' ? reading.reason : 'unreachable', Boolean(preset))));
+            const reason = reading.kind === 'unlisted' ? reading.reason : 'unreachable';
+            // The person typed this key; a refusal does not stop the save or drop the key (owner 2026-11-26). The format is not
+            // asked: the first path that answered 401/403 exists, so it is that one, else OpenAI Chat at the address as typed.
+            // The connection stays unverified until a save the address answers. An address that cannot be reached still stops here.
+            if (reason !== 'unauthorized') throw new Error(translate(connectionProbeMessageKey(reason, Boolean(preset))));
+            saved = [probe.data.refused?.[0] ?? { protocol: 'openai-chat-completions', baseUrl: address }];
+            unverified = true;
           }
         }
+        unverified ??= false;
       }
       // Unchecking the custom protocol only hides the routes; saving while it is unchecked removes them (asked above).
       const savedRoutes = (advanced.customProtocol ? routes : []).map((route) => customModelRouteSchema.parse({
@@ -293,6 +302,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
         preset: preset?.id ?? null, endpoints: saved,
         routes: savedRoutes,
         harnessProtocols: connection?.harnessProtocols,
+        ...(unverified === undefined ? {} : { unverified }),
         ...(typedKey ? { apiKey: typedKey } : {}),
         models: editedModel ? models : [entry, ...models],
       });

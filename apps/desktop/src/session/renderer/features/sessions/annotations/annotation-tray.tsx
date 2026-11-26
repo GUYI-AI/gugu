@@ -1,5 +1,5 @@
 import type { AnnotationConversation } from '@shared/browser-annotation';
-import { MessageSquare, Pencil, Trash2, X } from '@/lib/icons';
+import { Pencil, Trash2, X } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@renderer/lib/ui/button';
@@ -53,7 +53,7 @@ export const AnnotationTray = observer(function AnnotationTray({ conversation, o
       <div className="inline-flex items-center rounded-xl border border-border">
         <Popover>
           <PopoverTrigger render={<Button type="button" variant="ghost" size="sm" className="gap-2 rounded-l-xl rounded-r-none" />}>
-            <MessageSquare className="size-4" />{translate('annotations.count', { count: draft.items.length })}
+            {translate('annotations.count', { count: draft.items.length })}
           </PopoverTrigger>
           <PopoverContent side="top" align="start" className="max-h-[60vh] w-80 max-w-[calc(100vw-32px)] gap-0 overflow-y-auto p-0">
             {draft.items.map(item => {

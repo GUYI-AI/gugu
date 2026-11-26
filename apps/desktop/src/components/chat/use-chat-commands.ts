@@ -15,6 +15,7 @@ export function useChatCommands({ chatId, isGroup, visible, surface, openSetting
   const [rename, setRename] = useState({ chatId, count: 0 })
   useCommandProvider({
     scopeId: 'session-sub',
+    surface: 'shell',
     isActive: (element) => visible && !!element && !!surface.current?.contains(element),
     getCommands: () => settings?.can_manage !== true ? [] : [{
       id: 'chat.rename', execute: () => {

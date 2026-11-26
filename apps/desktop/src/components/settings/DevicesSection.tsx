@@ -23,7 +23,7 @@ import { useSshSignInStates } from '../../hooks/useSshSignInStates'
 import { useSshLinkProblems, useSshUpgrades } from '../../hooks/useSshLinkProblems'
 import { sshMachineAddresses, sshMachineIdsOf, watchSshMachineAddresses } from '../../lib/sshMachineAddresses'
 import { sshLinkFacts, reportedSshUpdate } from '../../lib/sshLinkOnline'
-import { requestSshServerUpgrade, signInSshMachine } from '../../lib/sshLinkChannel'
+import { requestSshServerUpgrade } from '../../lib/sshLinkChannel'
 import { readServerVersionSwitchBusyAgents, retryServerVersionMatch, restartServerVersionNow, type VersionRestartResult } from '../../lib/serverVersionRetry'
 import type { SshLinkFailure } from '../../lib/sshLink'
 import type { SshSignInState } from '../../lib/serverSshMachines'
@@ -42,6 +42,7 @@ import { SegmentedTabs } from '../ui/SegmentedTabs'
 import { cn } from '../../lib/cn'
 import { AddServerPanel, type AddServerMethod, type AddedServer } from './AddServerPanel'
 import { InlineAction } from './addServer/InlineAction'
+import { DeviceSshSignIn } from './DeviceSshSignIn'
 import { supersededBy } from '../../lib/deviceSuperseded'
 import { consumeAddServerIntent } from '../../lib/addServerIntent'
 import { consumeDeviceActionsIntent } from '../../lib/deviceActionsIntent'
@@ -176,7 +177,6 @@ export function DevicesSection({
       onOpenActions={() => setActionsFor(device.device_id)}
       signIn={signIns.get(device.device_id) ?? null}
       sshLink={sshMachines.state === 'unknown' ? 'unknown' : sshMachineIds?.has(device.device_id) ? (linkProblems.get(device.device_id) ?? null) : undefined}
-      onSshSignIn={() => void signInSshMachine(device.device_id)}
       upgradePercent={upgrades.get(device.device_id) ?? null}
       onRetryUpdate={() => void requestSshServerUpgrade(device.device_id, { force: true })}
       onRetryVersionMatch={() => retryServerVersionMatch(device.device_id)}
@@ -420,7 +420,6 @@ function DeviceRow({
   onOpenActions,
   signIn,
   sshLink,
-  onSshSignIn,
   upgradePercent,
   onRetryUpdate,
   onRetryVersionMatch,
@@ -449,8 +448,6 @@ function DeviceRow({
   /** #6264 远程 SSH 那台此刻设备连接的问题(没有 = 连着);其它机器 null。 */
   /** Its SSH link from this desktop; undefined = not an SSH machine here; 'unknown' = the SSH machine list is not read yet. */
   sshLink?: SshLinkFailure | null | 'unknown'
-  /** 设备连接要先登录时,句中的「登录」:经 SSH 登录(问密码 / 口令)。 */
-  onSshSignIn?: () => void
   /** 正在替它升级时的进度百分比(不知道总量 = null)。 */
   upgradePercent?: number | null
   /** 替它升级没成时,句中的「重试」。 */
@@ -593,10 +590,7 @@ function DeviceRow({
               className={cn('size-[7px] shrink-0 rounded-[var(--radius-circle)]', device.is_online ? 'bg-live' : 'bg-[var(--faint-fg)]')}
             />
             {link === 'signInRequired' ? (
-              <span className="text-[var(--danger-fg)]" data-testid="settings-device-ssh-sign-in">
-                {t('devices.loginState.sshSignIn')}
-                {onSshSignIn && <>{' '}<InlineAction onClick={onSshSignIn} testId="settings-device-ssh-sign-in-action">{t('devices.loginState.sshSignInAction')}</InlineAction></>}
-              </span>
+              <DeviceSshSignIn deviceId={device.device_id} name={device.label} hostKeyChanged={sshLink === 'hostKeyChanged'} />
             ) : link === 'updating' ? (
               // 版本太旧、这台电脑正在替它升级(远程 SSH):说真实状态与进度,❌「重连中」。
               <span data-testid="settings-device-updating">

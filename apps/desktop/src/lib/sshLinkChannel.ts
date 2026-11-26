@@ -202,7 +202,7 @@ export function wantTunnels(wants: readonly TunnelWant[]): void {
 
 /**
  * 每台远程 SSH 机器的设备连接此刻怎样(接上了 = 不在表里;接不上 / 断了 = 原因)。全局那张「要先登录」的
- * 浮卡(components/SshLinkSignIn.tsx)读它 —— 各个模块各自报错,「怎么修」只在一处给。
+ * 浮卡和设备设置共用这个原因；用户手动登录时，调用方也收到本次尝试的结果。
  */
 // ④ 跨组件的瞬时状态:这个渲染层自己的连接结果,属于这台设备(不随换号清:清单本身跟账号走,别人的机器不在里面)。
 const linkProblems = createSelectStore<ReadonlyMap<string, SshLinkFailure>>(new Map())

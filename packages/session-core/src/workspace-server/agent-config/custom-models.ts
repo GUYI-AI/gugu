@@ -40,5 +40,10 @@ export const customModelProtocolProbeSchema = z.object({
     step: z.union([z.literal('models'), modelProtocolSchema]),
     reason: z.enum([...connectionUnlistedReasonSchema.options, 'no-model', 'refused']),
   })),
+  /**
+   * The protocols whose request the address refused for the key (401/403), each with the base URL that refused it, in the
+   * order tried: the path exists, only the key was not accepted. A save through a refused key stores the first; absent when none was.
+   */
+  refused: z.array(modelEndpointSchema).optional(),
 });
 export type CustomModelProtocolProbe = z.infer<typeof customModelProtocolProbeSchema>;

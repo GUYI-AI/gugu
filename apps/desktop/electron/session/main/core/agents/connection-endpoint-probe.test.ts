@@ -3,6 +3,7 @@ import { createServer, type Server } from 'node:http';
 import { connect, type Socket } from 'node:net';
 import { getGlobalDispatcher } from 'undici';
 import { connectionModelListSchema, customModelProtocolProbeSchema } from '@gugu/session-core/workspace-server/agent-config';
+import { detectModelProtocol } from '@gugu/session-core/models/custom-model';
 import { listEndpointModels, probeEndpointProtocols, verifyEndpointModel } from './connection-endpoint-probe';
 
 const target = { endpoint: 'https://provider.test/v1', apiKey: 'dummy-key', protocol: 'openai-chat-completions' as const, env: {} };
@@ -178,4 +179,39 @@ it('reports a real redirect without following it or forwarding its key', async (
   expect(await listEndpointModels({ ...target, endpoint: url })).toEqual({ kind: 'unlisted', reason: 'redirect' });
   expect(await verifyEndpointModel({ ...target, endpoint: url }, 'model')).toEqual({ kind: 'unlisted', reason: 'redirect' });
   expect(destination.requests).toHaveLength(0);
+});
+
+// What real providers answer a fake key (d22, 2026-11-26): most check the key before routing (DeepSeek, OpenRouter, Zhipu and
+// Anthropic answer 401 on every path); OpenAI, Kimi, MiniMax and DashScope answer 404 on /messages, SiliconFlow on /responses.
+const byPath = (statuses: Record<string, number>): typeof fetch => vi.fn(async (input: string | URL | Request) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  return new Response('{}', { status: statuses[new URL(url).pathname] ?? 404 });
+});
+it('records the paths that refused the key, in the order tried, so a refused address is added as one that exists', async () => {
+  const result = await probeEndpointProtocols({ baseUrl: 'https://relay.test', apiKey: 'dummy-key', env: {}, modelId: 'model' }, byPath({
+    '/v1/models': 401, '/models': 401, '/v1/messages': 401, '/v1/chat/completions': 404, '/v1/responses': 404,
+  }));
+  expect(customModelProtocolProbeSchema.parse(result)).toEqual(result);
+  expect(result.endpoints).toEqual([]);
+  expect(result.refused).toEqual([{ protocol: 'anthropic-messages', baseUrl: 'https://relay.test' }]);
+  expect(result.failures).toContainEqual({ step: 'anthropic-messages', reason: 'unauthorized' });
+});
+it('a 401 under /v1 is kept when the bare address then answers 404, and an address that refuses every path lists OpenAI Chat first', async () => {
+  const result = await probeEndpointProtocols({ baseUrl: 'https://relay.test', apiKey: 'dummy-key', env: {}, modelId: 'model' }, byPath({
+    '/v1/chat/completions': 401, '/v1/responses': 401, '/messages': 401, '/v1/messages': 401, '/v1beta/models/model:generateContent': 401,
+  }));
+  expect(result.refused?.[0]).toEqual({ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' });
+  expect(result.failures).toContainEqual({ step: 'openai-chat-completions', reason: 'unauthorized' });
+  const none = await probeEndpointProtocols({ baseUrl: 'https://relay.test/v1', apiKey: 'dummy-key', env: {}, modelId: 'model' }, byPath({ '/v1/models': 401 }));
+  expect(none.refused).toBeUndefined();
+});
+// Anthropic's own API and Zhipu's Anthropic route answer 401 on every path with a refused key (measured above): only the
+// address can tell, and it does, so these are added anyway as Anthropic, not as OpenAI Chat that their first session would fail on.
+it.each([
+  ['https://api.anthropic.com', { protocol: 'anthropic-messages', baseUrl: 'https://api.anthropic.com' }],
+  ['https://open.bigmodel.cn/api/anthropic', { protocol: 'anthropic-messages', baseUrl: 'https://open.bigmodel.cn/api/anthropic' }],
+] as const)('%s, refusing the key on every path, is added anyway as Anthropic', async (baseUrl, first) => {
+  const everywhere: typeof fetch = vi.fn(async () => new Response('{}', { status: 401 }));
+  const result = await probeEndpointProtocols({ baseUrl, apiKey: 'dummy-key', env: {}, modelId: 'model', hint: detectModelProtocol(baseUrl) }, everywhere);
+  expect(result.refused?.[0]).toEqual(first);
 });

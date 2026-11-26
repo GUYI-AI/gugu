@@ -981,7 +981,7 @@ export default {
     "accountMenu": "Account menu",
     "back": "Back",
     "chats": "Chats",
-    "contacts": "Contacts (⌘2)",
+    "contacts": "Contacts",
     "messagesMobile": "Messages",
     "partnersMobile": "Partners",
     "errors": {
@@ -1009,7 +1009,7 @@ export default {
     },
     "logout": "Sign out",
     "mainNavigation": "Main navigation",
-    "messages": "Messages (⌘1)",
+    "messages": "Messages",
     "my": "Me",
     "newAgent": "Create agent",
     "newTask": "New task",

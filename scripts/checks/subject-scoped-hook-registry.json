@@ -38,6 +38,18 @@
     "how": "keyed-map",
     "why": "#6002:useSyncExternalStore 在渲染期用当前 agentId 读取 presence map 的 harness 原始值;切换身份同步更换 snapshot 与订阅,不靠 effect 将上一个 agent 的答案追到新主体。"
   },
+  "apps/desktop/src/hooks/useAgentHarness.ts::useAgentHarness": {
+    "how": "derived",
+    "why": "#3938:没有自有 state:类型、品牌字形与标签全部由 useAgentHarnessIdentity(agentId)、useKnownPhoneAgent(agentId) 与翻译当场派生,主体一换即换。"
+  },
+  "apps/desktop/src/hooks/useAgentHarness.ts::useAgentHarnessName": {
+    "how": "derived",
+    "why": "#3938:没有自有 state:由 useAgentHarness(agentId) 当场派生,只在有品牌字形、手机 agent 或 Gagent 时给出名字,否则 null。"
+  },
+  "apps/desktop/src/hooks/useAgentModelName.ts::useAgentModelName": {
+    "how": "keyed-map",
+    "why": "#3938:useSyncExternalStore 在渲染期用当前 agentId 读取 presence map 的 model_name;切换 agent 同步更换 snapshot 与订阅,还没读到就是 null(那一格不渲染),不会拿上一个 agent 的模型。"
+  },
   "apps/desktop/src/hooks/useSessionpageAgentProjection.ts::useSessionpageAgentProjection": {
     "how": "keyed-map",
     "why": "#3911:读数是按 agentUserId 做键的 replica 条目(agentSessionContext),渲染期按当前参数取;换 agent 的那一帧读到的是新 agent 的条目(没答过 = 还不知道),不会是上一个 agent 的答案。"

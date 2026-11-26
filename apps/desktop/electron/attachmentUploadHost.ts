@@ -1,5 +1,5 @@
 import { openAsBlob } from 'node:fs'
-import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
+import { readUploadFile, uploadFileInfo } from './uploadFileRead'
 import { attachmentSha256, declareAttachment, type AttachmentsEndpoint, type DeclaredAttachment } from '@gugu/core/cloud/attachmentsApi'
 import { createDeclaredUploads, type DeclaredUploadProgress } from '@gugu/core/cloud/declaredUploads'
 import { localCopy, recordFileOrigin, storeBytes } from '@gugu/core/local/files/fileSnapshots'
@@ -53,10 +53,13 @@ export function createAttachmentUploadHost(deps: {
       const host = await runtime()
       if (!host) throw new Error('Attachment uploader is not signed in')
       const { file } = request
-      const path = file.data ? null : await requireAgentFileAccess(file.path)
-      const bytes = path ? await openAsBlob(path, { type: file.contentType }) : new Blob([file.data!], { type: file.contentType })
-      if (bytes.size !== file.size) throw new Error('Attachment file size changed')
-      const sha256 = await attachmentSha256(bytes)
+      const path = file.data ? null : (await uploadFileInfo(file.path)).target
+      const read = async () => {
+        const bytes = path ? await openAsBlob(path, { type: file.contentType }) : new Blob([file.data!], { type: file.contentType })
+        if (bytes.size !== file.size) throw new Error('Attachment file size changed')
+        return { bytes, sha256: await attachmentSha256(bytes) }
+      }
+      const { bytes, sha256 } = path ? await readUploadFile(path, read) : await read()
       // A file on this disk is uploaded from where it is, not copied; a pasted one has no other home, so the store keeps it.
       if (path) await recordFileOrigin(host.home, sha256, path)
       else await storeBytes(host.home, sha256, file.name, bytes)

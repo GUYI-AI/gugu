@@ -426,6 +426,8 @@ export function saveCustomModel(input: SaveCustomModel): Promise<CustomModelConn
       models, routes: append && prior
         ? [...new Map([...(prior.routes ?? []), ...(input.routes ?? [])].map(route => [route.id, route])).values()]
         : input.routes ?? prior?.routes, harnessProtocols: input.harnessProtocols ?? prior?.harnessProtocols,
+      // A save that does not say (switching a model on or off, keeping a key) keeps what the last check found.
+      unverified: (input.unverified ?? prior?.unverified) || undefined,
       disabledModels: disabledModels?.filter(entry => !models.some(model => model.id === entry.id)) });
     const discovery = prior?.discovery;
     await registry.upsertAccount({ providerId: namespace, accountId: id, ...(key ? { secret: key } : {}), meta: {
@@ -518,7 +520,8 @@ export async function detectCustomModelProtocols(input: DetectCustomModelProtoco
   const probe = await probeEndpointProtocols({
     baseUrl: normalizeModelBaseUrl(input.baseUrl), apiKey, modelId: input.modelId, hint: detectModelProtocol(input.baseUrl), env: connectionProbeEnv(),
   });
-  return { ...probe, endpoints: probe.endpoints.map((endpoint) => ({ ...endpoint, baseUrl: normalizeModelBaseUrl(endpoint.baseUrl) })) };
+  const normalized = (endpoints: CustomModelMeta['endpoints']) => endpoints.map((endpoint) => ({ ...endpoint, baseUrl: normalizeModelBaseUrl(endpoint.baseUrl) }));
+  return { ...probe, endpoints: normalized(probe.endpoints), ...(probe.refused ? { refused: normalized(probe.refused) } : {}) };
 }
 
 export type ResolvedCustomModel = {

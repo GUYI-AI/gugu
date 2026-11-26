@@ -1,6 +1,8 @@
 import { PhoneConversationHeading } from '../mobile/chat/PhoneConversationHeading'
 import { PhoneGroupAgentCreation } from '../mobile/chat/PhoneNewTask'
-import { viewAnchor } from '@renderer/features/sidebar/inner-sidebar-anchor'; import { isProjectChat } from '@renderer/features/sidebar/inner-sidebar-scope'; import { useShownAgentName } from '@/hooks/useShownAgentName'
+import { viewAnchor } from '@renderer/features/sidebar/inner-sidebar-anchor'
+import { isProjectChat } from '@renderer/features/sidebar/inner-sidebar-scope'
+import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useMessageQuote } from '@/hooks/useMessageQuote'
 import { GroupRenameContext, useChatCommands } from './chat/use-chat-commands'
 import { useState, useRef, useEffect, useCallback, useMemo, type ReactNode } from 'react'
@@ -26,7 +28,8 @@ import { buildGroupRosterCandidates } from '../lib/mention'
 import { topicMentionCandidates } from './chat/topicMentionModels'
 import { resolveGroupRunningIndicator } from '../lib/agentRunningStatusModels'
 import { groupRunningTokens, latestSpokeAt } from '../lib/groupRunningTokenModels'
-import { useReadReceiptPanel } from '@/hooks/useReadReceiptPanel'; import { useMessageDelivery } from '@/hooks/useMessageDelivery'
+import { useReadReceiptPanel } from '@/hooks/useReadReceiptPanel'
+import { useMessageDelivery } from '@/hooks/useMessageDelivery'
 import { useStructurallyShared } from '../hooks/useStructurallyShared'
 import { AgentConversationNoticeSlot } from './AgentTurnFailureBar'
 import { RunningBarSlot, RunningTokenBar } from './RunningTokenBar'
@@ -48,13 +51,21 @@ import { ChatMessageComposer, type ChatMessageComposerProps, type ComposerAttach
 import { ChatMessageList, type MessageListRowProps } from './chat/ChatMessageList'
 import { useTaskChatRows } from './assistant/useTaskChatRows'
 import { MessageLoadFailure } from './chat/MessageLoadFailure'
-import { ChatBottomDock } from './chat/ChatBottomDock'; import { PhoneRoomComposerControls } from '../mobile/chat/PhoneRoomComposerControls'; import { PhoneProjectEmpty } from '../mobile/chat/PhoneProjectEmpty'; import { PhoneMessagesEmpty } from '../mobile/chat/PhoneMessagesEmpty'
+import { ChatBottomDock } from './chat/ChatBottomDock'
+import { PhoneRoomComposerControls } from '../mobile/chat/PhoneRoomComposerControls'
+import { PhoneProjectEmpty } from '../mobile/chat/PhoneProjectEmpty'
+import { PhoneMessagesEmpty } from '../mobile/chat/PhoneMessagesEmpty'
 import { ChatHeaderActions } from './chat/ChatHeaderActions'
 import { useFollowingTail, useTailPinning } from './chat/useFollowingTail'
 import { useConversationScrollMemory } from './chat/useConversationScrollMemory'
 import { sessionComposerDockBandClassName } from '../session/renderer/features/sessions/session-composer-styles'
-import { GroupTabContent } from './appSlot/GroupTabContent'; import { useChatOpener } from './appSlot/useChatOpener'; import { ChatPaneContent, ChatTabPage, ChatTabPortals } from './appSlot/ChatTabHosts'; import { TabBarAddMenu } from '../session/renderer/features/sessions/tab-bar-actions'; import { useMobxReading } from '../lib/mobxReadable'
-import { folderItem } from '../session/renderer/features/chats/chat-tabs/chat-panel-item'; import { closeInfoTab, focusedChatTab, infoTabOf, openInfoTab, openPanelItem, panelFull, panelTabsOf, setPanelFull, showChatOnly, type ChatPanelTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { GroupTabContent } from './appSlot/GroupTabContent'
+import { useChatOpener } from './appSlot/useChatOpener'
+import { ChatPaneContent, ChatTabPage, ChatTabPortals } from './appSlot/ChatTabHosts'
+import { TabBarAddMenu } from '../session/renderer/features/sessions/tab-bar-actions'
+import { useMobxReading } from '../lib/mobxReadable'
+import { folderItem } from '../session/renderer/features/chats/chat-tabs/chat-panel-item'
+import { closeInfoTab, focusedChatTab, infoTabOf, openInfoTab, openPanelItem, panelFull, panelTabsOf, setPanelFull, showChatOnly, type ChatPanelTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { openTopicChat, useTopicSurface } from '@/hooks/useTopicSurface'
 import { chatDisplayName, isRoomChat } from '@gugu/core/shared/ui/chatModels'
 import { useAgentFloodNotice } from '@/hooks/useAgentFloodNotice'
@@ -191,7 +202,12 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     const info = infoTabOf(activeChatId)
     return { page: full, chatUp: inBlock ? !full : focused?.kind !== 'panel', infoShown: inBlock ? Boolean(info?.shown) : focused?.kind === 'info' }
   }, [activeChatId, inBlock])
-  const handleOpenFolder = useCallback(() => { if (activeChatId) { closeRightSurfaces(); openPanelItem(activeChatId, folderItem()) } }, [activeChatId, closeRightSurfaces])
+  const handleOpenFolder = useCallback(() => {
+    if (activeChatId) {
+      closeRightSurfaces()
+      openPanelItem(activeChatId, folderItem())
+    }
+  }, [activeChatId, closeRightSurfaces])
   // A block draws its shown tabs in the engine's slots; without a strip, one focused page covers the chat.
   const coverChat = (page: ReactNode) => mobile ? <RightPanel>{page}</RightPanel> : <div className="absolute inset-0 z-20 flex flex-col bg-[var(--bg-primary)]">{page}</div>
   const inTabs = (infoPage: () => ReactNode) => !activeChatId ? null : blockHost ? <ChatTabPortals chatId={activeChatId} panel={panelContent} info={infoPage} /> : <ChatTabPage chatId={activeChatId} panel={(tab) => coverChat(panelContent(tab))} info={() => coverChat(infoPage())} />
@@ -253,7 +269,15 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   useChatHistoryPagination({ resetKey: chatResetKey, messages, enabled: !unreadNavigationPending, scroller: scrollerEl, atBottom: viewportAtBottom, loadOlder: loadOlderMessages, loadNewer: loadNewerMessages, window: messageWindow, onError: onHistoryError })
 
   // #1708 来源消息(群右栏工作区 App 的 gugu.showMessage):不在加载段里的先按锚点载进来,再定位 + 闪烁;载不到 → fail-loud toast。
-  const showMessage = useSourceMessageReveal({ activeChatId, viewportKey, navigationTarget, enabled: surfaceVisible, ready: tabs.chatUp, onNavigate: () => { if (activeChatId && tabs.page) setPanelFull(activeChatId, tabs.page.tabId, false); else if (activeChatId && mobile) showChatOnly(activeChatId) }, setFlashMessageId, flashTimerRef, revealMessage, onMissing: () => toast(t('chatArea.source.notVisible'), 'error') })
+  const showMessage = useSourceMessageReveal({
+    activeChatId, viewportKey, navigationTarget, enabled: surfaceVisible, ready: tabs.chatUp,
+    onNavigate: () => {
+      if (activeChatId && tabs.page) setPanelFull(activeChatId, tabs.page.tabId, false)
+      else if (activeChatId && mobile) showChatOnly(activeChatId)
+    },
+    setFlashMessageId, flashTimerRef, revealMessage,
+    onMissing: () => toast(t('chatArea.source.notVisible'), 'error'),
+  })
 
   const { pinToBottom } = useTailPinning({ resetKey: chatResetKey, messages: listedMessages,
     enabled: !unreadNavigationPending, messageWindow, scrollerRef, listRef, isAtBottomRef,

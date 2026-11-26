@@ -139,8 +139,8 @@ export const MessageBubble = memo(function MessageBubble({
   const bubbleRef = useRef<HTMLDivElement>(null)
   const [menuLink, setMenuLink] = useState<HTMLAnchorElement | null>(null)
   const [menuSelection, setMenuSelection] = useState('')
-  const menuSelectionAt = useRef<DOMRect | null>(null)
-  const commentOn = (at: DOMRect, text: string) => {
+  const menuSelectionAt = useRef<Range | null>(null)
+  const commentOn = (at: Range | DOMRect, text: string) => {
     const bubble = bubbleRef.current!
     openCommentLine({ kind: 'chat', chatId: msg.chat_id }, at, bubble.closest<HTMLElement>('[data-unread-stream-surface]') ?? bubble, {
       kind: 'message', messageId: msg.id, authorId: msg.sender_user_id ?? null, authorName: avatarName, text,
@@ -184,7 +184,7 @@ export const MessageBubble = memo(function MessageBubble({
   const captureMenuSelection = () => {
     const selection = window.getSelection(), inside = !!selection?.rangeCount && !!bubbleRef.current?.contains(selection.anchorNode) && bubbleRef.current.contains(selection.focusNode)
     setMenuSelection(inside ? selection!.toString() : '')
-    menuSelectionAt.current = inside ? selection!.getRangeAt(0).getBoundingClientRect() : null
+    menuSelectionAt.current = inside ? selection!.getRangeAt(0).cloneRange() : null
   }
 
   const openMenuAt = (x: number, y: number) => {

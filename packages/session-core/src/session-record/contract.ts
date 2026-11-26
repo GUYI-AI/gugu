@@ -1055,6 +1055,8 @@ export type GuguCatalogReason =
   | 'model-unavailable'
   | 'team-monthly-cap-reached'
   | 'team-credits-exhausted'
+  /** #3939 The address of a custom model refused the key the person typed (401/403): change the key in Settings → Models. */
+  | 'key-rejected'
   /** 认不出的串(老版本宿主送来的原文):与 `service-unavailable` 同一句,❌ 原样显示。 */
   | 'unknown';
 
@@ -1078,7 +1080,7 @@ const GUGU_CATALOG_REASONS = new Set<GuguCatalogReason>([
   'not-routable', 'no-identity-chat', 'no-identity-terminal', 'runtime-not-connected', 'host-not-ready',
   'none-for-agent', 'signed-out', 'service-unavailable', 'unreachable', 'membership-required', 'model-unavailable',
   'conversion-add-provider-timeout', 'conversion-switch-provider-timeout', 'conversion-listen-timeout', 'conversion-start-failed',
-  'team-monthly-cap-reached', 'team-credits-exhausted',
+  'team-monthly-cap-reached', 'team-credits-exhausted', 'key-rejected',
 ]);
 
 /** 读一格 `catalogError` / `guguReason`:null = 没有要说的;其余一定落在某个码上。 */

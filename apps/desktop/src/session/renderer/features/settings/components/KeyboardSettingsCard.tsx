@@ -98,8 +98,8 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
   };
 
   useEffect(() => {
-    commandRegistry.setShortcutsPaused(recorder.isRecording);
-    return () => commandRegistry.setShortcutsPaused(false);
+    if (!recorder.isRecording) return;
+    return commandRegistry.pauseShortcuts();
   }, [recorder.isRecording]);
 
   const handleReset = (key: CommandId) => {

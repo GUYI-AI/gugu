@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // 群文件夹 App 的子文件夹(gugu-supabase 20261016012659):
-// 文件夹在前,点进去、面包屑与「上一级」回来;最上层里「附件」不是一行,它里面的文件和最上层的文件列在一起(owner 10-28);新建文件夹在当前文件夹里、建完就改名;
+// 文件夹在前,点进去、面包屑与「上一级」回来;「附件」是最上层的一个普通文件夹,排在文件夹最前;新建文件夹在当前文件夹里、建完就改名;
 // 「移动到…」列出能去的文件夹(不含自己和自己里面的、现在的位置不可选);上传进当前文件夹,撞了名问「两个都留 / 替换原来的」;
 // 「附件」还是能移进去的文件夹;删文件夹先说里面有几项。页面跑在假的 window.gugu 上 —— 判的是 App 怎么用宿主动词、怎么画。
 // 父提交上没有文件夹:这里每一格都红。
@@ -171,7 +171,7 @@ beforeEach(async () => {
   await enter('contracts')
   await enter('y2026')
   goTop()
-  expect(names(), 'each case starts from the same list').toEqual(['合同', 'notes.md', 'shot.png'])
+  expect(names(), 'each case starts from the same list').toEqual(['附件', '合同', 'notes.md'])
 })
 
 describe('the folder on screen', () => {
@@ -179,7 +179,7 @@ describe('the folder on screen', () => {
     ENTRIES.find((e) => e.id === 'notes')!.updatedAt = ago(60)
     ENTRIES.push(entry('other', 'other.md', 'text', null, 'other.md'))
     await refreshed()
-    expect(names()).toEqual(['合同', 'notes.md', 'other.md', 'shot.png'])
+    expect(names()).toEqual(['附件', '合同', 'notes.md', 'other.md'])
     if (change === 'refresh') {
       ENTRIES.reverse()
       await refreshed()
@@ -187,7 +187,7 @@ describe('the folder on screen', () => {
       const [, changed] = gugu.files.onChanged.mock.calls.at(-1) as unknown as [unknown, (change: unknown) => void]
       changed({ kind: 'entries', entries: [{ ...ENTRIES.find((e) => e.id === 'notes')! }], gone: [] })
     }
-    expect(names()).toEqual(['合同', 'notes.md', 'other.md', 'shot.png'])
+    expect(names()).toEqual(['附件', '合同', 'notes.md', 'other.md'])
   })
 
   test('same-name folders from different paths keep id order in search after refresh and events', async () => {
@@ -207,12 +207,15 @@ describe('the folder on screen', () => {
     expect(ids()).toEqual(['a-folder', 'z-folder'])
   })
 
-  // owner 10-28: what was sent in the chat is not one folder further down — 「附件」's files are at the top with the rest.
-  test('the top: folders first, then the files there and in 「附件」 (no 「附件」 row); inside a folder only what is in it', async () => {
-    expect(names()).toEqual(['合同', 'notes.md', 'shot.png'])
-    expect(row('att'), '「附件」 is not a row at the top').toBe(null)
-    expect(row('shot').querySelector('.file-path'), 'nor said of its files').toBe(null)
+  test('the top: folders first, 「附件」 one of them; inside a folder only what is in it, and up goes back the way it came', async () => {
+    expect(names()).toEqual(['附件', '合同', 'notes.md'])
+    expect(row('shot'), 'what is in 「附件」 is not at the top').toBe(null)
     expect(row('contracts').querySelector('.file-meta')!.textContent).toContain('1 项')
+    await enter('att')
+    expect(names()).toEqual(['shot.png'])
+    expect(crumbs()).toEqual(['聊天文件', '附件'])
+    ;($('crumbs').querySelector('.back') as HTMLButtonElement).click()
+    expect(names()).toEqual(['附件', '合同', 'notes.md'])
     await enter('contracts')
     expect(names()).toEqual(['2026'])
     expect(crumbs()).toEqual(['聊天文件', '合同'])
@@ -223,7 +226,7 @@ describe('the folder on screen', () => {
     ;($('crumbs').querySelector('.back') as HTMLButtonElement).click()
     expect(names()).toEqual(['2026'])
     goTop()
-    expect(names()).toEqual(['合同', 'notes.md', 'shot.png'])
+    expect(names()).toEqual(['附件', '合同', 'notes.md'])
   })
 
   test('filtering searches every folder, each match saying the folder it is in', async () => {
@@ -288,13 +291,13 @@ describe('what the chat says while the folder is open', () => {
     const reads = gugu.files.list.mock.calls.length
     const made = entry('fresh', 'fresh.md', 'text', null, 'fresh.md', { updatedAt: ago(1) })
     heard({ kind: 'entries', entries: [made], gone: [] })
-    expect(names(), 'made').toEqual(['合同', 'fresh.md', 'notes.md', 'shot.png'])
+    expect(names(), 'made').toEqual(['附件', '合同', 'fresh.md', 'notes.md'])
     heard({ kind: 'entries', entries: [{ ...made, name: 'renamed.md', displayName: 'renamed.md', path: 'renamed.md' }], gone: [] })
-    expect(names(), 'renamed').toEqual(['合同', 'renamed.md', 'notes.md', 'shot.png'])
+    expect(names(), 'renamed').toEqual(['附件', '合同', 'renamed.md', 'notes.md'])
     heard({ kind: 'entries', entries: [{ ...ENTRIES.find((e) => e.id === 'notes')!, parentId: 'contracts', path: '合同/notes.md' }], gone: [] })
-    expect(names(), 'moved into 合同').toEqual(['合同', 'renamed.md', 'shot.png'])
-    heard({ kind: 'entries', entries: [], gone: ['shot'] })
-    expect(names(), 'deleted').toEqual(['合同', 'renamed.md'])
+    expect(names(), 'moved into 合同').toEqual(['附件', '合同', 'renamed.md'])
+    heard({ kind: 'entries', entries: [], gone: ['fresh'] })
+    expect(names(), 'deleted').toEqual(['附件', '合同'])
     await enter('contracts')
     await settle()
     expect(gugu.files.list.mock.calls.length - reads, 'only 合同, read as it is entered').toBe(1)
@@ -336,7 +339,7 @@ describe('making, moving, uploading, deleting', () => {
     into.click()
     await readAgain(listed)
     expect(gugu.files.move.mock.calls).toEqual([[expect.objectContaining({ id: 'notes' }), { folder: 'y2026' }]])
-    expect(names()).toEqual(['合同', 'shot.png'])
+    expect(names()).toEqual(['附件', '合同'])
   })
 
   test('a move to a folder that has the name says so', async () => {

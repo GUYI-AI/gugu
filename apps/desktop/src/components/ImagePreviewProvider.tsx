@@ -501,9 +501,7 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
   const annotating = editing !== null
   useLayoutEffect(() => {
     if (!annotating) return
-    const paused = commandRegistry.shortcutsPaused
-    commandRegistry.setShortcutsPaused(true)
-    return () => commandRegistry.setShortcutsPaused(paused)
+    return commandRegistry.pauseShortcuts()
   }, [annotating])
   // 宿主只登记一次,打开时读最新的形态与文案
   const latest = useRef({ t, i18n, mobile, toast })
