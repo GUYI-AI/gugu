@@ -199,6 +199,9 @@ export function classifyPushError(error: unknown): PushError {
   ) {
     return { type: 'no_remote', message: commandError.message };
   }
+  if (message.includes('hook declined') || message.includes('pre-receive hook')) {
+    return { type: 'hook_rejected', message: commandError.message };
+  }
   if (message.includes('rejected') || message.includes('non-fast-forward')) {
     return { type: 'rejected', message: commandError.message };
   }
@@ -213,9 +216,6 @@ export function classifyPushError(error: unknown): PushError {
     message.includes('unable to connect')
   ) {
     return { type: 'network_error', message: commandError.message };
-  }
-  if (message.includes('hook declined') || message.includes('pre-receive hook')) {
-    return { type: 'hook_rejected', message: commandError.message };
   }
   return commandError;
 }

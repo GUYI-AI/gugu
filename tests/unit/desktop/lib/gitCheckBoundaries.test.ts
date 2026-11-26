@@ -39,3 +39,9 @@ it('does not trim significant whitespace from numstat filenames', () => {
     ['first', { additions: 1, deletions: 2 }], ['last \t', { additions: 3, deletions: 4 }],
   ])
 })
+
+it('reports hook rejection as its existing specific error category', () => {
+  const message = '! [remote rejected] dev -> dev (pre-receive hook declined)'
+  expect(classifyPushError(new Error(message))).toEqual({ type: 'hook_rejected', message })
+  expect(classifyPushError(new Error('! [rejected] dev -> dev (non-fast-forward)')).type).toBe('rejected')
+})
