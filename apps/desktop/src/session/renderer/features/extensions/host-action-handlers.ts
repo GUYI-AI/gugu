@@ -295,8 +295,13 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       void import('../apps/app-host-layer').then(({ appPageNewDocument, pageKey }) => appPageNewDocument(extensionId, pageKey(sessionId, tabId)), () => undefined);
       return;
     case 'openBrowserTab': {
+      if (!sessionId) return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ chatPageOrigin }) => {
+        const source = chatPageOrigin(tabId);
+        if (!source) throw new Error('This chat page is no longer open');
+        source.pane.open('browser', { initialUrl: action.url }, { from: source.tabId, intent: 'newTab' });
+      });
       const view = requireSessionView(sessionId);
-      view.showPage(action.url, { reload: false, from: tabId });
+      view.showPage(action.url, { reload: false, from: tabId, intent: 'newTab' });
       view.setFocusedRegion('main');
       return;
     }
