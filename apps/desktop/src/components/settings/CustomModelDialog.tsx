@@ -71,7 +71,7 @@ const OUTPUT_LIMITS = [['8K', 8_192], ['16K', 16_384], ['32K', 32_768], ['64K', 
 const CONTEXT_LIMITS = CONTEXT_TIERS.map(value => [formatTokenLimit(value), value] as const);
 
 /** A token count as people say it (300K, 1M, 8K for 8192); never a raw seven-digit number in the field. */
-export function formatTokenLimit(value: number | undefined): string {
+function formatTokenLimit(value: number | undefined): string {
   if (value === undefined) return '';
   if (value % 1_000_000 === 0) return `${value / 1_000_000}M`;
   if (value % 1_000 === 0) return `${value / 1_000}K`;
@@ -80,7 +80,7 @@ export function formatTokenLimit(value: number | undefined): string {
 }
 
 /** What a typed limit means: digits, optionally with K (thousand) or M (million). Empty is the provider default. */
-export function parseTokenLimit(text: string): number | undefined | null {
+function parseTokenLimit(text: string): number | undefined | null {
   if (!text.trim()) return undefined;
   const match = /^(\d+(?:\.\d+)?)\s*([km]?)$/i.exec(text.trim());
   const value = match ? Math.round(Number(match[1]) * ({ k: 1_000, m: 1_000_000 }[match[2]!.toLowerCase()] ?? 1)) : NaN;
