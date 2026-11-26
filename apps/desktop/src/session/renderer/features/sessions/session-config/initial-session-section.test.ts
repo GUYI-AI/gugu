@@ -1464,6 +1464,24 @@ describe('useInitialSessionState', () => {
     expect(buildInitialSession(latestState!)).toHaveProperty('platformModel', null);
   });
 
+  it('records a context choice only for its model in the new session', async () => {
+    platformCatalog({ models: [GLM], agentDefault: { modelId: 'glm-5.2' } });
+    await renderProbe('project-1');
+    await act(async () => latestState?.setPlatformModel('glm-5.2'));
+    expect(buildInitialSession(latestState!)).not.toHaveProperty('contextChoice');
+
+    const contextChoice = { model: 'platform:glm-5.2', window: 200_000 };
+    await act(async () => latestState?.setContextChoice?.(contextChoice));
+    expect(buildInitialSession(latestState!)).toMatchObject({
+      platformModel: { modelId: 'glm-5.2' },
+      contextChoice,
+    });
+    expect(settingsStore.get('contextThresholds')).toBeUndefined();
+
+    await act(async () => latestState?.setPlatformModel(null));
+    expect(buildInitialSession(latestState!)).not.toHaveProperty('contextChoice');
+  });
+
   it('selects the provider default model instead of showing a generic model placeholder', async () => {
     await renderProbe('project-1');
 
