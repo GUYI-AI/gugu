@@ -10,8 +10,9 @@ import { archivedDeliveryReceipt, deliveryRefusalNotes, messageDeliveryBlocks } 
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
 import { createHash, randomUUID } from 'node:crypto'
 import { TOOL_OUTPUT_BYTE_BUDGET } from './mcp-tool-description-budget.mjs'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { openAsBlob } from 'node:fs'
+import { FileUnreadableError, readUploadFile, uploadFileInfo } from '../uploadFileRead'
 import { basename, isAbsolute, join as joinPath, resolve as resolvePath } from 'node:path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
@@ -774,22 +775,14 @@ async function uploadTarget(label, args) {
   const filePath = typeof args?.file_path === 'string' ? args.file_path.trim() : ''
   if (!filePath) throw new Error(`${label}: file_path is required`)
   if (!isAbsolute(filePath)) throw new Error(`${label}: file_path must be absolute, got ${filePath}`)
-  const target = await requireAgentFileAccess(resolvePath(filePath))
-  let info
-  try {
-    info = await stat(target)
-  } catch (err) {
-    throw new Error(`${label}: cannot read ${target} (${err?.code || err?.message || 'unknown'})`)
-  }
-  if (!info.isFile()) throw new Error(`${label}: ${target} is not a file`)
-  return { target, size: info.size }
+  return uploadFileInfo(resolvePath(filePath))
 }
 export async function readUploadBytes(label, args, maxBytes) {
   const { target, size } = await uploadTarget(label, args)
   if (size > maxBytes) throw new Error(`${label}: file exceeds ${maxBytes} bytes`)
-  const buf = await readFile(target)
+  const buf = await readUploadFile(target, () => readFile(target))
   // 读盘期间被换掉就不传——宁可响亮失败，也别传一份说不清是什么的东西出去。
-  if (buf.length !== size) throw new Error(`${label}: ${target} changed while reading`)
+  if (buf.length !== size) throw new FileUnreadableError(target, new Error('file changed while reading'), 'FILE_CHANGED')
   return buf
 }
 // An attachment goes up as a file-backed Blob: this code never reads the whole file, and the server's upload permit is the
@@ -797,7 +790,7 @@ export async function readUploadBytes(label, args, maxBytes) {
 // (a chunked upload bounds it to a chunk). A file-backed Blob also refuses to be read once the file changes on disk.
 async function uploadBlob(label, args, contentType) {
   const { target } = await uploadTarget(label, args)
-  return openAsBlob(target, { type: contentType })
+  return readUploadFile(target, () => openAsBlob(target, { type: contentType }))
 }
 function parseJwtPayload(token) {
   const part = String(token || '').split('.')[1]
@@ -2390,13 +2383,8 @@ async function publishHere(args, deps, chatId, message, next) {
   if (!publish) return null
   const fileName = resolveUploadName(args)
   const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
-  const filePath = typeof args?.file_path === 'string' ? args.file_path.trim() : ''
-  if (!isAbsolute(filePath)) throw new Error(`message_send: file_path must be absolute, got ${filePath}`)
-  const target = resolvePath(filePath)
-  await requireAgentFileAccess(target)
-  const info = await stat(target).catch((err) => { throw new Error(`message_send: cannot read ${target} (${err?.code || err?.message || 'unknown'})`) })
-  if (!info.isFile()) throw new Error(`message_send: ${target} is not a file`)
-  const sent = await publish(chatId, { name: fileName, path: target, size: info.size, contentType }, deps.context.agentId,
+  const { target, size } = await uploadTarget('message_send', args)
+  const sent = await publish(chatId, { name: fileName, path: target, size, contentType }, deps.context.agentId,
     { ...message, file_name: fileName, content_type: contentType }, next)
   return sent?.message ?? null
 }

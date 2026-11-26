@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HEAD_REF, STAGED_REF } from '@shared/core/git/types';
 import {
   EDITOR_CONFIRM_FILE_BYTES,
@@ -24,6 +24,8 @@ const fileMocks = vi.hoisted(() => ({
     data: { content: '<h1>outside</h1>', binary: false, truncated: false, totalSize: 16 },
   })),
   writeFile: vi.fn(async (..._args: unknown[]): Promise<unknown> => ({ success: true, data: { success: true, bytesWritten: 1 } })),
+  saveBuffer: vi.fn(async (..._args: unknown[]): Promise<void> => {}),
+  clearBuffer: vi.fn(async (..._args: unknown[]): Promise<void> => {}),
   fileExists: vi.fn(async (..._args: unknown[]): Promise<unknown> => ({ success: true, data: { exists: true, isDirectory: false } })),
 }));
 
@@ -53,14 +55,15 @@ vi.mock('@renderer/lib/ipc', () => ({
         fileExists: fileMocks.fileExists,
       },
       editor: {
-        saveBuffer: vi.fn(),
-        clearBuffer: vi.fn(),
+        saveBuffer: fileMocks.saveBuffer,
+        clearBuffer: fileMocks.clearBuffer,
       },
     },
   },
 }));
 
 describe('TextModelRegistry', () => {
+  afterEach(() => { vi.useRealTimers(); });
   beforeEach(() => {
     rpcState.indexContent = 'base';
     rpcState.refContent = 'base';
@@ -220,9 +223,11 @@ describe('TextModelRegistry', () => {
     const read = (content: string) => ({ success: true, data: { content, binary: false, truncated: false, totalSize: content.length } });
 
     let finishEmptied = (_: ReturnType<typeof read>) => undefined as void;
+    fileMocks.readFile.mockClear();
     fileMocks.readFile.mockImplementationOnce(() => new Promise((resolve) => { finishEmptied = resolve; }) as never);
     fileMocks.readFile.mockImplementation(async () => read('filled'));
     const emptied = registry.invalidateModel(diskUri);
+    await vi.waitFor(() => expect(fileMocks.readFile).toHaveBeenCalledTimes(1));
     const filled = registry.invalidateModel(diskUri);
     // Out of order, as they were before: the newer read was asked for and the older is still out.
     finishEmptied(read(''));
@@ -457,6 +462,26 @@ describe('TextModelRegistry', () => {
     return { registry, uri };
   };
 
+  it('keeps edits made during a pending save dirty and does not lose them on reload', async () => {
+    fileMocks.clearBuffer.mockClear();
+    const { registry, uri } = await openDirty('pending.md', 'original\n', 'saved\n');
+    let complete!: (value: unknown) => void;
+    fileMocks.writeFile.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const saving = registry.saveFileToDisk(uri);
+    await vi.waitFor(() => expect(complete).toBeDefined());
+    const model = registry.getModelByUri(uri)!;
+    model.edit({ from: model.doc.length, insert: 'still unsaved\n' });
+    complete({ success: true, data: { success: true, bytesWritten: 6 } });
+    expect(await saving).toBe('saved\n');
+    expect(registry.getDiskValue(uri)).toBe('saved\n');
+    expect(registry.isDirty(uri)).toBe(true);
+    expect(fileMocks.clearBuffer).not.toHaveBeenCalled();
+    fileMocks.readFile.mockImplementationOnce(async () => disk('saved\n'));
+    await registry.invalidateModel(registry.toDiskUri(uri));
+    expect(registry.getValue(uri)).toBe('saved\nstill unsaved\n');
+    expect(registry.isDirty(uri)).toBe(true);
+  });
+
   it('a CRLF file stays CRLF through an edit, a disk merge and the save', async () => {
     const registry = new TextModelRegistry();
     fileMocks.readFile.mockImplementationOnce(async () => disk('a\r\nb\r\n'));
@@ -472,6 +497,116 @@ describe('TextModelRegistry', () => {
     expect(registry.getValue(uri)).toBe('aX\r\nb\r\nc\r\n');
     expect(await registry.saveFileToDisk(uri)).toBe('aX\r\nb\r\nc\r\n');
     expect(registry.isDirty(uri)).toBe(false);
+  });
+
+  it('serializes repeated saves while allowing another file to save independently', async () => {
+    fileMocks.writeFile.mockClear();
+    const { registry, uri } = await openDirty('ordered.md', 'original\n', 'first\n');
+    let complete!: (value: unknown) => void;
+    fileMocks.writeFile.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const first = registry.saveFileToDisk(uri);
+    await vi.waitFor(() => expect(complete).toBeDefined());
+    registry.getModelByUri(uri)!.edit({ from: 0, to: registry.getModelByUri(uri)!.doc.length, insert: 'second\n' });
+    const second = registry.saveFileToDisk(uri);
+    const other = await registry.registerModel('project', 'workspace', '/ws', 'other.md', 'markdown', 'disk');
+    await registry.registerModel('project', 'workspace', '/ws', 'other.md', 'markdown', 'buffer');
+    expect(await registry.saveFileToDisk(other)).toBe('in the workspace');
+    const whileFirstPending = fileMocks.writeFile.mock.calls.filter(call => call[2] === 'ordered.md');
+    complete({ success: true, data: { success: true, bytesWritten: 6 } });
+    await first;
+    expect(await second).toBe('second\n');
+    expect(whileFirstPending).toHaveLength(1);
+    expect(registry.getDiskValue(uri)).toBe('second\n');
+    expect(registry.isDirty(uri)).toBe(false);
+  });
+
+  it('waits for a pending save before reading a disk change', async () => {
+    const { registry, uri } = await openDirty('watched.md', 'original\n', 'first\n');
+    let complete!: (value: unknown) => void;
+    fileMocks.writeFile.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const saving = registry.saveFileToDisk(uri);
+    await vi.waitFor(() => expect(complete).toBeDefined());
+    registry.getModelByUri(uri)!.edit({ from: registry.getModelByUri(uri)!.doc.length, insert: 'later\n' });
+    fileMocks.readFile.mockClear();
+    fileMocks.readFile.mockImplementationOnce(async () => disk('first\n'));
+    const reading = registry.invalidateModel(registry.toDiskUri(uri));
+    const readsDuringWrite = fileMocks.readFile.mock.calls.length;
+    complete({ success: true, data: { success: true, bytesWritten: 6 } });
+    await saving;
+    await reading;
+    expect(readsDuringWrite).toBe(0);
+    expect(registry.getValue(uri)).toBe('first\nlater\n');
+    expect(registry.isDirty(uri)).toBe(true);
+  });
+
+  it('persists pending recovery edits before closing the last buffer view', async () => {
+    fileMocks.saveBuffer.mockClear();
+    const { registry, uri } = await openDirty('closing.md', 'old\n', 'last edit\n');
+    registry.unregisterModel(uri);
+    await vi.waitFor(() => expect(fileMocks.saveBuffer).toHaveBeenCalledWith('project', 'workspace', 'closing.md', 'last edit\n'));
+    expect(registry.isDirty(uri)).toBe(true);
+  });
+
+  it('keeps recovery writes ordered behind an older in-flight autosave', async () => {
+    vi.useFakeTimers();
+    fileMocks.saveBuffer.mockClear();
+    const { registry, uri } = await openDirty('recovery.md', 'old\n', 'first edit\n');
+    let finish!: () => void;
+    fileMocks.saveBuffer.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(finish).toBeDefined();
+    const model = registry.getModelByUri(uri)!;
+    model.edit({ from: 0, to: model.doc.length, insert: 'latest edit\n' });
+    registry.unregisterModel(uri);
+    finish();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fileMocks.saveBuffer).toHaveBeenLastCalledWith('project', 'workspace', 'recovery.md', 'latest edit\n');
+  });
+
+  it('clears an older recovery write only after it completes and the disk save is acknowledged', async () => {
+    vi.useFakeTimers();
+    fileMocks.saveBuffer.mockClear();
+    fileMocks.clearBuffer.mockClear();
+    const { registry, uri } = await openDirty('recovery-clear.md', 'old\n', 'saved\n');
+    let finish!: () => void;
+    fileMocks.saveBuffer.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(finish).toBeDefined();
+    const saving = registry.saveFileToDisk(uri);
+    await vi.advanceTimersByTimeAsync(0);
+    const clearsBeforeRecoveryFinished = fileMocks.clearBuffer.mock.calls.length;
+    finish();
+    expect(await saving).toBe('saved\n');
+    expect(clearsBeforeRecoveryFinished).toBe(0);
+    expect(fileMocks.clearBuffer).toHaveBeenCalledWith('project', 'workspace', 'recovery-clear.md');
+    expect(registry.isDirty(uri)).toBe(false);
+  });
+
+  it('keeps edits after a failed write and lets a later save proceed', async () => {
+    const { registry, uri } = await openDirty('retry-save.md', 'old\n', 'new\n');
+    fileMocks.writeFile.mockImplementationOnce(async () => ({ success: false, error: { type: 'fs_error', message: 'disk full' } }));
+    expect(await registry.saveFileToDisk(uri)).toBeNull();
+    expect(registry.getDiskValue(uri)).toBe('old\n');
+    expect(registry.getValue(uri)).toBe('new\n');
+    expect(registry.isDirty(uri)).toBe(true);
+    expect(await registry.saveFileToDisk(uri)).toBe('new\n');
+    expect(registry.isDirty(uri)).toBe(false);
+  });
+
+  it('keeps edits made while clearing the recovery copy for a completed save', async () => {
+    fileMocks.saveBuffer.mockClear();
+    const { registry, uri } = await openDirty('late-edit.md', 'old\n', 'saved\n');
+    let finish!: () => void;
+    fileMocks.clearBuffer.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const saving = registry.saveFileToDisk(uri);
+    await vi.waitFor(() => expect(finish).toBeDefined());
+    const model = registry.getModelByUri(uri)!;
+    model.edit({ from: model.doc.length, insert: 'new edit\n' });
+    finish();
+    expect(await saving).toBe('saved\n');
+    expect(registry.getDiskValue(uri)).toBe('saved\n');
+    expect(registry.isDirty(uri)).toBe(true);
+    expect(fileMocks.saveBuffer).toHaveBeenLastCalledWith('project', 'workspace', 'late-edit.md', 'saved\nnew edit\n');
   });
 
   it('a disk reload is not an undo step: undo takes back only your own edit', async () => {
@@ -532,5 +667,18 @@ describe('TextModelRegistry', () => {
     expect(await registry.saveFileToDisk(uri)).toBe('one (mine)\ntwo (theirs)\n');
     expect(fileMocks.writeFile).toHaveBeenLastCalledWith('project', 'workspace', 'c.txt', 'one (mine)\ntwo (theirs)\n');
     expect(registry.isDirty(uri)).toBe(false);
+  });
+
+  it.each(['unreadable', 'truncated', 'binary'])('does not retry a conflicting save when the current disk is %s', async kind => {
+    const { registry, uri } = await openDirty('conflict.md', 'old\n', 'mine\n');
+    fileMocks.writeFile.mockClear();
+    fileMocks.writeFile.mockImplementationOnce(async () => ({ success: false, error: { type: 'fs_error', message: 'changed', code: 'conflict' } }));
+    fileMocks.readFile.mockImplementationOnce(async () => kind === 'unreadable'
+      ? { success: false, error: { type: 'fs_error', message: 'unreadable' } } as never
+      : { success: true, data: { content: '', binary: kind === 'binary', truncated: kind === 'truncated', totalSize: 40_000_000 } });
+    expect(await registry.saveFileToDisk(uri)).toBeNull();
+    expect(fileMocks.writeFile).toHaveBeenCalledTimes(1);
+    expect(registry.getValue(uri)).toBe('mine\n');
+    expect(registry.isDirty(uri)).toBe(true);
   });
 });

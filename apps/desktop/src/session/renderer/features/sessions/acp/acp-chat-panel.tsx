@@ -1,3 +1,4 @@
+import type { SessionContextChoice } from '@shared/core/sessions/session-config';
 import { useContextThresholds } from '../session-config/use-context-thresholds';
 import { usePermissionMenu } from '@renderer/features/sessions/session-config/use-permission-menu';
 import { withAutoReviewHint } from './auto-review-permission-hint';
@@ -428,10 +429,8 @@ const ComposerForStore = observer(function ComposerForStore({
     [agents]
   );
 
-  const providerId =
-    sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId)?.data
-      .providerId ?? null;
-  const contextThresholds = useContextThresholds(providerId, machineRegistry.machineOf(store.projectId));
+  const sessionRecord = sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId)?.data;
+  const providerId = sessionRecord?.providerId ?? null;
 
 
   const providerCapabilities = agents?.find((agent) => agent.id === providerId)?.capabilities;
@@ -801,6 +800,7 @@ const ComposerForStore = observer(function ComposerForStore({
       if (result.ok) {
         setInputFailure(null);
         platformCatalog.retry();
+        if (result.notStarted) store.retry();
         return true;
       }
       reportInputFailure(
@@ -826,6 +826,27 @@ const ComposerForStore = observer(function ComposerForStore({
   }, [store, platformCatalog, reportInputFailure, translate, onModelMenuRequest]);
 
   const writingModel = useRef(false);
+  const contextThresholds = useContextThresholds(providerId, machineRegistry.machineOf(store.projectId), sessionRecord?.contextChoice,
+    store.isTransient ? undefined : async (choice: SessionContextChoice, effort) => {
+      if (writingModel.current || reloading) throw new Error('A session setting is already changing');
+      const selection = composerModelSelection(choice.model);
+      const source = selection.source === 'platform' ? 'platform' : 'own';
+      const label = sessionModelOptions?.[choice.model]?.name ?? selection.modelId;
+      const reply = store.session?.sessionState.current().lifecycle === 'working' ? store.session.activeTurn.current() : null;
+      writingModel.current = true;
+      try {
+        if (reply) toast({ tier: 'info', title: translate('chat.modelSwitchContinuing', { model: label }), position: 'bottom-right' });
+        const target: RestartTarget = {
+          dimension: 'model', value: selection.modelId, source, label, contextChoice: choice,
+          ...(sessionRecord?.providerSessionId && effort !== undefined ? { effort } : {}),
+        };
+        if (!await applyReload(target, reply?.id)) {
+          throw new Error('The session did not apply the context choice');
+        }
+      } finally {
+        writingModel.current = false;
+      }
+    });
   const handleModelChange = useCallback(
     (optionId: string, effort?: string) => {
       if (writingModel.current) {
@@ -1207,7 +1228,6 @@ const ComposerForStore = observer(function ComposerForStore({
         agentLocked
         onAgentChange={() => {}}
         contextThresholds={contextThresholds}
-        contextWindowTaskId={store.sessionId}
         contextUsage={
           store.usage
             ? {

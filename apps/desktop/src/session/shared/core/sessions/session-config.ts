@@ -95,6 +95,13 @@ export const sessionLibraryMcpFactSchema = z.object({
 
 export type SessionLibraryMcpFact = z.infer<typeof sessionLibraryMcpFactSchema>;
 
+/** An explicit composer choice for this session and model's auto-compaction ceiling. */
+export const sessionContextChoiceSchema = z.object({
+  model: z.string().min(1),
+  window: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+});
+export type SessionContextChoice = z.infer<typeof sessionContextChoiceSchema>;
+
 const ptyConfigV1 = z.object({
   subscriptionConnectionId: z.string().optional(),
   version: z.literal('1'),
@@ -108,6 +115,7 @@ const ptyConfigV1 = z.object({
   effort: z.string().optional(),
   /** Per-session Fast intent; absent means off. */
   fastMode: z.boolean().optional(),
+  contextChoice: sessionContextChoiceSchema.optional(),
   /**
    * The task's name until it is bound to an agent identity (its pending-bind record, task-name.ts):
    * written at creation, consumed by provisioning, and the permanent name of a session that never
@@ -174,6 +182,7 @@ const acpConfigV1 = z.object({
   effort: z.string().optional(),
   /** Per-session Fast intent; absent means off. */
   fastMode: z.boolean().optional(),
+  contextChoice: sessionContextChoiceSchema.optional(),
   /**
    * The task's name until it is bound to an agent identity (its pending-bind record, task-name.ts):
    * written at creation, consumed by provisioning, and the permanent name of a session that never

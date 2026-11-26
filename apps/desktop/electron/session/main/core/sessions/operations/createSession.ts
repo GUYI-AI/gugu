@@ -122,6 +122,7 @@ export async function prepareCreateSession(
     model: ic.model,
     effort: ic.effort,
     ...(ic.fastMode !== undefined ? { fastMode: ic.fastMode } : {}),
+    contextChoice: ic.contextChoice,
     // 资源库 → MCP:每条新任务都带「默认启用」的那几台 —— 资源库的开关是唯一的控制点。
     libraryMcp: (await mcpLibraryService.list()).filter((server) => server.enabledByDefault).map((server) => server.name),
     initialPrompt: ic.initialPrompt,

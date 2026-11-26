@@ -1,7 +1,8 @@
 import { testAttachmentUploads } from '../../../support/attachmentUploadHost'
 import { verifiedFileHandle } from '../../../support/verifiedFileHandle'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readFileSync, truncateSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, openAsBlob, readFileSync, truncateSync, writeFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,6 +13,14 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { groupRulesVersion, memoryGroupRulesLedger } from '../../../../packages/core/src/local/agent/groupRulesDelivery'
 import { registerGuguExtensionTools } from '../../../../apps/desktop/electron/mcp/gugu-extension-tool'
 import { registerGuguSessionTools, SESSION_TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-session-tool'
+vi.mock('node:fs/promises', async importOriginal => {
+  const fs = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...fs, readFile: vi.fn(fs.readFile) }
+})
+vi.mock('node:fs', async importOriginal => {
+  const fs = await importOriginal<typeof import('node:fs')>()
+  return { ...fs, openAsBlob: vi.fn(fs.openAsBlob) }
+})
 vi.hoisted(() => {
   process.env.GUGU_AGENT_ID = 'agent-1'
   process.env.GUGU_ACCESS_TOKEN = `x.${Buffer.from(JSON.stringify({ sub: 'owner-1' })).toString('base64url')}.x`
@@ -152,7 +161,10 @@ function harness(members: string[] = [], groupPrompt: string | null = null) {
   const commitBodies: Array<Record<string, unknown>> = []
   let staged = 0
   const stagedBytes = new Map<string, Uint8Array>()
+  const attachmentRequests: string[] = []
   const attachmentsFetch = (async (url: string, init?: RequestInit) => {
+    attachmentRequests.push(url)
+    if (url.endsWith('/functions/v1/attachments/pending')) return new Response(JSON.stringify({ uploads: [] }))
     if (url.endsWith('/functions/v1/attachments/upload')) {
       staged += 1
       const key = `staging/owner-1/00000000-0000-4000-8000-${String(staged).padStart(12, '0')}`
@@ -269,7 +281,7 @@ function harness(members: string[] = [], groupPrompt: string | null = null) {
   const attachments = testAttachmentUploads(deps.attachmentsEndpoint)
   Object.assign(deps, { attachments })
   return {
-    attachments, setGroupPrompt: (v: string | null) => { currentGroupPrompt = v }, failCommit: (error: Error) => { commitError = error }, loseCommitAnswers: (n: number) => { lostAnswers = n }, commitBodies, deps, calls }
+    attachments, setGroupPrompt: (v: string | null) => { currentGroupPrompt = v }, failCommit: (error: Error) => { commitError = error }, loseCommitAnswers: (n: number) => { lostAnswers = n }, commitBodies, attachmentRequests, deps, calls }
 }
 async function connect(deps: Record<string, unknown>): Promise<Client> {
   const server = createGuguImServer(deps)
@@ -2149,6 +2161,81 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(String((err as Error)?.message ?? err)).toMatch(pattern)
     expect(h.calls.uploads).toHaveLength(0)
     expect(h.calls.inserts).toHaveLength(0)
+  })
+  test.each([
+    ['missing', () => join(fixtureRoot, 'absent-1114.html'), 'ENOENT'],
+    ['directory', () => fixtureRoot, 'NOT_A_FILE'],
+  ])('message_send #1114: %s source is a typed failure before declaration', async (_label, source, reason) => {
+    const h = harness(['agent-1'])
+    await expect(callTool('message_send', {
+      chat_id: '00000000-0000-4000-8000-000000000001', file_path: source(),
+    }, h.deps)).rejects.toMatchObject({ code: 'file_unreadable', reason })
+    expect(h.attachmentRequests).toEqual([])
+    await h.attachments.resume()
+    expect(h.attachmentRequests).toEqual(['https://db.test/functions/v1/attachments/pending'])
+    expect(h.commitBodies).toEqual([])
+    expect(h.calls.inserts).toEqual([])
+  })
+  test('message_send #1114: a text read refusal is an MCP error, with no retry or declaration', async () => {
+    const h = harness(['agent-1'])
+    const source = fixtureFile('unreadable.html', '<p>read refusal</p>')
+    const denied = Object.assign(new Error('permission denied'), { code: 'EACCES' })
+    const reads = vi.mocked(readFile)
+    const before = reads.mock.calls.length
+    reads.mockRejectedValueOnce(denied)
+    const client = await connect(h.deps)
+    try {
+      const result = await client.callTool({ name: 'message_send', arguments: {
+        chat_id: '00000000-0000-4000-8000-000000000001', file_path: source,
+      } })
+      expect(result.isError).toBe(true)
+      expect(text(result)).toContain('file_unreadable')
+      expect(text(result)).toContain('EACCES')
+      expect(text(result)).toContain('permission denied')
+      expect(text(result)).not.toContain('uncertain')
+      expect(h.attachmentRequests).toEqual([])
+      await h.attachments.resume()
+      expect(reads.mock.calls.length - before).toBe(1)
+      expect(h.attachmentRequests).toEqual(['https://db.test/functions/v1/attachments/pending'])
+      expect(h.commitBodies).toEqual([])
+      expect(h.calls.inserts).toEqual([])
+    } finally { await client.close() }
+  })
+  test.each(['open', 'hash'] as const)('message_send #1114: file-backed Blob %s failure is terminal before declaration', async stage => {
+    const h = harness(['agent-1'])
+    const source = fixtureFile('unreadable.png', Buffer.from([1, 2, 3]))
+    const denied = stage === 'open'
+      ? Object.assign(new Error('operation not permitted'), { code: 'EPERM' })
+      : new DOMException('The blob could not be read', 'NotReadableError')
+    const opens = vi.mocked(openAsBlob)
+    const before = opens.mock.calls.length
+    if (stage === 'open') opens.mockRejectedValueOnce(denied)
+    else {
+      const bytes = new Blob([Buffer.from([1, 2, 3])])
+      vi.spyOn(bytes, 'stream').mockImplementation(() => new ReadableStream({ start(controller) { controller.error(denied) } }))
+      opens.mockResolvedValueOnce(bytes)
+    }
+    await expect(callTool('message_send', {
+      chat_id: '00000000-0000-4000-8000-000000000001', file_path: source,
+    }, h.deps)).rejects.toMatchObject({ code: 'file_unreadable', cause: denied })
+    expect(h.attachmentRequests).toEqual([])
+    await h.attachments.resume()
+    expect(opens.mock.calls.length - before).toBe(1)
+    expect(h.attachmentRequests).toEqual(['https://db.test/functions/v1/attachments/pending'])
+    expect(h.commitBodies).toEqual([])
+    expect(h.calls.inserts).toEqual([])
+  })
+  test('message_send #1114: lost commit answers retain uncertain and one idempotent message', async () => {
+    const h = harness(['agent-1'])
+    h.loseCommitAnswers(3)
+    const sent = JSON.parse(await callTool('message_send', {
+      chat_id: '00000000-0000-4000-8000-000000000001', file_path: fixtureFile('lost-1114.png', Buffer.from([1, 2, 3])),
+    }, h.deps))
+    expect(sent).toMatchObject({ status: 'uncertain', message_id: `msg:${String(h.commitBodies[0]!.message_id)}` })
+    expect(h.commitBodies).toHaveLength(3)
+    expect(h.commitBodies.every(body => JSON.stringify(body) === JSON.stringify(h.commitBodies[0]))).toBe(true)
+    expect(h.calls.inserts).toHaveLength(1)
+    expect(sent.note).toContain('Check message_history')
   })
   test.each([
     ['3 字节', 3],
