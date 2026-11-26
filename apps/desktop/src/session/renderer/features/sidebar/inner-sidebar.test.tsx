@@ -162,7 +162,7 @@ const { setInnerSidebarTopicsAll, publishInnerSidebarTopicsView, publishOneListA
 const readInnerSidebarTopicsAll = () => ((window as unknown as Record<string, unknown>).__GUGU_INNER_SIDEBAR_TOPICS_ALL__ as string | undefined) ?? null;
 const { installShellSlots, readShellSlots } = await import('@/lib/shellSlots');
 const { InnerSidebar, InnerSidebarRestore, innerSidebarChat, innerSidebarShownFor } = await import('./inner-sidebar');
-const { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarFolded, shellRestoreLaneTaken } = await import('./inner-sidebar-fold');
+const { innerSidebarFolded, innerSidebarAttached, setInnerSidebarFolded, shellRestoreLaneTaken } = await import('./inner-sidebar-fold');
 const { sidebarFolds } = await import('./sidebar-folds');
 const { readPanelToggle } = await import('@/lib/panelToggles');
 const { sidebarStore } = await import('@renderer/lib/stores/app-state');
@@ -327,8 +327,8 @@ describe('inner sidebar', () => {
     state.infoShown = false;
     // v16: the head block is avatar, name and create only; no ⋯ (the group's items live on its details page).
     expect(host.querySelector('[data-inner-head="group"] [data-testid="inner-head-more"]')).toBeNull();
-    const trailing = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!.parentElement!;
-    expect(trailing.children).toHaveLength(1);
+    // No fold button in the head row: the column's toggle is at the content's top left (owner 11-26).
+    expect(host.querySelector('[data-inner-head="group"] [data-inner-head-fold]')).toBeNull();
     const create = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-create]')!;
     expect(create, 'the group head has a direct creation entry').not.toBeNull();
     expect(create.parentElement).toBe(head().parentElement);
@@ -441,32 +441,32 @@ describe('inner sidebar', () => {
     expect(host.querySelector('[data-region="inner-sidebar"] input')).toBeNull();
   });
 
-  it('folds from its head row, for every group alike, until expanded from the restore lane', async () => {
+  it('folds and expands from the one toggle at the content\'s top left, open or folded, for every group alike', async () => {
     const restore = document.body.appendChild(document.createElement('div'));
     const restoreRoot = createRoot(restore);
     await act(async () => restoreRoot.render(<InnerSidebarRestore />));
     openChat('group');
     await render();
-    expect(shellRestoreLaneTaken()).toBe(false);
-    expect(restore.querySelector('button')).toBeNull();
-    const fold = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!;
-    expect(fold.getAttribute('aria-label')).toBe('sidebar.collapseInner');
-    // The fold button sits at the row's far end.
-    expect([...fold.parentElement!.children].at(-1)).toBe(fold);
+    // Open: the toggle is already in the restore lane (owner 11-26: the same place folded or not), the strip leaves it its lane.
+    expect(innerSidebarAttached.get()).toBe(true);
+    expect(shellRestoreLaneTaken()).toBe(true);
+    expect(host.querySelector('[data-inner-head="group"] [data-inner-head-fold]'), 'no fold button in the head row').toBeNull();
+    const fold = restore.querySelector<HTMLElement>('[data-shell-restore-lane] button[aria-label="sidebar.collapseInner"]')!;
+    expect(fold, 'the list column toggle, in the restore lane').not.toBeNull();
+    expect(fold.textContent, 'no number on it').toBe('');
 
     await act(async () => fold.click());
     expect(innerFrame.folded, 'folded: its slot closes, the content is the card alone').toBe(true);
     expect(innerSidebarFolded.get()).toBe(true);
-    expect(innerSidebarFoldedAway.get()).toBe(true);
+    expect(innerSidebarAttached.get()).toBe(true);
     expect(innerSidebarShownFor.get()).toBeNull();
     // Still attached: the list keeps the group lit.
     expect(innerSidebarChat.get()).toEqual({ kind: 'group', chatId: 'group' });
-    // The leftmost strip leaves the expand button its lane even with the list open beside it.
     expect(shellRestoreLaneTaken()).toBe(true);
+    // The same button in the same lane, now the expand one.
     const expand = restore.querySelector<HTMLElement>('button[aria-label="sidebar.expandInner"]')!;
-    expect(expand, 'the list column toggle, in the restore lane').not.toBeNull();
     expect(expand.closest('[data-shell-restore-lane]')).not.toBeNull();
-    expect(expand.textContent, 'no number on it').toBe('');
+    expect(restore.querySelectorAll('button')).toHaveLength(1);
 
     // Remembered globally: another group (and a project) opens folded too.
     openProject('p-shop');
@@ -477,7 +477,7 @@ describe('inner sidebar', () => {
     // Nothing to fold over (a direct message): no expand button, no lane.
     openChat('dm');
     await render();
-    expect(innerSidebarFoldedAway.get()).toBe(false);
+    expect(innerSidebarAttached.get()).toBe(false);
     expect(restore.querySelector('button')).toBeNull();
     expect(shellRestoreLaneTaken()).toBe(false);
 
@@ -486,8 +486,9 @@ describe('inner sidebar', () => {
     expect(readPanelToggle('column:inner')).toMatchObject({ open: false, label: 'sidebar.expandInner' });
     await act(async () => restore.querySelector<HTMLElement>('button')!.click());
     expect(host.querySelector('[data-inner-sidebar-chat="group"]')).not.toBeNull();
-    expect(restore.querySelector('button')).toBeNull();
     expect(innerSidebarShownFor.get()).toBe('group');
+    // Expanded again: the toggle stays where it was, back to the collapse one.
+    expect(restore.querySelector('button[aria-label="sidebar.collapseInner"]')).not.toBeNull();
     act(() => restoreRoot.unmount());
     restore.remove();
   });

@@ -13,9 +13,8 @@ import '@renderer/index.css';
  * GUYI-AI/gugu#2548 叠一层(owner 11-12): beside the one list, the content is a card stacked on the list — the same
  * layering as the icon rail and the list. Direction A (owner 11-26, GUYI-AI/gugu-dev#1515, desktop-shell.css
  * @@@inner-on-card): a group's / project's inner column is the left part of that card — the card's face, its top and bottom
- * gap and left corners — and no line runs between it and the content; its modules float as one panel inside the card,
- * filling the column down to the card's bottom gap (inner-sidebar-head.css @@@inner-modules); folded, the content surface is
- * the whole card again.
+ * gap and left corners; its modules are parted from the messages by one open line on the column's right edge, from under the
+ * head to the card's bottom gap (inner-sidebar-head.css @@@inner-modules); folded, the content surface is the whole card again.
  */
 
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
@@ -97,7 +96,7 @@ for (const theme of ['light', 'dark'] as const) {
     expect(style.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
   });
 
-  it(`${theme}: the inner column is the left part of the card: its face, its gap, its left corners, no line to the content`, async () => {
+  it(`${theme}: the inner column is the left part of the card: its face, its gap, its left corners, no card ring between it and the content`, async () => {
     const { shell, list, surface, column } = await renderDesktop(theme, true);
     expect(column).not.toBeNull();
     const left = column!.getBoundingClientRect();
@@ -123,28 +122,27 @@ for (const theme of ['light', 'dark'] as const) {
     expect(col.borderLeftWidth).toBe('0px');
   });
 
-  it(`${theme}: the modules float as one panel inside the card: the lift, the surface radius, a gap, down to the card's bottom gap`, async () => {
-    const { surface, column } = await renderDesktop(theme, true);
+  it(`${theme}: the modules are not a card: one open line on the column's right edge, from under the head to the composer's line`, async () => {
+    const { column } = await renderDesktop(theme, true);
     const stack = column!.querySelector<HTMLElement>('[data-inner-module-stack]')!;
     const style = getComputedStyle(stack);
-    // The product's one lift and surface radius, resolved in this theme (no new elevation or colour).
+    expect(style.boxShadow, 'no lift: not a floating card').toBe('none');
+    expect(style.borderRadius).toBe('0px');
+    expect(style.backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    // The one line: the existing border colour, on the right edge only.
     const probe = document.createElement('div');
-    probe.style.boxShadow = 'var(--shadow-lift)';
+    probe.style.color = 'var(--border-color)';
     stack.parentElement!.append(probe);
-    expect(style.boxShadow).toBe(getComputedStyle(probe).boxShadow);
+    expect(style.borderRightColor).toBe(getComputedStyle(probe).color);
     probe.remove();
-    expect(style.boxShadow).not.toBe('none');
-    expect(style.borderRadius).toBe('12px');
-    expect(style.backgroundColor, 'the card face, not a third colour').toBe(getComputedStyle(surface).backgroundColor);
+    expect([style.borderTopWidth, style.borderBottomWidth, style.borderLeftWidth, style.borderRightWidth]).toEqual(['0px', '0px', '0px', '1px']);
     const box = stack.getBoundingClientRect();
     const col = column!.getBoundingClientRect();
-    expect(box.left - col.left).toBeCloseTo(8);
-    expect(col.right - box.right).toBeCloseTo(8);
-    // V2 (owner 11-26): the panel fills the column under the head, its bottom --spacing-sm above the card's bottom edge — the
-    // composer's bottom line — so no L of empty space is left under it.
     const head = column!.querySelector<HTMLElement>('[data-test-head]')!.getBoundingClientRect();
-    expect(box.top - head.bottom, 'right under the head').toBeCloseTo(0);
-    expect(col.bottom - box.bottom, 'the card\'s bottom gap').toBeCloseTo(8);
+    expect(col.right - box.right, 'on the column\'s right edge').toBeCloseTo(0);
+    expect(box.top - head.bottom, 'from under the head').toBeCloseTo(0);
+    // Its lower end stops --spacing-sm above the card's bottom (the composer's line), so it never meets the card's edge.
+    expect(col.bottom - box.bottom).toBeCloseTo(8);
     expect([...stack.querySelectorAll('[data-inner-sidebar-section]')].map((e) => e.getAttribute('data-inner-sidebar-section'))).toEqual(['topics', 'agents']);
   });
 

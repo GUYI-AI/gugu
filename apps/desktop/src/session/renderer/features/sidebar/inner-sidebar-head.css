@@ -1,6 +1,7 @@
 /*
  * Inner sidebar, v16 design (group / project / sample columns share it). Numbers are the design's, measured from the left
- * edge of the 220px column, whose 1px left border is the line between it and the zero list (the design's .list): head block 9px in, 58px tall, radius 12, 40px avatar, collapse button outside the block;
+ * edge of the 220px column, whose 1px left border is the line between it and the zero list (the design's .list): head block 9px in, 58px tall, radius 12, 40px avatar (the column's fold toggle is not in the head: it sits at the content's
+ * top left, folded or not);
  * section headers 13px with the label 27px in; empty lines 12.5px, 9px in; 14px between sections.
  * Scoped to the column so the zero-level list keeps its own rows.
  */
@@ -12,22 +13,22 @@
 .gg-inner-head-double [data-inner-head] { height: 58px; }
 .gg-inner-head-double [data-inner-head-open] {
   position: absolute;
-  inset: 0 32px 0 0;
+  inset: 0;
   width: auto;
   height: 100%;
   align-items: flex-start;
   border-radius: 12px;
   background-color: transparent;
-  /* The block's own 6px end padding; while the hover ⋯ shows, also clear it (it sits over the block's end). */
-  padding-inline-end: calc(var(--head-reserve) - 30px) !important;
+  /* The block's own 6px end padding. */
+  padding-inline-end: 6px !important;
 }
 /* The head is the group's title on the group's card (desktop-shell.css @@@inner-on-card): no selected chip under it; the
    hover below stays. */
-/* Paint the hover independently of the two-line button, over the block only (not the collapse button). */
+/* Paint the hover independently of the two-line button, over the whole block. */
 .gg-inner-head-double [data-inner-head]:is(:hover, :focus-within, :has([aria-expanded='true']))::before {
   content: '';
   position: absolute;
-  inset: 0 32px 0 0;
+  inset: 0;
   border-radius: 12px;
   background-color: var(--hover);
   pointer-events: none;
@@ -46,15 +47,6 @@
   width: 40px;
   height: 40px;
 }
-.gg-inner-head-double [data-inner-head-actions] {
-  top: 0;
-  right: 0;
-  bottom: auto;
-  z-index: 1;
-  height: 28px;
-  pointer-events: none;
-}
-.gg-inner-head-double [data-inner-head-actions] button { pointer-events: auto; }
 .gg-inner-head-double .gg-inner-head-create {
   position: absolute;
   inset-inline-start: 52px;
@@ -75,17 +67,15 @@
 }
 .gg-inner-head-create svg { width: 13px; height: 13px; }
 
-/* @@@inner-modules: the modules float as one panel inside the group's card, with the product's one lift (--shadow-lift) and the
-   surface radius. The head row stays on the card above it. The panel fills the column down to the card's bottom gap, so its
-   bottom edge lines up with the composer's and the left side is one block (owner 11-26, V2: a panel only as tall as its modules
-   left an L of empty space under it and beside the composer, and the messages had nothing to hang on). */
+/* @@@inner-modules (owner 11-26): the modules are not a closed card. One thin line on the column's right edge parts them from the
+   messages: it starts under the head row (where the floating panel's top was) and stops --spacing-sm above the card's bottom,
+   level with the composer's bottom; neither end meets the card's edge. The column's fold toggle is not in the head row but at
+   the content's top left, folded or not (InnerSidebarRestore). */
 [data-region='inner-sidebar'] [data-inner-module-stack] {
   flex: 1 1 auto;
-  margin: 0 var(--spacing-sm) var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
   padding-block: var(--spacing-sm);
-  border-radius: var(--radius-surface);
-  background: var(--bg);
-  box-shadow: var(--shadow-lift);
+  border-inline-end: 1px solid var(--border-color);
 }
 [data-region='inner-sidebar'] [data-inner-sidebar-section] { margin-bottom: 14px; }
 [data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child {

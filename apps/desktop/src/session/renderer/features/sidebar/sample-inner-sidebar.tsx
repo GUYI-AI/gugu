@@ -8,7 +8,6 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import {
   InnerHeadRowLayout,
   InnerModuleStack,
-  InnerSidebarFoldButton,
   innerSectionEmptyClass,
 } from './inner-sidebar-parts';
 import { setSidebarFold, sidebarFolds } from './sidebar-folds';
@@ -41,7 +40,6 @@ export const SampleInnerSidebar = observer(function SampleInnerSidebar() {
         onOpen={() => {
           if (taskOpen) openSamplePane(null);
         }}
-        trailingButtons={1}
         createAction={{
           label: translate('sidebar.createAgent'),
           onClick: () => {
@@ -49,9 +47,7 @@ export const SampleInnerSidebar = observer(function SampleInnerSidebar() {
             requestAnimationFrame(() => focusSessionComposer(document.querySelector('[data-sample-composer]') ?? document));
           },
         }}
-      >
-        <InnerSidebarFoldButton />
-      </InnerHeadRowLayout>
+      />
       <InnerModuleStack modules={[
         { id: 'topics', node: <SampleTopicsSection /> },
         { id: 'agents', node: <SampleAgentsSection agent={content.agent} active={taskOpen} /> },

@@ -2,16 +2,17 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
-import { InnerHeadRowLayout, InnerSidebarFoldButton } from '@renderer/features/sidebar/inner-sidebar-parts';
+import { InnerHeadRowLayout } from '@renderer/features/sidebar/inner-sidebar-parts';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import '@/styles/tokens.css';
 import '@/components/sessionpage/EmdashSessionFrame.css';
 import '@renderer/index.css';
 
 /**
- * GUYI-AI/gugu#2574 a standalone agent's inner column: its head row has only the fold button (no new-agent pen).
- * The name runs up to that button and keeps its room when the pointer is on the row: no head row has a control that
- * only appears on hover. Real Chromium, real CSS: `:hover` is the engine's own state.
+ * GUYI-AI/gugu#2574 a standalone agent's inner column: its head row has no button at all (no new-agent pen, and since owner
+ * 11-26 no fold button either: the column's toggle is at the content's top left). The name runs to the row's end and keeps
+ * its room when the pointer is on the row: no head row has a control that only appears on hover. Real Chromium, real CSS:
+ * `:hover` is the engine's own state.
  */
 
 const LONG_NAME = '整理周报、核对日程并且顺手把下周的出差行程也排好的那个智能体';
@@ -30,48 +31,28 @@ afterEach(() => {
 
 const avatar = <span className="block size-6 rounded-full bg-[var(--border)]" />;
 
-it('the agent head row ends in the fold button and keeps the name\'s room on hover; a room head gives its two buttons their room, on hover or not', async () => {
+it('the agent head row has no buttons: the name runs to the row\'s end and keeps its room on hover', async () => {
   harness = createReactHarness();
   await harness.render(
     <div className="gugu-skin emlight" style={{ position: 'fixed', inset: 0 }}>
       <SessionLocalizationProvider>
         <div style={{ width: 260 }}>
-          <InnerHeadRowLayout headKey="agent" name={LONG_NAME} avatar={avatar} active onOpen={() => {}} trailingButtons={1}>
-            <InnerSidebarFoldButton />
-          </InnerHeadRowLayout>
-          <InnerHeadRowLayout headKey="room" name={LONG_NAME} avatar={avatar} active={false} onOpen={() => {}} trailingButtons={2}>
-            <span data-first-button="" className="block size-7" />
-            <InnerSidebarFoldButton />
-          </InnerHeadRowLayout>
+          <InnerHeadRowLayout headKey="agent" name={LONG_NAME} avatar={avatar} active onOpen={() => {}} />
         </div>
       </SessionLocalizationProvider>
     </div>
   );
-  const head = (key: string) => harness.container.querySelector<HTMLElement>(`[data-inner-head="${key}"]`)!;
-  const name = (key: string) => head(key).querySelector<HTMLElement>('[data-slot="button"] .truncate')!;
-  const nameWidth = (key: string) => name(key).getBoundingClientRect().width;
-
-  const row = head('agent').getBoundingClientRect();
-  const fold = head('agent').querySelector<HTMLElement>('[data-inner-head-fold]')!.getBoundingClientRect();
+  const head = harness.container.querySelector<HTMLElement>('[data-inner-head="agent"]')!;
+  const name = head.querySelector<HTMLElement>('[data-slot="button"] .truncate')!;
+  const row = head.getBoundingClientRect();
   expect(row.width, 'real CSS geometry must be present: the list body insets the row').toBeGreaterThan(200);
   expect(row.width).toBeLessThan(260);
-  expect(head('agent').querySelector('[data-inner-head-new-agent]')).toBeNull();
-  // The fold button sits at the row's far end; the (truncated) name stops before it.
-  expect(row.right - fold.right).toBeCloseTo(8, 0);
-  expect(name('agent').scrollWidth, 'the name is long enough to be cut').toBeGreaterThan(nameWidth('agent'));
-  expect(name('agent').getBoundingClientRect().right).toBeLessThanOrEqual(fold.left);
-  const agentAtRest = nameWidth('agent');
-  const roomAtRest = nameWidth('room');
-  // One more 28px button and the 4px between the two.
-  expect(agentAtRest - roomAtRest).toBeCloseTo(32, 0);
-  expect(name('room').getBoundingClientRect().right).toBeLessThanOrEqual(head('room').querySelector<HTMLElement>('[data-first-button]')!.getBoundingClientRect().left);
-
-  // The pointer on a head row changes nothing: nothing appears on hover.
-  for (const key of ['room', 'agent']) {
-    await userEvent.hover(name(key));
-    await until(`the pointer is on the ${key} head`, () => head(key).matches(':hover'));
-  }
-  expect(nameWidth('room')).toBeCloseTo(roomAtRest, 0);
-  expect(nameWidth('agent')).toBeCloseTo(agentAtRest, 0);
-  expect(name('agent').getBoundingClientRect().right).toBeLessThanOrEqual(fold.left);
+  expect(head.querySelector('button:not([data-slot="button"])'), 'no button besides the head itself').toBeNull();
+  expect(head.querySelector('[data-inner-head-fold], [data-inner-head-new-agent]')).toBeNull();
+  expect(name.scrollWidth, 'the name is long enough to be cut').toBeGreaterThan(name.getBoundingClientRect().width);
+  expect(row.right - name.getBoundingClientRect().right, 'the name runs to the row\'s end padding').toBeLessThan(16);
+  const atRest = name.getBoundingClientRect().width;
+  await userEvent.hover(name);
+  await until('the pointer is on the head', () => head.matches(':hover'));
+  expect(name.getBoundingClientRect().width).toBeCloseTo(atRest, 0);
 });

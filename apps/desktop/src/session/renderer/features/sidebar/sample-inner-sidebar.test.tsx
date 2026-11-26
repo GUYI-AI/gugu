@@ -92,7 +92,7 @@ state.live = observable(
 );
 const { publishChatSummaries } = await import('@/lib/chatSummariesBridge');
 const { InnerSidebar, InnerSidebarRestore, innerSidebarChat, innerSidebarShownFor } = await import('./inner-sidebar');
-const { innerSidebarFoldedAway } = await import('./inner-sidebar-fold');
+const { innerSidebarAttached } = await import('./inner-sidebar-fold');
 const { sidebarFolds } = await import('./sidebar-folds');
 const { SampleProjectBlock } = await import('@renderer/features/sample-project/sample-project-block');
 const { openSamplePane } = await import('@renderer/features/sample-project/sample-project-view');
@@ -230,20 +230,20 @@ describe('the inner column for the sample project', () => {
     expect(column()).toBeNull();
   });
 
-  it('folds like the group column: the head row’s far-end button, then the expand button in the restore lane brings it back', async () => {
+  it('folds like the group column: the one toggle at the content\'s top left, open or folded', async () => {
     await act(async () => root.render(<><InnerSidebar /><SampleProjectBlock blockId="sample-block" /><InnerSidebarRestore /></>));
     await until(() => column() !== null, 'the sample column drawn');
-    const fold = host.querySelector<HTMLElement>('[data-inner-head="sample-project"] [data-inner-head-fold]')!;
-    expect([...fold.parentElement!.children].at(-1)).toBe(fold);
+    expect(host.querySelector('[data-inner-head="sample-project"] [data-inner-head-fold]'), 'no fold button in the head row').toBeNull();
+    const fold = host.querySelector<HTMLElement>('[data-shell-restore-lane] button[aria-label="sidebar.collapseInner"]')!;
     await act(async () => fold.click());
     expect(innerFrame.folded).toBe(true);
-    expect(innerSidebarFoldedAway.get()).toBe(true);
+    expect(innerSidebarAttached.get()).toBe(true);
     expect(innerSidebarShownFor.get()).toBeNull();
     const expand = host.querySelector<HTMLElement>('[data-shell-restore-lane] button[aria-label="sidebar.expandInner"]')!;
     await act(async () => expand.click());
     expect(innerFrame.folded).toBe(false);
     expect(column()!.dataset.innerSidebarKind).toBe('sample');
-    expect(host.querySelector('[data-shell-restore-lane]')).toBeNull();
+    expect(host.querySelector('[data-shell-restore-lane] button[aria-label="sidebar.collapseInner"]'), 'the toggle stays').not.toBeNull();
   });
 
   it('draws nothing while the account has no sample', async () => {

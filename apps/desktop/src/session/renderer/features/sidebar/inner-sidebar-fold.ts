@@ -25,8 +25,11 @@ export function setInnerSidebarCrowded(value: boolean): void {
   });
 }
 
-/** 收起着,而此刻本该有这一列(挂在一个群 / 项目 / 示例上):展开钮这时才在。InnerSidebar 写。 */
-export const innerSidebarFoldedAway = observable.box(false);
+/**
+ * 此刻有这一列(挂在一个群 / 项目 / 示例上),收起或展开都算:它的开关钮这时在正文左上角(owner 11-26:收起和展开同一个位置,
+ * 这一列右边、消息流左上角、群 title 行左侧)。InnerSidebar 写。
+ */
+export const innerSidebarAttached = observable.box(false);
 
 export function setInnerSidebarFolded(folded: boolean): void {
   if (!crowded.get()) return setSidebarFold('inner', folded);
@@ -35,9 +38,9 @@ export function setInnerSidebarFolded(folded: boolean): void {
 }
 
 /**
- * 正文左上角此刻浮着一枚展开钮,那里那条页签条要给它让车道:内层栏收起时的「展开内层栏」(左边列表收起成一列头像,
+ * 正文左上角此刻浮着这一列的开关钮,那里那条页签条要给它让车道:有内层栏时,收起和展开都在(左边列表收起成一列头像,
  * 从不整列让开,所以没有「展开侧栏」那一枚)。读 mobx,调用方是 observer。
  */
 export function shellRestoreLaneTaken(): boolean {
-  return innerSidebarFoldedAway.get();
+  return innerSidebarAttached.get();
 }
