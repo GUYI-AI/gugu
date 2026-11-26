@@ -31,16 +31,29 @@ export function useGroupApps(chatId: string): GroupApp[] {
     // Apps that open a chat's files and name none of their own (`chatFile`: asking for those makes their file).
     const candidates = installed.appsIn('chat').filter((app) => !installed.mainTabOf(app.extensionId)
       && !installed.manifestFor(app.extensionId)?.contributes.tabs.some((tab) => tab.chatFile))
-    void Promise.all(candidates.map(async (app) => {
-      const result = await appsHere!.appInChat({ chatId, extensionId: app.extensionId })
-      return result.success && result.data && 'files' in result.data && result.data.files.length > 0 ? app.extensionId : null
-    })).then((ids) => { if (live) setInGroup(ids.filter((id): id is string => id !== null)) })
+    void appsWithFilesIn(chatId, candidates).then((ids) => { if (live) setInGroup(ids) })
     return () => { live = false }
   }, [installed, chatId])
   if (!installed) return []
   const here = installed.appsIn('chat').filter((app) => inGroup.includes(app.extensionId))
   const cards = shared.state === 'value' ? shared.value.filter((pkg) => !installed.manifestFor(pkg.appId)) : []
   return [...here, ...cards.map((pkg): GroupApp => ({ extensionId: pkg.appId, name: pkg.manifest.name, kind: '', iconDataUrl: null, card: pkg.card }))]
+}
+
+/** Which of these Apps have a file in this group's folder (`appInChat`); one that cannot be asked is left out and logged, not all of them. */
+export async function appsWithFilesIn(chatId: string, candidates: readonly RailApp[]): Promise<string[]> {
+  if (!appsHere) return []
+  const ids = await Promise.all(candidates.map(async (app) => {
+    try {
+      const result = await appsHere!.appInChat({ chatId, extensionId: app.extensionId })
+      if (!result.success) log.warn({ appId: app.extensionId, chatId, error: result.error }, 'could not read whether a group App is in this group')
+      return result.success && result.data && 'files' in result.data && result.data.files.length > 0 ? app.extensionId : null
+    } catch (error) {
+      log.warn({ appId: app.extensionId, chatId, error }, 'could not read whether a group App is in this group')
+      return null
+    }
+  }))
+  return ids.filter((id): id is string => id !== null)
 }
 
 /** A group App picked in its group's side panel: opened there, or installed from its card first — the card's own install, its consent included. */
