@@ -11,10 +11,19 @@ import { createAssistantPanelRuntime } from '../../apps/desktop/electron/session
 
 // Drive the explicit schedule/integration callbacks without fixture filesystem events starting an unrelated full publication.
 vi.mock('node:fs', async importOriginal => ({ ...await importOriginal<typeof import('node:fs')>(),
-  watch: () => ({ on() { return this }, close() {} }),
+  watch: () => ({ on() { return this }, close() { calls.closedWatchers++ } }),
 }))
 
-const calls = vi.hoisted(() => ({ signals: [] as AbortSignal[],domains:[] as string[],assistants:[] as string[],rpcNames:[] as string[],prepareFailure:null as Error|null,holdRpc:null as string|null,commitPublication:false,live:true,readable:false,stalled:true,collectIntegrations: false,blockedDomain:null as string|null,hold: null as Promise<void> | null }))
+const calls = vi.hoisted(() => ({ closedWatchers: 0,requests: [] as { name: string; assistant: unknown }[],sessionAgents: {} as Record<string,string>,boundAssistant: null as string|null,roleHold: null as Promise<boolean>|null,roleChecks: [] as string[],rejectAssistant: null as string|null,rejection: { code: '42501',message: 'Personal assistant is not available to this account' },networkFailure: false,signals: [] as AbortSignal[],domains:[] as string[],assistants:[] as string[],rpcNames:[] as string[],prepareFailure:null as Error|null,holdRpc:null as string|null,commitPublication:false,live:true,readable:false,stalled:true,collectIntegrations: false,blockedDomain:null as string|null,hold: null as Promise<void> | null }))
+vi.mock('../../apps/desktop/electron/sessionpage/assistant-agent-role',() => ({
+  isPersonalAssistantAgent: async (auth: { userId: string },id: string) => {
+    calls.roleChecks.push(`${auth.userId}:${id}`)
+    return calls.roleHold ?? calls.boundAssistant === id
+  },
+}))
+vi.mock('../../apps/desktop/electron/sessionpage/sessionpage-session-agent',() => ({
+  localAgentForSession: async (id: string) => calls.sessionAgents[id] ? { gugu_user_id: calls.sessionAgents[id] } : null,
+}))
 vi.mock('../../apps/desktop/electron/sessionpage/assistant-panel-admission',async importOriginal=>{
   const original=await importOriginal<typeof import('../../apps/desktop/electron/sessionpage/assistant-panel-admission')>()
   return {...original,
@@ -31,8 +40,12 @@ vi.mock('../../apps/desktop/electron/sessionpage/assistant-panel-publisher',()=>
 }}))
 vi.mock('@gugu/core/cloud/supabase',() => ({ createGuguSupabaseClient: () => ({
   from: () => { const query = { select: () => query,eq: () => query,abortSignal: () => query,maybeSingle: async () => ({error:null,data:calls.live ? {id:'assistant'} : null}) }; return query },
-  rpc(name: string) {
-    calls.rpcNames.push(name)
+  rpc(name: string,args: Record<string,unknown> = {}) {
+    calls.rpcNames.push(name); calls.requests.push({ name,assistant: args.p_assistant })
+    if (args.p_assistant === calls.rejectAssistant) return { abortSignal: async () => {
+      if (calls.networkFailure) throw new TypeError('fetch failed')
+      return { data: null,error: calls.rejection }
+    } }
     if (name === calls.holdRpc) return {abortSignal(signal:AbortSignal) {
       calls.signals.push(signal)
       return new Promise<never>((_resolve,reject) => { if(signal.aborted) reject(signal.reason); else signal.addEventListener('abort',()=>reject(signal.reason),{once:true}) })
@@ -53,7 +66,7 @@ vi.mock('@gugu/core/cloud/supabase',() => ({ createGuguSupabaseClient: () => ({
 // Each turn's profile review is rendered from the assistant App's rules (#1931): fixed rules here, at the version the
 // index lines below name.
 beforeAll(() => installAssistantRulesResolver(fixedAssistantRules({ ...NEUTRAL_ASSISTANT_RULES, defaults: { ...NEUTRAL_ASSISTANT_RULES.defaults, profileRulesVersion: 6 } })))
-afterEach(() => { vi.useRealTimers(); calls.signals.length = 0; calls.domains.length=0; calls.assistants.length=0; calls.rpcNames.length=0; calls.prepareFailure=null; calls.holdRpc=null; calls.commitPublication=false; calls.live=true; calls.readable=false; calls.stalled=true; calls.collectIntegrations=false; calls.blockedDomain=null; calls.hold=null })
+afterEach(() => { calls.closedWatchers=0;calls.requests.length=0;calls.sessionAgents={};calls.boundAssistant=null;calls.roleHold=null;calls.roleChecks.length=0;calls.rejectAssistant=null;calls.rejection={code:'42501',message:'Personal assistant is not available to this account'};calls.networkFailure=false;vi.useRealTimers(); calls.signals.length = 0; calls.domains.length=0; calls.assistants.length=0; calls.rpcNames.length=0; calls.prepareFailure=null; calls.holdRpc=null; calls.commitPublication=false; calls.live=true; calls.readable=false; calls.stalled=true; calls.collectIntegrations=false; calls.blockedDomain=null; calls.hold=null })
 
 it('stops only the removed assistant timers and listeners and never recreates its cached binding',async()=>{
   vi.useFakeTimers();calls.stalled=false;calls.readable=true
@@ -205,7 +218,7 @@ async function panelFixture() {
   let schedulesChanged:(()=>void)|undefined
   const unsubscribeIntegrations=vi.fn(),unsubscribeSchedules=vi.fn()
   const runtime=createAssistantPanelRuntime({getAuth:async()=>({accessToken:'fixture',userId:'owner'}),instanceId:()=> 'runtime',deviceId:async()=> 'device',
-    local:{onIntegrationsChanged:(listener:()=>void)=>{integrationChanged=listener;return unsubscribeIntegrations},onSchedulesChanged:(listener:()=>void)=>{schedulesChanged=listener;return unsubscribeSchedules}} as never,guguHome:cwd,kind:'computer',env:{},failed:vi.fn(),locale:()=> 'zh-CN'})
+    local:{home:async()=>({cwd}),onIntegrationsChanged:(listener:()=>void)=>{integrationChanged=listener;return unsubscribeIntegrations},onSchedulesChanged:(listener:()=>void)=>{schedulesChanged=listener;return unsubscribeSchedules}} as never,guguHome:cwd,kind:'computer',env:{},failed:vi.fn(),locale:()=> 'zh-CN'})
   await runtime.bind({sessionId:'session',assistantId:'assistant',ownerId:'owner',cwd})
   return {runtime,integrationChanged:()=>integrationChanged?.(),schedulesChanged:()=>schedulesChanged?.(),unsubscribeIntegrations,unsubscribeSchedules,
     async cleanup(){runtime.dispose();await rm(cwd,{recursive:true,force:true})}}
@@ -262,6 +275,115 @@ it('publishes again when a second schedule change arrives during the first publi
   }finally{held.resolve();await f.cleanup()}
 })
 
+
+it('retires a rejected panel without stopping other publishers or its ordinary conversation',async()=>{
+  vi.useFakeTimers();calls.stalled=false;calls.readable=true
+  const cwd=await mkdtemp(join(tmpdir(),'panel-revoked-')),listeners=new Set<()=>void>()
+  const runtime=createAssistantPanelRuntime({getAuth:async()=>({accessToken:'fixture',userId:'owner'}),instanceId:()=> 'runtime',deviceId:async()=> 'device',
+    local:{onSchedulesChanged:(listener:()=>void)=>{listeners.add(listener);return()=>listeners.delete(listener)}} as never,guguHome:cwd,kind:'computer',env:{},failed:vi.fn(),locale:()=> 'en-US'})
+  try{
+    await runtime.bind({sessionId:'old',assistantId:'stale',ownerId:'owner',cwd})
+    await runtime.bind({sessionId:'other',assistantId:'live',ownerId:'owner',cwd})
+    await vi.advanceTimersByTimeAsync(1000)
+    calls.requests.length=0;calls.rejectAssistant='stale';calls.boundAssistant='live';calls.sessionAgents.old='stale'
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(calls.requests.filter(row=>row.assistant==='stale').map(row=>row.name)).toEqual(['assistant_panel_pending'])
+    expect(listeners.size).toBe(1)
+    expect(calls.closedWatchers).toBeGreaterThan(0)
+    const ordinary=await runtime.prepare('old','ordinary task stays intact')
+    expect(ordinary.text).toBe('ordinary task stays intact')
+    expect(ordinary.assistantPanel).toBeUndefined()
+    await ordinary.accepted()
+    await vi.advanceTimersByTimeAsync(600_001)
+    expect(calls.requests.filter(row=>row.assistant==='stale')).toHaveLength(1)
+    expect(calls.requests.some(row=>row.assistant==='live' && row.name==='assistant_panel_snapshot')).toBe(true)
+    await expect(runtime.bind({sessionId:'old',assistantId:'stale',ownerId:'owner',cwd})).rejects.toThrow('Personal assistant is not available')
+    calls.boundAssistant='stale';calls.rejectAssistant=null
+    await runtime.bind({sessionId:'old',assistantId:'stale',ownerId:'owner',cwd})
+    await runtime.publish('old')
+    expect(calls.roleChecks).toEqual(['owner:stale','owner:stale','owner:stale'])
+    expect(calls.requests.some(row=>row.assistant==='stale' && row.name==='assistant_panel_snapshot')).toBe(true)
+  }finally{runtime.dispose();await rm(cwd,{recursive:true,force:true})}
+})
+
+it('uses the ordinary turn after a confirmed binding rejection during panel admission',async()=>{
+  vi.useFakeTimers();calls.readable=true
+  const f=await panelFixture()
+  try{
+    calls.stalled=true;calls.rejectAssistant='assistant';calls.requests.length=0
+    const prepared=await f.runtime.prepare('session','keep this prompt')
+    expect(prepared.text).toBe('keep this prompt')
+    expect(prepared.assistantPanel).toBeUndefined()
+    expect(calls.requests.map(row=>row.name)).toEqual(['assistant_panel_pending'])
+    expect(f.unsubscribeIntegrations).toHaveBeenCalledOnce()
+    expect(f.unsubscribeSchedules).toHaveBeenCalledOnce()
+  }finally{await f.cleanup()}
+})
+
+it.each([
+  {kind:'other permission',rejection:{code:'42501',message:'Runtime lease is not ready'},networkFailure:false},
+  {kind:'authentication',rejection:{code:'PGRST301',message:'JWT expired'},networkFailure:false},
+  {kind:'server',rejection:{code:'XX000',message:'temporary failure'},networkFailure:false},
+  {kind:'transport',rejection:{code:'',message:''},networkFailure:true},
+])('keeps $kind failures visible and the publisher recoverable',async({rejection,networkFailure})=>{
+  vi.useFakeTimers();calls.readable=true
+  const f=await panelFixture()
+  try{
+    calls.stalled=true;calls.rejectAssistant='assistant';calls.rejection=rejection;calls.networkFailure=networkFailure
+    let failure: unknown
+    const preparation=f.runtime.prepare('session','must not be silently admitted').catch(error=>{failure=error})
+    await vi.advanceTimersByTimeAsync(2500);await preparation
+    expect(failure).toBeInstanceOf(Error)
+    expect(f.unsubscribeSchedules).not.toHaveBeenCalled()
+    calls.rejectAssistant=null;calls.stalled=false
+    await f.runtime.publish('session')
+    const before=calls.requests.filter(row=>row.name==='assistant_panel_pending').length
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(calls.requests.filter(row=>row.name==='assistant_panel_pending').length).toBeGreaterThan(before)
+  }finally{await f.cleanup()}
+})
+
+it('aborts in-flight panel work on rejection and sends no later domain',async()=>{
+  vi.useFakeTimers();calls.readable=true
+  const f=await panelFixture()
+  try{
+    calls.commitPublication=true;calls.holdRpc='assistant_panel_commit'
+    const publication=f.runtime.publish('session')
+    await vi.waitFor(()=>expect(calls.signals).toHaveLength(1))
+    calls.rejectAssistant='assistant'
+    calls.stalled=true
+    await f.runtime.prepare('session','ordinary turn')
+    await publication
+    expect(calls.signals[0]!.aborted).toBe(true)
+    expect(calls.domains).toEqual(['memory'])
+    const requests=calls.requests.length
+    f.schedulesChanged();f.integrationChanged()
+    await vi.advanceTimersByTimeAsync(600_001)
+    expect(calls.requests).toHaveLength(requests)
+  }finally{await f.cleanup()}
+})
+
+it('cannot restore a rejected binding using a role read that began before the rejection',async()=>{
+  vi.useFakeTimers();calls.readable=true
+  const f=await panelFixture(),held=Promise.withResolvers<boolean>()
+  try{
+    calls.sessionAgents.restored='assistant';calls.roleHold=held.promise
+    const restoring=f.runtime.publish('restored')
+    await vi.waitFor(()=>expect(calls.roleChecks).toEqual(['owner:assistant']))
+    calls.rejectAssistant='assistant'
+    await f.runtime.publish('session')
+    held.resolve(true);await restoring
+    calls.roleHold=null
+    const requests=calls.requests.length
+    await vi.advanceTimersByTimeAsync(600_001)
+    expect(calls.requests).toHaveLength(requests)
+    calls.boundAssistant='assistant';calls.rejectAssistant=null
+    await f.runtime.publish('restored')
+    expect(calls.roleChecks).toEqual(['owner:assistant','owner:assistant'])
+    expect(calls.requests.slice(requests).some(row=>row.name==='assistant_panel_snapshot')).toBe(true)
+  }finally{held.resolve(false);await f.cleanup()}
+
+})
 
 async function freshlyPreparedProfile() {
   calls.stalled=false
