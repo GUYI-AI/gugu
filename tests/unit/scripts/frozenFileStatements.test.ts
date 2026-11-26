@@ -23,7 +23,7 @@ const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
 /** A synthetic tree whose baseline is the original file's own count, so the cases do not depend on the real files. */
-function tree(source: string, baseline: Record<string, number> | null = { [FILE]: countStatements(FILE, ORIGINAL) }) {
+function tree(source: string, baseline: Record<string, number> | null = { [FILE]: countStatements(FILE, ORIGINAL) }, base?: Record<string, number>) {
   const root = mkdtempSync(join(tmpdir(), 'gugu-frozen-'))
   roots.push(root)
   mkdirSync(dirname(join(root, FILE)), { recursive: true })
@@ -32,8 +32,13 @@ function tree(source: string, baseline: Record<string, number> | null = { [FILE]
     mkdirSync(dirname(join(root, BASELINE)), { recursive: true })
     writeFileSync(join(root, BASELINE), JSON.stringify(baseline))
   }
+  const args = ['--root', root]
+  if (base) {
+    writeFileSync(join(root, 'base-baseline.json'), JSON.stringify(base))
+    args.push('--base-baseline', join(root, 'base-baseline.json'))
+  }
   const errors: string[] = []
-  const code = run(['--root', root], { log: () => {}, error: line => errors.push(line) })
+  const code = run(args, { log: () => {}, error: line => errors.push(line) })
   return { code, errors }
 }
 
@@ -75,5 +80,36 @@ describe('frozen source files are measured in statements, not lines', () => {
 
   test('a missing baseline file is an error', () => {
     expect(tree(ORIGINAL, null).code).toBe(1)
+  })
+})
+
+describe('a PR may not raise its own limit', () => {
+  const limit = countStatements(FILE, ORIGINAL)
+  const grown = ORIGINAL.replace('  if (!name) return null\n', '  if (!name) return null\n  console.info(name)\n')
+
+  test('growing the file and raising the baseline to match fails against the base baseline', () => {
+    const { code, errors } = tree(grown, { [FILE]: limit + 1 }, { [FILE]: limit })
+    expect(code).toBe(1)
+    expect(errors.join('\n')).toContain('Frozen limit raised')
+  })
+
+  test('lowering the baseline is allowed', () => {
+    const shrunk = ORIGINAL.replace('  if (!name) return null\n', '')
+    expect(tree(shrunk, { [FILE]: limit - 1 }, { [FILE]: limit }).code).toBe(0)
+  })
+
+  test('removing an entry or freezing another file is allowed', () => {
+    expect(tree(ORIGINAL, { [FILE]: limit }, { [FILE]: limit, 'apps/desktop/src/Old.tsx': 10 }).code).toBe(0)
+    expect(tree(ORIGINAL, { [FILE]: limit }, {}).code).toBe(0)
+  })
+
+  test('a missing base baseline file is an error', () => {
+    const root = mkdtempSync(join(tmpdir(), 'gugu-frozen-'))
+    roots.push(root)
+    mkdirSync(dirname(join(root, FILE)), { recursive: true })
+    writeFileSync(join(root, FILE), ORIGINAL)
+    mkdirSync(dirname(join(root, BASELINE)), { recursive: true })
+    writeFileSync(join(root, BASELINE), JSON.stringify({ [FILE]: limit }))
+    expect(run(['--root', root, '--base-baseline', join(root, 'nope.json')], { log: () => {}, error: () => {} })).toBe(1)
   })
 })

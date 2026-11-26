@@ -2,8 +2,16 @@
 // elements), not on physical lines: squeezing statements onto one line does not hide growth, and splitting a long
 // line for readability is not growth. The files and their counts live in the baseline next to this script.
 //
+// Not counted: growth inside one expression (one more prop, object field or condition) leaves the count unchanged.
+// That is accepted so a frozen file can still take a one-line fix.
+//
+// The baseline is in the repository, so a PR could raise its own limit with --write. CI therefore also passes the
+// baseline as it is on the PR's base (--base-baseline): any entry higher than there fails. Lowering or removing an
+// entry, or freezing another file, is allowed.
+//
 //   node scripts/checks/frozen-file-statements.mts            fail when a file counts more than its baseline
 //   node scripts/checks/frozen-file-statements.mts --write    record the current counts as the baseline
+//   --base-baseline <file>                                    the baseline JSON from the base commit; fail on any raised entry
 //   --root <dir>                                              read files and baseline under <dir> (tests)
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -57,6 +65,21 @@ export function run(argv: string[], output: Output = console): number {
   const baseline = JSON.parse(readFileSync(baselinePath, 'utf8')) as Record<string, number>
   const current: Record<string, number> = {}
   let failed = 0
+  const baseIndex = argv.indexOf('--base-baseline')
+  if (baseIndex >= 0) {
+    const basePath = resolve(argv[baseIndex + 1])
+    if (!existsSync(basePath)) {
+      output.error(`::error file=${BASELINE}::base baseline not found: ${basePath}`)
+      return 1
+    }
+    const base = JSON.parse(readFileSync(basePath, 'utf8')) as Record<string, number>
+    for (const [file, limit] of Object.entries(baseline)) {
+      if (file in base && limit > base[file]) {
+        output.error(`::error file=${BASELINE}::Frozen limit raised for ${file}: ${base[file]} -> ${limit}; the baseline may only go down`)
+        failed = 1
+      }
+    }
+  }
   for (const [file, limit] of Object.entries(baseline)) {
     const absolute = resolve(root, file)
     if (!existsSync(absolute)) {
