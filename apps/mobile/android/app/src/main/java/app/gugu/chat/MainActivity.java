@@ -17,6 +17,7 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     private static final String NATIVE_BACK_EVENT = "gugu:native-back";
     private StartupSurface startup;
+    private PhotoPickerChromeClient photoPicker;
     private boolean shellChromeDark;
 
     @Override
@@ -64,6 +65,10 @@ public class MainActivity extends BridgeActivity {
         }
         // Each App runs in an origin of its own, served by this client, and cannot navigate its frame out of it (AppOriginsClient).
         getBridge().setWebViewClient(new AppOriginsClient(getBridge(), startup));
+        if (Build.VERSION.SDK_INT >= 36) {
+            photoPicker = new PhotoPickerChromeClient(getBridge());
+            getBridge().getWebView().setWebChromeClient(photoPicker);
+        }
         // An App's frame is third-party to this page, so on the phone an App has no cookies (L9, 统筹 15:54): a cookie is
         // the one storage an App could scope to the domain every App origin shares (apps.gugu.invalid), where another App's
         // origin read it. An App keeps what it stores in localStorage / IndexedDB or gugu.writeData — its own origin's.
@@ -149,6 +154,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onDestroy() {
         if (startup != null) startup.destroy();
+        if (photoPicker != null) photoPicker.close();
         super.onDestroy();
     }
 

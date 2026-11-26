@@ -14,4 +14,5 @@
     <string name="startup_compat">Compatibility startup</string>
     <string name="startup_restore">Restore startup animation</string>
     <string name="startup_policy_failed">The startup setting could not be saved. Your previous setting is still active.</string>
+    <string name="photo_picker_read_failed">Could not open one or more selected photos.</string>
 </resources>
