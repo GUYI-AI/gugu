@@ -10,6 +10,7 @@
  *  · 渲染层(会话页经 gugu 侧的桥)问「哪些设备能直连」,决定新建时给不给「编程」、打开时用不用终端;
  *  · 会话页引擎开端口转发时问「这台怎么连」(DirectTerminalResolver)。
  */
+import { remoteServerStartCommand } from './server-names'
 import { spawn, spawnSync } from '@gugu/core/local/childProcess'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
@@ -118,7 +119,8 @@ export type SshMachineStore = {
 
 /** 渲染层看得到的那一份:设备 id + 给人看的地址。❌ 不给目的地原串与端口(它们只在真连的时候用)。 */
 export function summarizeSshMachines(machines: readonly SshMachine[]): SshMachineSummary[] {
-  return machines.map((m) => ({ deviceId: m.deviceId, display: m.display }))
+  const startCommand = remoteServerStartCommand()
+  return machines.map((m) => ({ deviceId: m.deviceId, display: m.display, startCommand }))
 }
 
 export function createSshMachineStore(file: string): SshMachineStore {

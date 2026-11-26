@@ -11,7 +11,7 @@ export function useSshMachines(): {
 } {
   watchSshMachineAddresses()
   const reading = useReplica(sshMachineAddresses, [])
-  const addresses = useMemo(() => (reading.state === 'value' ? new Map(reading.value) : null), [reading])
+  const addresses = useMemo(() => (reading.state === 'value' ? new Map(reading.value.map(([id, address]) => [id, address] as const)) : null), [reading])
 
   const forget = useCallback(async (deviceId: string) => {
     const electron = desktopIpc()

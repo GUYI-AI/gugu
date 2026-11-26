@@ -67,7 +67,7 @@ function TaskDeviceRecovery({ sessionId, ...props }: Omit<DeviceRecoveryProps, '
           return composer() ?? true;
         }}>
           <header><Popover.Title>{props.name}</Popover.Title><Popover.Close render={<IconButton size="sm" aria-label={t('devices.recovery.dismiss')}><X size={14} /></IconButton>} /></header>
-          <DeviceRecoveryPanel key={props.state} {...props} onDone={() => {
+          <DeviceRecoveryPanel key={props.state} {...props} inTask onDone={() => {
             setOpen(false);
             requestAnimationFrame(() => composer()?.focus());
           }} />

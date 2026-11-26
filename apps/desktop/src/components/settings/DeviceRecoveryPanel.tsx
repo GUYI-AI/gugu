@@ -1,16 +1,17 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../ui/Button'
-import { ChevronRight, Copy } from '@/lib/icons'
+import { ChevronRight } from '@/lib/icons'
 import { reconnectDevice } from '@/lib/sessionpageNewSessionBridge'
-import { requestSshServerUpgrade, resumeSshDevice, signInSshMachine, startSshService, trustVerifiedIdentity } from '@/lib/sshLinkChannel'
+import { disconnectSshDevice, requestSshServerUpgrade, resumeSshDevice, signInSshMachine, startSshService, trustVerifiedIdentity } from '@/lib/sshLinkChannel'
 import type { SshLinkFailure, SshLinkOpenResult } from '@/lib/sshLink'
-import { platform } from '@/platform'
+import { CommandBlock } from './addServer/CommandBlock'
+import { formatRelativeTime } from '@/lib/relativeTime'
 import { AddServerPanel, type AddServerMethod } from './AddServerPanel'
 import { SshIdentityDetails } from './addServer/SshHostKeyChanged'
 import { useDevicesStore } from '@/store/devicesContext'
 import { canRestartServerUpdate } from '@/lib/deviceRowModel'
-import { readServerVersionSwitchBusyAgents, restartServerVersionNow } from '@/lib/serverVersionRetry'
+import { readServerVersionSwitchBusyAgents, restartServerVersionNow, retryServerVersionMatch } from '@/lib/serverVersionRetry'
 import { serverSupportsConfirmedRestart } from '@gugu/core/cloud/serverMachineHealth'
 import { useReplica } from '@/lib/replica'
 import { sshMachineAddresses } from '@/lib/sshMachineAddresses'
@@ -26,6 +27,7 @@ export type DeviceRecoveryProps = {
   version?: string | null
   progress?: number | null
   lastSync?: number
+  inTask?: boolean
   onDone: () => void
 }
 
@@ -36,7 +38,7 @@ export function DeviceRecoveryStatus({ state }: { state: RecoveryState }) {
   </span>
 }
 
-export function DeviceRecoveryPanel({ deviceId, state, name, address, version, progress, lastSync, onDone }: DeviceRecoveryProps) {
+export function DeviceRecoveryPanel({ deviceId, state, name, address, version, progress, lastSync, inTask, onDone }: DeviceRecoveryProps) {
   const { t, i18n } = useTranslation('settings')
   const [pending, setPending] = useState(false)
   const [failure, setFailure] = useState<Failure | null>(null)
@@ -44,13 +46,16 @@ export function DeviceRecoveryPanel({ deviceId, state, name, address, version, p
   const [verified, setVerified] = useState(false)
   const [setup, setSetup] = useState<AddServerMethod | null>(null)
   const [restart, setRestart] = useState<{ busy?: number } | null>(null)
-  const [copied, setCopied] = useState(false)
   const { devices } = useDevicesStore()
   const machine = devices.find(row => row.device_id === deviceId)
-  const addresses = useReplica(sshMachineAddresses, address === undefined ? [] : null)
-  const endpoint = address ?? (addresses.state === 'value' ? addresses.value.find(([id]) => id === deviceId)?.[1] : null)
+  const addresses = useReplica(sshMachineAddresses, [])
+  const entry = addresses.state === 'value' ? addresses.value.find(([id]) => id === deviceId) : undefined
+  const endpoint = address ?? entry?.[1]
   const update = machine?.capabilities?.server_update
-  const canRestart = !!machine && !!update && canRestartServerUpdate(update, machine.capabilities)
+  const bootFailed = state === 'updateFailed' && update?.state === 'failed' && update.reason === 'boot-failed'
+  const reviewingUpdate = state === 'waitingIdle' || state === 'confirmationRequired' || bootFailed
+  const reportedRestart = !!machine && !!update && canRestartServerUpdate(update, machine.capabilities) &&
+    (update.state === 'ready' || bootFailed)
   const hostKey = failure?.reason === 'hostKeyChanged' ? failure.hostKey : null
   const prefix = `devices.recovery.${state}`
   const key = (suffix: string) => t(`devices.recovery.${suffix}`)
@@ -67,6 +72,18 @@ export function DeviceRecoveryPanel({ deviceId, state, name, address, version, p
     setPending(true)
     setError('')
     try {
+      if (reviewingUpdate) {
+        if (!restart) {
+          setRestart({ busy: await readServerVersionSwitchBusyAgents(deviceId) })
+          return
+        }
+        const requested = reportedRestart && machine && update
+          ? (await restartServerVersionNow(deviceId, update.version, serverSupportsConfirmedRestart(machine.capabilities))).requested
+          : await requestSshServerUpgrade(deviceId, { force: true, now: true })
+        if (!requested) setError('failed')
+        setRestart(null)
+        return
+      }
       switch (state) {
         case 'connected': onDone(); break
         case 'notRunning': showResult(await startSshService(deviceId)); break
@@ -82,22 +99,15 @@ export function DeviceRecoveryPanel({ deviceId, state, name, address, version, p
           break
         case 'disconnected': await resumeSshDevice(deviceId); requestReconnect(); break
         case 'outdated':
-        case 'updateFailed':
-          if (!await requestSshServerUpgrade(deviceId, { force: true })) setError('failed')
+        case 'updateFailed': {
+          const fromHeartbeat = state === 'updateFailed' && machine?.status === 'online' && update?.state === 'failed'
+          const accepted = fromHeartbeat ? await retryServerVersionMatch(deviceId) : await requestSshServerUpgrade(deviceId, { force: true })
+          if (!accepted) setError('failed')
           break
+        }
         case 'notInstalled':
         case 'notSignedIn':
         case 'unmapped': setSetup('ssh'); break
-        case 'waitingIdle':
-        case 'confirmationRequired':
-          if (restart && machine && update) {
-            const result = await restartServerVersionNow(deviceId, update.version, serverSupportsConfirmedRestart(machine.capabilities))
-            if (!result.requested) setError('failed')
-            setRestart(null)
-          } else {
-            setRestart({ busy: await readServerVersionSwitchBusyAgents(deviceId) })
-          }
-          break
         default: requestReconnect()
       }
     } catch {
@@ -108,16 +118,16 @@ export function DeviceRecoveryPanel({ deviceId, state, name, address, version, p
   }
 
   function cancelVerification() { setVerified(false); setFailure(null); setError('') }
-  async function copy(text: string) {
-    try { await platform.writeClipboardText(text); setCopied(true) }
-    catch { setError('copyFailed') }
-  }
-  const reviewingUpdate = state === 'waitingIdle' || state === 'confirmationRequired'
-  const primary = state === 'connected' ? key('close')
-    : reviewingUpdate ? canRestart ? restart ? t('devices.update.confirmRestart') : key('seeUpdate') : null
+  const primary = state === 'connected' ? key(inTask ? 'backToTask' : 'close')
+    : reviewingUpdate ? restart ? t('devices.update.confirmRestart') : key('seeUpdate')
     : state === 'updating' || state === 'checking' ? null
     : hostKey?.fingerprint ? key('trust') : t(prefix + '.action')
-  const manual = failure?.reason === 'notRunning' && failure.detail?.match(/^~\/\.local\/bin\/gugu-server(?:-beta)? start$/) ? failure.detail : null
+  const manual = state === 'notRunning' ? entry?.[2] : null
+  const lastSeen = machine?.last_seen_at ? formatRelativeTime(machine.last_seen_at, { mode: 'elapsed', dateAfterDays: 30 }) : null
+  const updateReport = update?.state === 'ready' ? t('devices.update.ready')
+    : update?.state === 'downloading' ? t('devices.update.downloading', { version: update.version })
+    : update?.state === 'switching' ? t('devices.update.restarting')
+    : update?.state === 'failed' ? t('devices.loginState.matchFailed') : null
   const seen = lastSync ? new Date(lastSync).toLocaleString(i18n.language, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : null
   if (setup) return <AddServerPanel method={setup} onMethodChange={setSetup} onClose={() => setSetup(null)}
     onAdded={() => { setSetup(null); requestReconnect() }}
@@ -131,19 +141,22 @@ export function DeviceRecoveryPanel({ deviceId, state, name, address, version, p
       <span>{key('fingerprint')}</span><code>{hostKey.fingerprint ?? t('devices.versionUnknown')}</code>
       {hostKey.fingerprint && <label><input type="checkbox" checked={verified} onChange={e => setVerified(e.target.checked)} />{key('verified')}</label>}
     </div>}
-    {error && <p role="alert">{error === 'copyFailed' ? t('actions.copyFailed', { ns: 'common' }) : key(error)}</p>}
+    {error && <p role="alert">{key(error)}</p>}
     {primary && <div className="gg-recovery-actions">
       <Button size="sm" variant={state === 'connected' ? 'secondary' : 'primary'} disabled={pending || (!!hostKey && (!hostKey.fingerprint || !verified))}
         onClick={() => void act()} data-testid="device-recovery-primary">{pending ? key('busy') : primary}</Button>
+      {state === 'connected' && <Button size="sm" variant="ghost" onClick={() => void disconnectSshDevice(deviceId).catch(() => setError('failed'))}>{key('pause')}</Button>}
       {(hostKey || restart) && <Button size="sm" variant="ghost" onClick={() => { cancelVerification(); setRestart(null) }}>{t('devices.cancel')}</Button>}
     </div>}
     <details className="gg-recovery-details">
       <summary><ChevronRight size={13} />{key('details')}</summary>
       <dl>
         {endpoint && <><dt>{key('address')}</dt><dd>{endpoint}</dd></>}
-        {version && <><dt>{key('version')}</dt><dd>{version}</dd></>}
+        {version && <><dt>{key('version')}</dt><dd>{t('devices.serverVersion', { version })}</dd></>}
+        {lastSeen && <><dt>{key('heartbeat')}</dt><dd>{t('devices.lastSeen', { time: lastSeen })}</dd></>}
+        {updateReport && <><dt>{key('reportedUpdate')}</dt><dd>{updateReport}{update?.version && ' · ' + update.version}</dd></>}
         {seen && <><dt>{key('lastSync')}</dt><dd>{seen}</dd></>}
-        {manual && <><dt>{key('manual')}</dt><dd><code>{manual}</code> <Button size="sm" variant="ghost" aria-label={t('devices.addServer.copy')} onClick={() => void copy(manual)}><Copy size={13} />{copied && t('devices.addServer.copied')}</Button></dd></>}
+        {manual && <><dt>{key('manual')}</dt><dd><CommandBlock command={manual} /></dd></>}
         {hostKey?.location && <><dt>{key('fingerprint')}</dt><dd><SshIdentityDetails hostKey={hostKey} /></dd></>}
       </dl>
       {error === 'manualTrust' && <Button size="sm" variant="secondary" onClick={() => { cancelVerification(); void signInSshMachine(deviceId).then(showResult) }}>{key('manualReconnect')}</Button>}

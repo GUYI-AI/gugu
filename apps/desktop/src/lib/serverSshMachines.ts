@@ -51,6 +51,7 @@ export type SshMachineSummary = {
   deviceId: string
   /** `用户@主机:端口`(或本机 SSH 配置里的别名)。 */
   display: string
+  startCommand?: string
 }
 
 /** 那台机器上登着咕咕 server 的一个账号(从它的数据目录读,只有邮箱)。 */

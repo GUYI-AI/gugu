@@ -28,7 +28,7 @@ import type { DeviceRpcRequester } from '@gugu/core/cloud/deviceRpcRequester'
 import type { SharedSshLinks } from '../device-rpc-requester'
 import type { HeldFileSshLinks } from '../projectFileSsh'
 import { sshBatchArgs } from './ssh-batch'
-import { desktopServerChannel, remoteServerPaths } from './server-names'
+import { remoteServerStartCommand } from './server-names'
 import { updateVerifiedHostKey } from './ssh-host-key-recovery'
 import { classifyLinkExit, createSshLinkManager, type SshLinkManager } from './ssh-link'
 import { findSshMachine, sshTargetOf, terminalControlPath, type SshMachine, type SshMachineStore } from './ssh-machines'
@@ -245,7 +245,7 @@ export function registerSshLinkIpc(options: {
       if (before.ok || before.reason !== 'notRunning') return before
       const current = await machineFor(deviceId)
       if (!current || JSON.stringify(current) !== JSON.stringify(machine)) return { ok: false, reason: 'unmapped' }
-      const command = remoteServerPaths(desktopServerChannel()).binTilde + ' start'
+      const command = remoteServerStartCommand()
       const args = ['-o', 'StrictHostKeyChecking=yes', ...sshBatchArgs(sshTargetOf(machine), 'exec ' + command, terminalControlPath())]
       const result = await systemSpawnSsh(process.env)(args, { stdin: '', signal: AbortSignal.timeout(25_000) })
       if (result.code !== 0) {

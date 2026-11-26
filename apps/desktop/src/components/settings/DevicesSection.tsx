@@ -5,6 +5,7 @@ import { Unknown } from '../ui/Unknown'
 import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { isDeviceOnline } from '@gugu/core/shared/enums/deviceModels'
 import type { Device } from '@gugu/core/shared/types/chat'
 import { formatBytes, serverSupportsConfirmedRestart, type ServerMachineNotice } from '@gugu/core/cloud/serverMachineHealth'
 import { REMOTE_TUNNEL_OPEN } from '@gugu/core/cloud/remoteTunnel'
@@ -550,8 +551,9 @@ function DeviceRow({
       : t('devices.versionUnknown')
   const ssh = !!sshAddress || (sshLink !== undefined && sshLink !== 'unknown')
   const recovery: DeviceRecoveryProps['state'] = link ?? (signedOutText ? 'notSignedIn' : sshLink === 'checking' ? 'checking'
-    : ssh && model.update?.state === 'ready' ? 'waitingIdle' : ssh && model.update?.state === 'downloading' ? 'updating'
-    : ssh && failedUpdate ? 'updateFailed' : 'connected')
+    : isDeviceOnline(device.status) && model.update?.state === 'ready' ? 'waitingIdle'
+    : isDeviceOnline(device.status) && (model.update?.state === 'downloading' || model.update?.state === 'switching') ? 'updating'
+    : isDeviceOnline(device.status) && failedUpdate ? 'updateFailed' : 'connected')
   const RowIcon = model.kind === 'phone' ? Smartphone : model.kind === 'server' ? Server : Monitor
   const detailsId = `device-recovery-${device.device_id}`
   const acceptsWork = deviceAcceptsWork(device)

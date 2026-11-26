@@ -104,15 +104,16 @@ describe('DevicesSection interaction', () => {
   it('reports a repeated SSH host key refusal in the device row and clears it after a successful retry', async () => {
     const deviceId = 'rotated-host'
     const refused: SshLinkOpenResult = { ok: false, reason: 'hostKeyChanged', hostKey: { host: 'box', fingerprint: 'SHA256:newKey', location: '/test/known_hosts:17' } }
+    const verifiedIdentity = vi.fn(async (_id: string, _fingerprint?: string) => true)
     const pending = Promise.withResolvers<SshLinkOpenResult>()
     const signIn = vi.fn().mockResolvedValueOnce(refused).mockReturnValueOnce(pending.promise).mockResolvedValueOnce({ ok: true })
     const electron = window as unknown as { electronAPI?: unknown }
     electron.electronAPI = {
       eventOn: () => () => undefined,
-      invoke: (channel: string, id: string) => {
+      invoke: (channel: string, id: string, fingerprint?: string) => {
         if (channel === 'server-ssh-machines:describe') return Promise.resolve([{ deviceId, display: 'user@box' }])
         if (channel === 'ssh-link:sign-in') return signIn(id)
-        if (channel === 'ssh-link:verify-identity') return Promise.resolve(true)
+        if (channel === 'ssh-link:verify-identity') return verifiedIdentity(id, fingerprint)
         return Promise.resolve(null)
       },
     }
@@ -135,6 +136,7 @@ describe('DevicesSection interaction', () => {
       await act(async () => { container.querySelector<HTMLInputElement>('input[type=checkbox]')!.click() })
       await act(async () => { action().click() })
       expect(summary.textContent).toContain('已连接')
+      expect(verifiedIdentity.mock.calls).toEqual([[deviceId, refused.hostKey?.fingerprint]])
       expect(signIn.mock.calls).toEqual([[deviceId], [deviceId], [deviceId]])
     } finally {
       delete electron.electronAPI
@@ -418,10 +420,17 @@ describe('DevicesSection interaction', () => {
       const server = Array.from(rows).find((row) => row.dataset.deviceId === 'srv')!
       expect(server.dataset.kind).toBe('server')
       expect(server.textContent).toContain('Ubuntu 22.04.5 LTS，arm64')
-      expect(server.textContent).toContain('咕咕 server 0.2.99')
+      const summary = server.querySelector<HTMLButtonElement>('[data-testid="settings-device-summary"]')!
+      expect(summary.textContent).not.toContain('新版本已就绪')
+      expect(summary.getAttribute('aria-expanded')).toBe('false')
+      await act(async () => { summary.click() })
+      const details = server.querySelector<HTMLDetailsElement>('details')!
+      await act(async () => { details.querySelector('summary')!.click() })
+      expect(details.open).toBe(true)
+      expect(details.textContent).toContain('咕咕 server 0.2.99')
       expect(server.textContent).toContain('新版本已就绪')
       expect(server.textContent).toContain('上次在线 3 小时前')
-      expect(server.textContent).toContain('远程 SSH：alice@box:2222')
+      expect(details.textContent).toContain('alice@box:2222')
       const me = Array.from(rows).find((row) => row.dataset.deviceId === 'me')!
       expect(me.textContent).toContain('本机')
       expect(me.textContent).not.toContain('远程')
