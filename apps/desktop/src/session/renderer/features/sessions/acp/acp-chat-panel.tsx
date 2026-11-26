@@ -14,7 +14,7 @@ import { codexStartupKind, isCodexProviderStartupKind } from '@gugu/core/local/c
 import { agentOffersConnections } from '@renderer/features/settings/agents-page/agent-account';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
 import { isTranscriptDelivery } from '@/lib/pendingSessionDeliveries';
-import { readNativeOfflineDraft, writeNativeOfflineDraft } from '@/lib/nativeOfflineDraft';
+import { readNativeOfflineDraft, remoteComposerDraft, writeNativeOfflineDraft } from '@/lib/nativeOfflineDraft';
 import { useSessionInputAccount } from '@/lib/outbox/kinds/sessionInput';
 import { appendToDraft } from '@/store/chatContext';
 import { registerNativeComposer } from '@/lib/nativeComposerHandoff';
@@ -93,6 +93,7 @@ type PanelCondition = Omit<ChatSessionCondition, 'actions'> & {
   actions?: readonly { label: string; pending?: boolean; run: (anchor?: HTMLElement) => void }[];
 };
 import { rpc } from '@renderer/lib/ipc';
+import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { machineLabel } from '@renderer/lib/machine-clients';
 import { machineUnavailableLabel } from '../machine-unavailable-label';
 import { machineRegistry } from '@renderer/lib/machine-routing';
@@ -388,16 +389,30 @@ const ComposerForStore = observer(function ComposerForStore({
 
   const composerShown = useContext(SurfaceShownContext);
   const inputAccount = useSessionInputAccount();
+  const machine = machineRegistry.machineOf(store.runtimeSessionId);
+  const localDraft = useMemo(() => machine && inputAccount ? remoteComposerDraft(inputAccount, machine, store.runtimeSessionId) : null,
+    [machine, inputAccount, store.runtimeSessionId]);
+  const connection = machine && remoteHostsStore.connectionState(machine);
+  useEffect(() => {
+    if (!composerShown || !localDraft) return;
+    store.bindRemoteDraft(localDraft);
+    return () => store.bindRemoteDraft(null);
+  }, [composerShown, store, localDraft]);
+  useEffect(() => {
+    // A previously acknowledged draft still needs local custody if the user quits while its host is away.
+    if (localDraft && connection !== 'connected') store.checkpointDisconnectedDraft();
+  }, [localDraft, connection, store, composerShown]);
   useEffect(() => {
     if (!composerShown) return;
-    const machine = machineRegistry.machineOf(store.runtimeSessionId);
-    const kept = readNativeOfflineDraft(machine, store.runtimeSessionId);
-    if (kept) { store.setDraftText(appendToDraft(store.draftText, kept)); writeNativeOfflineDraft(machine, store.runtimeSessionId, ''); }
+    if (!machine) {
+      const kept = readNativeOfflineDraft(null, store.runtimeSessionId);
+      if (kept) { store.setDraftText(appendToDraft(store.draftText, kept)); writeNativeOfflineDraft(null, store.runtimeSessionId, ''); }
+    }
     return registerNativeComposer(store.runtimeSessionId, async draft => {
       await attachFiles(draft.files ?? []);
       store.setDraftText(appendToDraft(store.draftText, draft.text));
     });
-  }, [store, composerShown, inputAccount, attachFiles]);
+  }, [store, machine, composerShown, inputAccount, attachFiles]);
 
   const handleAttachmentsChange = useCallback(
     (visible: ComposerAttachment[]) => {

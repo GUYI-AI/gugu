@@ -41,6 +41,7 @@ import { action, computed, makeObservable, observable, reaction, runInAction, wh
 import { flushSync } from 'react-dom';
 import { discardSessionLifeRow, endSessionLife, forkSessionLife, readSessionLife, retryUnknownSessionInput, sessionLifeView, startSessionLife, stopSessionLife } from '../stores/session-life-views';
 import { ACP_START_FAILED, lifeHoldIsFailure, lifeIsStarting, type LifeView } from '@shared/core/sessions/session-life';
+import type { remoteComposerDraft } from '@/lib/nativeOfflineDraft';
 import { sendThroughCustody } from './queue-native-input';
 import { sendHeldInputNow } from './send-held-input-now';
 import { sessionInputBubbles } from '@/lib/sessionInput';
@@ -265,6 +266,8 @@ export class AcpChatStore {
   private readonly _linkWaiters = new Set<() => void>();
   private _visualEvidenceOverride = false;
   private _unsubs: Array<() => void> = [];
+  private _remoteDraft: ReturnType<typeof remoteComposerDraft> | null = null;
+  private _lastDraftWriter: ReturnType<typeof remoteComposerDraft> | null = null;
   private _draftRev = 0;
   private _pendingDraftRev: number | null = null;
   pendingPermissionMode: {
@@ -411,6 +414,7 @@ export class AcpChatStore {
       reorderQueuedPrompts: action,
       sendQueuedPromptNow: action,
       setDraftText: action,
+      bindRemoteDraft: action,
       exportTranscript: action,
       retry: action,
       installVisualEvidenceFixture: action,
@@ -1417,9 +1421,38 @@ export class AcpChatStore {
     }
   }
 
+  bindRemoteDraft(draft: ReturnType<typeof remoteComposerDraft> | null): void {
+    this._remoteDraft = draft;
+    if (draft && this._lastDraftWriter && !this._sameDraftOwner(draft)) {
+      if (this._draftTimer !== null) window.clearTimeout(this._draftTimer);
+      this._pendingDraftRev = null;
+      this._lastDraftWriter = null;
+      this.draftText = '';
+    }
+    const saved = draft?.restore(this.draftText);
+    if (saved === undefined || (saved === this.draftText && this._pendingDraftRev !== null)) return;
+    this._stageDraft(saved);
+  }
+
+  private _sameDraftOwner(draft: ReturnType<typeof remoteComposerDraft>): boolean {
+    return this._lastDraftWriter?.account === draft.account && this._lastDraftWriter.deviceId === draft.deviceId;
+  }
+
+  checkpointDisconnectedDraft(): void {
+    if (this.draftText) this._lastDraftWriter?.write(this.draftText);
+  }
+
   setDraftText(text: string): void {
     this.renewDraftSubmission();
     if (text === this.draftText) return;
+    this._stageDraft(text);
+  }
+
+  private _stageDraft(text: string): void {
+    if (this._remoteDraft) {
+      this._lastDraftWriter = this._remoteDraft;
+      this._remoteDraft.write(text);
+    }
     this.draftText = text;
     this._draftRev += 1;
     this._pendingDraftRev = this._draftRev;
@@ -2553,12 +2586,14 @@ export class AcpChatStore {
       const session = this.session;
       if (!session?.canSyncDraft()) return;
       const generation = session.draftConnectionGeneration;
+      const writer = this._lastDraftWriter;
       void session
         .setPromptDraft(draft)
         .then((result) => {
           if (this._disposed || this.session !== session || generation !== session.draftConnectionGeneration) return;
           if (!result.success) this._toastError('acpFailure.syncDraft', result.error);
           if (result.success && draft.input === null && this._pendingDraftRev === rev) {
+            writer?.acknowledge('');
             runInAction(() => {
               this._pendingDraftRev = null;
             });
@@ -2591,6 +2626,7 @@ export class AcpChatStore {
 
     if (this._pendingDraftRev !== null) {
       if (draft.rev >= this._pendingDraftRev) {
+        if (draft.text === this.draftText) this._lastDraftWriter?.acknowledge(draft.text);
         this._draftRev = Math.max(this._draftRev, draft.rev);
         this._pendingDraftRev = null;
       }

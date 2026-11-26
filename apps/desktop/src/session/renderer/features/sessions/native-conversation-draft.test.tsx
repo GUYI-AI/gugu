@@ -3,7 +3,7 @@ import { act, useCallback, useState, type ReactNode, type SetStateAction } from 
 import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { ChatStoreProvider, useChatStore } from '@/store/chatContext';
-import { readNativeOfflineDraft, writeNativeOfflineDraft } from '@/lib/nativeOfflineDraft';
+import { readNativeOfflineDraft, remoteComposerDraft, writeNativeOfflineDraft } from '@/lib/nativeOfflineDraft';
 import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
 import { useSessionConversationDraft } from '@/components/session-watch/use-session-conversation-draft';
 
@@ -171,4 +171,41 @@ it('ignores an old account commit after the active account changes', () => {
   expect(readNativeOfflineDraft('host', 'task')).toBe('Hi');
   scope.account = 'owner';
   expect(readNativeOfflineDraft('host', 'task')).toBe('Hi');
+});
+
+it('restores the remote editor after a cold start and retires only its acknowledged edit', () => {
+  const editor = remoteComposerDraft('owner', 'host', 'task');
+  writeNativeOfflineDraft('host', 'task', 'offline addition');
+  const joined = editor.restore('live words');
+  expect(joined).toBe('live words\noffline addition');
+  editor.write(joined!);
+  const reopened = remoteComposerDraft('owner', 'host', 'task');
+  expect(reopened.restore('live words')).toBe(joined);
+  expect(reopened.restore(joined!)).toBe(joined);
+  writeNativeOfflineDraft('host', 'task', 'edited offline');
+  expect(reopened.restore('live words')).toBe('edited offline');
+  reopened.write('new edit');
+  editor.acknowledge(joined!);
+  expect(reopened.restore('')).toBe('new edit');
+  reopened.acknowledge('new edit');
+  expect(reopened.restore('')).toBeUndefined();
+  reopened.write('');
+  expect(reopened.restore('older host snapshot')).toBe('');
+  reopened.acknowledge('');
+  expect(reopened.restore('')).toBeUndefined();
+});
+
+it('keeps a late host echo and stale editor out of another account or device', () => {
+  const first = remoteComposerDraft('owner', 'host', 'task');
+  first.write('owned');
+  expect(remoteComposerDraft('owner', 'another-host', 'task').restore('')).toBeUndefined();
+  scope.account = 'second';
+  const second = remoteComposerDraft('second', 'host', 'task');
+  expect(second.restore('')).toBeUndefined();
+  second.write('second edit');
+  first.write('late first edit');
+  first.acknowledge('owned');
+  expect(second.restore('')).toBe('second edit');
+  scope.account = 'owner';
+  expect(first.restore('')).toBe('owned');
 });
