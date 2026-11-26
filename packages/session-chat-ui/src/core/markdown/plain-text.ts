@@ -17,6 +17,7 @@ export function blockPlainText(block: Block): string {
       return block.code;
     case 'mermaid':
     case 'svg':
+    case 'html-render':
       return block.source;
     case 'math':
       return block.tex;
