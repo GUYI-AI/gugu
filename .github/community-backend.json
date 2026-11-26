@@ -1,5 +1,5 @@
 {
   "repository": "GUYI-AI/gugu-supabase",
-  "ref": "36486a2183284abce3e35817fb800549f2c1c2e5",
-  "status": "Backend #409 merged on dev: chat.messages.annotations, p_annotations on send_message_with_overlays and attachment_commit, annotations in messages_view and pull_agent_inbox_v2."
+  "ref": "a30552694b6d479c84b05e2e98b84c5b76a837f7",
+  "status": "Backend #413 merged on dev: owner-scoped App agent bindings and my_app_agent, including legacy provision compatibility and cancel cleanup; retains #409 annotations."
 }

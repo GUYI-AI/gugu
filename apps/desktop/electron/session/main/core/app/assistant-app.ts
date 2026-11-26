@@ -1,6 +1,6 @@
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
 import { userIdFromSupabaseAccessToken } from '@gugu/core';
-import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision';
+import { ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC, pickAssistant } from '@gugu/core/shared/assistantProvision';
 import { listAgentsForExtension } from '@main/core/extensions/extension-agents';
 import { currentAccountAccessToken } from '@main/core/extensions/account-token';
 import { messageAgentFromHostApp, AppSendError } from '@main/core/extensions/extension-send';
@@ -30,10 +30,9 @@ export async function callAssistantApp(verb: string, input: unknown, expectedOwn
   }
   if (verb === 'dispatch' || verb === 'listAgents') {
     const client = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } });
-    const { data, error } = await client.from('agent_provisions').select(ASSISTANT_PROVISION_SELECT)
-      .eq('owner_user_id', ownerId).eq('member_key', 'assistant');
+    const { data, error } = await client.rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS);
     if (error) throw new AppSendError('failed', 'Could not verify the personal assistant');
-    const personal = pickAssistant((data ?? []) as AssistantProvisionRow[]);
+    const personal = pickAssistant(data);
     if ((await account()).ownerId !== ownerId) throw new AppSendError('denied', 'Account changed');
     if (verb === 'listAgents') {
       if (!personal) return { agents: [], unreached: [] };
@@ -57,10 +56,9 @@ export async function callAssistantApp(verb: string, input: unknown, expectedOwn
     if (args.name === 'assistant_work_list' || args.name === 'assistant_work_clear') {
       z.object({}).strict().parse(args.arguments ?? {});
       const client = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } });
-      const { data, error } = await client.from('agent_provisions').select(ASSISTANT_PROVISION_SELECT)
-        .eq('owner_user_id', ownerId).eq('member_key', 'assistant');
+      const { data, error } = await client.rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS);
       if (error) throw new AppSendError('failed', 'Could not verify the personal assistant');
-      const personal = pickAssistant((data ?? []) as AssistantProvisionRow[]);
+      const personal = pickAssistant(data);
       if ((await account()).ownerId !== ownerId) throw new AppSendError('denied', 'Account changed');
       const store = personal ? assistantWorkForAgent(personal.agentId) : null;
       if (!store) throw new AppSendError('failed', 'Personal assistant recovery state is not available on this device');

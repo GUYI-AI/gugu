@@ -1232,6 +1232,25 @@ describe('MainLayout: files.openWith', () => {
     expect(takeChatAsk('topic-file')).toBeNull()
   })
 
+  // A file opened from a topic's message opens in that topic, on the phone as on the desktop: the topic stays the
+  // conversation on screen (closing the file returns to it), and its panel takes the request; the file is still the source's.
+  it.each(['phone', 'desktop'] as const)('a file opened from a topic message opens in that topic (%s)', async (shell) => {
+    if (shell === 'phone') { platformMock.kind = 'capacitor'; platformMock.capabilities.sessionHost = false }
+    takeChatAsk('source'); takeChatAsk('topic-file') // the chats' mailboxes outlive a case
+    chatStoreMock.chats = [{ id: 'source', kind: 'group' }, { id: 'topic-file', kind: 'topic', source_chat_id: 'source', name: 'Topic' }] as never
+    const message = { id: 'message-in-topic', chat_id: 'topic-file', content: 'page.html', retracted_at: null }
+    const restore = vi.fn()
+    await renderMainLayoutWithToast()
+    fileOwner.mockResolvedValue({ data: { chat_id: 'source' }, error: null })
+    await act(async () => { await openLinkTarget({ kind: 'file', itemId: 'F1' }, { message: message as never, restore }) })
+    if (shell === 'phone') {
+      expect(chatStoreMock.setActiveChatId, 'the topic stays on screen').toHaveBeenCalledWith('topic-file')
+      expect(chatStoreMock.setActiveChatId, 'never its source group').not.toHaveBeenCalledWith('source')
+    } else expect(sessionPageViewRequests.openChat).toHaveBeenCalledExactlyOnceWith('topic-file', false, 'resource')
+    expect(takeChatAsk('topic-file')).toMatchObject({ itemId: 'F1', opener: { itemId: 'F1', chatId: 'topic-file' }, message, restore })
+    expect(takeChatAsk('source')).toBeNull()
+  })
+
   it('the file\'s chat comes up and its panel is asked for the file, with the host\'s answer', async () => {
     chatStoreMock.chats = [{ id: 'g-open', kind: 'group', name: 'G' } as never]
     await renderMainLayoutWithToast()
@@ -1509,7 +1528,8 @@ it.each(['group', 'topic'] as const)('keeps a private annotated image private in
   expect(chatStoreMock.setDraftAttachments).toHaveBeenCalledWith(target, [expect.objectContaining({ file: expect.objectContaining({ name: 'edited.png' }) })])
 })
 
-// Links and notifications retain the topic address. Files open the shared source slot.
+// Links and notifications retain the topic address. A file with no conversation to open from opens in the shared source
+// slot; one opened from a conversation (a group or a topic, on the desktop and the phone) opens there.
 
 describe('MainLayout: opening a topic on the desktop', () => {
   // 对话链接只认 UUID 形的对话 id(真对话就是这样)。
