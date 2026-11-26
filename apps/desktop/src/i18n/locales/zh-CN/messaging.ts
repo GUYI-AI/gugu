@@ -830,7 +830,7 @@ export default {
   },
   "message": {
     "myAgentTag": "我的智能体",
-    "removedIdentityTag": "已移除",
+    "removedMemberName": "{{name}}（已移除）",
     "agentOwnerUnavailableTag": "主人信息不可用",
     "agentOwnerTag": "{{owner}} 的 agent",
     "agentOwnerSuffix": "（{{owner}} 的智能体）",

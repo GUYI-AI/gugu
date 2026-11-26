@@ -13,6 +13,14 @@ import { ChatReplyQuote, type ReplyQuoteDisclosure } from './ChatReplyQuote'
 import { SourcePreview } from '@/components/markdown/SourcePreview'
 import { imSourcePreview } from './messageQuote.css'
 import { useQuotedSystemNoticeText } from './messageQuoteSource'
+import { shownMemberName } from '../../lib/memberFallbackName'
+
+/** 被引那条是谁说的;说话的身份已移除时照样写名字,带「（已移除）」(#4028)。 */
+function quotedSenderName(msg: MessageItem, memberProfiles: Record<string, MemberProfileCardModel> | undefined): string | null {
+  if (!msg.reply_to_sender_user_id) return null
+  const sender = memberProfiles?.[msg.reply_to_sender_user_id]
+  return shownMemberName(resolveOrLoud(sender?.displayName, `reply sender ${msg.reply_to_message_id ?? msg.id}`), sender?.removedAt)
+}
 
 /**
  * 气泡里引的那一条:谁说的 + 原话,点一下跳到被引用的消息。
@@ -37,7 +45,7 @@ export function MessageQuote({ msg, quoterIsAgent, memberProfiles, onShowMessage
       mine={msg.is_mine}
       onClick={onShowMessage ? showQuoted : undefined}
       head={quotedCard ? <ComposerCardHead type={quotedCard.type} agentUserId={quoterIsAgent ? msg.sender_user_id : null} />
-        : msg.reply_to_sender_user_id ? resolveOrLoud(memberProfiles?.[msg.reply_to_sender_user_id]?.displayName, `reply sender ${msg.reply_to_message_id ?? msg.id}`) : null}
+        : quotedSenderName(msg, memberProfiles)}
       text={quotedText}
       preview={Boolean(disclosure)}
     />
@@ -95,7 +103,7 @@ export function DirectMessageQuote({ msg, quoterIsAgent, memberProfiles, onShowM
   const noticeText = useQuotedSystemNoticeText(msg)
   const { card: quotedCard, text: quotedText } = quotedContentView(noticeText ?? partialQuotedContent(msg)?.quoteText ?? widgetMessagePreview(msg.reply_to_content) ?? msg.reply_to_content)
   const sender = quotedCard ? <ComposerCardHead type={quotedCard.type} agentUserId={quoterIsAgent ? msg.sender_user_id : null} />
-    : msg.reply_to_sender_user_id ? resolveOrLoud(memberProfiles?.[msg.reply_to_sender_user_id]?.displayName, `reply sender ${msg.reply_to_message_id ?? msg.id}`) : null
+    : quotedSenderName(msg, memberProfiles)
   const source = quotedText
   const summary = quoteSummary(source)
   const showQuoted = (event: MouseEvent) => {

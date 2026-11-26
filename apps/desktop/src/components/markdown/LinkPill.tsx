@@ -14,6 +14,8 @@ import { linkPillTarget } from './linkPills'
 import { conversationLink, groupFileLink } from '@gugu/core/shared/ui/guguLink'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { messagesByIdPrefix } from '../../lib/messageIdPrefix'
+import { shownMemberName } from '../../lib/memberFallbackName'
+import type { DisplayIdentity } from '../../lib/displayIdentity'
 import { followLink } from '../../lib/guguLinks'
 import { DropdownMenu, MenuItem } from '../ui/Menu'
 import { Bot, ListChecks, MessageSquare, Reply, User, Users } from '@/lib/icons'
@@ -113,6 +115,9 @@ function openMessage(row: MessageItem): void {
 }
 
 /** A message as a pill names it: `sender: its first words`. */
+/** A message link names who said it the way the bubble does: a removed sender keeps its name, marked removed (#4028). */
+const senderOf = (identity: DisplayIdentity | undefined): string | undefined => identity && shownMemberName(identity.display_name, identity.removed_at)
+
 function messageLabel(row: MessageItem, t: ReturnType<typeof useTranslation<'messaging'>>['t'], sender: string | undefined): string {
   const words = quoteSummary(parseAttachmentContent(row.content)?.fileName ?? quotedContentView(widgetMessagePreview(row.content) ?? row.content).text)
   return sender ? t('linkPill.message', { sender, words }) : words
@@ -133,7 +138,7 @@ function ChatPill({ href, onClick, children, rest, chatId, messageId }: DrawProp
     const row = message.data && message.data.chat_id === chatId && !message.data.retracted_at ? message.data : null
     unavailable = message.isError || (message.isSuccess && !row)
     named = row !== null
-    if (row) label = messageLabel(row, t, row.sender_user_id ? identitiesById[row.sender_user_id]?.display_name : undefined)
+    if (row) label = messageLabel(row, t, row.sender_user_id ? senderOf(identitiesById[row.sender_user_id]) : undefined)
     if (row?.file_item_id) open = (event) => { event.preventDefault(); openMessage(row) }
   } else {
     const listed = chats.find(row => row.id === chatId)

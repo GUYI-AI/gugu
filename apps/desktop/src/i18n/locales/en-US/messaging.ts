@@ -833,7 +833,7 @@ export default {
   },
   "message": {
     "myAgentTag": "my agent",
-    "removedIdentityTag": "removed",
+    "removedMemberName": "{{name}} (removed)",
     "agentOwnerUnavailableTag": "owner unavailable",
     "agentOwnerTag": "{{owner}}'s agent",
     "agentOwnerSuffix": " ({{owner}}'s agent)",
