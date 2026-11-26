@@ -768,22 +768,6 @@ export type ExtensionHostEvent =
    */
   | { type: 'programNotification'; server: string; method: string; params?: unknown };
 
-/** What `notify` takes. Title and body are shown under the extension's name. */
-export interface ExtensionNotificationRequest {
-  title: string;
-  body?: string;
-  /** A later banner with the same tag replaces this one instead of stacking. */
-  tag?: string;
-  /** Handed back verbatim on click. JSON-serialisable. */
-  data?: unknown;
-  /**
-   * What a click opens, as the call names it (真源原则 13 — never where the page that posts it is): one of this App's
-   * tabs in a session (`tab` defaults to its first), the App in a chat's panel, or a file where it lives. None: the
-   * App's own page, as a link naming none.
-   */
-  open?: { session: string; tab?: string } | { chat: string } | { file: unknown };
-}
-
 /** The background page's own preload argument: its `gugu` has the background's members, not a page's (`VerbFacts.only`). */
 export const BACKGROUND_PAGE_ARG = '--gugu-app-background';
 

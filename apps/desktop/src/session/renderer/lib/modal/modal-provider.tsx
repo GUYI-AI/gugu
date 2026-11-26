@@ -73,15 +73,6 @@ export function useShowModal<MId extends ModalId>(id: MId) {
   );
 }
 
-export function useTransitionModal<MId extends ModalId>(id: MId) {
-  return useCallback(
-    (args: UserArgs<MId>) => {
-      modalStore.setModal(id, wrapArgs(args));
-    },
-    [id]
-  );
-}
-
 /**
  * Standalone (non-hook) alternative to useShowModal.
  * Safe to call from MobX reactions, command providers, and any code outside

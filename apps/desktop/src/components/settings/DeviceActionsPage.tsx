@@ -20,7 +20,6 @@ import { messageForUser } from '../../lib/userFacingError'
 // 「这台电脑能做的事」的现读状态:与助理 App「能力 · 设备」那一行(AssistantDevicesPage)共用一份。
 import { useThisDeviceState } from '../../hooks/useThisDeviceActions'
 import { formatRelativeTime } from '../../lib/relativeTime'
-import { useDevicesStore } from '../../store/devicesContext'
 import {
   Bell,
   CalendarClock,
@@ -152,19 +151,6 @@ export function DeviceActionsPage({ device, isThisDevice, onBack, embedded = fal
       <OtherDeviceActions device={selected} compact={embedded} machineOnline={device.is_online || configurations?.some(version => version.is_online) === true} />
     </SettingsPage>
   )
-}
-
-/** Compatibility route: local and remote device pages both summarize grants. */
-export function DeviceCapabilitiesPage({ deviceId, onBack }: { deviceId?: string; onBack?: () => void }) {
-  const { t } = useTranslation('settings')
-  const { devices, loading } = useDevicesStore()
-  const device = deviceId ? devices.find((d) => d.device_id === deviceId) ?? null : devices.find((d) => d.is_current_device) ?? null
-  if (!device) {
-    // 这台电脑在设备列表登记上之前,本机的授权页照样能用(授权只在本机)。
-    if (!deviceId && desktopIpc()) return <ThisDeviceActions onBack={onBack} />
-    return <SettingsPage data-testid="settings-device-actions"><SettingsNote>{loading ? t('devices.loading') : t('devices.deviceActions.otherNone')}</SettingsNote></SettingsPage>
-  }
-  return <DeviceActionsPage device={device} isThisDevice={device.is_current_device === true} onBack={onBack} />
 }
 
 function PageHeader({ title, subtitle, backLabel, onBack, trailing, testId, panelNavigation = false, navigationKey }: { panelNavigation?: boolean; navigationKey?: string; title: ReactNode; subtitle?: ReactNode; backLabel: string; onBack?: () => void; trailing?: ReactNode; testId?: string }) {

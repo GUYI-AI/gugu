@@ -107,11 +107,3 @@ export function parseRepositoryRefResult(
         input,
       });
 }
-
-export function splitNameWithOwner(nameWithOwner: string): { owner: string; repo: string } {
-  const parsed = parseRepositoryRef(nameWithOwner, { defaultHost: 'github.com' });
-  if (!parsed || parsed.nameWithOwner !== nameWithOwner.trim()) {
-    throw new Error(`Invalid nameWithOwner: "${nameWithOwner}" (expected "owner/repo")`);
-  }
-  return { owner: parsed.owner, repo: parsed.repo };
-}

@@ -181,21 +181,6 @@ export function _resetElectronRealtimeChannelRegistryForTesting(): void {
   nextChannelId = 1
 }
 
-export function debugEmitElectronRealtimeChannelStatus(
-  idOrLabel: string,
-  status: string,
-  errorText?: string
-): ElectronRealtimeChannelRegistryEntry {
-  const entry = registry.get(idOrLabel) ?? Array.from(registry.values()).find((item) => item.label === idOrLabel)
-  if (!entry) throw new Error(`Electron Realtime channel not found: ${idOrLabel}`)
-  const handler = debugStatusHandlers.get(entry.id)
-  if (!handler) throw new Error(`Electron Realtime channel has no active subscribe handler: ${entry.label}`)
-  handler(status, errorText ? new Error(errorText) : undefined)
-  const updated = registry.get(entry.id)
-  if (!updated) throw new Error(`Electron Realtime channel disappeared after debug status: ${entry.label}`)
-  return registryEntry(updated)
-}
-
 async function subscribeRegistryEntry(id: string, reconnecting: boolean): Promise<void> {
   const entry = registry.get(id)
   if (!entry?.active) return
@@ -368,17 +353,6 @@ function statusName(status: unknown): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
-}
-
-function registryEntry(entry: InternalElectronRealtimeChannelRegistryEntry): ElectronRealtimeChannelRegistryEntry {
-  return {
-    id: entry.id,
-    label: entry.label,
-    status: entry.status,
-    lastError: entry.lastError,
-    createdAt: entry.createdAt,
-    updatedAt: entry.updatedAt
-  }
 }
 
 function safeRemoveChannel(

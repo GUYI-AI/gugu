@@ -98,17 +98,3 @@ export const phoneAssistantLayer = {
     return () => { workListeners.delete(listener) }
   },
 }
-
-/** Tests only. */
-export function resetPhoneAssistantLayerForTest(): void {
-  shown = null
-  actions = null
-  status = null
-  counts = null
-  work = null
-  openWork = null
-  shownListeners.clear()
-  statusListeners.clear()
-  workListeners.clear()
-  intentListeners.clear()
-}

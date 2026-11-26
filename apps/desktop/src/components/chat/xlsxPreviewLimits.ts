@@ -35,16 +35,6 @@ function sheetDataRange(xml: string): { start: number; end: number } | null {
   return { start: open.index, end: open.index + close.index }
 }
 
-/** 工作表 XML 里 `<sheetData>` 中的格子数。 */
-export function countSheetCells(xml: string): number {
-  const range = sheetDataRange(xml)
-  if (!range) return 0
-  const body = xml.slice(range.start, range.end)
-  let cells = 0
-  for (const match of body.matchAll(ROW_OR_CELL)) if (match[1] === 'c') cells += 1
-  return cells
-}
-
 /**
  * 超过 `maxCells` 时,只留前面整行加起来不超过它的那些行;没超就原样返回。
  * 截的位置总在某个 `<row` 的开头,所以留下来的都是完整的行。

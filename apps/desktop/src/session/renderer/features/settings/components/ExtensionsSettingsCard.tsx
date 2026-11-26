@@ -85,8 +85,6 @@ import { compareExtensionVersions, declaredContexts, type ExtensionManifest } fr
 import { readCachedDevices } from '@/store/devicesCache';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 
-export type MarketplaceTab = 'agents' | 'market' | 'connectors';
-
 /** 清单上的一条:manifest 画卡片,ref 说装的时候装哪一版,cloud 是清单上那一版的其余
  *  (版本、兼容、弃用、图标、更新说明、代码在哪,#5410)。 */
 type ShelfItem = MarketListItem;

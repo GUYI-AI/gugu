@@ -103,18 +103,3 @@ export function pinnedSubtreeRoots<T extends SessionTreeItem & { isPinned?: bool
     node.item.isPinned === true ? [node] : pinnedSubtreeRoots(node.children)
   );
 }
-
-/** Keep ancestors needed to navigate to a matching descendant. */
-export function filterSessionTree<T extends SessionTreeItem>(
-  roots: readonly SessionTreeNode<T>[],
-  matches: (item: T) => boolean
-): SessionTreeNode<T>[] {
-  const filter = (node: SessionTreeNode<T>): SessionTreeNode<T> | null => {
-    const children = node.children
-      .map(filter)
-      .filter((child): child is SessionTreeNode<T> => child !== null);
-    if (!matches(node.item) && children.length === 0) return null;
-    return { item: node.item, children };
-  };
-  return roots.map(filter).filter((root): root is SessionTreeNode<T> => root !== null);
-}

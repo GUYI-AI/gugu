@@ -9,8 +9,6 @@ import { formatAutomationError } from './automation-run-format';
 import { useAutomations } from './use-automations';
 import { useAutomationFormState } from './useAutomationFormState';
 
-export type AutomationSettingsAutoSave = ReturnType<typeof useAutomationSettingsAutoSave>;
-
 export function useAutomationSettingsAutoSave(automation: Automation) {
   const baseFormState = useAutomationFormState(automation);
   const { updateSettings, rename } = useAutomations();

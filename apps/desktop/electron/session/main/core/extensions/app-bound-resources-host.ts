@@ -45,4 +45,3 @@ export const manageHost = {
     return invokeInEmbedder(embedderId, EXTENSION_EXPORT_VOICE_NOTE_METHOD, ask) as Promise<VoiceNoteExportOutcome>;
   },
 };
-export type ManageHost = typeof manageHost;

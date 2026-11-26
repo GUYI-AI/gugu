@@ -52,7 +52,6 @@ export const minHScreen = style({ minHeight: '100vh' });
 export const size15 = style({ width: '0.375rem', height: '0.375rem' });
 export const size3 = style({ width: '0.75rem', height: '0.75rem' });
 export const size35 = style({ width: '0.875rem', height: '0.875rem' });
-export const size4 = style({ width: '1rem', height: '1rem' });
 
 // ── Grid column templates ─────────────────────────────────────────────────────
 

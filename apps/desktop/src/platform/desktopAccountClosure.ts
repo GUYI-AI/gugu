@@ -33,14 +33,3 @@ export const nativeDesktopAccountClosure: AccountClosureNative = {
     return result as AccountClosureResult
   },
 }
-/** Private composition hooks; no preparation assertion from renderer data. */
-export const desktopClosurePreparation = {
-  async prepare(scope: AccountClosureScope) {
-    const result = await invoke('prepare', scope) as { prepared?: unknown } | null
-    if (result?.prepared !== true) return failure('closure_not_prepared')
-  },
-  async cancel(scope: AccountClosureScope) {
-    const result = await invoke('cancel', scope) as { cancelled?: unknown } | null
-    if (result?.cancelled !== true) return failure('closure_not_prepared')
-  },
-}

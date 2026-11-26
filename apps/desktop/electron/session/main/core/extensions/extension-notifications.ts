@@ -5,28 +5,6 @@ import { sessionHostLocale } from '@main/core/host-locale';
 import { localizedManifestText } from '@shared/extensions/catalog';
 import { extensionTabKind, type ExtensionManifest } from '@shared/extensions/manifest';
 
-/**
- * Extensions posting system banners (`notify`, capability `notifications`). Refs #6387.
- *
- * The banner is gugu's one reminder channel, so an extension borrows it rather than
- * getting a second one: it obeys the same two switches in Settings as the agents'
- * banners, and it always says which extension is talking — the title is shown under
- * the extension's installed name (in the interface language, as its `localized` says it), so no extension can post a banner that reads as
- * gugu's own.
- *
- * A click is the person asking to see it: gugu comes to the front, what the banner names is brought on screen (`open`,
- * 真源原则 13 — never where the page that posted it is): one of the App's tabs in a session, the App in a chat's panel,
- * a file where it lives — or, naming none, the App's own page, as a link naming none opens; and the extension is told
- * which banner was clicked.
- */
-
-export interface ExtensionBanner {
-  title: string;
-  body: string;
-  onClick: () => void;
-  close: () => void;
-}
-
 export interface ExtensionNotifierDeps {
   manifestOf(extensionId: string): ExtensionManifest;
   /** The interface language: the App's name in the title is the one its manifest gives there. */

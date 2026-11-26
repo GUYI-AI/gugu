@@ -29,10 +29,6 @@ export function conversationBubbleKey(item: ChatMessage): string {
   return `conversation-bubble:${messageId ?? (item.sourceItemId ? item.sourceItemId + batch : item.id)}`;
 }
 
-/** 对话布局里名字那一行、过程行的高(ConversationMessage 与只有过程的那一行 turn-process 共用,两边一样高才没有空白)。 */
-export const CONVERSATION_HEADER_H = 24;
-export const CONVERSATION_PROCESS_H = 22;
-
 /** 气泡下面那排时间、复制、编辑的高(不含上面的间隙);没回话那一轮末尾的复制也是这一排(#1041)。 */
 export const CONVERSATION_FOOTER_H = 16;
 
@@ -45,8 +41,6 @@ export const conversationNarrationText = (text: string): string => {
   const flat = text.replace(/\s+/g, ' ');
   return flat.length > 160 ? `${flat.slice(0, 159)}…` : flat;
 };
-/** message_send 带了 reply_to_message_id 时气泡上方那一行引用「谁 · 摘要」。 */
-export const CONVERSATION_QUOTE_H = 22;
 
 /**
  * 气泡下面那一行(时间、复制)画不画:没有正文不画;agent 一轮里拆出来的气泡只有收了口的最后一句画

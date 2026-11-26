@@ -14,7 +14,6 @@
  */
 
 import { recipe } from '@vanilla-extract/recipes';
-import type { RecipeVariants } from '@vanilla-extract/recipes';
 import { svgContainer, svgDefaultSize } from '@session-ui/styles/effects/svg-helpers.css';
 import { vars } from '@session-ui/theme/core/contract/contract.css';
 import { tokenVars } from '@session-ui/theme/tokens.css';
@@ -62,5 +61,3 @@ export const menuItemBase = recipe({
     muted: false,
   },
 });
-
-export type MenuItemBaseVariants = RecipeVariants<typeof menuItemBase>;

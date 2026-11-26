@@ -24,20 +24,6 @@ export type StatusAccount = {
 
 export type StatusReport = { version: string | null; installedVersion?: string | null; supervisorVersion?: string | null; accounts: StatusAccount[]; migrationRequired?: boolean }
 
-/** 列哪些账号:登着的,和被迫登出的(自己 logout 的不列 —— 那是他自己的选择,不用解释)。 */
-export function statusAccounts(accounts: readonly ServerAccount[], running: (account: ServerAccount) => boolean, versionOf?: (account: ServerAccount) => string | null): StatusAccount[] {
-  return accounts
-    .filter((account) => account.signedIn || account.signedOut)
-    .map((account) => ({
-      userId: account.userId,
-      email: account.email,
-      signedIn: account.signedIn,
-      running: account.signedIn && running(account),
-      ...(versionOf ? { version: account.signedIn ? versionOf(account) : null } : {}),
-      signedOut: account.signedIn ? null : account.signedOut,
-    }))
-}
-
 export function formatStatusJson(report: StatusReport): string {
   return `\n${STATUS_JSON_BEGIN}\n${JSON.stringify(report)}\n${STATUS_JSON_END}\n`
 }

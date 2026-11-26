@@ -9,11 +9,6 @@ export function setPortalContainer(el: HTMLElement | null): void {
   portalContainer = el;
 }
 
-// undefined → Base UI falls back to document.body.
-export function getPortalContainer(): HTMLElement | undefined {
-  return portalContainer ?? undefined;
-}
-
 // For raw createPortal call sites that need a concrete element.
 export function getPortalContainerOrBody(): HTMLElement {
   return portalContainer ?? document.body;

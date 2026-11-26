@@ -23,9 +23,6 @@ export type ScaleName =
   | 'orange'
   | 'purple';
 
-/** Hue-named scales that carry no fixed semantic role. */
-export type HueScaleName = Exclude<ScaleName, 'neutral' | 'accent'>;
-
 /** Canonical ordered list of all palette scales. Shared between the generator and stories. */
 export const SCALE_NAMES = [
   'neutral',
@@ -149,14 +146,6 @@ export const SURFACE_STATUSES = [
   'success',
 ] as const satisfies readonly SurfaceStatusName[];
 
-/** Maps each status surface to the palette scale it derives its colors from. */
-export const STATUS_SCALE: Record<SurfaceStatusName, ScaleName> = {
-  destructive: 'red',
-  warning: 'amber',
-  info: 'blue',
-  success: 'green',
-};
-
 /**
  * Non-base elevation scopes that get per-level status surface variants.
  * The `base` scope is the default (unsuffixed) token, so it is excluded here.
@@ -185,8 +174,6 @@ export const SURFACE_CASCADE_VARS = [
   'surface-border',
   'surface-foreground',
 ] as const;
-
-export type SurfaceCascadeVarName = (typeof SURFACE_CASCADE_VARS)[number];
 
 /**
  * Returns every CSS custom property name that belongs to the surface system.

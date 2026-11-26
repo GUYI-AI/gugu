@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react';
+import { createContext } from 'react';
 
 export type SessionConfigOptions = {
   /** Whether PR-related presets are visible. Set to false in automation contexts. Defaults to true. */
@@ -27,8 +27,4 @@ export function SessionConfigProvider({
   };
 
   return <SessionConfigContext.Provider value={value}>{children}</SessionConfigContext.Provider>;
-}
-
-export function useSessionConfig(): ResolvedSessionConfig {
-  return useContext(SessionConfigContext);
 }

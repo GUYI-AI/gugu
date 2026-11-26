@@ -10,7 +10,6 @@ import { getRendererSession } from '@/lib/sessionPublication';
 import { findSessionAnywhere } from '@renderer/features/sessions/stores/session-selectors';
 import { composeInSession } from '@renderer/features/extensions/compose-in-session';
 import { sessionConversationTabId } from '@renderer/features/sessions/view/session-pane-policy';
-import { sessionAnnotations, type SessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations';
 
 /**
  * A selection's Cite on a computer, into the conversation `selectionConversationOf` named: a chat's composer (the words,
@@ -30,11 +29,6 @@ export async function citeIntoConversation(conversation: AnnotationConversation,
     group.pane.setActiveTab(tabId);
   }
   await composeInSession(view, cite.draft);
-}
-
-/** The conversation's annotation draft, as its composer reads it (a chat's is the signed-in account's). */
-export function annotationsOf(conversation: AnnotationConversation): SessionAnnotations {
-  return sessionAnnotations.forConversation(conversation);
 }
 
 /**

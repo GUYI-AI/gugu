@@ -129,8 +129,6 @@ export const SEMANTIC_TEMPLATE = {
   'foreground-conflict': 'orange.11',
   'foreground-merged': 'purple.9',
 } as const;
-
-export type SemanticSlot = keyof typeof SEMANTIC_TEMPLATE;
 export type SemanticVar = string;
 
 import { nsName } from './namespace';

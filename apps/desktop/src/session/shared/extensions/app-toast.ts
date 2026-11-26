@@ -33,8 +33,3 @@ export async function appToast(
   last.set(page.extensionId, at);
   await act({ kind: 'toast', text: parsed.data.text });
 }
-
-/** Tests only. */
-export function forgetToastsForTest(): void {
-  last.clear();
-}

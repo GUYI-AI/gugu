@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { queryClient, refreshFailure, replica, useReplica, type Reading } from '@/lib/replica';
+import { queryClient, refreshFailure, replica, useReplica } from '@/lib/replica';
 import { writeOver } from '@/lib/replicaWrite';
 import { keepLibraryHost, libraryHostOf, useLibraryHost } from '@renderer/features/library/library-host';
 import { useManagementAgents } from '@renderer/lib/stores/use-agents';
@@ -28,15 +28,6 @@ export const harnessMcpServers = replica({
   read: async (_owner: string, hostKey: string, agentId: string): Promise<LibraryMcpHarnessServer['server'][]> =>
     (await libraryHostOf(hostKey).mcpLibrary.harnessServers([agentId])).map((row) => row.server),
 })
-
-/**
- * 一家自己配的那几台 —— 段头展开才读(参数 null 前不读),一家一个条目:读哪一家只等哪一家,一家读不了只坏它那一组。
- * 照读那一家的配置文件,❌ 跑它的 CLI(好几家 `mcp list` 会把每台 stdio server 起一遍)。
- */
-export function useHarnessMcpServers(agentId: string, enabled: boolean): Reading<LibraryMcpHarnessServer['server'][]> {
-  const host = keepLibraryHost(useLibraryHost());
-  return useReplica(harnessMcpServers, enabled ? [host.key, agentId] : null, { read: host.remote?.online !== false });
-}
 
 /**
  * 资源库 → MCP 的数据:这台机器(资源库选的那台)上咕咕自己管的列表,以及装了的各家自己的用户级那几台。

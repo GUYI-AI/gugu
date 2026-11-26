@@ -44,7 +44,3 @@ export function forkRuntimes(provider: CLIAgentPluginProvider): SessionRuntime[]
   if (hooked || acpForkHandshakes.get(provider.metadata.id) === true) runtimes.push('acp');
   return runtimes;
 }
-
-export function resetAcpForkHandshakesForTest(): void {
-  acpForkHandshakes.clear();
-}

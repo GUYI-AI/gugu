@@ -12,7 +12,6 @@ import { makeAutoObservable, runInAction } from 'mobx';
 import {
   REMOTE_WORKSPACE_CHUNK_BYTES,
   REMOTE_WORKSPACE_MAX_FILE_BYTES,
-  WORKSPACE_EXISTS_CODE,
   WORKSPACE_WRITE_FORCE,
   type SessionpageWorkspaceEntry,
   type SessionpageWorkspaceWriteRequest,
@@ -88,11 +87,6 @@ export type RemoteTransfersDeps = {
   now?: () => number;
   newId?: () => string;
 };
-
-function errorCode(error: unknown): string | null {
-  const code = (error as { code?: unknown } | null)?.code;
-  return typeof code === 'string' ? code : null;
-}
 
 export class RemoteTransfers {
   items: RemoteTransfer[] = [];
@@ -206,9 +200,4 @@ export class RemoteTransfers {
     return transfer;
   }
 
-}
-
-/** 上传没成的原因里,「同名已有」单独说;其余交给通用那一句。 */
-export function isExistsError(error: unknown): boolean {
-  return errorCode(error) === WORKSPACE_EXISTS_CODE;
 }

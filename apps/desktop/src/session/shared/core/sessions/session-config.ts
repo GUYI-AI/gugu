@@ -306,5 +306,3 @@ export const sessionConfig = defineVersionedSchema()
   .build();
 
 export type SessionConfig = typeof sessionConfig.Type;
-export type SessionConfigPty = z.infer<typeof ptyConfigV1>;
-export type SessionConfigAcp = z.infer<typeof acpConfigV1>;

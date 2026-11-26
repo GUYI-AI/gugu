@@ -20,7 +20,6 @@ export type ExtensionVariant = z.infer<typeof extensionVariantSchema>;
 export const appVariantsSchema = z.object({ active: variantNameSchema, variants: z.array(extensionVariantSchema) });
 export type AppVariants = z.infer<typeof appVariantsSchema>;
 export interface ForkBehind { upstream: string; behind: number; commit: string }
-export type AppVariantsResult = AppVariants & { behind: ForkBehind | null };
 
 /** Count published versions, excluding withdrawals; the merge target is the newest exact source commit. */
 export function forkBehind(base: string, versions: readonly MarketIndexVersion[]): ForkBehind | null {

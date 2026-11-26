@@ -1,4 +1,3 @@
-import { runInAction } from 'mobx';
 import type { TabEntry } from '@renderer/features/tabs/core/tab-provider';
 import type { sessionTabView } from '../session-tab-registry';
 
@@ -88,31 +87,4 @@ export function closeTabsOfSession(
     for (const tabId of doomed) pane.closeTab(tabId);
   }
   return { displayedInPaneId, chatTabAt };
-}
-
-/**
- * 同一条会话换一种展示(编程 ↔ 通用):关掉它的对话页签,在原来那一格、原来的位置开新种类的那一枚。
- * - **一笔**做完:分两笔的话,中间那一刻这一块可能一枚页签都没有,keepBlockFilled 把它当「关空了」关掉 ——
- *   一屏几块时这块被拿走、整组散掉(开发版实测:并排两块里给一块换展示,组没了)。
- * - **原位**:会话那块的第一枚页签就是会话本身(spec session-page「一屏几块」);新开的页签默认排到最后,
- *   不放回去的话换完它就跑到终端、文件后面。
- */
-export function replaceSessionTab(paneLayout: SessionPaneLayout, sessionId: string, kind: string): void {
-  runInAction(() => {
-    // Side by side with something: the new display takes the old one's place in the pair (spec session-page「并排」).
-    const pair = paneLayout.pair;
-    const pinnedEntry = pair ? paneLayout.mainGroup.pane.entries.get(pair.pinned) : undefined;
-    const keptSide = pinnedEntry && (pinnedEntry.state as { sessionId?: string } | undefined)?.sessionId === sessionId ? pair!.side : undefined;
-    const { chatTabAt } = closeTabsOfSession(paneLayout, sessionId);
-    const opened = paneLayout.open(kind, { sessionId }, { from: null, intent: 'newTab' });
-    if (opened && keptSide) paneLayout.pairWith(opened, keptSide, { by: 'restore' });
-    if (!chatTabAt) return;
-    const pane = paneLayout.groups.find((g) => g.paneId === chatTabAt.paneId)?.pane;
-    if (!pane) return;
-    const from = pane.tabOrder.findIndex((tabId) => {
-      const entry = pane.entries.get(tabId);
-      return entry?.kind === kind && (entry.state as { sessionId?: string } | undefined)?.sessionId === sessionId;
-    });
-    if (from >= 0 && from !== chatTabAt.index) pane.reorderTabs(from, chatTabAt.index);
-  });
 }

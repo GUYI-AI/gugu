@@ -1,5 +1,5 @@
 import type { PlatformCallableRoutes } from '@gugu/session-core/agents/plugins';
-import { PLATFORM_STANDALONE_SEARCH_ROUTE, platformStandaloneSearchGranted } from '@gugu/session-core/agents/plugins';
+import { platformStandaloneSearchGranted } from '@gugu/session-core/agents/plugins';
 import { CODEX_WIRE_API } from './platform';
 
 // Fresh gateway threads share one native provider. Existing custom threads can still
@@ -50,11 +50,6 @@ export const CODEX_IMAGE_GENERATION_ROUTE = '/v1/images/generations';
 export const CODEX_IMAGE_GENERATION_MODEL = 'gpt-image-2';
 export const CODEX_ACTOR_AUTHORIZATION_HEADER = 'x-openai-actor-authorization';
 export const CODEX_ACTOR_AUTHORIZATION_SWITCH = 'gugu-image-generation-switch';
-/**
- * 同一个头也能打开 codex 的独立联网搜索工具 `web.run`(`ext/web-search/src/extension.rs:47`),它打
- * `<base_url>/alpha/search`(`codex-api/src/endpoint/search.rs:15`)。
- */
-export const CODEX_STANDALONE_SEARCH_ROUTE = PLATFORM_STANDALONE_SEARCH_ROUTE;
 
 // HTTP retries emit no app-server notification. Use the visible stream retry loop instead.
 // Codex defaults (4 HTTP retries nested in 5 stream retries) allow 30 attempts with ~24.2s

@@ -24,17 +24,6 @@ export function isProcessAlive(pid: number): boolean {
   }
 }
 
-/**
- * #6264 锁里记着的进程号还是不是**我们的那个进程**:活着,且命令行里带着 `marker`(读得到时)。
- * 只看「活着」不够:进程号会被复用 —— 机器重启、或守护进程被 kill -9 很久之后,锁里的号可能已经是
- * 一个毫不相干的进程,那把锁就永远没人敢接管了。读不到命令行(macOS 读不了别人的 /proc)时退回只看活着。
- */
-export function isOwnProcessAlive(pid: number, marker: string, readCmdline: (pid: number) => string | null = readProcCmdline): boolean {
-  if (!isProcessAlive(pid)) return false
-  const line = readCmdline(pid)
-  return line === null || line.includes(marker)
-}
-
 export function readProcCmdline(pid: number): string | null {
   if (process.platform !== 'linux') return null
   try {
@@ -43,6 +32,3 @@ export function readProcCmdline(pid: number): string | null {
     return null
   }
 }
-
-/** 咕咕 server 各进程命令行里都有的那一段(bin/gugu-server 启动器 exec 的是 app/dist-electron/server.js)。 */
-export const SERVER_PROCESS_MARK = 'server.js'

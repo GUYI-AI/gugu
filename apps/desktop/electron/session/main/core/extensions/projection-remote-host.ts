@@ -21,7 +21,6 @@ export const PROJECTION_REMOTE_VIEWERS = 32;
 
 /** An App's projection in a session there, or (`page: true`) that task's own browser page, which is gugu's. */
 export type ProjectionRemoteAppWatch = { app: string; version: string; session: string; source: string; presentation?: 1 };
-export type ProjectionRemoteWatch = { watch: string; presentation?: 1 } & (ProjectionRemoteAppWatch | { session: string; page: true });
 export type ProjectionRemotePacketEvent = { type: typeof PROJECTION_REMOTE_PACKET; watch: string; packet: ProjectionHostPacket };
 export type ProjectionRemotePageStateEvent = { type: typeof PROJECTION_REMOTE_PAGE_STATE; watch: string; state: TaskPageState };
 

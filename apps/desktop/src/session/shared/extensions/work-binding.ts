@@ -2,18 +2,6 @@ import { z } from 'zod';
 import { AGENT_STATUSES, AGENT_STATUS_DETAILS } from '@gugu/core/shared/agentStatus';
 
 /**
- * #1925 (API 46) The built-in assistant's 任务 list, moved into an App: on the conversation binding (#1927), when the chosen
- * conversation is the person's private chat with their own assistant, the `work` action (`chat:work`) lets an App
- * - read the work the assistant handed out, each row exactly as the built-in list draws it (`AppWorkItem`), and hear each
- *   change (`gugu.bindings.work` / `onWorkChanged`);
- * - in the person's click, have the host draw one task's own conversation in the App's panel, over its page, with a back
- *   control of the host's (`gugu.bindings.openWork` / `closeWork`). The App never sees that conversation.
- * The ledger, its execution and its reports stay the host's. The App names the binding, and a row by the handle the host gave
- * it; it never names, nor hears, a work, session, chat, device or account id, a path, a URL or a message.
- */
-export const WORK_BINDING_API_VERSION = 46;
-
-/**
  * A row's handle: opaque, made by the host for this App, this account and this choice of conversation — it means nothing to
  * another App, after the person chooses again, or after gugu restarts (read the list again then).
  */

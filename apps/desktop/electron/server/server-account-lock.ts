@@ -7,6 +7,3 @@ const probe = createAccountLockProbe({ fs, spawnSync, platform: process.platform
 export const accountLockHolder = probe.holder
 export const accountLockDataDirs = probe.directories
 export const sameAccountLockInode = probe.same
-// true/false are verified results. Unknown inspection throws and never grants
-// permission to reclaim a lock or signal an unverified PID.
-export const processOwnsAccountLock = probe.owns

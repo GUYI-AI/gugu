@@ -1,7 +1,6 @@
 import { z } from 'zod'
 
 export type PermissionEffect = 'allow' | 'ask' | 'deny'
-export type PermissionMode = 'ask_some' | 'always_ask'
 export type ToolEffect = 'discovery' | 'read' | 'write' | 'send' | 'execute' | 'owner' | 'social' | 'permission' | 'credential'
 export interface ToolRisk { risk: 'low' | 'medium' | 'high'; effect: ToolEffect }
 export interface PermissionOperation extends ToolRisk {

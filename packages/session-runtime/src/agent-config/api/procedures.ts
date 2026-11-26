@@ -136,8 +136,6 @@ export function createAgentConfigProcedures(runtime: AgentConfigRuntime) {
   };
 }
 
-export type AgentConfigProcedures = ReturnType<typeof createAgentConfigProcedures>;
-
 function unsupportedConnectionOperation(): Result<never, AgentConfigAuthError> {
   return err({ type: 'invalid-state', message: 'Connection management requires the credential-owning host' });
 }

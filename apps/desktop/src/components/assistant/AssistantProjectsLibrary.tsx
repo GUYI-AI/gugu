@@ -10,11 +10,6 @@ import type { AssistantMachine } from '../../session/renderer/features/assistant
 import { AssistantEmpty, AssistantRow, AssistantSection, PageHead } from '../../session/renderer/features/assistant/assistant-ui-parts'
 
 type Props = { machine: AssistantMachine | null | undefined; onOpen?: () => void; askInChat?: (text: string) => void }
-
-/** Project identity is the existing sidebar's identity; Filesystem folders never create project rows. */
-export function AssistantProjectsCard(props: Props) {
-  return platform.capabilities.agentRuntime ? <NativeProjects {...props} /> : <PhoneProjects {...props} />
-}
 export function AssistantProjectsLibrary(props: Props) {
   return platform.capabilities.agentRuntime ? <NativeProjects {...props} detail /> : <PhoneProjects {...props} detail />
 }

@@ -4,10 +4,6 @@ import type { PromptLibraryPrompt } from '@shared/prompt-library';
 
 export { buildIssueContextText } from '@shared/core/issues/issue-context';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-export type ContextActionKind = 'linked-issue' | 'prompt';
-
 export interface IssueContextAction {
   id: string;
   kind: 'linked-issue';

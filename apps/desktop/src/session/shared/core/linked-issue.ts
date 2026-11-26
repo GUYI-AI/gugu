@@ -46,13 +46,6 @@ const v0Schema = z.object({
  */
 export const linkedIssue = defineVersionedSchema().unversioned(v0Schema).build();
 
-// ---------------------------------------------------------------------------
-// Exports
-// ---------------------------------------------------------------------------
-
-/** The Zod schema for the latest linked issue shape. */
-export const linkedIssueSchema = linkedIssue.schema;
-
 /** The TypeScript type for a linked issue. */
 export type LinkedIssue = typeof linkedIssue.Type;
 

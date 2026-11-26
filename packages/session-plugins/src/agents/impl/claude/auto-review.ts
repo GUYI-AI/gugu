@@ -3,7 +3,6 @@ import type { SessionConfigOption } from '@agentclientprotocol/sdk';
 import { flattenSelectOptions, meetsReviewModeRequirements } from '@gugu/session-core/acp';
 
 export const CLAUDE_REVIEWER_MODEL = 'claude-haiku-5-5';
-export const CLAUDE_AUTO_REVIEW_MIN_VERSION = '2.1.302';
 
 /** Server review ignores the chosen model; pin client review in the protected session document. */
 export function claudeReviewSettings(settings: Record<string, unknown>, modelId = CLAUDE_REVIEWER_MODEL): Record<string, unknown> {

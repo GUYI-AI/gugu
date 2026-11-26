@@ -30,12 +30,6 @@ export function groupJoinDenialKey(message: string | null | undefined): string |
   return null
 }
 
-export function parseGroupAgentJoinOutcome(data: unknown): GroupAgentJoinOutcome {
-  const status = (data as { status?: unknown } | null)?.status
-  if (status === 'joined' || status === 'pending_approval') return status
-  throw new Error(`add_group_agent returned an unexpected status: ${JSON.stringify(status)}`)
-}
-
 export type AgentJoinRequestStatus = 'pending' | 'accepted' | 'rejected'
 
 /** 发起人自己那头每个 agent 最近一条请求的状态(RPC 已按 updated_at 倒序)。 */
@@ -48,21 +42,6 @@ export function latestAgentJoinRequestStatus(
     if (row.status === 'pending' || row.status === 'accepted' || row.status === 'rejected') latest.set(row.agent_user_id, row.status)
   }
   return latest
-}
-
-/** 一次批量添加的结果汇总:已入群、已提交审批、失败。 */
-export function summarizeAgentJoinResults(
-  results: ReadonlyArray<PromiseSettledResult<GroupAgentJoinOutcome | void>>,
-): { joined: number; pendingApproval: number; failed: number } {
-  let joined = 0
-  let pendingApproval = 0
-  let failed = 0
-  for (const result of results) {
-    if (result.status === 'rejected') failed += 1
-    else if (result.value === 'pending_approval') pendingApproval += 1
-    else joined += 1
-  }
-  return { joined, pendingApproval, failed }
 }
 
 /** 待审请求要显示的身份:申请人(人或 agent),以及 agent 请求里替它发起的人。 */

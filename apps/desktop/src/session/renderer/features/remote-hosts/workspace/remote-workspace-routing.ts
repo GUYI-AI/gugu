@@ -9,7 +9,6 @@
 //  · 侧边聊天:它在本机分叉一条会话,别的机器上的会话分不出来 —— 这一轮不变(不在远端清单里)。
 import type { RemoteHostDevice } from '@/session/shared/remote-hosts';
 import { formatAgo, type Translate } from '../connection-status';
-import { remoteErrorCode } from '../remote-failure-copy';
 import type { SessionMessageKey } from '@renderer/localization/messages';
 
 export type RemoteWorkspaceTool = 'review' | 'terminal' | 'browser' | 'ports' | 'files';
@@ -82,33 +81,6 @@ export function remoteToolReach(
       ? translate('remoteHost.condition.offline', { device: device.label, ago })
       : translate('remoteHost.condition.offlineNever', { device: device.label }),
   };
-}
-
-/**
- * 问那台机器失败时,文件树 / 编辑器 / 审阅里那一句。原因码只进悬停与日志,❌ 进这句话。
- * 超时(传输层,没有业务码)当成「那台机器没应答」。
- */
-export function remoteWorkspaceFailure(error: unknown, device: string, translate: Translate): string {
-  const code = remoteErrorCode(error);
-  switch (code) {
-    case 'unknown_method':
-      return translate('remoteWorkspace.serverTooOld', { device });
-    case 'session_not_found':
-      return translate('remoteHost.condition.sessionGone', { device });
-    case 'not_found':
-      return translate('task.fileNotFound');
-    case 'not_a_directory':
-    case 'not_a_file':
-      return translate('remoteWorkspace.notAFile');
-    case 'permission_denied':
-      return translate('remoteWorkspace.permissionDenied', { device });
-    case 'outside_workspace':
-      return translate('remoteWorkspace.outsideWorkspace');
-    case null:
-      return translate('remoteWorkspace.noAnswer', { device });
-    default:
-      return translate('remoteWorkspace.failed', { device });
-  }
 }
 
 // ── 浏览器:那台机器上的 localhost ────────────────────────────────────────────

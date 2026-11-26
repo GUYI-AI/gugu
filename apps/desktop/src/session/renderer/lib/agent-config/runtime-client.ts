@@ -28,10 +28,6 @@ export function getAgentConfigRuntimeClient(machine: string | null = null): Prom
   return promise;
 }
 
-export function resetAgentConfigRuntimeClient(): void {
-  clientPromises.clear();
-}
-
 async function createAgentConfigRuntimeClient(): Promise<AgentConfigRuntimeRpcClient> {
   const portPromise = awaitWirePort(window, { channel: AGENT_CONFIG_WIRE_CHANNEL });
   await electronApi().requestWirePort(AGENT_CONFIG_WIRE_CHANNEL);

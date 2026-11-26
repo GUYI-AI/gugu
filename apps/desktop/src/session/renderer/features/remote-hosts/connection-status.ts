@@ -226,11 +226,6 @@ export const TOO_OLD_CODES = new Set(['unknown_method', 'server_outdated']);
 /** 「那台机器上已经没有这条会话」。 */
 export const GONE_CODES = new Set(['record_not_found', 'not_found', 'conversation_not_found']);
 
-/** 一次失败会不会自己好:太旧、会话没了都不会(重试只是把同一句错话说很多遍)。 */
-export function isRetryableRemoteError(code: string | null): boolean {
-  return !(code && (code === 'client_outdated' || TOO_OLD_CODES.has(code) || GONE_CODES.has(code)));
-}
-
 // ── 聊天界面:那台机器有件事要人知道 ─────────────────────────────────────────────
 
 /**

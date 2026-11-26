@@ -14,15 +14,6 @@ export function isExternalModelRoot(rootPath: string): boolean {
 }
 
 /**
- * Workspace files are addressed by a relative path, files outside every workspace by an
- * absolute one — the same discriminator the main process uses to split readFile from
- * readExternalFile. Used when only a bare path survives (e.g. a restored draft row).
- */
-export function isAbsoluteFilePath(filePath: string): boolean {
-  return filePath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(filePath);
-}
-
-/**
  * Build a stable model URI for a file within a project/worktree context.
  * The registry keys the file's text and its undo history by this identity.
  */

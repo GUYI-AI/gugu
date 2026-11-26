@@ -47,8 +47,6 @@ export const APP_RUNTIME_GLUE_MODULE = `${APP_RUNTIME_BASE}glue.js`;
  */
 export const APP_RUNTIME_UI_CSS = `${APP_RUNTIME_BASE}ui.css`;
 export const APP_RUNTIME_UI_JS = `${APP_RUNTIME_BASE}ui.js`;
-/** Every element and class of the look on one page (app-runtime/ui/gallery.html): the picture guide apps-ui shows. */
-export const APP_RUNTIME_UI_GALLERY = `${APP_RUNTIME_BASE}gallery.html`;
 /**
  * The phone's page that forgets an App's storage in its origin when the App is uninstalled (forget-entry.ts,
  * built by the phone's bundle only — vite.config.mts phoneAppsPlugin; the desktop clears its partition instead).

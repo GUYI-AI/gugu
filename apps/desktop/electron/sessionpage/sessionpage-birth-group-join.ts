@@ -23,11 +23,7 @@ type PendingJoin = BirthGroup & { reason: string }
 /** SQLSTATEs for "the database rolled this transaction back because of a concurrent one; run it again". */
 const TRANSIENT_CODES = new Set(['40P01', '40001'])
 
-let retryDelaysMs: readonly number[] = [2_000, 8_000]
-/** Tests only. */
-export function setBirthGroupJoinRetryDelaysForTests(delays: readonly number[]): void {
-  retryDelaysMs = delays
-}
+const retryDelaysMs: readonly number[] = [2_000, 8_000]
 
 const listeners = new Set<(event: { sessionId: string; join: SessionShellBirthGroupJoin | null }) => void>()
 /** A born-in-chat join failed, or a retry settled it (join null). Returns unsubscribe. */

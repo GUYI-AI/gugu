@@ -865,38 +865,6 @@ export const usageBarFillWarn = style({
   backgroundColor: vars.surfaceWarningForeground,
 });
 
-// ── Effort row (footer inside the model popover) ───────────────────────────────
-
-/**
- * 设置面板里的一行(模型 / 推理强度):左标签、右当前值 + ›,点开向右飞出二级。
- * 两行共用这一套样式 —— Codex 里它们是并列且同构的,不是「列表 + 页脚」的主次关系。
- */
-export const settingRow = style({
-  display: 'flex',
-  width: '100%',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  paddingLeft: '0.5rem',
-  paddingRight: '0.5rem',
-  paddingTop: '0.375rem',
-  paddingBottom: '0.375rem',
-  borderRadius: tokenVars.radiusMd,
-  fontSize: fallbackVar(tokenVars.textSm, '13px'),
-  color: vars.foreground,
-  background: 'transparent',
-  border: 'none',
-  cursor: 'default',
-  outline: 'none',
-  selectors: {
-    '&:hover': { backgroundColor: vars.surfaceHover },
-    // @@@state-ladder-mix 开着的下拉是「持久选中」语义,必须比悬浮深一档,否则开没开看不出来。
-    '&[data-popup-open]': { backgroundColor: vars.surfaceSelected },
-    '&:active:not(:disabled)': {
-      backgroundColor: `var(--em-surface-press, ${vars.surfaceSelected})`,
-    },
-  },
-});
-
 /**
  * 模型清单里那条「去登录」。
  *
@@ -1643,16 +1611,6 @@ export const composerPanelItemName = style({
   fontWeight: 500,
   fontSize: fallbackVar(tokenVars.textSm, '13px'),
   color: vars.foreground,
-});
-
-/** 上游 `text-muted-foreground truncate text-xs` —— 第二行,它才是这一行与别行的差别。 */
-export const composerPanelItemDesc = style({
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-  fontSize: tokenVars.textTiny,
-  lineHeight: 1.4,
-  color: vars.foregroundMuted,
 });
 
 // ── 行内厂商图标 ─────────────────────────────────────────────────────────────

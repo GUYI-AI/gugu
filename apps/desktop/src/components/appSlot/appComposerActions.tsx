@@ -42,17 +42,6 @@ export function composerChip(views: readonly ComposerActionView[] | null, { zh, 
 
 type Column = { ownerId: string; extensionId: string; authority: string; chatId: string }
 
-/**
- * #1927 (API 48) The 「+」 entries an App placed beside the person's own assistant chat declares, for this column
- * (AppConversationSurfaceHost): main says which to draw — none unless this is that chat — and runs the one the person
- * clicks (app-composer-actions.ts). Only ids go to main; no App code runs on the click. A draft comes back for this
- * composer, in the person's language, put after what they already wrote, as the built-in's 「分析健康报告」 does
- * (AssistantChatSlot).
- */
-export function useAppComposerActions(column: Column) {
-  return useAppComposerEntries(column).menu
-}
-
 /** The same entries, and the one also drawn as the capsule above the composer (`chip`), run the same way. */
 export function useAppComposerEntries({ ownerId, extensionId, authority, chatId }: Column) {
   const { i18n } = useTranslation()

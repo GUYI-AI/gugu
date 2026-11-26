@@ -26,8 +26,6 @@ export type SessionMenuAction =
   | 'open-window'
 
 export type SessionMenuEntry = 'tab' | 'sidebar-row' | 'one-list-task' | 'phone' | 'contacts'
-
-export type SessionMenuLabel = MenuLabel
 export type SessionMenuItem = MenuTableItem<SessionMenuAction>
 
 export type SessionMenuState = {

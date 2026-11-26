@@ -6,10 +6,6 @@ let storageFailed = false
 export const REFERRAL_LINK_EVENT = 'gugu:personal-referral-link'
 export const REFERRAL_CHANGED_EVENT = 'gugu:personal-referral-changed'
 
-export function refreshPersonalReferrals(userId: string): void {
-  window.dispatchEvent(new CustomEvent(REFERRAL_CHANGED_EVENT, { detail: userId }))
-}
-
 export function rememberPersonalReferral(code: string): void {
   const normalized = normalizeReferralCode(code)
   if (!normalized) return

@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import type { CloudComputerPresence } from '@gugu/core/shared/types/deviceHost'
 import type { AgentStatusPresentation } from '@gugu/core/shared/agentStatusPresentation'
 import type { AgentDisplayStatus, Device } from '@gugu/core/shared/types/chat'
 import { displayStatusOf } from '@gugu/core/shared/ui/agentConversationStatusModels'
 import type { AgentCloudState } from '@/lib/agentReplyPending'
-import { cloudComputer, cloudSnapshotOf, useCloudComputer } from '@/lib/cloudComputer'
+import { cloudSnapshotOf, useCloudComputer } from '@/lib/cloudComputer'
 import { useContactsStore } from '@/store/contactsContext'
 import { useDevicesStore } from '@/store/devicesContext'
 import { readIdentityDirectoryBridge, type IdentityDirectorySnapshot } from '@/lib/identityDirectoryBridge'
@@ -77,19 +77,6 @@ export function useShownAgentStatus() {
   }, [reclaimed])
 }
 export type ShownAgentStatus = ReturnType<typeof useShownAgentStatus>
-
-/**
- * 打开和云电脑上的 agent 的私聊那一刻现问一次管家:两次轮询之间它可能刚睡下 / 刚被叫醒,库里那一行还没翻。
- * 别的 agent ❌ 问。
- */
-export function useRefreshCloudComputerFor(agentUserId: string | null): void {
-  const { contacts } = useContactsStore()
-  const cloudDeviceId = cloudSnapshotOf(useCloudComputer())?.deviceId ?? null
-  const onCloud = !!agentUserId && !!cloudDeviceId && contacts.some((c) => c.id === agentUserId && c.device_id === cloudDeviceId)
-  useEffect(() => {
-    if (onCloud) void cloudComputer.refresh()
-  }, [agentUserId, onCloud])
-}
 
 /**
  * #7199 这位 agent 住的云电脑此刻怎样(休息 / 正在醒 / 醒着,及管家说进入这一状态的时刻);不住在云电脑上 = null。

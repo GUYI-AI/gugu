@@ -55,16 +55,6 @@ export async function listProviderSessionTranscriptFiles(dir: string): Promise<S
   return files;
 }
 
-/** List `<uuid>.jsonl` session transcripts with their mtimes. */
-export async function listSessionTranscripts(dir: string): Promise<SessionTranscript[]> {
-  const files = await listProviderSessionTranscriptFiles(dir);
-  const transcripts: SessionTranscript[] = [];
-  for (const file of files) {
-    transcripts.push({ ...file, mtimeMs: (await stat(file.filePath)).mtimeMs });
-  }
-  return transcripts;
-}
-
 /** 首条消息之前只有几行元数据(mode / queue-operation 之类);读到这么多行还没见到消息就当它还没有。 */
 const TRANSCRIPT_HEAD_SCAN_MAX_LINES = 50;
 

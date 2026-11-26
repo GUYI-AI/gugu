@@ -55,13 +55,6 @@ export async function assertWorkspaceRemoveAllowed(
   return ok({ path: entry });
 }
 
-export async function assertWorkspaceDirectoryTargetAllowed(
-  workspacePath: CanonicalPath,
-  dirPath: string
-): Promise<Result<WorkspacePathResolution, FileError>> {
-  return resolveWorkspacePath(workspacePath, dirPath, { allowEmpty: true });
-}
-
 function normalizeRelativePath(
   filePath: string,
   options: { allowEmpty?: boolean }

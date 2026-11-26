@@ -105,14 +105,3 @@ export function isMentionQueryActive(query: string, candidates: readonly Mention
   if (anyMatch) return query.length <= MAX_QUERY_LENGTH
   return query.length <= MAX_QUERY_LENGTH && !SENTENCE_BREAK.test(query) && !hasDomainTail(query)
 }
-
-/** 往回找触发这次 @ 的位置;找不到返回 null。@ 前面是什么字都算(#6819,与 shared/mentionToken 同一判据)。 */
-export function findMentionStart(value: string, cursor: number): number | null {
-  const floor = Math.max(0, cursor - MAX_QUERY_LENGTH - 1)
-  for (let i = cursor - 1; i >= floor; i -= 1) {
-    const ch = value[i]
-    if (ch === '\n') return null
-    if (ch === '@') return i
-  }
-  return null
-}

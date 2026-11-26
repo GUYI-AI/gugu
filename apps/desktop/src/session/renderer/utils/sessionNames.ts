@@ -25,26 +25,3 @@ export const normalizeSessionName = (input: string, options?: SessionNameTransfo
 
 export const sessionNameCollisionKey = (input: string): string =>
   normalizeSessionName(input).toLowerCase();
-
-export const ensureUniqueSessionName = (
-  baseName: string,
-  existingNames: Iterable<string>,
-  maxAttempts = 6,
-  options?: SessionNameTransformOptions
-): string => {
-  const normalizedExisting = new Set(
-    Array.from(existingNames, (name) => sessionNameCollisionKey(name)).filter(Boolean)
-  );
-  const base = normalizeSessionName(baseName, options);
-  if (base && !normalizedExisting.has(sessionNameCollisionKey(base))) return base;
-
-  for (let i = 2; i < 2 + maxAttempts; i++) {
-    const candidate = normalizeSessionName(`${baseName}-${i}`, options);
-    if (candidate && !normalizedExisting.has(sessionNameCollisionKey(candidate))) {
-      return candidate;
-    }
-  }
-
-  const fallback = normalizeSessionName(`${baseName}-${Date.now().toString(36)}`, options);
-  return fallback || base;
-};

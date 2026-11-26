@@ -74,6 +74,4 @@ const v1Schema = z.object({
 });
 
 export const sessionConfig = defineVersionedSchema().initial('1', v1Schema).build();
-
-export const sessionConfigSchema = sessionConfig.schema;
 export type NewSessionConfig = typeof sessionConfig.Type;

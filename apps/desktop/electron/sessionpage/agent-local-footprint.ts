@@ -16,21 +16,6 @@ import {
 import { emdashAgentRegistry } from './emdash-agent-registry'
 import { unregisterLocalSessionDeliveryForAgent } from './local-session-delivery'
 
-/**
- * @@@4526B 这个 agent 绑定的会话页会话 id(没有绑定 → '')。取消在飞回合要先知道取消**哪条会话**,
- * 而这层「agent → conversation」绑定就存在花名册记录的 cache 里 —— 与本模块读的是同一处,
- * ❌ 不在调用方再抄一遍 roster 读法。
- */
-export async function sessionpageSessionIdForAgent(
-  agentUserId: string,
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<string> {
-  if (!agentUserId) return ''
-  const roster = await listAgents(env, { includeGuests: true })
-  const record = roster.find((agent) => agent.gugu_user_id === agentUserId)
-  return cacheString(record?.cache, SESSION_CACHE_KEY)
-}
-
 export interface ReleaseAgentLocalFootprintInput {
   agentUserId: string
   /** 墓碑上的展示名。留空时从花名册记录取——删除提示要说得出「谁」被删了。 */

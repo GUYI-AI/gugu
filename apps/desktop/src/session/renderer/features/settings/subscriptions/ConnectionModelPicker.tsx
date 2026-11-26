@@ -1,6 +1,5 @@
 import type { CustomModelMeta } from '@gugu/session-core/models/custom-model'
 import type { ConnectionModelList, CustomModelProtocolProbe } from '@gugu/session-core/workspace-server/agent-config'
-import { metadataSeparator } from '@/i18n/format'
 import { useEffect, useId, useState } from 'react'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
 import { Input } from '@renderer/lib/ui/input'
@@ -199,14 +198,4 @@ export function ConnectionModelPicker({
       </Combobox>
     </div>
   )
-}
-
-/** 连接那一行写它点名的模型:两个以内全写,多了写第一个 +N。 */
-export function modelsLine(
-  models: readonly string[] | undefined,
-  translate: ReturnType<typeof useSessionMessages>['translate']
-): string | undefined {
-  if (!models?.length) return undefined
-  if (models.length <= 2) return models.join(metadataSeparator())
-  return translate('subscriptions.connections.moreModels', { first: models[0], count: models.length - 1 })
 }

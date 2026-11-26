@@ -119,11 +119,6 @@ export const nameStem = style({
   flex: '0 1 auto',
 });
 
-export const nameTail = style({
-  flex: '0 0 auto',
-  whiteSpace: 'nowrap',
-});
-
 /**
  * 右边「侧边栏 ▾」:写明点整行时怎么打开,点它弹出全部打开方式(「Open in ▾」)。
  * 与会话页其它小按钮同一副样子:细边框、控件圆角、caption 之上一档的字。

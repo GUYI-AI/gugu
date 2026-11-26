@@ -12,9 +12,6 @@
 // ── Row creation counter ──────────────────────────────────────────────────────
 // Row() increments this on every component instantiation.
 let rowCreations = 0;
-export function bumpRowCreations(): void {
-  rowCreations++;
-}
 export function getRowCreations(): number {
   return rowCreations;
 }

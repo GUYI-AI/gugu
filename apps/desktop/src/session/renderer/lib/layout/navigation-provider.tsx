@@ -5,15 +5,6 @@ import { registeredViews } from './registered-views';
 import { appState } from '@renderer/lib/stores/app-state';
 export { useNavigate, type NavigateFnTyped, type NavArgs } from './navigation-actions';
 
-/**
- * NavArgs makes the params argument optional when all fields are optional,
- * and omits it entirely for views with no params (home, skills).
- */
-export type UpdateViewParamsFn = <TId extends ViewId>(
-  viewId: TId,
-  update: Partial<WrapParams<TId>> | ((prev: WrapParams<TId>) => WrapParams<TId>)
-) => void;
-
 export type SlotsContextValue = {
   WrapView: ComponentType<{ children: ReactNode } & Record<string, unknown>>;
   TitlebarSlot: ComponentType;
@@ -26,10 +17,6 @@ export type SlotsContextValue = {
 
 export type WrapParamsContextValue = {
   wrapParams: Record<string, unknown>;
-};
-
-export type ViewParamsStoreContextValue = {
-  viewParamsStore: Partial<{ [K in ViewId]: WrapParams<K> }>;
 };
 
 export function useWorkspaceSlots(): SlotsContextValue {
@@ -50,13 +37,6 @@ export function useWorkspaceSlots(): SlotsContextValue {
       pageView: appState.navigation.pageViewId,
     };
   });
-}
-
-export function useWorkspaceWrapParams(): WrapParamsContextValue {
-  return useObserver(() => ({
-    wrapParams: (appState.navigation.viewParamsStore[appState.navigation.currentViewId] ??
-      {}) as Record<string, unknown>,
-  }));
 }
 
 export function useParams<TId extends ViewId>(

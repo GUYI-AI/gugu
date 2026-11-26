@@ -80,5 +80,3 @@ export function createAppCloud(platform: { account(): Promise<{ token: string }>
     },
   };
 }
-
-export type AppCloud = ReturnType<typeof createAppCloud>;

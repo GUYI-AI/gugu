@@ -11,11 +11,6 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { useIntegrationsContext } from './integrations-provider';
 import type { IntegrationFormInput } from './types';
 
-export type SetupFormProps = {
-  onSuccess: () => void;
-  onClose: () => void;
-};
-
 type SetupFormShellProps = {
   providerId: string;
   /** #7240「编辑凭据」:改的是哪个已存账号。 */

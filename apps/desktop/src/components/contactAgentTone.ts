@@ -42,11 +42,6 @@ export function useShownAgentContactStatus(agentUserId: string, status: AgentDis
   return { tone: shown ?? null, label: useAgentContactStatusLabel(shown, presentation) }
 }
 
-export function agentContactTone(status: AgentDisplayStatus): Pick<AgentContactPresentation, 'tone' | 'labelKey'> {
-  const { tone, labelKey } = agentContactPresentation(status)
-  return { tone, labelKey }
-}
-
 export function agentContactRowStatusClass(tone: AgentContactTone | null): string {
   const base = 'gg-c-st-dot flex items-center gap-1'
   return tone === 'pending' || tone === 'offline' || tone === 'archived' ? `${base} off` : base

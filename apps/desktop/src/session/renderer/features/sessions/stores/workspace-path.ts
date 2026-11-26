@@ -6,13 +6,6 @@ export function resolveWorkspacePath(workspacePath: string | undefined, filePath
   return `${root}/${relative}`;
 }
 
-export function relativeToWorkspace(workspacePath: string, filePath: string): string {
-  const root = workspacePath.replace(/\\/g, '/').replace(/\/+$/, '');
-  const normalizedPath = filePath.replace(/\\/g, '/');
-  const prefix = `${root}/`;
-  return normalizedPath.startsWith(prefix) ? normalizedPath.slice(prefix.length) : normalizedPath;
-}
-
 /** 路径判定的单一出处:聊天链接路由与它的契约测试都从这儿拿,❌ 各自复刻一份(两份今天
  * 一致,改一边就分岔)。反斜杠先归一 —— `C:\…` 与 `C:/…` 是同一种绝对路径。 */
 export function isAbsolutePath(filePath: string): boolean {

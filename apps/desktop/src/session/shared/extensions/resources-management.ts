@@ -22,7 +22,6 @@ export const RESOURCES_MANAGEMENT_API_VERSION = 50;
 
 /** The binding action for the voice-note operations, and its capability. */
 export const VOICE_NOTES_MANAGE_ACTION = 'voice-notes:manage';
-export const VOICE_NOTES_MANAGE_CAPABILITY = 'chat:voice-notes:manage';
 
 /**
  * Why a resource could not be read (or a change could not be made) now — one class per message the assistant's own pages

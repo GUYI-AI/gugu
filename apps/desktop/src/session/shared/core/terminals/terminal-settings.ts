@@ -48,16 +48,8 @@ export function terminalShellBasename(shell: string): string {
   return shell.split(/[\\/]/).pop()?.toLowerCase() ?? '';
 }
 
-export function isExplicitTerminalShellId(shell: string): shell is ExplicitTerminalShellId {
-  return TERMINAL_SHELL_IDS.includes(shell as TerminalShellId) && shell !== 'system';
-}
-
 export function isRuntimeTerminalShellId(shell: string): shell is RuntimeTerminalShellId {
   return RUNTIME_TERMINAL_SHELL_IDS.includes(shell as RuntimeTerminalShellId);
-}
-
-export function isCshShell(shell: string): boolean {
-  return CSH_SHELLS.has(terminalShellBasename(shell));
 }
 
 export function terminalShellFamily(shell: string): TerminalShellFamily {

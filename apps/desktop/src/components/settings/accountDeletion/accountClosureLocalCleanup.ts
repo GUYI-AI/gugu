@@ -8,13 +8,6 @@ export interface AccountClosureJournal {
 }
 export type ClosureCleanupState = { status: 'idle' | 'running' | 'pending' | 'complete' | 'failed' | 'unconfirmed'; retainedUnattributed: readonly string[] }
 export type AccountClosureLocalCleanup = ReturnType<typeof createAccountClosureLocalCleanup>
-
-export async function captureAccountClosureReceipt(ownerId: string, receipt: string, native: AccountClosureNative, journal: AccountClosureJournal): Promise<AccountClosureScope> {
-  const scope = Object.freeze({ ownerId, localOperationId: crypto.randomUUID() })
-  await native.receipt.put(scope, receipt)
-  await journal.write(scope)
-  return scope
-}
 export async function restoreAccountClosureScope(ownerId: string, journal: AccountClosureJournal): Promise<AccountClosureScope | null> {
   const scope = await journal.read(ownerId)
   if (!scope) return null

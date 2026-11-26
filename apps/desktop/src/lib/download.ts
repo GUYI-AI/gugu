@@ -11,7 +11,3 @@ export async function fetchBlob(url: string): Promise<Blob> {
 export function downloadBlob(blob: Blob, filename: string): Promise<{ saved: boolean }> {
   return platform.saveFile(blob, filename)
 }
-
-export async function downloadRemoteFile(url: string, filename: string): Promise<{ saved: boolean }> {
-  return downloadBlob(await fetchBlob(url), filename)
-}

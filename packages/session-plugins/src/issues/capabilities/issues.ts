@@ -15,8 +15,6 @@ import type {
  */
 export const issueRequiredInputSchema = z.enum(['repositoryUrl']);
 
-export type IssueRequiredInput = z.infer<typeof issueRequiredInputSchema>;
-
 const issuesDescriptorSchema = z.object({
   requiredInputs: z.array(issueRequiredInputSchema).default([]),
 });

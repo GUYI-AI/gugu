@@ -1,7 +1,6 @@
 import { inArray, or, type SQL } from 'drizzle-orm';
 import {
   pullRequests,
-  type pullRequestAssignees,
   type pullRequestChecks,
   type pullRequestLabels,
   type pullRequestUsers,
@@ -31,7 +30,6 @@ export function pullRequestRepositoryScope(repositoryUrls: string[]): SQL {
 }
 export type PrUserRow = typeof pullRequestUsers.$inferSelect;
 export type PrLabelRow = typeof pullRequestLabels.$inferSelect;
-export type PrAssigneeRow = typeof pullRequestAssignees.$inferSelect;
 export type PrCheckRow = typeof pullRequestChecks.$inferSelect;
 
 /** Convert a raw DB pull_request_users row to the shared PullRequestUser type. */

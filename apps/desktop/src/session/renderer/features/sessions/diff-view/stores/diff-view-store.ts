@@ -7,8 +7,6 @@ import { commitRef } from '@shared/core/git/utils';
 import type { ActiveFile, DiffViewSnapshot } from '@shared/view-state';
 import { type GitWorktreeStore } from '../../stores/git-worktree-store';
 
-export const MAX_STACKED_FILES = 8;
-
 type CommitAction = 'commit' | 'commit-push' | 'commit-pr';
 
 const VALID_OBJECT_REF_KINDS = new Set(['branch', 'commit', 'tag']);

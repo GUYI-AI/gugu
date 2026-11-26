@@ -1,6 +1,5 @@
 import { Github } from '@/lib/icons'
 import { Badge } from '@renderer/lib/ui/badge';
-import { SelectItem } from '@renderer/lib/ui/select';
 import type { SessionMessageKey } from '@renderer/localization/messages';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { GitHubAccountSummary, GitHubCredentialSource } from '@shared/github';
@@ -16,14 +15,6 @@ const GITHUB_SOURCE_KEYS: Partial<Record<GitHubCredentialSource, SessionMessageK
   device_flow: 'projects.github.sourceDeviceFlow',
   secure_storage: 'projects.github.sourceSavedToken',
 };
-
-export function GitHubAccountSelectItem({ account }: { account: GitHubAccountSummary }) {
-  return (
-    <SelectItem value={account.accountId} className="py-2">
-      <GitHubAccountSelectLabel account={account} />
-    </SelectItem>
-  );
-}
 
 export function GitHubAccountSelectLabel({ account }: { account: GitHubAccountSummary }) {
   return (

@@ -19,13 +19,3 @@ export function kindToRunningState(kind: string | null | undefined): AgentRunnin
       return 'running'
   }
 }
-
-// @@@1993 DM and group activity share this priority chain: thinking, live kind, presence kind, fallback.
-export function deriveAgentRunningState(
-  stream: { thinking: boolean; latestKind: string | null } | null | undefined,
-  presenceKind: string | null,
-): AgentRunningStateKey {
-  if (stream?.thinking) return kindToRunningState('think')
-  if (stream?.latestKind) return kindToRunningState(stream.latestKind)
-  return kindToRunningState(presenceKind)
-}

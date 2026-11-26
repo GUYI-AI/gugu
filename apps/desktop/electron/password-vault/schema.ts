@@ -52,7 +52,6 @@ export const documentSchema = z.strictObject({
 export const installationSchema = z.strictObject({ schema: z.literal(1), id: uuid, binding: z.string().regex(/^[a-f0-9]{64}$/), owners: z.array(z.string().regex(/^[a-f0-9]{64}$/)) })
 export type VaultDocument = z.infer<typeof documentSchema>
 export type VaultPayload = z.infer<typeof payloadSchema>
-export type CredentialField = z.infer<typeof fieldSchema>
 export type CredentialGrant = z.infer<typeof grantSchema>
 export type Installation = z.infer<typeof installationSchema>
 export function hash(value: string): string { return createHash('sha256').update(value).digest('hex') }

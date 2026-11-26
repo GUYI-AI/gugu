@@ -18,10 +18,6 @@ export function removeTabId(state: TabOrderState, id: string): void {
   }
 }
 
-export function setTabActive(state: TabOrderState, id: string): void {
-  state.activeTabId = id;
-}
-
 export function reorderTabIds(state: TabOrderState, fromIndex: number, toIndex: number): void {
   if (fromIndex === toIndex) return;
   const [tab] = state.tabOrder.splice(fromIndex, 1);

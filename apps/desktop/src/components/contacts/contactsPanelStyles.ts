@@ -19,14 +19,10 @@ export const detailBlockClass = '!mt-6 max-w-[620px]'
 // 详情面里的一行提示条(加载中/为空/出错):控件高一档,圆角与卡片同 --r。
 export const detailNoticeClass =
   'flex min-h-[var(--control-h-lg)] items-center rounded-[var(--radius-control)] border border-[var(--border)] bg-[var(--input-bg)] !px-3 text-[length:var(--font-body)] text-[var(--muted-fg)]'
-// 详情面里的卡片行(公开 Agent / 群成员):同一内距、同一圆角、同一边框。
-export const detailCardRowClass =
-  'flex min-h-[var(--control-h-touch)] min-w-0 items-center gap-3 rounded-[var(--radius-control)] border border-[var(--border)] bg-[var(--input-bg)] !p-2'
 // 详情面里的标题(群名 / Agent 名)。
 export const detailTitleTypeClass = 'text-lg font-semibold text-[var(--fg)]'
 export const detailTitleClass = `${detailTitleTypeClass} ${nameClampClass}`
 export const detailPlaceholderClass = 'flex flex-1 items-center justify-center text-sm text-[var(--muted-fg)]'
-export const detailSectionClass = (mobile?: boolean) => (mobile ? '!px-4 !py-5' : '!px-6 !py-6')
 export const detailBodyClass = (mobile?: boolean) =>
   cn(
     'flex-1 overflow-y-auto overflow-x-hidden',

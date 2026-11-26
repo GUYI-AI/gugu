@@ -151,19 +151,6 @@ export async function assertStarterRecordOwner(
   }
 }
 
-// ── owner 解析好的产品侧入口(store 本身保持纯:owner 由调用方给) ─────────────────────────────────────
-
-/** 在第一条 RPC 之前记住这条 operation 的 starter；显式空串也是必须保留的用户意图。 */
-export async function rememberStarterForOperation(
-  operationId: string,
-  starter: string,
-  getOwnerUserId: () => Promise<string> = getCurrentAuthUserId,
-): Promise<void> {
-  const ownerUserId = await getOwnerUserId()
-  if (!ownerUserId) throw new Error('starter continuation: no current auth owner — refusing to persist a starter')
-  starterContinuationStore.remember({ version: 1, ownerUserId, operationId, starter })
-}
-
 /**
  * finalize 建成群后回填群 id。**这条 operation 没有 starter 指针时是 no-op** —— 不是所有团队都带开场任务;
  * store 自身仍拒绝为无指针的 operation 凭空造一条(那才是要防的)。
@@ -177,16 +164,6 @@ export async function bindStarterGroup(
   if (!ownerUserId) throw new Error('starter continuation: no current auth owner — refusing to bind a group')
   if (!starterContinuationStore.find(ownerUserId, operationId)) return   // 本次创建没带 starter
   starterContinuationStore.bindGroup(ownerUserId, operationId, groupChatId)
-}
-
-/** starter 已落进该群草稿后的终态清理(happy path:创建成功当场落草稿)。未知 operation 是幂等 no-op。 */
-export async function clearLandedStarter(
-  operationId: string,
-  getOwnerUserId: () => Promise<string> = getCurrentAuthUserId,
-): Promise<void> {
-  const ownerUserId = await getOwnerUserId()
-  if (!ownerUserId) throw new Error('starter continuation: no current auth owner — refusing to clear a starter')
-  starterContinuationStore.clear(ownerUserId, operationId, 'draft-landed')
 }
 
 /** operation 被显式取消后的终态清理:群从未建成,故 `cancelled` 不要求已绑定群。未知 operation 是幂等 no-op。 */

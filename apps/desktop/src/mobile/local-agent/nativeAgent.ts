@@ -40,8 +40,6 @@ export interface PhoneAgentSession {
   lastJobStatus?: string | null
   lastActiveAt?: string | null
 }
-
-export interface PhoneAgentConversation { agentUserId: string; chatId: string }
 export interface PhoneAgentHostCall {
   ownerId: string
   id: string

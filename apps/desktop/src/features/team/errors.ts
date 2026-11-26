@@ -25,22 +25,3 @@ const STOP_REASONS = new Set<TeamStopReason>(['team_member_monthly_cap_reached',
 export function teamStopReason(value: unknown): TeamStopReason | null {
   return typeof value === 'string' && STOP_REASONS.has(value as TeamStopReason) ? value as TeamStopReason : null
 }
-
-/** Only structured reason codes select a funding notice, never HTTP/message/余额 heuristics. */
-export function teamFailureReason(error: unknown): TeamStopReason | null {
-  const seen = new Set<object>(), pending = [error]
-  while (pending.length) {
-    const item = pending.shift()
-    if (!item || typeof item !== 'object' || seen.has(item)) continue
-    seen.add(item)
-    const value = item as Record<string, unknown>
-    const reason = teamStopReason(value.reason_code) ?? teamStopReason(value.stop_reason)
-    if (reason) return reason
-    pending.push(value.error, value.cause)
-  }
-  return null
-}
-
-export function isTeamAccessRefusal(error: unknown): boolean {
-  return error instanceof TeamApiError && ['membership_disabled', 'team_identity_required', 'region_mismatch', 'unauthenticated'].includes(error.code)
-}

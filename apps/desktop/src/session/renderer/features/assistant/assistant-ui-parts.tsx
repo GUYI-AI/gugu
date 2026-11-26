@@ -152,18 +152,3 @@ export function AssistantEmpty({ title, children, action }: { title?: ReactNode;
     </div>
   );
 }
-
-export function StatusPill({ tone, children }: { tone: 'on' | 'off' | 'muted'; children: ReactNode }) {
-  return (
-    <span
-      className={cn(
-        'shrink-0 rounded-full px-2 py-1 text-xs',
-        tone === 'on' && 'bg-background-success text-foreground-success',
-        tone === 'off' && 'ta-chip-off',
-        tone === 'muted' && 'text-foreground-muted'
-      )}
-    >
-      {children}
-    </span>
-  );
-}

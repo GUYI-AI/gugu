@@ -78,7 +78,6 @@
     { "file": "apps/desktop/src/session/shared/preview/preview-link-script.ts", "class": "E", "reason": "Injected script source; the Chinese is script comments." },
     { "file": "apps/desktop/src/session/renderer/features/sample-project/content/zh-CN.ts", "class": "E", "reason": "Chinese sample project content, chosen for the zh-CN locale." },
     { "file": "apps/desktop/src/session/renderer/features/sample-project/content/en-US.ts", "class": "E", "reason": "Sample project content: the agent's recorded Chinese search queries." },
-    { "file": "apps/desktop/src/lib/assistantSetup.ts", "class": "E", "reason": "Name ideas offered for the assistant, mixing Chinese and English names." },
     { "file": "apps/desktop/src/lib/systemNoticeText.ts", "class": "E", "reason": "Matches the Chinese sentences the server writes, to translate them." },
     { "file": "apps/desktop/src/lib/assistantWorkTitle.ts", "class": "E", "reason": "Matches the stored placeholder title of old rows." },
     {"file": "apps/desktop/src/lib/localizedStoredValue.ts", "text": "已加入群聊", "class": "E", "reason": "Matches a stored group join value before resolving a localized label."},

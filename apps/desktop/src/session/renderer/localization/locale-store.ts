@@ -4,10 +4,7 @@ import {
   registerLocaleNamespace,
   subscribeLocale,
 } from '@/i18n/runtime';
-import type { SupportedLocale } from '@/i18n/locale';
 import { enUSMessages, type SessionMessageKey, zhCNMessages } from './messages';
-
-export type SessionLocale = SupportedLocale;
 export type SessionMessageValues = Readonly<Record<string, string | number>>;
 
 let registered = false;

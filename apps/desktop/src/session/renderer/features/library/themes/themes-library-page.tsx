@@ -221,10 +221,6 @@ function ThemePackPicker({ embedded = false }: { embedded?: boolean }) {
   );
 }
 
-export function ThemesLibraryPage() {
-  return <ThemePackPicker />;
-}
-
 export function ThemePackSettings() {
   return <ThemePackPicker embedded />;
 }

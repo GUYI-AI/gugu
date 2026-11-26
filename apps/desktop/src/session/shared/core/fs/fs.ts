@@ -2,13 +2,6 @@ import type { Result } from '@gugu/session-shared';
 
 export type FileWatchEventType = 'create' | 'delete' | 'modify' | 'rename';
 
-export interface FileWatchEvent {
-  type: FileWatchEventType;
-  entryType: 'file' | 'directory' | 'symlink';
-  path: string;
-  oldPath?: string;
-}
-
 export type BrowseLocalDirectoryParams = {
   type: 'local';
   path: string;

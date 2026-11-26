@@ -8,6 +8,5 @@ const isCanary = env?.VITE_BUILD === 'canary';
 // APP_ID / USER_DATA_DIR_NAME / ARTIFACT_PREFIX / R2_BASE_URL 一个引用都没有,
 // 已删除,留着只会让人误以为它们说了算。
 export const PRODUCT_NAME = isCanary ? 'gugu Canary' : 'gugu';
-export const APP_NAME_LOWER = isCanary ? 'gugu-canary' : 'gugu';
 export const UPDATE_CHANNEL = isCanary ? 'v1-canary' : 'v1-stable';
 export const IS_CANARY = isCanary;

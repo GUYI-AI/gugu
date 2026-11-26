@@ -4,8 +4,6 @@
  * a DOM environment.
  */
 
-import type { MentionKind } from './types';
-
 // ── Basename ──────────────────────────────────────────────────────────────────
 
 /**
@@ -35,13 +33,3 @@ export function compactMentionPath(path: string): string {
   const tail = parts.slice(Math.max(0, parts.length - 3), -1);
   return `${parts.length > 3 ? '…/' : ''}${tail.join('/')}/`;
 }
-
-// ── Lucide icon name by kind ──────────────────────────────────────────────────
-
-/** Map a MentionKind to a lucide icon name for use in the pill. */
-export const KIND_ICON: Record<MentionKind, string> = {
-  file: 'File',
-  issue: 'CircleDot',
-  symbol: 'Braces',
-  custom: 'AtSign',
-};
