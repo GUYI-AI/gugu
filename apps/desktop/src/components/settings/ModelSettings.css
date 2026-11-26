@@ -97,9 +97,9 @@
 .gg-model-key-row > button { flex: none; min-width: 81px; height: 32px; font-weight: 600; }
 .gg-model-test-ok { display: flex; align-items: center; gap: 4px; margin-top: -4px; font-size: var(--font-caption); line-height: 18px; color: var(--ok-fg); }
 .gg-model-field .subscription-error { margin-top: -4px; }
-/* The address refused the key: pick a protocol and add it anyway, right under the refusal. */
-.gg-model-add-anyway { display: flex; flex-direction: column; gap: 6px; }
-.gg-model-add-anyway-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* Under the key: what the check said, and "Add anyway" right after it when the address refused the key. */
+.gg-model-key-message { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: -4px; }
+.gg-model-key-message > .subscription-error { margin: 0; }
 .gg-model-advanced { margin-top: 26px; }
 .gg-model-checks { display: flex; flex-wrap: wrap; column-gap: 12px; row-gap: 6px; margin-top: 7px; }
 .gg-model-check { display: inline-flex; height: 20px; align-items: center; gap: 8px; font-size: 14px; line-height: 20px; color: var(--text-primary); cursor: pointer; user-select: none; }

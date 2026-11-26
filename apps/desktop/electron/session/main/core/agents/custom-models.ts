@@ -520,7 +520,8 @@ export async function detectCustomModelProtocols(input: DetectCustomModelProtoco
   const probe = await probeEndpointProtocols({
     baseUrl: normalizeModelBaseUrl(input.baseUrl), apiKey, modelId: input.modelId, hint: detectModelProtocol(input.baseUrl), env: connectionProbeEnv(),
   });
-  return { ...probe, endpoints: probe.endpoints.map((endpoint) => ({ ...endpoint, baseUrl: normalizeModelBaseUrl(endpoint.baseUrl) })) };
+  const normalized = (endpoints: CustomModelMeta['endpoints']) => endpoints.map((endpoint) => ({ ...endpoint, baseUrl: normalizeModelBaseUrl(endpoint.baseUrl) }));
+  return { ...probe, endpoints: normalized(probe.endpoints), ...(probe.refused ? { refused: normalized(probe.refused) } : {}) };
 }
 
 export type ResolvedCustomModel = {
