@@ -300,6 +300,7 @@ export function useCreateSessionCallback({
       },
     })).then(async () => {
       if (submission) submission.created = true;
+      input.clearSubmittedContextChoice?.();
       // The new-session memory never stands in the way (L11 复核 58): the session is made, its first line sent and the
       // box closed even when this computer cannot save what was picked — said in the log and in a light notice. Written
       // once the session exists, not awaited: a first line that fails still leaves a started session to remember, so its

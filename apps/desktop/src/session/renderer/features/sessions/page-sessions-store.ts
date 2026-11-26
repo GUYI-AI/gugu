@@ -166,7 +166,7 @@ export class PageSessionsStore implements IDisposable {
         // `sessionId: null` 是**清空**的线上形状(见 sessionEvents 那侧的抬头:`undefined`
         // 过不了 JSON 传输)。会话模型这一格用缺席表示「没有」,所以在这一处翻译回去 ——
         // ❌ 别把 `null` 直接抄进 store:下游到处在用 `=== undefined` 判首启。
-        const { providerSessionId, model, effort, contextUsage, providerSessionState, ...rest } = event.changes;
+        const { providerSessionId, model, effort, contextUsage, contextChoice, providerSessionState, ...rest } = event.changes;
         Object.assign(store.data, rest);
         if ('providerSessionId' in event.changes) store.data.providerSessionId = providerSessionId ?? undefined;
         // 模型与档位同一个形状:`null` = 删了键,会话模型里是缺席。
@@ -176,6 +176,7 @@ export class PageSessionsStore implements IDisposable {
         }
         if ('effort' in event.changes) store.data.effort = effort ?? undefined;
         if ('contextUsage' in event.changes) store.data.contextUsage = contextUsage ?? undefined;
+        if ('contextChoice' in event.changes) store.data.contextChoice = contextChoice ?? undefined;
         // 引擎那边的状态同一个形状:`null` = 去掉了(#7223)。
         if ('providerSessionState' in event.changes) store.data.providerSessionState = providerSessionState ?? undefined;
         // spec session-graph:归档 = 这一行离开会话列表 ⇒ 事件到达就收起它,形状与删除那一条一致。
