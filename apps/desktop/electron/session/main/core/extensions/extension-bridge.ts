@@ -1898,6 +1898,16 @@ async function operatorSession(caller: BridgeCaller): Promise<string | undefined
   throw new Error(`${operator.id}, the agent working this page, is no longer on this computer`);
 }
 
+/** `showSession`'s `orChatWith`: an agent's id as a tool call's `_meta['gugu/agent']` gives it (`user:<uuid>`), or bare. */
+function chatPeerOf(value: unknown): string | null {
+  if (value === undefined) return null;
+  const id = typeof value === 'string' ? value.replace(/^user:/, '') : '';
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    throw Object.assign(new Error('orChatWith names an agent by its id, as a tool call\'s gugu/agent gives it'), { code: 'invalid' });
+  }
+  return id.toLowerCase();
+}
+
 /** The page a page's own verb is about (`VerbFacts.only: 'page'`): `answerCall` let no other caller through. */
 function thePage(caller: BridgeCaller): SurfaceBinding {
   if (!caller.binding) throw new Error('Only a page has this');
@@ -2689,9 +2699,17 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
         await showSession(args.id, { projectHere: sessionHere, projectListed: listedSessionProject, bringUp });
         return undefined;
       }
+      const sessionId = sessionIdOf(args.id), chatWith = chatPeerOf(args.orChatWith);
+      // A surface floats over another App, outside gugu's window: its click brings gugu forward first, as a banner's does.
+      if (caller.binding?.surface) (await import('@main/core/agent-hooks/notification')).focusAppFromNotification();
       // Otherwise it opens the one way every session is opened (gugu-links.openLink); its failure in this API's codes.
       const { openLink } = await import('./gugu-links');
-      const outcome = await openLink({ kind: 'session', sessionId: sessionIdOf(args.id) });
+      const outcome = await openLink({ kind: 'session', sessionId });
+      // `orChatWith` (66): no such session here — that agent's private chat, as a click on its name in a chat opens it.
+      if (chatWith && outcome.kind === 'failed' && outcome.reason === 'no-session') {
+        await (await import('./extension-bridge-relay')).actInWindow({ kind: 'openLinkTarget', target: { kind: 'sender', userId: chatWith } });
+        return undefined;
+      }
       if (outcome.kind === 'failed') {
         throw Object.assign(new Error(outcome.reason === 'no-session'
           ? `Session ${sessionIdOf(args.id)} is not on this computer or in your task list`

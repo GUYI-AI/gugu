@@ -177,7 +177,12 @@ export const EXTENSION_WIDGET_READY_API_VERSION = 64;
 // 65 (app-credentials.ts): `gugu.credentials.choose(site, { hint?, help? })` opens the host's dialog, in the person's click, to
 // pick one of their saved credentials for the App on that website or save a new one (`hint`: what to save; `help`: the https
 // page that makes one); answers `{ chosen }`. `typeof gugu.credentials.choose` tells an older host.
-export const EXTENSION_API_VERSION = 65;
+// 66: `gugu.showSession(id, { orChatWith })`: a session not on this computer or in its task list opens that agent's private
+// chat instead (`orChatWith`: the agent's id, as a tool call's `gugu/agent` gives it). From an App surface (the strip over
+// another App's window) the call also brings gugu's window forward first, as a banner's click does. An older host ignores
+// `orChatWith` and answers `not-found`, and opens the session without bringing gugu forward. Desktop only: the phone has no surfaces
+// and answers `not-found` as before.
+export const EXTENSION_API_VERSION = 66;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;

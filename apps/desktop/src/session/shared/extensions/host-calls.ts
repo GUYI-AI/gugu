@@ -155,7 +155,8 @@ export const HOST_CALLS = {
   sendToBackground: { verb: 'sendToBackground', pack: (message: unknown) => ({ message }) },
   broadcastToViews: { verb: 'broadcastToViews', pack: (message: unknown) => ({ message }) },
   showMessage: { verb: 'showMessage', pack: (id: string) => ({ id }) },
-  showSession: { verb: 'showSession', pack: (id: string, options?: { peek?: boolean }) => ({ id, ...(options?.peek === true ? { peek: true } : {}) }) },
+  showSession: { verb: 'showSession', pack: (id: string, options?: { peek?: boolean; orChatWith?: string }) =>
+    ({ id, ...(options?.peek === true ? { peek: true } : {}), ...(options?.orChatWith === undefined ? {} : { orChatWith: options.orChatWith }) }) },
   'clipboard.writeText': { verb: 'clipboardWriteText', pack: (text: string) => ({ text }) },
   // Every file call names where its file is (真源原则 13): its argument object travels as it is.
   'appFiles.open': { verb: 'filesOpen' },

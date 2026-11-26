@@ -188,6 +188,7 @@ Free, from a click or key (they read and write no data):
 - \`showMessage(id)\` → its chat comes up, scrolled to it (a file's \`sourceMessageIds\`). \`not-found\`: not in its chat.
 - \`showSession(id)\` → that session comes up, as a click on it in the task list (\`ctx.workspace.sessionId\`, a tool's
   \`call.session\`). \`not-found\`: not in that list. \`{ peek: true }\`: beside your page, left as it is.
+  \`{ orChatWith: agent }\` (66): not in that list ⇒ that agent's private chat instead. From a surface, gugu comes forward first.
 - \`refs: [{ file, at?, label?, version? }]\`: pills to places in one chat's files, "file · \`label\`": \`file\` its
   entry or \`ctx.file\`; \`at\` where (\`{ slide: 3, shape: 12 }\`), back as the \`onLink\` \`query\`
   of the App a click opens it in; \`version\` picked on (else the entry's). Only with refs may \`text\` be empty.
