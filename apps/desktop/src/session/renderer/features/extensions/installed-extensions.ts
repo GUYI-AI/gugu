@@ -306,20 +306,34 @@ export async function fetchInstalledApps(hostKey: string = LOCAL_HOST): Promise<
   return appsOf(await installedExtensions.fetch(hostKey), getLocaleSnapshot().resolvedLocale);
 }
 
-const ticks = new Map<string, IObservableValue<number>>();
+type Held = { tick: IObservableValue<number>; list?: InstalledExtensionsList; locale?: string; apps: InstalledApps | null };
+const held = new Map<string, Held>();
 
-/** For a MobX computed/reaction: a tick per host, no data held. */
+/**
+ * For a MobX computed/reaction, or a render: a host's installed apps. Renders read this many times per frame; building
+ * them from a full replica peek each time hashed its key and rebuilt the apps every time. The result is kept with the
+ * list object and the language it was made from, and every read checks both against the cache's value and the language
+ * now — so a read made inside another listener of the same change already sees the new apps, whatever order the
+ * listeners run in. The tick only tells MobX readers to read again.
+ */
 export function peekInstalledAppsTracked(hostKey: string = LOCAL_HOST): InstalledApps | null {
-  let tick = ticks.get(hostKey);
-  if (!tick) {
-    const box = observable.box(0);
-    const bump = () => runInAction(() => box.set(box.get() + 1));
+  let entry = held.get(hostKey);
+  if (!entry) {
+    const tick = observable.box(0);
+    const bump = () => runInAction(() => tick.set(tick.get() + 1));
     installedExtensions.subscribe([hostKey], bump);
     subscribeLocale(bump);
-    ticks.set(hostKey, (tick = box));
+    held.set(hostKey, (entry = { tick, apps: null }));
   }
-  tick.get();
-  return peekInstalledApps(hostKey);
+  entry.tick.get();
+  const list = installedExtensions.peekValue(hostKey);
+  const locale = getLocaleSnapshot().resolvedLocale;
+  if (!('list' in entry) || entry.list !== list || entry.locale !== locale) {
+    entry.list = list;
+    entry.locale = locale;
+    entry.apps = list === undefined ? null : appsOf(list, locale);
+  }
+  return entry.apps;
 }
 
 export function writeInstalled<R>(
