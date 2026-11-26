@@ -870,6 +870,7 @@ export default {
     "copyFailed": "Could not copy. Select the text and copy it manually.",
     "forwarded": "↪ Forwarded",
     "forwardedFrom": "↪ From {{line}}",
+    "targetingSeparator": ", ",
     "me": "Me",
     "read": "Read",
     "readCount": "Read by {{read}}",
