@@ -975,14 +975,14 @@ const subagents = createCodexSubagents({ rootId: () => sessionId, emit: sessionU
 let lastGoalLine = null
 const GOAL_STATUS_TEXT = {
   active: 'Goal active', paused: 'Goal paused', blocked: 'Goal blocked',
-  usageLimited: 'Goal stopped: usage limit reached', budgetLimited: 'Goal stopped: token budget reached',
+  usageLimited: 'Goal stopped, usage limit reached', budgetLimited: 'Goal stopped, token budget reached',
   complete: 'Goal complete',
 }
 function goalLine(goal) {
   const used = Number(goal.tokensUsed ?? 0).toLocaleString('en-US')
   const tokens = goal.tokenBudget == null ? `${used} tokens used`
     : `${used} / ${Number(goal.tokenBudget).toLocaleString('en-US')} tokens`
-  return `${GOAL_STATUS_TEXT[goal.status] ?? `Goal ${goal.status}`} · ${tokens}`
+  return `${GOAL_STATUS_TEXT[goal.status] ?? `Goal ${goal.status}`}: ${tokens}`
 }
 // The set response and the `thread/goal/updated` that follows carry the same goal: one line for it. Token counts move
 // on every turn, so they are not part of what makes a line new.

@@ -127,8 +127,8 @@ describe('Codex ACP /goal is codex thread goal', () => {
     expect(receipt).toEqual({ messageId: expect.stringMatching(/^goal:/) })
     expect(rig.goalWire()).toEqual([{ method: 'thread/goal/set', params: {
       threadId: 'th-goal', origin: 'user', objective: 'ship the fix', status: 'active', tokenBudget: 200_000 } }])
-    await awaitFact('budget notice', () => rig.notices().find((title) => title?.startsWith('Goal stopped: token budget reached')))
-    expect(rig.notices()).toEqual(['Goal active · 0 / 200,000 tokens', 'Goal stopped: token budget reached · 200,005 / 200,000 tokens'])
+    await awaitFact('budget notice', () => rig.notices().find((title) => title?.startsWith('Goal stopped, token budget reached')))
+    expect(rig.notices()).toEqual(['Goal active: 0 / 200,000 tokens', 'Goal stopped, token budget reached: 200,005 / 200,000 tokens'])
     expect(rig.updates.find((update) => update.sessionUpdate === 'user_message')?.content).toEqual(prompt('/goal --tokens 200k ship the fix'))
   })
 
@@ -143,7 +143,7 @@ describe('Codex ACP /goal is codex thread goal', () => {
       { threadId: 'th-goal', origin: 'user', status: 'paused' },
       { threadId: 'th-goal', origin: 'user' },
     ])
-    expect(rig.notices()).toEqual(['Goal active · 0 tokens used', 'Goal paused · 0 tokens used', 'Goal cleared'])
+    expect(rig.notices()).toEqual(['Goal active: 0 tokens used', 'Goal paused: 0 tokens used', 'Goal cleared'])
   })
 
   it('refuses a malformed budget without touching codex', async () => {
