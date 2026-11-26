@@ -4,9 +4,9 @@ import { extensionOf, normalizeMimeType } from './imageMime.mjs'
 
 const FAMILIES = [
   ['pdf', /^pdf$/, /pdf/],
-  ['word', /^(docx?|odt|rtf|pages)$/, /msword|wordprocessing|opendocument\.text/],
-  ['sheet', /^(xlsx?|csv|tsv|ods|numbers)$/, /excel|spreadsheet|csv/],
-  ['slides', /^(pptx?|odp|key)$/, /powerpoint|presentation/],
+  ['word', /^(doc[xm]?|odt|rtf|pages)$/, /msword|wordprocessing|opendocument\.text/],
+  ['sheet', /^(xls[xm]?|csv|tsv|ods|numbers)$/, /excel|spreadsheet|csv/],
+  ['slides', /^(ppt[xm]?|odp|key)$/, /powerpoint|presentation/],
   ['archive', /^(zip|rar|7z|tar|gz|tgz|bz2|xz)$/, /zip|compressed|x-tar|gzip/],
   ['image', /^(a?png|jpe?g|jfif|gif|webp|bmp|svg|heic|heif|tiff?|avif|ico)$/, /^image\//],
   ['video', /^(mp4|mov|webm|mkv|avi|m4v)$/, /^video\//],

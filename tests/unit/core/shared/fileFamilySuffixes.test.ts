@@ -30,3 +30,9 @@ it("classifies configuration suffixes known to MIME inference as text", () => {
     expect(fileFamily(name, mime)).toBe(family)
   }
 })
+
+it("recognizes macro-enabled Office documents without MIME metadata", () => {
+  for (const [name, mime, family] of [["report.docm", "", "word"], ["budget.xlsm", "", "sheet"], ["deck.pptm", "", "slides"]]) {
+    expect(fileFamily(name, mime)).toBe(family)
+  }
+})
