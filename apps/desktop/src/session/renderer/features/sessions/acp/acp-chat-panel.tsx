@@ -1959,7 +1959,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   if (!store) {
     return (
       <div
-        className="relative h-full w-full bg-background-secondary-1"
+        className="relative h-full w-full bg-[var(--chat-bg)]"
         data-session-chat-surface={tabKind === 'side-chat' ? 'side-chat' : 'source'}
       />
     );
@@ -1989,7 +1989,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       data-session-chat-composer-slot={composerSlot ? 'present' : 'absent'}
       // Focusable (outside the Tab order) so ⌘F pressed after clicking the transcript lands in this panel.
       tabIndex={-1}
-      className={`relative h-full overflow-hidden bg-background-secondary-1 outline-none ${nativeChatAppearance}`}
+      className={`relative h-full overflow-hidden bg-[var(--chat-bg)] outline-none ${nativeChatAppearance}`}
     >
       <div className="flex h-full min-h-0 flex-col">
         <div className="relative min-h-0 flex-1">

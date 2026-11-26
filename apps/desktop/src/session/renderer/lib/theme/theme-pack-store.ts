@@ -4,6 +4,8 @@
  *   - 选双模式主题:两个槽位一起填,明暗偏好不动(跟随系统照常跟);
  *   - 选单模式主题:只填它那一格;当下生效的是另一种明暗时顺手把偏好切过去 —— 点一下就要看得见(owner 11-07 拍板);
  *   - 槽位空 = 那种明暗用咕咕默认。
+ *   - 从没选过(本机没存过槽位)= 用宿主给的默认族:桌面是 GitHub(owner 11-26「github 成默认主题」),
+ *     手机没有主题入口,不给 = 咕咕默认。选过「咕咕默认」存的是 `{}`,和「没选过」分得开,升级不会把它改成 GitHub。
  *
  * 落地是一段样式表(`<style id="gugu-theme-pack">`),同一段字符串存进 localStorage,index.html 的引导脚本首帧前就插上,
  * 不闪色。内置与导入走同一条路(themePackStylesheet),只是导入的配色存在本机。
@@ -54,8 +56,24 @@ export function findThemePack(id: string | undefined): ThemePack | undefined {
   return id ? allThemePacks().find((pack) => pack.id === id) : undefined;
 }
 
+/** 出厂默认的那一族(owner 11-26)。 */
+export const DEFAULT_THEME_PACK_ID = 'github';
+
+let unchosenSlots: ThemePackSlots = {};
+
+/** 宿主声明「没选过主题的人用哪族」;null = 咕咕默认。桌面启动时设一次(store/theme.ts)。 */
+export function setUnchosenThemePack(id: string | null): void {
+  unchosenSlots = id ? { dark: id, light: id } : {};
+}
+
+/** 本机存下的选择;null = 从没选过(连「咕咕默认」也没点过)。存坏了按「选过咕咕默认」读,下一次写入覆盖。 */
+export function readStoredThemePackSlots(): ThemePackSlots | null {
+  if (typeof localStorage === 'undefined' || localStorage.getItem(THEME_PACK_SLOTS_KEY) === null) return null;
+  return readJson<ThemePackSlots>(THEME_PACK_SLOTS_KEY, {});
+}
+
 export function readThemePackSlots(): ThemePackSlots {
-  const slots = readJson<ThemePackSlots>(THEME_PACK_SLOTS_KEY, {});
+  const slots = readStoredThemePackSlots() ?? unchosenSlots;
   const out: ThemePackSlots = {};
   // 指向已经不存在的主题(导入的被删了)= 那一格回到默认。
   for (const mode of ['dark', 'light'] as const) if (findThemePack(slots?.[mode])?.modes[mode]) out[mode] = slots[mode];
@@ -85,21 +103,31 @@ export function applyThemePackSlots(slots: ThemePackSlots = readThemePackSlots()
   notifyHostTheme();
 }
 
-function writeSlots(slots: ThemePackSlots): void {
-  if (typeof localStorage !== 'undefined') localStorage.setItem(THEME_PACK_SLOTS_KEY, JSON.stringify(slots));
-  applyThemePackSlots(slots);
+/** null = 回到「没选过」(删掉存的槽位,跟着宿主默认走)。 */
+function writeSlots(slots: ThemePackSlots | null): void {
+  if (typeof localStorage !== 'undefined') {
+    if (slots) localStorage.setItem(THEME_PACK_SLOTS_KEY, JSON.stringify(slots));
+    else localStorage.removeItem(THEME_PACK_SLOTS_KEY);
+  }
+  applyThemePackSlots();
   for (const listener of listeners) listener();
 }
 
-export type ThemePackChoice = { slots: ThemePackSlots; preference: ThemePreference };
+/** 某一刻的选择:存下的槽位(null = 没选过)与明暗偏好。「撤销」和首次选主题的「跳过」都回到它。 */
+export type ThemePackChoice = { slots: ThemePackSlots | null; preference: ThemePreference };
+
+export function readThemePackChoice(): ThemePackChoice {
+  return { slots: readStoredThemePackSlots(), preference: readThemePreference() };
+}
 
 /** 选一族主题。返回选之前的槽位与明暗偏好,给「撤销」用。 */
 export function chooseThemePack(id: string): ThemePackChoice {
   const pack = findThemePack(id);
   if (!pack) throw new Error(`no such theme: ${id}`);
-  const before = { slots: readThemePackSlots(), preference: readThemePreference() };
+  const before = readThemePackChoice();
   const modes = packModes(pack);
-  const next = { ...before.slots };
+  // 从当下生效的槽位出发:没选过的人点了只有深色的主题,浅色那一格仍是默认族。
+  const next = { ...readThemePackSlots() };
   for (const mode of modes) next[mode] = id;
   writeSlots(next);
   // 单模式主题:当下是另一种明暗时把偏好切过去,❌ 选了却看不见变化。
@@ -124,12 +152,13 @@ export function saveImportedThemePack(pack: ThemePack): void {
 }
 
 export function removeImportedThemePack(id: string): void {
-  const slots = readThemePackSlots();
+  const stored = readStoredThemePackSlots();
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(IMPORTED_KEY, JSON.stringify(readImportedThemePacks().filter((p) => p.id !== id)));
   }
-  const next = { ...slots };
-  for (const mode of ['dark', 'light'] as const) if (next[mode] === id) delete next[mode];
+  // 没选过 = 槽位里不可能有导入的主题;照旧「没选过」,❌ 顺手存成一份选择。
+  const next = stored && { ...stored };
+  for (const mode of ['dark', 'light'] as const) if (next?.[mode] === id) delete next[mode];
   writeSlots(next);
 }
 
