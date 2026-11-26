@@ -21,8 +21,8 @@ export async function readRecentPhotos(): Promise<RecentPhoto[]> {
   }
 }
 
-export async function readRecentPhotoThumbnail(photo: RecentPhoto): Promise<string | null> {
-  const { jpeg } = await nativePhoneData.recentPhotoThumbnail({ id: photo.id })
+export async function readRecentPhotoThumbnail(id: string): Promise<string | null> {
+  const { jpeg } = await nativePhoneData.recentPhotoThumbnail({ id })
   return jpeg ? `data:image/jpeg;base64,${jpeg}` : null
 }
 

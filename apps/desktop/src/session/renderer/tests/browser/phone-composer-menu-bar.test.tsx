@@ -118,8 +118,8 @@ it('stages and removes a recent photo while sharing the existing ten-file limit'
   const first = recent.getByRole('button', { name: photos[0].name })
   const last = recent.getByRole('button', { name: photos[11].name })
   const staged = () => harness!.container.querySelectorAll('[data-slot="composer-attachment"]').length
-  await until('the visible thumbnail is loaded', () => media.thumbnail.mock.calls.some(([photo]) => photo.id === '1'))
-  expect(media.thumbnail.mock.calls.some(([photo]) => photo.id === '12')).toBe(false)
+  await until('the visible thumbnail is loaded', () => media.thumbnail.mock.calls.some(([id]) => id === '1'))
+  expect(media.thumbnail.mock.calls.some(([id]) => id === '12')).toBe(false)
   await first.click()
   await expect.element(first).toHaveAttribute('aria-pressed', 'true')
   expect(staged()).toBe(1)
@@ -132,7 +132,7 @@ it('stages and removes a recent photo while sharing the existing ten-file limit'
     await expect.element(tile).toHaveAttribute('aria-pressed', 'true')
   }
   await last.click()
-  await until('the scrolled thumbnail is loaded', () => media.thumbnail.mock.calls.some(([photo]) => photo.id === '12'))
+  await until('the scrolled thumbnail is loaded', () => media.thumbnail.mock.calls.some(([id]) => id === '12'))
   await expect.element(last).toHaveAttribute('aria-pressed', 'false')
   expect(staged()).toBe(10)
   await paperclip.click()
