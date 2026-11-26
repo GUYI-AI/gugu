@@ -1,3 +1,4 @@
+import { registerKeyLayer } from '@renderer/lib/commands/keyboard-dispatcher';
 import { commandRegistry } from '@renderer/lib/commands/registry';
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
 import { detectPlatform } from '@tanstack/react-hotkeys';
@@ -137,7 +138,7 @@ function runShortcut(key: SessionNavShortcutKey): boolean {
 }
 
 /**
- * behavior session-page「键盘导航」. One bubble-phase listener rather than per-composer wiring: by the
+ * behavior session-page「键盘导航」. A key layer of the one dispatcher rather than per-composer wiring: by the
  * time the event reaches it, TipTap's suggestion plugin has already claimed ↑↓ if a mention or
  * slash popup is open (ProseMirror calls preventDefault when a plugin handles a key), so
  * `defaultPrevented` is a "someone else owns this key" signal and no popup sniffing or
@@ -226,10 +227,10 @@ export function SessionKeyboardNavListener() {
       event.stopPropagation();
     };
     document.addEventListener('focusin', onFocusIn);
-    document.addEventListener('keydown', onKeyDown);
+    const stopLayer = registerKeyLayer(onKeyDown);
     return () => {
       document.removeEventListener('focusin', onFocusIn);
-      document.removeEventListener('keydown', onKeyDown);
+      stopLayer();
     };
   }, [hotkeys]);
 

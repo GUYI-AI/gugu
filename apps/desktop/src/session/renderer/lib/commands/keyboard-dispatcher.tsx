@@ -84,6 +84,18 @@ export function dispatchKey(event: KeyboardEvent, source: KeySource): boolean {
   return false;
 }
 
+/**
+ * A keymap that is a table of its own rather than one command per chord (the session-page keyboard navigation: which
+ * layer a key belongs to decides what it does). Layers see every key that reaches the document after the commands, in
+ * the same listener, so the two never race; a layer does its own preventDefault when it acts.
+ */
+export type KeyLayer = (event: KeyboardEvent) => void;
+const layers = new Set<KeyLayer>();
+export function registerKeyLayer(layer: KeyLayer): () => void {
+  layers.add(layer);
+  return () => { layers.delete(layer); };
+}
+
 function install(): () => void {
   const sync = () => commandRegistry.setSessionPageVisible(isEmbedVisible());
   sync();
@@ -93,7 +105,10 @@ function install(): () => void {
     if (element) commandRegistry.setContext(element);
   };
   const capture = (event: KeyboardEvent) => { dispatchKey(event, 'capture'); };
-  const bubble = (event: KeyboardEvent) => { dispatchKey(event, 'bubble'); };
+  const bubble = (event: KeyboardEvent) => {
+    dispatchKey(event, 'bubble');
+    for (const layer of layers) layer(event);
+  };
   document.addEventListener('focusin', context, true);
   document.addEventListener('pointerdown', context, true);
   document.addEventListener('keydown', capture, true);
