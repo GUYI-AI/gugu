@@ -404,7 +404,6 @@ export default {
       "disconnect": "Disconnect",
       "openSystemSettings": "Open System Settings",
       "restartToApply": "Restart Gugu",
-      "afterVerify": "After verifying the fingerprint independently, remove the old entry on this computer and reconnect.",
       "connectFailed": "Not completed: {{message}}",
       "connection": "{{name}} permissions",
       "status": "Status",
@@ -541,6 +540,7 @@ export default {
       }
     },
     "link": {
+      "afterVerify": "After verifying the fingerprint independently, remove the old entry on this computer and reconnect.",
       "startService": "Run gugu-server start on the device, then reconnect.",
       "deviceGone": "This device is no longer in your devices list.",
       "connectFailed": "Could not reconnect to this device.",

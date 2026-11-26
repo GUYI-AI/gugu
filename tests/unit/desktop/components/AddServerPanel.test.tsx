@@ -323,6 +323,8 @@ describe('AddServerPanel · 连接后原地变成进度', () => {
     }))
     expect(body()).toContain('在「连接」步骤失败')
     expect(body()).toContain('这台机器的身份已变更')
+    expect(body()).toContain(zhSettings.devices.link.afterVerify)
+    expect(enSettings.devices.link.afterVerify).toContain('verifying the fingerprint independently')
     expect(body()).toContain("ssh-keygen -R '[box]:2222'")
     expect(body()).toContain('SHA256:new')
     expect(buttonNamed('重试')).toBeTruthy()

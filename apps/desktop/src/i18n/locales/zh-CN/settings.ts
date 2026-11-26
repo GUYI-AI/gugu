@@ -404,7 +404,6 @@ export default {
       "disconnect": "断开连接",
       "openSystemSettings": "打开系统设置",
       "restartToApply": "重启咕咕",
-      "afterVerify": "独立核对指纹后，在本机移除这台设备的旧记录，再重新连接。",
       "connectFailed": "未完成：{{message}}",
       "connection": "{{name}} 权限",
       "status": "状态",
@@ -541,6 +540,7 @@ export default {
       }
     },
     "link": {
+      "afterVerify": "独立核对指纹后，在本机移除这台设备的旧记录，再重新连接。",
       "startService": "请在设备上运行 gugu-server start，然后重新连接。",
       "deviceGone": "这台设备已从你的设备列表移除。",
       "connectFailed": "未能重新连接这台设备。",
