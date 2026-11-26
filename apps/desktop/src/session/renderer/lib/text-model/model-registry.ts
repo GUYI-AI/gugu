@@ -797,7 +797,7 @@ export class TextModelRegistry {
         if ((result.error as { code?: string }).code === 'conflict' && !merged) {
           const disk = this.modelMap.get(this.toDiskUri(uri));
           if (disk?.type !== 'disk') throw new Error('The saved file has no disk model');
-          await this.readDisk(this.toDiskUri(uri), disk);
+          await this.readDisk(this.toDiskUri(uri), disk, false, true);
           return this.writeModelToDisk(uri, true);
         }
         throw new Error(result.error.type === 'not_found' ? translateSessionMessage('taskError.fileNotFound', { path: '[path]' }) : result.error.message);
@@ -890,7 +890,7 @@ export class TextModelRegistry {
     return turn.done;
   }
 
-  private async readDisk(uri: string, entry: DiskModelEntry, seenEmpty = false): Promise<void> {
+  private async readDisk(uri: string, entry: DiskModelEntry, seenEmpty = false, requireComplete = false): Promise<void> {
     const res = entry.external
       ? await workspaceRpc(entry.projectId).files.readExternalFile(
           entry.projectId,
@@ -906,6 +906,8 @@ export class TextModelRegistry {
         );
     const bufferUri = uri.replace(/^disk:\/\//, 'file://');
     if (!res.success) {
+      if (requireComplete) throw new Error(res.error.type === 'not_found'
+        ? translateSessionMessage('taskError.fileNotFound', { path: '[path]' }) : res.error.message);
       if (!entry.external) {
         const exists = await workspaceRpc(entry.projectId).files.fileExists(entry.projectId, entry.workspaceId, entry.filePath);
         if (exists.success && !exists.data.exists) runInAction(() => this.deletedOnDisk.add(bufferUri));
@@ -920,10 +922,16 @@ export class TextModelRegistry {
         this.modelStatus.set(uri, 'too-large');
         this.modelTotalSizes.set(uri, res.data.totalSize);
       });
+      if (requireComplete) throw new Error('The current file is too large to merge before saving');
+      return;
+    }
+    if (res.data.binary) {
+      runInAction(() => this.modelStatus.set(uri, 'binary'));
+      if (requireComplete) throw new Error('The current file is binary and cannot be merged before saving');
       return;
     }
     // Empty where it was not: most likely caught mid-write, so not taken on one read. Empty twice, it is empty.
-    if (res.data.content === '' && entry.model.doc.length > 0 && !seenEmpty) return this.readDisk(uri, entry, true);
+    if (res.data.content === '' && entry.model.doc.length > 0 && !seenEmpty) return this.readDisk(uri, entry, true, requireComplete);
     this.applyDiskUpdate(uri, entry, res.data.content);
   }
 

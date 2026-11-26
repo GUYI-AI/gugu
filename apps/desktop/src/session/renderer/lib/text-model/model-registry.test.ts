@@ -668,4 +668,17 @@ describe('TextModelRegistry', () => {
     expect(fileMocks.writeFile).toHaveBeenLastCalledWith('project', 'workspace', 'c.txt', 'one (mine)\ntwo (theirs)\n');
     expect(registry.isDirty(uri)).toBe(false);
   });
+
+  it.each(['unreadable', 'truncated', 'binary'])('does not retry a conflicting save when the current disk is %s', async kind => {
+    const { registry, uri } = await openDirty('conflict.md', 'old\n', 'mine\n');
+    fileMocks.writeFile.mockClear();
+    fileMocks.writeFile.mockImplementationOnce(async () => ({ success: false, error: { type: 'fs_error', message: 'changed', code: 'conflict' } }));
+    fileMocks.readFile.mockImplementationOnce(async () => kind === 'unreadable'
+      ? { success: false, error: { type: 'fs_error', message: 'unreadable' } } as never
+      : { success: true, data: { content: '', binary: kind === 'binary', truncated: kind === 'truncated', totalSize: 40_000_000 } });
+    expect(await registry.saveFileToDisk(uri)).toBeNull();
+    expect(fileMocks.writeFile).toHaveBeenCalledTimes(1);
+    expect(registry.getValue(uri)).toBe('mine\n');
+    expect(registry.isDirty(uri)).toBe(true);
+  });
 });
