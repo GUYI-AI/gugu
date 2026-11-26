@@ -111,7 +111,7 @@ export function useMachineCreateContext(target: MachineCreateTarget | null): Mac
           wakeFailure: wakeFailureLine(target.deviceId, label, translate),
           signInExpiredAt: device?.signInExpiredAt,
           notices: device?.notices,
-          serverUpdate: device?.serverUpdate,
+          serverUpdate: device?.sshLink ? undefined : device?.serverUpdate,
           deviceId: target.deviceId,
           signIn: () => void remoteHostsStore.signIn(target.deviceId),
           translate,

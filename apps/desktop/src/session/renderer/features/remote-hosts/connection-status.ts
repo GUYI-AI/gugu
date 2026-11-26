@@ -261,8 +261,11 @@ export function machineNoticeLabel(
   notices: readonly ServerMachineNotice[] | undefined,
   device: string,
   translate: Translate,
-  options: { protocolOnly?: boolean; serverUpdate?: DeviceServerUpdate } = {}
+  options: { connection: HostConnectionState | null; protocolOnly?: boolean; serverUpdate?: DeviceServerUpdate }
 ): string | null {
+  // Heartbeat details can outlive the condition they describe. Use them for a protocol block
+  // only while the live connection still reports a version mismatch.
+  if (options.protocolOnly && options.connection !== 'outdated') return null;
   if (notices?.some(notice => notice.kind === 'desktop-too-old')) return translate('remoteHost.notice.desktopTooOld', { device });
   const update = options.serverUpdate;
   if (update) {

@@ -35,9 +35,9 @@ export function machineNotice(input: {
   translate: Translate;
 }): MachineNoticeSpec | null {
   const { connection, label, dials, translate } = input;
-  const update = connection === 'connected' ? undefined : input.serverUpdate;
-  const versionNotice = machineNoticeLabel(input.notices, label ?? '', translate, { protocolOnly: true, serverUpdate: update });
-  if (versionNotice && !isSshAttention(connection) && connection !== 'sign-in' && connection !== 'reconnecting' && (update || (connection !== 'updating' && connection !== 'update-failed'))) {
+  const update = input.serverUpdate;
+  const versionNotice = machineNoticeLabel(input.notices, label ?? '', translate, { connection, protocolOnly: true, serverUpdate: update });
+  if (versionNotice) {
     const updateNotice = input.notices?.some(notice => notice.kind === 'desktop-too-old') ? undefined : update;
     return { title: versionNotice, tier: updateNotice && updateNotice.state !== 'failed' ? 'info' : 'error', waiting: updateNotice?.state === 'downloading', delayed: false };
   }
