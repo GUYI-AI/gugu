@@ -4,15 +4,15 @@ import { extensionOf, normalizeMimeType } from './imageMime.mjs'
 
 const FAMILIES = [
   ['pdf', /^pdf$/, /pdf/],
-  ['word', /^(docx?|odt|rtf|pages)$/, /msword|wordprocessing|opendocument\.text/],
-  ['sheet', /^(xlsx?|csv|tsv|ods|numbers)$/, /excel|spreadsheet|csv/],
-  ['slides', /^(pptx?|odp|key)$/, /powerpoint|presentation/],
-  ['archive', /^(zip|rar|7z|tar|gz|tgz|bz2|xz)$/, /zip|compressed|x-tar|gzip/],
-  ['image', /^(png|jpe?g|gif|webp|bmp|svg|heic|avif|ico)$/, /^image\//],
+  ['word', /^(do[ct][xm]?|odt|rtf|pages)$/, /msword|wordprocessing|opendocument\.text/],
+  ['sheet', /^(xl[st][xm]?|csv|tsv|ods|numbers)$/, /excel|spreadsheet|csv/],
+  ['slides', /^(p[po]t[xm]?|odp|key)$/, /powerpoint|presentation/],
+  ['archive', /^(zip|rar|7z|tar|gz|tgz|tbz2?|txz|bz2|xz)$/, /zip|compressed|x-tar|gzip/],
+  ['image', /^(a?png|jpe?g|jfif|gif|webp|bmp|svg|heic|heif|tiff?|avif|ico)$/, /^image\//],
   ['video', /^(mp4|mov|webm|mkv|avi|m4v)$/, /^video\//],
   ['audio', /^(mp3|wav|m4a|aac|flac|ogg|opus)$/, /^audio\//],
-  ['code', /^(js|mjs|cjs|ts|mts|cts|tsx|jsx|py|go|rs|java|c|cpp|h|sh|rb|php|swift|kt|sql|css|scss|sass|less|vue|svelte)$/, /javascript|typescript|x-python|x-sh/],
-  ['text', /^(md|txt|json|ya?ml|xml|html?|log)$/, /^text\/|json/],
+  ['code', /^(js|mjs|cjs|ts|mts|cts|tsx|jsx|py|go|rs|java|c|cc|cpp|h|hpp|cs|sh|bash|zsh|rb|php|swift|kt|sql|css|scss|sass|less|vue|svelte)$/, /javascript|typescript|x-python|x-sh|x-shellscript/],
+  ['text', /^(md|markdown|txt|json|ya?ml|xml|html?|log|toml|ini|conf)$/, /^text\/|json/],
 ]
 
 /** `report.pdf` → `'pdf'`; a name without a known suffix goes by its mime; nothing known → `'other'`. */
