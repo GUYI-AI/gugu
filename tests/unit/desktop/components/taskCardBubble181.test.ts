@@ -276,7 +276,7 @@ describe('task card resource access', () => {
     ] })
     const card = harness.container.querySelector<HTMLElement>('[data-testid="composer-card"]')!
     expect(card.tagName).toBe('DIV')
-    expect(card.textContent).toContain('无法查看 Colleague 的任务')
+    expect(card.textContent).toContain('无法查看 Colleague 的智能体会话')
     expect(card.textContent).toContain('brief.pdf')
     expect(card.textContent).toContain('notes.txt')
     expect(card.querySelector('a')).toBeNull()
@@ -295,7 +295,7 @@ describe('task card resource access', () => {
     }))
     const card = harness.container.querySelector<HTMLElement>('[data-testid="composer-card"]')!
     expect(card.tagName).toBe(openable ? 'BUTTON' : 'DIV')
-    if (!openable) expect(card.textContent).toContain('无法查看 Original owner 的任务')
+    if (!openable) expect(card.textContent).toContain('无法查看 Original owner 的智能体会话')
   })
 
   // #446:手机上任务那枚页签 = 开在卡上的话题,点卡就切过去;谁的卡都一样,❌ 去开会话页。
