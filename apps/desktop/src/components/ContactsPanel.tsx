@@ -12,17 +12,16 @@ import { SectionLabel } from './ui/SectionLabel'
 import { Chip } from './ui/Chip'
 import {
   ChevronRight,
-  Check,
   MessageCircle,
   Pencil,
   Plus,
   Tag,
   Trash2,
   UserPlus,
-  Users,
-  X
+  Users
 } from '@/lib/icons'
 import { OnContactsHidden } from './contacts/OnContactsHidden'
+import { GroupNameEditor } from './contacts/GroupNameEditor'
 import { useContactsStore } from '../store/contactsContext'
 import { useChatStore, useStoreValueBy } from '../store/chatContext'
 import { useAuth } from '../store/auth'
@@ -60,8 +59,7 @@ import { messageForUser } from '../lib/userFacingError'
 import { confirmOwnedAgentArchive } from '../lib/archiveOwnedAgent'
 import { confirmConversationAction } from '../lib/confirmDanger'
 import { ContactDetail, GroupChatRow, PaneBackButton } from './contacts/ContactDetail'
-import { ct, profileBodyClass, groupChatListCountLabel, groupChatListTitle, groupChatSummaryLabel, inlineInputClass } from './contacts/contactsPanelStyles'
-import { isImeComposing } from '@/lib/ime'
+import { ct, profileBodyClass, groupChatListCountLabel, groupChatListTitle, groupChatSummaryLabel } from './contacts/contactsPanelStyles'
 // #855 契约：GroupJoinConfirmDialog 曾从本模块导出，实现搬走后仍从这里透出，外部 import 不受影响。
 export { GroupJoinConfirmDialog } from './contacts/GroupInvite'
 interface ContactsPanelProps {
@@ -122,51 +120,6 @@ function NavButton({
         <span className="text-xs text-[var(--muted-fg)]">{count}</span>
       ) : null}{mobile && <ChevronRight size={16} aria-hidden="true" className="shrink-0 text-[var(--faint-fg)]" />}
     </button>
-  )
-}
-
-function GroupNameEditor({
-  value,
-  placeholder,
-  onSave,
-  onCancel
-}: {
-  value: string
-  placeholder: string
-  onSave: (name: string) => Promise<void> | void
-  onCancel: () => void
-}) {
-  const [draft, setDraft] = useState(value)
-  const [saving, setSaving] = useState(false)
-
-  const save = async () => {
-    const name = draft.trim()
-    if (!name || saving) return
-    setSaving(true)
-    try {
-      await onSave(name)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="flex items-center gap-1">
-      <input
-        autoFocus
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => { if (isImeComposing(event)) return; if (event.key === 'Enter') save(); if (event.key === 'Escape') onCancel() }}
-        placeholder={placeholder}
-        className={inlineInputClass}
-      />
-      <IconButton title={ct('profile.saveAlias')} onClick={save}>
-        <Check size={14} />
-      </IconButton>
-      <IconButton title={ct('common.cancel')} onClick={onCancel}>
-        <X size={14} />
-      </IconButton>
-    </div>
   )
 }
 
