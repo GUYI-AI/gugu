@@ -557,7 +557,7 @@ function DeviceRow({
   const sshElsewhere = model.connection.via === 'sshElsewhere'
   const localSummary = ssh || model.kind === 'this'
   const compactRow = localSummary || sshElsewhere
-  const summaryMeta = model.kind === 'this' ? [t('devices.current'), model.system] : [model.system, 'SSH']
+  const summaryMeta = model.kind === 'this' ? [t('devices.current'), model.system] : [model.system, t('devices.addServer.method.ssh')]
   const reportedStatus = sshElsewhere && device.is_online && model.update
     ? (restarting || model.update.state === 'switching' ? t('devices.update.restarting')
       : model.update.state === 'failed' ? t('devices.loginState.matchFailed')
