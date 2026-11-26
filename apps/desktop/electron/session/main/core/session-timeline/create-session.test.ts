@@ -216,7 +216,7 @@ const readAuth = async () => {
   return result.success ? result.data ?? null : null;
 };
 
-const { createSession, createModels, startSession, createAttachmentDraft } = await import('./create-session');
+const { createSession, createModels, startSession, createAttachmentDraft, autoReviewOffReason } = await import('./create-session');
 const { AgentInstallFailedError } = await import('@main/core/agents/ensure-agent-installed');
 
 describe('createSession reasoning effort validation', () => {
@@ -657,5 +657,31 @@ describe('attachment draft creation preflight and deferred launch', () => {
     expect((await createSession({ projectId: 'proj-1', harness: 'codex', prompt: 'ordinary' })).ok).toBe(true);
     expect(state.lifeEnqueued).toHaveLength(1);
     expect(state.createParams[0]).toMatchObject({ sessionConfig: { initialSession: { initialQueue: [{ text: 'ordinary', origin: 'manual' }] } } });
+  });
+});
+
+describe('autoReviewOffReason: why Auto mode is off on the create menu (#3940)', () => {
+  const signedOut = { cliVersion: '2.1.318', versionTooOld: false, nativeReady: false, nativeReviewer: false };
+
+  it('a Gugu-model session on a machine with no Claude login shows the host reason, not "cannot confirm"', () => {
+    expect(autoReviewOffReason({ ...signedOut, hostVerdict: true, hostReason: 'taskConfig.reviewNoReviewer' }))
+      .toBe('taskConfig.reviewNoReviewer');
+    expect(autoReviewOffReason({ ...signedOut, hostVerdict: true, hostReason: 'taskConfig.reviewMainModelUnsupported' }))
+      .toBe('taskConfig.reviewMainModelUnsupported');
+  });
+
+  it('the CLI version still comes first: unknown, then too old', () => {
+    expect(autoReviewOffReason({ ...signedOut, cliVersion: undefined, hostVerdict: true, hostReason: 'taskConfig.reviewNoReviewer' }))
+      .toBe('taskConfig.reviewEligibilityUnknown');
+    expect(autoReviewOffReason({ ...signedOut, versionTooOld: true, hostVerdict: true, hostReason: 'taskConfig.reviewNoReviewer' }))
+      .toBe('taskConfig.reviewVersionUnsupported');
+  });
+
+  it('a native login keeps the native reasons', () => {
+    expect(autoReviewOffReason({ ...signedOut, hostVerdict: false, hostReason: undefined })).toBe('taskConfig.reviewEligibilityUnknown');
+    expect(autoReviewOffReason({ ...signedOut, nativeReady: true, hostVerdict: false, hostReason: undefined }))
+      .toBe('taskConfig.reviewNativeUnavailable');
+    expect(autoReviewOffReason({ ...signedOut, nativeReady: true, nativeReviewer: true, hostVerdict: false, hostReason: undefined }))
+      .toBe('taskConfig.reviewUnavailable');
   });
 });

@@ -542,7 +542,7 @@ export default {
     "link": {
       "connecting": "正在经 SSH 连接「{{name}}」…",
       "signIn": "登录",
-      "hostKeyChanged": "「{{name}}」的指纹已变更。确认安全后，请删除 ~/.ssh/known_hosts 中的旧记录，然后点击",
+      "hostKeyChanged": "「{{name}}」的 SSH 主机指纹已变更。请先向设备管理员核实新指纹，确认后更新 SSH 已知主机文件中这台设备的记录，再重试。",
       "updateFailed": "「{{name}}」上的咕咕 server 版本过旧，更新失败。",
       "updating": "「{{name}}」上的咕咕 server 版本过旧，正在更新…",
       "retryUpdate": "重试",
@@ -849,6 +849,9 @@ export default {
       "matchFailed": "更新失败",
       "matchRetrying": "正在更新…",
       "sshSignIn": "需要 SSH 登录",
+      "sshHostKeyChanged": "SSH 主机指纹已变更",
+      "sshSignInIncomplete": "SSH 登录未完成，请检查凭据后重试。",
+      "sshOldEntry": "旧记录：{{location}}",
       "sshSignInAction": "登录",
       "expired": "登录已失效（{{time}}起）",
       "offlineHint": "请在该设备上运行 gugu-server status 查看原因。",

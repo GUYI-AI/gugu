@@ -4,6 +4,8 @@ import { page } from 'vitest/browser'
 import { ChatComposer } from '@gugu/session-ui/react/components'
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
 import { withAutoReviewHint } from '@renderer/features/sessions/acp/auto-review-permission-hint'
+import { translateSessionMessage } from '@renderer/localization/locale-store'
+import { UI_EVENTS } from '@/lib/uiEvents'
 import { i18n } from '@/i18n'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@gugu/session-ui/styles/global'
@@ -80,3 +82,39 @@ it('keeps an unavailable Auto row visible, explains it on hover and never emits 
   row.element().dispatchEvent(new MouseEvent('click', { bubbles: true }));
   expect(changed).not.toHaveBeenCalled();
 });
+
+it('names the reviewer the host resolved and who pays for it', () => {
+  const hint = (kind: 'platform' | 'connection') => withAutoReviewHint({ auto: { name: '自动模式', reviewer: { label: 'Claude Sonnet 4.6', kind } } },
+    'claude', 'platform', { 'ai-review': { id: 'auto' } })?.auto?.detail
+  expect(hint('platform')).toBe('由 Claude Sonnet 4.6 审查，消耗咕咕积分')
+  expect(hint('connection')).toBe('由 Claude Sonnet 4.6 审查，使用你的 API Key')
+})
+
+it('sends a greyed Auto mode with no reviewer to the review model setting', async () => {
+  const opened = vi.fn()
+  const open = (event: Event) => opened((event as CustomEvent).detail)
+  window.addEventListener(UI_EVENTS.openSettings, open)
+  try {
+    const options = withAutoReviewHint({ edit: { name: '编辑' },
+      'ai-review': { name: '自动模式', disabled: true, description: translateSessionMessage('taskConfig.reviewNoReviewer') } }, 'claude', 'platform')
+    root.render(<SessionLocalizationProvider><ChatComposer permissionModeOptions={options} selectedPermissionMode="edit"
+      onPermissionModeChange={changed} onSubmit={() => {}} onStop={() => {}} /></SessionLocalizationProvider>)
+    await until('permission trigger', () => container.querySelector('[data-slot="composer-permission-mode"]') != null)
+    await page.getByText('编辑', { exact: true }).click()
+    await until('permission menu mounted', () => document.querySelector('[data-slot="combobox-content"]') != null)
+    await page.getByRole('option', { name: '自动模式', exact: true }).hover()
+    await until('reason and link shown', () => document.querySelector('[data-slot="permission-mode-detail"]')?.textContent?.includes('去设置里选一个审查模型') === true)
+    await page.getByTestId('auto-review-choose-model').click()
+    expect(opened.mock.calls).toEqual([[{ section: 'model', action: 'review-model' }]])
+    expect(changed).not.toHaveBeenCalled()
+  } finally { window.removeEventListener(UI_EVENTS.openSettings, open) }
+})
+
+it('offers no settings link where no reviewer choice would turn Auto mode on', () => {
+  const detail = (reason: Parameters<typeof translateSessionMessage>[0]) => withAutoReviewHint({
+    auto: { name: '自动模式', disabled: true, description: translateSessionMessage(reason) } }, 'claude', 'platform', { 'ai-review': { id: 'auto' } })?.auto?.detail
+  expect(detail('taskConfig.reviewMainModelUnsupported')).toBeUndefined()
+  expect(detail('taskConfig.reviewCrossReviewerUnroutable')).toBeUndefined()
+  expect(detail('taskConfig.reviewVersionUnsupported')).toBeUndefined()
+  expect(detail('taskConfig.reviewPreferenceUnavailable')).toBeDefined()
+})

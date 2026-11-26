@@ -1,29 +1,26 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import { runFileSelection } from '@renderer/features/sessions/annotations/file-selection-overlay'
 import { SelectionLineLayer } from '@renderer/features/sessions/annotations/selection-line'
+import { sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
 import type { FileSelectionAsk } from '@shared/extensions/file-selection'
 import { APP_COMPOSE_EVENT } from '@shared/extensions/app-runtime-protocol'
-import { ChatStoreProvider } from '@/store/chatContext'
-import { chatStore } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@gugu/session-ui/styles/global'
 import '@gugu/session-ui/theme/theme.css'
 import '@gugu/session-ui/theme/semantic.css'
 import '@/styles/tokens.css'
 
-// Cite or Send pressed on an App page's selection menu reaches the window (the menu itself is the page's runtime's). Here
-// the page is a plain box of the same size: what is judged is the host's half — a draft, or the person's own line.
+// Cite or Comment pressed on an App page's selection menu reaches the window (the menu itself is the page's runtime's). Here
+// the page is a plain box of the same size: what is judged is the host's half — a draft, or the comment box.
 let guest: HTMLDivElement, host: HTMLDivElement, root: Root
-const sendMessageToChat = vi.fn(async () => 'message-1')
 beforeEach(async () => {
-  sendMessageToChat.mockClear()
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
-  await act(async () => root.render(<ChatStoreProvider value={chatStore({ sendMessageToChat })}><SelectionLineLayer /></ChatStoreProvider>))
+  await act(async () => root.render(<SelectionLineLayer />))
   guest = document.createElement('div')
   Object.assign(guest.style, { position: 'fixed', left: '20px', top: '20px', width: '400px', height: '300px' })
   guest.tabIndex = -1
@@ -53,7 +50,6 @@ it('Cite drafts the words and the file\'s pill into the conversation; nothing is
   // A file on a computer is named in words in a chat, its path written out (a chat has no pill that opens it).
   expect(drafts).toMatchObject([{ chatId, text: expect.stringMatching(/^> run the gates\n\nAGENTS\.md \([^)]+\): \/home\/me\/work\/AGENTS\.md$/), refs: [] }])
   expect(line()).toBeNull()
-  expect(sendMessageToChat).not.toHaveBeenCalled()
 })
 
 it('Cite of a chat folder\'s file drafts its pill alone: the link names the lines, the words are not quoted beside it', async () => {
@@ -67,21 +63,23 @@ it('Cite of a chat folder\'s file drafts its pill alone: the link names the line
   expect(drafts).toHaveLength(1)
   expect(drafts[0]!.text).toBe('')
   expect(drafts[0]!.refs).toEqual([{ label: expect.stringMatching(/^RETENTION\.md \(/), link }])
-  expect(sendMessageToChat).not.toHaveBeenCalled()
 })
 
-it('Send opens the host\'s own line at the selection; only the person\'s submit sends, and a press elsewhere dismisses it', async () => {
+it('Comment opens the numbered box at the selection; saved, the comment joins the draft and nothing is sent; a press elsewhere dismisses it', async () => {
+  const draft = sessionAnnotations.forConversation({ kind: 'chat', chatId })
+  draft.clear()
   await act(async () => runFileSelection(guest, null, ask('send')))
-  await until('the line is open at the selection', () => !!line())
+  await until('the box is open at the selection', () => !!line())
   expect(line()!.getBoundingClientRect().top).toBeGreaterThanOrEqual(20)
-  expect(sendMessageToChat).not.toHaveBeenCalled()
+  expect(line()!.textContent).toContain('1')
   await act(async () => { await userEvent.keyboard('Say which gates{Enter}') })
-  await until('sent into the group', () => sendMessageToChat.mock.calls.length === 1)
-  expect(sendMessageToChat).toHaveBeenCalledWith(chatId, expect.stringMatching(/^> run the gates\n\nAGENTS\.md \([^)]+\): \/home\/me\/work\/AGENTS\.md\n\nSay which gates$/), { toUserIds: [] })
-  await until('the line goes once sent', () => !line())
+  await until('the comment joins the draft', () => draft.items.length === 1)
+  expect(draft.items[0]).toMatchObject({ kind: 'file', file: ask('send').file, places: [{ at: { lines: '12-13' } }], text: 'run the gates', annotation: 'Say which gates', number: 1 })
+  await until('the box goes once saved', () => !line())
   await act(async () => runFileSelection(guest, null, ask('send')))
-  await until('opened again', () => !!line())
+  await until('opened again, numbered next', () => !!line() && line()!.textContent!.includes('2'))
   await act(async () => { await userEvent.click(guest) })
   await until('a press elsewhere dismisses it', () => !line())
-  expect(sendMessageToChat).toHaveBeenCalledTimes(1)
+  expect(draft.items).toHaveLength(1)
+  draft.clear()
 })

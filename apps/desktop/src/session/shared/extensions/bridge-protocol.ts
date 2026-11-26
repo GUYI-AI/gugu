@@ -158,9 +158,9 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // box in the page). Presentation only, as 51: an older host opens the one image.
 // 58: frame-bound, App-owned projection presentation, without granting input or surface authority.
 // 59: withdrawn (the preinstalled Files App's `files.annotateSelection`, and with 60 also 54/55's `files.sendSelection`).
-// 60 (file-selection.ts): an opened file carries its selection menu (the host's table: Copy · Cite · Send);
+// 60 (file-selection.ts): an opened file carries its selection menu (the host's table: Copy · Cite · Comment, wire `send`);
 // `files.showSelection({ file, places, text?, code?, rect } | null)` draws it in the page, moved in the same frame; Cite and
-// Send pressed there go to the host in the person's gesture — a draft, or the host's own box to send from.
+// Comment pressed there go to the host in the person's gesture — a draft, or the host's comment box, into the conversation's draft.
 // 61 (app-credentials.ts): `permissions.credentials` and `gugu.credentials.read(site, url, options?)` /
 // `.write(site, method, url, body?, options?)`: a request the host sends with the saved credential the person picked for the
 // App on that website, in the declared header; answers `{ status, data, headers }`. A computer's pages only.
@@ -177,10 +177,15 @@ export const EXTENSION_WIDGET_READY_API_VERSION = 64;
 // 65 (app-credentials.ts): `gugu.credentials.choose(site, { hint?, help? })` opens the host's dialog, in the person's click, to
 // pick one of their saved credentials for the App on that website or save a new one (`hint`: what to save; `help`: the https
 // page that makes one); answers `{ chosen }`. `typeof gugu.credentials.choose` tells an older host.
-// 66 (app-files-core): `files.replace(file, content, { expectedVersion })` takes a text or JSON document too — its next
+// 66: `gugu.showSession(id, { orChatWith })`: a session not on this computer or in its task list opens that agent's private
+// chat instead (`orChatWith`: the agent's id, as a tool call's `gugu/agent` gives it). From an App surface (the strip over
+// another App's window) the call also brings gugu's window forward first, as a banner's click does. An older host ignores
+// `orChatWith` and answers `not-found`, and opens the session without bringing gugu forward. Desktop only: the phone has no surfaces
+// and answers `not-found` as before.
+// 67 (app-files-core): `files.replace(file, content, { expectedVersion })` takes a text or JSON document too — its next
 // version, refused (`content-changed`) when the text changed since that version, nothing written; and `files.create` takes
 // no `contentType`: a file's name is its format. An older host refuses a document (`live-text-file`).
-export const EXTENSION_API_VERSION = 66;
+export const EXTENSION_API_VERSION = 67;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;

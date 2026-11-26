@@ -2,10 +2,16 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { modelProtocolSchema, type ModelProtocol } from '@gugu/session-core/models/custom-model';
 import { proxyPlatformCredentialRequest } from '../../../../sessionpage/platform-credential-proxy';
+import { reviewDivert } from './review-routes';
 
 /** `priority`: the session asked for Fast on a model and protocol that carry it. */
 type Target = { endpoint: string; apiKey: string; priority?: boolean };
 type TargetResolver = (connectionId: string, protocol: ModelProtocol, routeId?: string, sessionId?: string) => Promise<Target | null>;
+const reviewTarget = async (connectionId: string) => {
+  const target = await pendingResolver?.(connectionId, 'anthropic-messages');
+  return target ? { endpoint: target.endpoint, apiKey: target.apiKey } : null;
+};
+let pendingResolver: TargetResolver | undefined;
 /** `sessions`: one local key per session (key → session id), so a request says which session sent it. */
 type Forwarder = { server: Server; endpoint: string; apiKey: string; sessions: Map<string, string> };
 let pending: Promise<Forwarder> | undefined;
@@ -16,6 +22,7 @@ export function customModelRoute(root: string, connectionId: string, protocol: M
 }
 
 export async function customModelForwarder(resolveTarget: TargetResolver): Promise<{ endpoint: string; apiKey: string }> {
+  pendingResolver = resolveTarget;
   if (!pending) {
     const started = start(resolveTarget);
     pending = started;
@@ -105,6 +112,8 @@ async function forward(request: IncomingMessage, response: ServerResponse, token
         : { authorization: `Bearer ${key}` },
     maxRequestBytes: 50 * 1024 * 1024,
     ...(target.priority ? { body: withPriorityTier } : {}),
+    // A session's Auto mode reviewer on another of the user's connections (Anthropic wire only).
+    ...(protocol.data === 'anthropic-messages' ? { divert: reviewDivert(from.sessionId, path, url.search, reviewTarget) } : {}),
     warn: () => {}, // The caller receives the transport failure without logging provider data.
   });
 }

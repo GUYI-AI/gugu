@@ -70,6 +70,11 @@ export interface PlatformModelOption {
    */
   reasoningEfforts: readonly string[] | null;
   /**
+   * `billing.platform_models.default_reasoning_effort`(gugu-dev#1556):目录给这个模型定的默认档,一定是
+   * `reasoningEfforts` 里的一档。旧服务端不带 / 坏值 ⇒ 没有这一格,客户端照今天的规则走。
+   */
+  defaultReasoningEffort?: string;
+  /**
    * 目录的 `requires_membership`(#7056):网关在卖这个模型,但这个用户的会员档走不到它(免费档)。
    *
    * 门槛在网关(用户分组 = 会员档),这一格只决定**下拉里列不列它**(见 `offeredInModelPicker`)、
@@ -104,6 +109,18 @@ export function parsePlatformReasoningEfforts(value: unknown): string[] | null {
     if (!out.includes(entry.trim())) out.push(entry.trim());
   }
   return out;
+}
+
+/**
+ * 目录 / IPC 里的默认档(`default_reasoning_effort`,gugu-dev#1556)→ `{ defaultReasoningEffort }`:只在它是 `efforts`
+ * 里的一档时才有。缺省、坏值、不在档位里一律没有 —— 画一个菜单里没有的默认档比不画更坏。
+ */
+export function platformDefaultReasoningEffort(
+  value: unknown,
+  efforts: readonly string[] | null | undefined,
+): { defaultReasoningEffort?: string } {
+  const level = typeof value === 'string' ? value.trim() : '';
+  return level && efforts?.includes(level) ? { defaultReasoningEffort: level } : {};
 }
 
 /**

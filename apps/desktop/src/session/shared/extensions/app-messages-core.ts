@@ -116,14 +116,14 @@ export function createAppMessages(platform: { account(): Promise<{ token: string
       const chat = chatOf(args);
       if (args.thread !== undefined && (typeof args.thread !== 'string' || !args.thread)) throw invalid("thread is the thread's first message's id");
       const page = pageOf(args);
-      return read('message_history_as', { p_chat_id: chat, p_as_user_id: as.asAgent ?? null, p_thread_root_id: args.thread ?? null, ...page }, chat, page.p_limit);
+      return read('message_history_as', { p_chat_id: chat, p_as_user_id: as.asAgent ?? null, p_thread_root_id: args.thread ?? null, p_before_seq: page.p_before_seq, p_limit: page.p_limit }, chat, page.p_limit);
     },
     /** A chat's messages, threads too, holding a piece of text or naming a file, newest first. */
     async search(args: Record<string, unknown>, as: { asAgent?: string | null } = {}): Promise<AppMessagesPage> {
       const chat = chatOf(args);
       const query = queryOf(args);
       const page = pageOf(args);
-      return read('message_search_as', { p_chat_id: chat, p_query: query, p_as_user_id: as.asAgent ?? null, ...page }, chat, page.p_limit);
+      return read('message_search_as', { p_chat_id: chat, p_query: query, p_as_user_id: as.asAgent ?? null, p_before_seq: page.p_before_seq, p_limit: page.p_limit }, chat, page.p_limit);
     },
   };
 }

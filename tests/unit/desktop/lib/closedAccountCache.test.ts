@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { IDBFactory, IDBIndex as FakeIndex, IDBKeyRange } from 'fake-indexeddb'
+import { IDBFactory, IDBObjectStore as FakeObjectStore, IDBKeyRange } from 'fake-indexeddb'
 import { eraseClosedImAccount, openImRepository } from '../../../../apps/desktop/src/lib/imRepository'
 import { createMemoryLocalSyncDb, openLocalSyncDb, IM_STORE_NAMES } from '../../../../apps/desktop/src/lib/localSyncDb'
 
@@ -8,13 +8,13 @@ const deferred = () => { let resolve!: () => void; const promise = new Promise<v
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 async function rawRows(factory: IDBFactory, owner: string) {
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    const request = factory.open('gugu.localSync.v1'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
+    const request = factory.open('gugu.localSync.v2'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
   })
   try {
     const transaction = db.transaction(IM_STORE_NAMES, 'readonly')
     const done = new Promise<void>((resolve, reject) => { transaction.oncomplete = () => resolve(); transaction.onabort = () => reject(transaction.error) })
     const values = await Promise.all(IM_STORE_NAMES.map(name => new Promise<unknown[]>((resolve, reject) => {
-      const request = transaction.objectStore(name).index('accountId').getAll(owner)
+      const request = transaction.objectStore(name).getAll(IDBKeyRange.bound([owner], [owner, []]))
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
     })))
     await done; return values.flat()
@@ -67,10 +67,10 @@ describe('closed original-owner renderer cache', () => {
     vi.stubGlobal('IDBKeyRange', IDBKeyRange)
     const factory = new IDBFactory(), adapter = await openLocalSyncDb(factory), a = crypto.randomUUID()
     await adapter.commit([{ type: 'put', store: 'sync_state', value: { accountId: a, key: 'original', value: { keep: true } } }])
-    // The clear walks each store's accountId index, so the fault goes on the index cursor.
-    const before = await rawRows(factory, a), original = FakeIndex.prototype.openKeyCursor
-    const failure = vi.spyOn(FakeIndex.prototype, 'openKeyCursor').mockImplementation(function(this: InstanceType<typeof FakeIndex>, ...args: Parameters<typeof original>) {
-      if (this.objectStore.name === 'chat') throw new Error('Injected clear failure')
+    // The clear deletes each store's account key range, so the fault goes on the store's range delete.
+    const before = await rawRows(factory, a), original = FakeObjectStore.prototype.delete
+    const failure = vi.spyOn(FakeObjectStore.prototype, 'delete').mockImplementation(function(this: InstanceType<typeof FakeObjectStore>, ...args: Parameters<typeof original>) {
+      if (this.name === 'chat') throw new Error('Injected clear failure')
       return original.apply(this, args)
     })
     await expect(adapter.retireAccount!(a)).rejects.toThrow('Injected clear failure')

@@ -1,9 +1,9 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { log } from '@renderer/utils/logger';
 import { getSessionView } from '@renderer/features/sessions/stores/session-selectors';
+import type { PaneStore } from '@renderer/features/tabs/pane-store';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { rpc } from '@renderer/lib/ipc';
-import { showModal } from '@renderer/lib/modal/modal-provider';
 import { appState } from '@renderer/lib/stores/app-state';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { normalizeExternalHttpUrl } from './external-url';
@@ -11,50 +11,43 @@ import { activeRemoteLinkTarget } from './remote-link-target';
 
 const HTTP_URL_PATTERN = /^https?:\/\//i;
 
-export function confirmOpenExternalLink(url: string, onError?: (error: unknown) => void): void {
-  const normalizedUrl = normalizeExternalHttpUrl(url);
+/** Where a person sends a web link: Gugu's own browser, or the system's. */
+export type WebLinkTarget = 'app' | 'system';
 
-  if (!HTTP_URL_PATTERN.test(normalizedUrl)) {
-    return;
-  }
-
-  // #6264 别的机器上的会话里点的 localhost 链接:开进那条会话的浏览器格(经 SSH 转到那台机器),❌ 开到这台电脑自己的端口。
-  const remote = activeRemoteLinkTarget();
-  if (remote?.claimLoopback(normalizedUrl)) return;
-
-  const sessionView = getActiveSessionView();
-
-  showModal('confirmExternalLinkModal', {
-    url: normalizedUrl,
-    canOpenInEmdashBrowser: sessionView !== undefined || remote?.canOpenInBrowserTab === true,
-    onCopy: () => copyExternalLink(normalizedUrl),
-    onSuccess: (choice) => {
-      if (choice === 'emdash-browser' && !sessionView && remote) {
-        remote.openInBrowserTab(normalizedUrl);
-        return;
-      }
-      if (choice === 'emdash-browser') {
-        sessionView?.activePane.open('browser', { initialUrl: normalizedUrl }, { intent: 'navigate' });
-        sessionView?.setFocusedRegion('main');
-        return;
-      }
-      void rpc.app.openExternal(normalizedUrl).catch((error) => {
-        log.error('opening an external link failed', { error });
-        toast({ title: translateSessionMessage('externalLink.openFailed'), description: messageForUser(error), tier: 'error' });
-        onError?.(error);
-      });
-    },
-  });
+/** A plain click opens in Gugu's browser; Cmd/Ctrl-click opens in the system browser. */
+export function webLinkTarget(click?: { metaKey?: boolean; ctrlKey?: boolean }): WebLinkTarget {
+  return click?.metaKey || click?.ctrlKey ? 'system' : 'app';
 }
 
 /**
- * 不经「打开链接?」确认、直接在系统浏览器里开 —— 只给**人刚在界面上点了「在浏览器中打开」**的那一下用
- * (那一下本身就是确认,链接全文就摆在他眼前)。
- *
- * ⚠️ 为什么不能走 `confirmOpenExternalLink`:它用的是全局唯一的那个弹窗位,弹出来就把**当前**弹窗换掉。
- * 登录窗口里弹它,登录窗口就被顶没了 —— 点「取消」整个登录窗口跟着消失,而那台机器上的登录命令还在跑
- * (#6264 走查实撞)。
+ * @@@open-web-link — the one place that opens a web link a person clicked or chose from a link menu, from every surface
+ * (chat and task messages, file previews, terminals, App product pages, the host's link menus). `pane` is the pane the
+ * link was in; without one it opens beside the session being looked at. Nowhere to open it in Gugu ⇒ the system browser.
+ * Returns false for anything that is not an http(s) link: those keep their own openers.
  */
+export function openWebLink(
+  url: string,
+  target: WebLinkTarget,
+  pane?: PaneStore | null,
+  intent: 'beside' | 'newTab' | 'navigate' = 'beside',
+): boolean {
+  const normalizedUrl = normalizeExternalHttpUrl(url);
+  if (!HTTP_URL_PATTERN.test(normalizedUrl)) return false;
+  if (target === 'system') {
+    openExternalLinkInBrowser(normalizedUrl);
+    return true;
+  }
+  // #6264 别的机器上的会话里点的 localhost 链接:开进那条会话的浏览器格(经 SSH 转到那台机器),❌ 开到这台电脑自己的端口。
+  const remote = activeRemoteLinkTarget();
+  if (remote?.claimLoopback(normalizedUrl)) return true;
+  const into = pane ?? getActiveSessionView()?.activePane;
+  if (into) into.open('browser', { initialUrl: normalizedUrl }, { intent });
+  else if (remote?.canOpenInBrowserTab) remote.openInBrowserTab(normalizedUrl);
+  else openExternalLinkInBrowser(normalizedUrl);
+  return true;
+}
+
+/** The system browser, with a toast when the system refuses. */
 export function openExternalLinkInBrowser(url: string, onError?: (error: unknown) => void): void {
   const normalizedUrl = normalizeExternalHttpUrl(url);
   if (!HTTP_URL_PATTERN.test(normalizedUrl)) return;
@@ -76,7 +69,6 @@ export async function copyExternalLink(url: string, done = translateSessionMessa
     return false;
   }
 }
-
 
 function getActiveSessionView() {
   if (appState.navigation.currentViewId !== 'session') return undefined;

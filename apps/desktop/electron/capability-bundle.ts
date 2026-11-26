@@ -651,6 +651,8 @@ export function buildAcpModelCapability(input: {
    */
   reasoningEffort?: string | null
   fastMode?: boolean
+  /** Claude: the model that reviews Auto mode on this platform session (resolved by the host); null = none. */
+  autoReviewModel?: string | null
 }): SessionModelCapability | null {
   if (input.dialect === null) return null
   const platformModel = platformModelForDialect(input.dialect, input.engineId)
@@ -672,6 +674,7 @@ export function buildAcpModelCapability(input: {
     // a property of the model, not of one harness.
     contextWindow: platformAccess?.contextWindow ?? undefined,
     callableRoutes: platformAccess?.callableRoutes ?? {},
+    ...(input.autoReviewModel !== undefined ? { autoReviewModel: input.autoReviewModel } : {}),
     protocolEnv: (relayUrl, contextWindow) => {
       const protocol = platformProtocolForEngine(platformModelOwner(input.dialect!).metadata.id)
       if (!protocol || !platformAccess) throw new Error(`${input.dialect}: no wire protocol to point at the relay`)

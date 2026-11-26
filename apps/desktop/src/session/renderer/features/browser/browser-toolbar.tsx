@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Ellipsis, Globe, Plus, Reload, RotateCcw, Square } from '@/lib/icons'
+import { ArrowLeft, ArrowRight, Ellipsis, ExternalLink, Globe, Plus, Reload, RotateCcw, Square } from '@/lib/icons'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Minus } from '@/lib/icons'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
@@ -236,6 +236,12 @@ export function BrowserToolbar({
           )}
         </div>
       </form>
+      {/* Always in sight, so opening the page in the system browser needs no shortcut and no menu (@@@open-web-link). */}
+      {!remote && (
+        <ToolbarIconButton label={translate('browser.openExternally')} disabled={!canOpenExternal} onClick={openExternal}>
+          <ExternalLink className="size-[15px]" />
+        </ToolbarIconButton>
+      )}
       {!remote && (
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -257,9 +263,6 @@ export function BrowserToolbar({
               onClick={takeScreenshot}
             >
               {translate('browser.copyScreenshot')}
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={!canOpenExternal} onClick={openExternal}>
-              {translate('browser.openExternally')}
             </DropdownMenuItem>
             <DropdownMenuItem disabled={!adapter} onClick={() => onForceReload?.()}>
               {translate('browser.forceReload')}

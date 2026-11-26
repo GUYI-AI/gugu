@@ -2,6 +2,9 @@ import { resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 
 const DB_NAME = 'gugu.localSync.v1'
+// #3967: the legacy database is copied into this one, then deleted once the copy reads back identical.
+const CURRENT_DB_NAME = 'gugu.localSync.v2'
+const CURRENT_STORES = ['chat', 'identity', 'membership', 'migration', 'outbox', 'presence', 'retired_accounts', 'sync_state', 'view']
 // Same Vite origin and real IndexedDB/modules, without booting the unrelated renderer for every row shape.
 const FIXTURE_PAGE = '/@fs/' + resolve('tests/fixtures/local-im-repository.html').replaceAll('\\', '/').replace(/^\//, '')
 
@@ -33,15 +36,15 @@ test.describe.configure({ mode: 'serial' })
 test.beforeEach(async ({ page }) => {
   await page.goto(FIXTURE_PAGE)
   await expect(page).toHaveTitle('Local IM repository fixture')
-  await page.evaluate(async (name) => {
+  await page.evaluate(async (names) => {
     localStorage.clear()
-    await new Promise<void>((resolve, reject) => {
+    for (const name of names) await new Promise<void>((resolve, reject) => {
       const request = indexedDB.deleteDatabase(name)
       request.onsuccess = () => resolve()
       request.onerror = () => reject(request.error)
       request.onblocked = () => reject(new Error(`delete blocked: ${name}`))
     })
-  }, DB_NAME)
+  }, [DB_NAME, CURRENT_DB_NAME])
 })
 
 test('real repository API commits, selects, subscribes, hands an older build\'s queued send over, and isolates account reset', async ({ page }) => {
@@ -153,7 +156,7 @@ test('v2 upgrade atomically normalizes account rows and removes every legacy sto
     const accountB = await adapter.loadAccount('account-b')
     adapter.close()
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('gugu.localSync.v1')
+      const request = indexedDB.open('gugu.localSync.v2')
       request.onsuccess = () => resolve(request.result)
       request.onerror = () => reject(request.error)
     })
@@ -167,33 +170,43 @@ test('v2 upgrade atomically normalizes account rows and removes every legacy sto
         indexes: Array.from(store.indexNames).sort(),
       }]
     }))
+    const migration = await new Promise((resolve, reject) => {
+      const request = database.transaction('migration', 'readonly').objectStore('migration').get('legacy')
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
     database.close()
     return {
       version,
-      stores, schema,
+      stores, schema, migration,
+      databases: (await indexedDB.databases()).map((entry) => entry.name).sort(),
       accountA: Object.fromEntries(Object.entries(accountA).map(([store, rows]) => [store, (rows as unknown[]).length])),
       accountB: Object.fromEntries(Object.entries(accountB).map(([store, rows]) => [store, (rows as unknown[]).length])),
     }
   })
 
   // Legacy message windows are a cache the message store rebuilds (v5): they are not carried.
-  expect(result.version).toBe(6)
-  expect(result.stores.sort()).toEqual(['chat', 'identity', 'membership', 'outbox', 'presence', 'retired_accounts', 'sync_state', 'view'])
+  expect(result.version).toBe(1)
+  expect(result.stores.sort()).toEqual(CURRENT_STORES)
+  // #3967: the copy verified, so the legacy database is gone.
+  expect(result.migration).toEqual({ key: 'legacy', state: 'done' })
+  expect(result.databases).not.toContain(DB_NAME)
   expect(result.accountA).toMatchObject({ identity: 2, membership: 2, view: 0, outbox: 1 })
   expect(result.accountB).toMatchObject({ outbox: 1 })
   expect(result.schema).toEqual({
-    chat: { keyPath: ['accountId', 'id'], indexes: ['accountId'] },
-    identity: { keyPath: ['accountId', 'id'], indexes: ['accountId'] },
-    membership: { keyPath: ['accountId', 'chatId', 'identityId'], indexes: ['accountChat', 'accountId'] },
-    outbox: { keyPath: ['accountId', 'id'], indexes: ['accountId'] },
-    presence: { keyPath: ['accountId', 'identityId'], indexes: ['accountId'] },
+    chat: { keyPath: ['accountId', 'id'], indexes: [] },
+    identity: { keyPath: ['accountId', 'id'], indexes: [] },
+    membership: { keyPath: ['accountId', 'chatId', 'identityId'], indexes: [] },
+    migration: { keyPath: 'key', indexes: [] },
+    outbox: { keyPath: ['accountId', 'id'], indexes: [] },
+    presence: { keyPath: ['accountId', 'identityId'], indexes: [] },
     retired_accounts: { keyPath: 'accountId', indexes: [] },
-    sync_state: { keyPath: ['accountId', 'key'], indexes: ['accountId'] },
-    view: { keyPath: ['accountId', 'key'], indexes: ['accountId'] },
+    sync_state: { keyPath: ['accountId', 'key'], indexes: [] },
+    view: { keyPath: ['accountId', 'key'], indexes: [] },
   })
 })
 
-test('published v1 upgrades every legacy row directly to v6', async ({ page }) => {
+test('published v1 upgrades every legacy row directly into the current database', async ({ page }) => {
   await seedVersionOne(page)
 
   const result = await page.evaluate(async () => {
@@ -210,7 +223,7 @@ test('published v1 upgrades every legacy row directly to v6', async ({ page }) =
       error = caught instanceof Error ? caught.message : String(caught)
     }
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('gugu.localSync.v1')
+      const request = indexedDB.open('gugu.localSync.v2')
       request.onsuccess = () => resolve(request.result)
       request.onerror = () => reject(request.error)
     })
@@ -221,14 +234,14 @@ test('published v1 upgrades every legacy row directly to v6', async ({ page }) =
   })
 
   expect(result.error).toBe('')
-  expect(result.version).toBe(6)
-  expect(result.stores.sort()).toEqual(['chat', 'identity', 'membership', 'outbox', 'presence', 'retired_accounts', 'sync_state', 'view'])
+  expect(result.version).toBe(1)
+  expect(result.stores.sort()).toEqual(CURRENT_STORES)
   expect(result.counts).toMatchObject({ identity: 2, membership: 2, view: 0 })
 })
 
 // #7290 v3 → v4:老客户端存下的消息行没有指向字节的列 ⇒ 消息窗口和从它推出来的(stream、view、sync_state 游标)丢掉重取;
 // 会话、身份、成员、在线、发件箱照留。
-test('v3 upgrades to v6 by dropping the cached message tables and its cursors, keeping the rest', async ({ page }) => {
+test('v3 upgrades into the current database by dropping the cached message tables and its cursors, keeping the rest', async ({ page }) => {
   await page.evaluate(async (name) => {
     const keyPaths: Record<string, string[]> = {
       identity: ['accountId', 'id'], chat: ['accountId', 'id'], membership: ['accountId', 'chatId', 'identityId'],
@@ -267,7 +280,7 @@ test('v3 upgrades to v6 by dropping the cached message tables and its cursors, k
     const adapter = await repositoryModule.openLocalSyncDb()
     adapter.close()
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('gugu.localSync.v1')
+      const request = indexedDB.open('gugu.localSync.v2')
       request.onsuccess = () => resolve(request.result)
       request.onerror = () => reject(request.error)
     })
@@ -283,16 +296,16 @@ test('v3 upgrades to v6 by dropping the cached message tables and its cursors, k
     return { version, counts }
   })
 
-  expect(result.version).toBe(6)
-  expect(result.counts).toEqual({ chat: 1, identity: 1, membership: 1, presence: 1, outbox: 1, view: 0, sync_state: 0, retired_accounts: 0 })
+  expect(result.version).toBe(1)
+  expect(result.counts).toEqual({ chat: 1, identity: 1, membership: 1, presence: 1, outbox: 1, view: 0, sync_state: 0, retired_accounts: 0, migration: 1 })
 })
 
 for (const version of [1, 2] as const) {
   // A legacy window is a cache: whatever its bounds say, it is dropped, never validated into a failed upgrade.
-  for (const maxSeq of [0, 99]) test(`published v${version} empty window (max seq ${maxSeq}) upgrades to v6 without it`, async ({ page }) => {
+  for (const maxSeq of [0, 99]) test(`published v${version} empty window (max seq ${maxSeq}) upgrades into the current database without it`, async ({ page }) => {
     await seedEmptyLegacy(page, version, maxSeq)
     const result = await openLegacyUpgrade(page)
-    expect(result).toMatchObject({ error: '', version: 6 })
+    expect(result).toMatchObject({ error: '', version: 1 })
     expect(result.view).toBeUndefined()
   })
 }
@@ -334,7 +347,7 @@ test('a confirmed send lands in the message store, main and thread streams apart
 test('a malformed v1 message window is dropped with the legacy cache, not carried or validated', async ({ page }) => {
   await seedVersionOne(page, 'envelope-mismatch')
   const result = await openLegacyUpgrade(page)
-  expect(result).toMatchObject({ error: '', version: 6 })
+  expect(result).toMatchObject({ error: '', version: 1 })
 })
 
 test('a synchronous DataCloneError aborts earlier requests in the same real IDB transaction', async ({ page }) => {
@@ -401,9 +414,9 @@ for (const store of ['identity', 'chat', 'membership', 'presence', 'view', 'sync
 
 // A legacy message window is a cache, dropped at the upgrade: its own malformations never abort it (v5).
 for (const shape of ['envelope-mismatch', 'cursor-mismatch', 'duplicate-id'] as const) {
-  test(`${shape} in a legacy message window upgrades to v6 without the window`, async ({ page }) => {
+  test(`${shape} in a legacy message window upgrades into the current database without the window`, async ({ page }) => {
     await seedVersionTwo(page, shape)
-    expect(await openLegacyUpgrade(page)).toMatchObject({ error: '', version: 6 })
+    expect(await openLegacyUpgrade(page)).toMatchObject({ error: '', version: 1 })
   })
 }
 
@@ -613,7 +626,7 @@ async function openLegacyUpgrade(page: Page): Promise<{ error: string; version: 
       error = caught instanceof Error ? caught.message : String(caught)
     }
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('gugu.localSync.v1')
+      const request = indexedDB.open('gugu.localSync.v2')
       request.onsuccess = () => resolve(request.result)
       request.onerror = () => reject(request.error)
     })

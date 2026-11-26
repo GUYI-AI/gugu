@@ -459,7 +459,7 @@ describe('G1 files.replace acting for an agent: a stored file\'s next version', 
     await expect(files.replace(surface, { ref: { id: uploaded!.id }, file: { name: '', contentType: '', bytes: bytes([8]) }, expectedVersion: 1 }))
       .rejects.toMatchObject({ code: 'content-changed', message: expect.stringMatching(/is version 2 now, not 1/) })
     expect(await blobOf()).toBe(second)
-    // A text document's next version goes to the server's door too (API 66), never refused here: the database takes it only
+    // A text document's next version goes to the server's door too (API 67), never refused here: the database takes it only
     // once the file service has checked it against the live text (prepared), which this fixture has no service for.
     const doc = await files.create(w.group, { name: 'Notes.md', content: 'x' }, { asAgent: w.agent })
     await expect(files.replace(surface, { ref: { id: doc.id }, file: { name: '', contentType: '', bytes: bytes('# y') }, expectedVersion: doc.version }))

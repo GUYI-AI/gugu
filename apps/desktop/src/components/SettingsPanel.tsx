@@ -135,7 +135,7 @@ export function SettingsPanel({
       case 'prompts': return <div><SessionSettingsSection section="prompts" /></div>
       case 'account':  return <AccountSection user={user} updateUser={updateUser} logout={logout} mobile={mobile} />
       case 'team': return teamAccount ? <TeamPage /> : null
-      case 'general':  return <GeneralSection onOpenPermissions={() => selectSection('permissions')} showThemePacks={!mobile && !!onClose && platform.capabilities.agentRuntime} />
+      case 'general':  return <GeneralSection onOpenPermissions={() => selectSection('permissions')} />
       case 'data-import': return <Suspense fallback={null}><DataImportSection onClose={() => onClose?.()} /></Suspense>
       case 'devices':  return <DevicesSection onUpgrade={() => selectSection(membershipSettingsSection(mobile))} />
       // This is a primary page now; keep its content while opting out of nested-page navigation.

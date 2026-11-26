@@ -39,7 +39,7 @@ export function placeTarget(file: FileReference, place: SelectionPlace): string 
 /** Where the page's selection is, in the page's CSS px, and the page's size. */
 export interface SelectionBox { rect: { x: number; y: number; width: number; height: number }; viewport: { width: number; height: number } }
 
-/** Main → the window that draws the page: the person pressed Cite or Send on this selection. */
+/** Main → the window that draws the page: the person pressed Cite or Comment (wire name `send`) on this selection. */
 export interface FileSelectionAsk extends SelectionBox {
   webContentsId: number;
   action: 'cite' | 'send';
@@ -60,10 +60,10 @@ export function selectionConversationOf(page: { session?: string | null; chat?: 
   return null;
 }
 
-/** The menu's words, in the person's language: one source for every place that draws it. */
+/** The menu's words, in the person's language: one source for every place that draws it. `send` is Comment's wire name (API 60). */
 const WORDS = {
-  'zh-CN': { copy: '复制', cite: '引用', send: '发送', sendPlaceholder: '写一句给 agent 的话…' },
-  'en-US': { copy: 'Copy', cite: 'Cite', send: 'Send', sendPlaceholder: 'A line for the agent…' },
+  'zh-CN': { copy: '复制', cite: '引用', send: '评论' },
+  'en-US': { copy: 'Copy', cite: 'Cite', send: 'Comment' },
 } as const;
 export function selectionWords(locale: string): (typeof WORDS)[keyof typeof WORDS] {
   return locale.startsWith('zh') ? WORDS['zh-CN'] : WORDS['en-US'];
@@ -73,7 +73,7 @@ export interface SelectionMenuItem { id: FileSelectionAction; label: string }
 
 /**
  * The menu, in order, for a page's file: Copy always (drawn only when a pick has words: `drawnItems`); Cite with a
- * conversation and a file it can name for its readers; Send also needs a surface that can send (a phone's task page cites only).
+ * conversation and a file it can name for its readers; Comment also needs a surface whose composer sends comments (a phone's task page cites only).
  */
 export function selectionMenu(conversation: AnnotationConversation | null, named: boolean, canSend: boolean, locale: string): SelectionMenuItem[] {
   const words = selectionWords(locale);

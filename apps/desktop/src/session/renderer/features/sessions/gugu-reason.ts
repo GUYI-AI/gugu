@@ -7,7 +7,7 @@ import { billingLinksAvailable } from '@/lib/appLinks';
 import { errorSentence } from '@gugu/session-shared';
 
 /** 原因上的那一个按钮(规格原因表的按钮列);`null` = 只说一句(没有动作能改变它)。 */
-export type GuguReasonAction = 'retry' | 'switch-model' | 'join-membership' | 'sign-in' | null;
+export type GuguReasonAction = 'retry' | 'switch-model' | 'join-membership' | 'sign-in' | 'model-settings' | null;
 
 export type GuguReasonCopy = {
   copy: SessionMessageKey;
@@ -44,6 +44,7 @@ const GUGU_REASONS: Record<GuguCatalogReason, GuguReasonCopy> = {
   'unknown': { copy: 'guguCatalog.reason.unknown', action: 'retry' },
   'team-monthly-cap-reached': { copy: 'transcript.teamMonthlyCapReached', action: null },
   'team-credits-exhausted': { copy: 'transcript.teamCreditsExhausted', action: null },
+  'key-rejected': { copy: 'guguCatalog.reason.key-rejected', action: 'model-settings' },
 };
 
 export function guguReasonCopy(kind: GuguCatalogReason): GuguReasonCopy {
@@ -80,9 +81,11 @@ export type GuguReasonHandlers = {
   retry?: () => void;
   switchModel?: () => void;
   joinMembership?: () => void;
+  /** Settings → Models, where a custom model's key is changed (#3939). */
+  openModelSettings?: () => void;
 };
 
-export type GuguReasonButton = { kind: 'retry' | 'switch-model' | 'join-membership' | 'joined' | 'signed-in'; label: string; run: () => void };
+export type GuguReasonButton = { kind: 'retry' | 'switch-model' | 'join-membership' | 'joined' | 'signed-in' | 'model-settings'; label: string; run: () => void };
 
 /**
  * 原因 → 按钮。规格每个原因一个按钮;要会员的另带一颗「我开好了」(开完回来再起一次,真去问 ——
@@ -90,7 +93,7 @@ export type GuguReasonButton = { kind: 'retry' | 'switch-model' | 'join-membersh
  * 给「我已登录」—— 在别处登好了回来,清掉退避再起一次。
  */
 export function reasonActions(kind: GuguCatalogReason, handlers: GuguReasonHandlers, translate: Translate): GuguReasonButton[] {
-  const { retry, switchModel, joinMembership } = handlers;
+  const { retry, switchModel, joinMembership, openModelSettings } = handlers;
   switch (GUGU_REASONS[kind].action) {
     case 'join-membership':
       if (!billingLinksAvailable()) {
@@ -102,6 +105,8 @@ export function reasonActions(kind: GuguCatalogReason, handlers: GuguReasonHandl
       ];
     case 'switch-model':
       return switchModel ? [{ kind: 'switch-model', label: translate('chat.membershipSwitchModel'), run: switchModel }] : [];
+    case 'model-settings':
+      return openModelSettings ? [{ kind: 'model-settings', label: translate('chat.openModelSettings'), run: openModelSettings }] : [];
     case 'sign-in':
       return retry ? [{ kind: 'signed-in', label: translate('chat.signInDone'), run: retry }] : [];
     case 'retry':

@@ -31,7 +31,15 @@ export interface CredentialProxyOptions {
   warn: (event: { kind: 'connection' | 'stream'; status?: number; code?: string; headerNames?: string[] }) => void
   streamTiming?: (timing: PlatformStreamTiming) => void
   httpError?: (diagnostic: PlatformHttpErrorDiagnostic) => void
+  /**
+   * Reads the buffered body once: a request another connection serves (the Auto mode reviewer the user picked on
+   * their own connection) goes there instead — its upstream, key and headers, its body — with no refresh or refusal
+   * handling of this proxy's own credential. Null = this proxy's own upstream.
+   */
+  divert?: (raw: Buffer<ArrayBuffer>) => Promise<CredentialProxyDivert | null>
 }
+
+export type CredentialProxyDivert = Pick<CredentialProxyOptions, 'upstream' | 'credential' | 'credentialHeaders' | 'body'>
 
 /** The deadline bounds the caller, not the shared rotation: a late successful issue remains usable. */
 export async function withinCredentialDeadline<T>(pending: Promise<T>, timeoutMs = 2_000): Promise<T> {
@@ -68,8 +76,9 @@ function upstreamHeaders(headers: IncomingHttpHeaders, options: CredentialProxyO
  * Replay only an unaccepted 401, once. Request bytes are retained; response SSE is never buffered.
  */
 export async function proxyPlatformCredentialRequest(
-  request: IncomingMessage, response: ServerResponse, options: CredentialProxyOptions,
+  request: IncomingMessage, response: ServerResponse, proxyOptions: CredentialProxyOptions,
 ): Promise<void> {
+  let options = proxyOptions
   const chunks: Buffer[] = []
   let bytes = 0
   for await (const chunk of request) {
@@ -78,6 +87,8 @@ export async function proxyPlatformCredentialRequest(
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
   }
   const raw = Buffer.concat(chunks)
+  const diverted = options.divert ? await options.divert(raw) : null
+  if (diverted) options = { localOnlyHeaders: options.localOnlyHeaders, warn: options.warn, ...diverted }
   const body = options.body ? options.body(raw) : raw
   let upstreamAbort: AbortController | undefined
   let harnessGone = response.destroyed

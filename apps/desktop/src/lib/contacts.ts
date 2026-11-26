@@ -591,7 +591,8 @@ export const contactsService = {
     const { error: uploadError } = await dataClient.storage.from('avatars').upload(path, file, {
       upsert: false,
       contentType: file.type,
-      cacheControl: '3600',
+      // Every upload is a new key whose bytes never change: cache it for a year (same as the human avatar in auth.ts).
+      cacheControl: '31536000',
     })
     if (uploadError) throw new Error(messageForUser(uploadError), { cause: uploadError })
 

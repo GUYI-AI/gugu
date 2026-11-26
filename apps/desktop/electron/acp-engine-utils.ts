@@ -34,6 +34,7 @@ import { withResolvedChatId } from './mcp/sessionpage-tool-registrar'
 import { registerGuguExtensionTools } from './mcp/gugu-extension-tool'
 import { runAppAction } from './mcp/app-tool-host'
 import { registerGuguGuideTools } from './mcp/gugu-guide-tool'
+import { registerGuguHtmlPreviewTool } from './mcp/gugu-html-preview-tool'
 import type { ExtensionSkill } from '@gugu/session-core/agents/plugins'
 import { GUGU_ASSISTANT_LISTED_TOOLS, GUGU_LISTED_TOOLS, registerGuguCatalogTools, type CatalogTool } from './mcp/gugu-catalog-tools'
 import { registerGuguAppSearchTool, type AppSearchHit } from './mcp/gugu-app-search-tool'
@@ -340,6 +341,8 @@ function buildGuguMcpServer(off: ReadonlySet<string>, ...[getContext, grantSigna
     )
   }
   registerGuguGuideTools(server)
+  // Electron is loaded only when a page is drawn: this server is also built where there is none (listing, tests).
+  registerGuguHtmlPreviewTool(server, async (request, signal) => (await import('./html-render-preview')).previewHtmlRender(request, signal), trackRequest)
   if (search) registerGuguWebSearchTool(server, {
     available: search.available,
     run: (query, signal) => {

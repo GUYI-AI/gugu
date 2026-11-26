@@ -127,3 +127,16 @@ it('lets an @ win over the comments', async () => {
   await until('sent', () => onSend.mock.calls.length === 1)
   expect(onSend.mock.calls[0]?.[1]?.toUserIds).toEqual(['cite-agent'])
 })
+
+it('sends comments on a chat file with no @ to the members who made the file', async () => {
+  editors.ids = ['cite-me', 'cite-peer', 'someone-who-left']
+  const draft = sessionAnnotations.forConversation({ kind: 'chat', chatId: 'file-comment-room' })
+  draft.clear()
+  draft.add({ kind: 'file', file: { name: 'notes.md', target: 'gugu-file://0b6f6c1e-58a4-4a39-9a37-3f1f4c7a2d10?v=2' }, places: [{ at: { lines: '3' } }], text: 'the part', annotation: 'why?' })
+  root.render(<LocalizationProvider><ChatMessageComposer chatId="file-comment-room" currentUserId="cite-me" isGroupChat onSend={onSend} groupMembers={members} /></LocalizationProvider>)
+  const send = page.getByRole('button', { name: 'Send message', exact: true })
+  await until('the comment can be sent alone', () => send.elements().length === 1 && !(send.element() as HTMLButtonElement).disabled)
+  await send.click()
+  await until('sent', () => onSend.mock.calls.length === 1)
+  expect(onSend.mock.calls[0]?.[1]?.toUserIds).toEqual(['cite-peer'])
+})

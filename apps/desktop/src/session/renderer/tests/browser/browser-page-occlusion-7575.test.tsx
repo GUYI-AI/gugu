@@ -66,16 +66,25 @@ it('reports a real dialog covering the page', async () => {
   expect(isBrowserPageOccluded(placeholder, placeholder.getBoundingClientRect())).toBe(true);
 });
 
-it('does not mistake the rounded pane clipping its own page corner for an overlay', async () => {
-  await harness.render(<div style={{ position: 'fixed', inset: 8, borderRadius: 12, clipPath: 'inset(0 round 12px)', overflow: 'hidden', background: '#fff' }}>
-    <div data-browser-page="rounded-page" style={{ position: 'absolute', inset: 0 }} />
+it('does not mistake a rounded card clipping its own page corner for an overlay', async () => {
+  // The chat's tool card: rounded bottom corners clip the page, and another page layer of the pane tree lies behind it.
+  await harness.render(<div style={{ position: 'fixed', inset: 8 }}>
+    <div data-testid="layer-behind" style={{ position: 'absolute', inset: 0, background: '#eee' }} />
+    <div style={{ position: 'absolute', inset: 0, borderRadius: '0 0 12px 12px', clipPath: 'inset(0 round 0 0 12px 12px)', overflow: 'hidden', background: '#fff' }}>
+      <div data-browser-page="rounded-page" style={{ position: 'absolute', inset: 0 }} />
+    </div>
   </div>);
   const placeholder = harness.container.querySelector<HTMLElement>('[data-browser-page]')!;
   const rect = placeholder.getBoundingClientRect();
   const corner = document.elementFromPoint(rect.right - 3, rect.bottom - 3)!;
-  expect(corner, JSON.stringify({ rect: rect.toJSON(), viewport: [innerWidth, innerHeight], parent: placeholder.parentElement?.getAttribute('style') })).not.toBe(placeholder);
-  expect(corner.contains(placeholder)).toBe(true);
+  expect(corner.getAttribute('data-testid')).toBe('layer-behind');
   expect(isBrowserPageOccluded(placeholder, rect)).toBe(false);
+  // Something really drawn over that part of the page still counts.
+  const menu = document.createElement('div');
+  menu.style.cssText = `position:fixed;left:${rect.left + rect.width / 2}px;top:${rect.top + rect.height / 2}px;right:8px;bottom:8px;z-index:10`;
+  document.body.append(menu);
+  expect(isBrowserPageOccluded(placeholder, rect)).toBe(true);
+  menu.remove();
 });
 
 // @@@occluder-set: pointer-events:none overlays are found from the tracked set, which follows the DOM after the first check.

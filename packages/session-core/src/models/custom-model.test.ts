@@ -92,6 +92,9 @@ describe('custom model protocol matching', () => {
   });
   it.each([
     ['https://open.bigmodel.cn/api/anthropic', 'anthropic-messages'],
+    ['https://api.deepseek.com/anthropic/v1', 'anthropic-messages'],
+    ['https://api.anthropic.com', 'anthropic-messages'],
+    ['https://api.anthropic.com/v1', 'anthropic-messages'],
     ['https://relay.test/v1/messages', 'anthropic-messages'],
     ['https://api.openai.com/v1/responses', 'openai-responses'],
     ['https://api.siliconflow.cn/v1/chat/completions', 'openai-chat-completions'],

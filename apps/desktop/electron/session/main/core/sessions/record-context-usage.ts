@@ -21,17 +21,17 @@ const SETTLED = new Set<SessionSummary['lifecycle']>(['ready', 'working', 'cance
 /** 一份读数本身;落库时再盖上它属于哪一条原生会话(`SessionContextUsage.providerSessionId`)。 */
 export type ContextReading = Omit<SessionContextUsage, 'providerSessionId'>;
 
-/** `write` = 记下这份读数;`clear` = 记录里那份作废;null = 不动。 */
-export type ContextUsageChange = { kind: 'write'; reading: ContextReading } | { kind: 'clear' } | null;
+/** `write` = 记下这份读数;null = 不动。 */
+export type ContextUsageChange = { kind: 'write'; reading: ContextReading } | null;
 
 /**
  * #7342 一份会话摘要要不要改记录里的上下文读数 —— 判据只在这里。
  *
  * - **写**:不在生成、读数齐、且读数是在会话**此刻跑的模型**下量的,与记录那份不同才写。
  *   流式中 ❌ 写:摘要每个 token 都在变,一轮落定写一次就够(停下后要的只是最后那份)。
- * - **作废**:会话此刻跑的模型已知、且不是记录那份量它时的模型(热切了 / 重开成了别的模型)——
- *   上限随模型变,旧读数 ❌ 冒充新模型的。
- * - 其余不动:还在起 / 重放(模型在过渡)、模型说不出(引擎不报)都不作废;读数还是旧模型量的不写。
+ * - 换了模型(热切了 / 重开成了别的模型)**不作废**(owner 2026-11-27「行，我认同」,改 #7342 当初的作废):
+ *   已用量是这段对话本身,渲染层拿此刻模型的窗口当分母(recorded-context-usage.ts);新模型报了读数再覆盖。
+ * - 其余不动:还在起 / 重放(模型在过渡)、模型说不出(引擎不报);读数还是旧模型量的不写。
  */
 export function contextUsageChange(
   recorded: ContextReading | null,
@@ -50,7 +50,6 @@ export function contextUsageChange(
     if (recorded?.used === used && recorded.size === size && recorded.modelId === current) return null;
     return { kind: 'write', reading: { used, size, modelId: current } };
   }
-  if (recorded && current !== null && recorded.modelId !== current) return { kind: 'clear' };
   return null;
 }
 
@@ -89,23 +88,18 @@ export function applyContextUsageChange(sessionId: string, change: NonNullable<C
       });
       return null;
     }
-    if (change.kind === 'write' && !row.providerSessionId) {
+    if (!row.providerSessionId) {
       log.warn('context usage: live session has no provider session id on its record; reading not recorded', { sessionId });
       return null;
     }
-    const { contextUsage: _previous, ...rest } = config;
-    void _previous;
-    const usage = change.kind === 'write'
-      ? { ...change.reading, providerSessionId: row.providerSessionId as string }
-      : null;
+    const usage = { ...change.reading, providerSessionId: row.providerSessionId };
     tx.update(sessions)
-      .set({ config: usage ? { ...rest, contextUsage: usage } : rest })
+      .set({ config: { ...config, contextUsage: usage } })
       .where(eq(sessions.id, sessionId))
       .run();
     return { projectId: row.projectId, usage };
   });
   if (!written) return;
-  // 作废用 `null`,❌ `undefined`:网页宿主那条传输会把 undefined 的键整个丢掉(见 sessionChangedChannel 抬头)。
   events.emit(sessionChangedChannel, {
     sessionId,
     projectId: written.projectId,

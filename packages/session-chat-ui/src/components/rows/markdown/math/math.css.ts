@@ -29,7 +29,8 @@ export const mathBlock = style({
   overflowX: 'auto',
   overflowY: 'hidden',
   lineHeight: 'normal',
-  color: vars.fg,
+  // No colour of its own: the formula takes the text colour of the surface it sits on, as the text around it does
+  // (a user bubble the host inverts included; pinning the page ink drew it in the bubble's fill).
 });
 
 /**
@@ -49,6 +50,17 @@ export const mathContent = style({
 
 globalStyle(`${mathContent} .katex-display`, {
   margin: 0,
+});
+
+/**
+ * KaTeX sets a `\tag` number at the right of the positioned `.katex` /
+ * `.katex-html`, which here are only as wide as the formula: the number would
+ * sit on the formula's last glyphs. Set against the block instead (`mathBlock`
+ * is positioned), as KaTeX's own full-width line would. The number is absolute,
+ * so the measured box is unchanged.
+ */
+globalStyle(`${mathContent} .katex-display > .katex, ${mathContent} .katex-display > .katex > .katex-html`, {
+  position: 'static',
 });
 
 /** Failed formulas keep the source visible instead of vanishing. */

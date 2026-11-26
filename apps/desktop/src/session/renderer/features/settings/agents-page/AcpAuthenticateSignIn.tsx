@@ -2,7 +2,7 @@ import { ExternalLink } from '@/lib/icons';
 import { useEffect, useRef, useState } from 'react';
 import { AcpAuthLoginBinding } from '@renderer/lib/acp/auth-login-binding';
 import type { BaseModalProps } from '@renderer/lib/modal/modal-provider';
-import { openExternalLinkInBrowser } from '@renderer/lib/open-external-link';
+import { openExternalLinkInBrowser } from '@renderer/lib/open-web-link';
 import { Button } from '@renderer/lib/ui/button';
 import {
   DialogContentArea,

@@ -1,7 +1,7 @@
 import { useRef, type FormEvent } from 'react';
 import { Copy } from '@/lib/icons';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
-import { copyExternalLink } from '@renderer/lib/open-external-link';
+import { copyExternalLink } from '@renderer/lib/open-web-link';
 import { Button } from '@renderer/lib/ui/button';
 import { Input } from '@renderer/lib/ui/input';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';

@@ -71,6 +71,8 @@ export interface SessionCellDeps {
    * ❌ 说成「这家在这台机器上的登录已失效」(#6264)。
    */
   hostCredentials?: boolean;
+  /** #3939 The host credential is a key the person typed for a custom model: a 401/403 means that key, see `classifyTurnFailure`. */
+  customModelKey?: boolean;
   billingRoute?: 'own' | 'platform' | 'unknown';
   agent?: AcpAgentApi;
   /** Provider-declared live setting contract. Missing declarations are an explicit runtime error. */

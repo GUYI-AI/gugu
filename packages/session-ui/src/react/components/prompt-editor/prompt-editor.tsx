@@ -418,6 +418,10 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
         // bold / italic / underline / inline code stay for now, and still carry the same send-time
         // defect.
         strike: false,
+        // StarterKit ships Tiptap's Link: it autolinks URLs and emails as you type, draws them as unstyled anchors
+        // and opens them on a plain click. The composer is plain text (`serializeDoc` drops marks); links become
+        // live once sent, read by the one message dialect. A click here only places the caret.
+        link: false,
       }),
       mentionExtension,
       slashExtension,

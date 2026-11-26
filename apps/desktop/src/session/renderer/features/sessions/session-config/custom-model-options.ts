@@ -25,6 +25,24 @@ export function connectionTag(preset: ProviderPreset | undefined, baseUrl: strin
   return preset?.group === 'coding-plan' && preset.vendor ? vendorName(preset.vendor) : vendorTag(baseUrl);
 }
 
+/**
+ * Two configurations may share an address, a key and a provider (owner 11-26 23:26: different models or capabilities
+ * are different configurations, never merged). Where a label would repeat, each gets its number in saved order
+ * (「openai 1」「openai 2」); a label nobody shares stays as it is. Settings and the model menu number the same way.
+ */
+export function numberSharedLabels<T>(items: readonly T[], labelOf: (item: T) => string): Map<T, string> {
+  const counts = new Map<string, number>();
+  for (const item of items) counts.set(labelOf(item), (counts.get(labelOf(item)) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  return new Map(items.map((item) => {
+    const label = labelOf(item);
+    if (counts.get(label)! < 2) return [item, label];
+    const index = (seen.get(label) ?? 0) + 1;
+    seen.set(label, index);
+    return [item, `${label} ${index}`];
+  }));
+}
+
 /** What a harness's own sign-in reads as: the sign-in reading's kind, and the plan reading when there is one. */
 export type OwnSignIn = { credentialKind?: 'subscription' | 'api-key'; plan?: SubscriptionPlanReading | null };
 
@@ -54,9 +72,13 @@ export function customComposerOptions(
   const convertFrom = agent?.capabilities.customModel?.convertFrom ?? [];
   const accepted = [...protocols, ...convertFrom];
   const protocolName = (protocol: ModelProtocol) => translate(`customModels.${protocol}`);
+  const presetOf = (connection: CustomModelConnection) => providerPresets.find(({ id }) => id === connection.preset);
+  const tagOf = (connection: CustomModelConnection) => connectionTag(presetOf(connection), connection.endpoints[0]?.baseUrl);
+  // Numbered across every saved configuration in saved order, as Settings numbers them, not only those with a key here.
+  const labels = numberSharedLabels(connections, connection => tagOf(connection) ?? connection.name);
   return Object.fromEntries(connections.filter(({ keySaved }) => keySaved).flatMap((connection) => {
-    const preset = providerPresets.find(({ id }) => id === connection.preset);
-    const tag = connectionTag(preset, connection.endpoints[0]?.baseUrl);
+    const preset = presetOf(connection);
+    const tag = tagOf(connection) && labels.get(connection);
     return connection.models.filter(chatModel).map((model) => {
       const matched = matchCustomModel({ connection, modelId: model.id, harness: agent?.id, nativeProtocol: incoming, protocols, convertFrom });
       const required = protocols.map(protocolName).join(' / ');
@@ -82,7 +104,7 @@ export function customComposerOptions(
         name: model.label || model.id,
         // No group heading: the vendor tag already says this one is the person's own (owner 11-19).
         // Search matches it like the tag; a record whose address has no vendor keeps its own name.
-        providerLabel: tag ?? connection.name,
+        providerLabel: labels.get(connection)!,
         ...(tag ? { tag } : {}),
         // A preset draws its own logo; an address of the person's own draws the maker of the model it serves
         // (OpenRouter serving qwen/… → Qwen). Neither → the menu's generic icon (every row has one, owner 11-25).

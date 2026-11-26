@@ -2,6 +2,7 @@ import type { Hotkey } from '@tanstack/react-hotkeys';
 import { COMMANDS, type CommandId } from '@shared/commands';
 import { resolveDefaultHotkey } from '@shared/shortcuts';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
+import { platform } from '@/platform';
 
 export type { CommandDef, CommandId } from '@shared/commands';
 export { COMMANDS } from '@shared/commands';
@@ -45,10 +46,14 @@ export function getHotkeyRegistration(
 }
 
 /**
- * The user's shortcut overrides from the settings replica; null until read. While null nothing is bound and no
- * shortcut label is drawn — a default chord shown or bound before the user's own binding is known is a fake value.
+ * The user's shortcut overrides from the settings replica; null while the read is on its way. While null nothing is
+ * bound and no shortcut label is drawn — a default chord shown or bound before the user's own binding is known is a
+ * fake value. When there is nothing to wait for — no task-page host keeps settings (web, phone shells), or the read
+ * failed — the defaults are the binding: otherwise every shortcut would stay dead for good.
  */
 export function useShortcutOverrides(): ShortcutOverrides | null {
   const { settings } = useAppSettingsKey('keyboard');
-  return settings.state === 'value' ? settings.value.value : null;
+  if (settings.state === 'value') return settings.value.value;
+  if (!platform.capabilities.sessionHost || settings.state === 'error') return {};
+  return null;
 }

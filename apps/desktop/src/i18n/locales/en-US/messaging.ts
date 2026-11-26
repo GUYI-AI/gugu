@@ -845,7 +845,8 @@ export default {
       "keepFailed": "Could not change",
       "copy": "Copy",
       "copyLink": "Copy link",
-      "openLink": "Open link",
+      "openLink": "Open in Gugu browser",
+      "openLinkSystem": "Open in system browser",
       "selectText": "Select text",
       "delete": "Delete",
       "deleteConfirm": "Delete this message? It cannot be restored.",
@@ -905,6 +906,11 @@ export default {
       }
     },
     "showQuoted": "Go to the quoted message",
+    "htmlRender": {
+      "close": "Close",
+      "expand": "Expand",
+      "title": "Rendered page"
+    },
     "svgFigure": {
       "invalid": "This SVG could not be drawn: it is not a well-formed SVG document",
       "noViewbox": "This SVG could not be drawn: its root needs a viewBox",

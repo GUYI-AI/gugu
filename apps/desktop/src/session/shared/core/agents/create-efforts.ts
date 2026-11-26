@@ -34,10 +34,12 @@ export const DEFAULT_INITIAL_EFFORT = 'medium';
 
 export function resolveInitialEffort(
   efforts: ResolvedModelEfforts | null,
-  override: string | null | undefined
+  override: string | null | undefined,
+  /** A platform model's directory default (gugu-dev#1556): armed before the fixed medium when nothing was picked. */
+  preferred?: string | null
 ): string | null {
   if (!efforts || override === null || override?.toLowerCase() === 'default') return null;
-  const desired = override ?? DEFAULT_INITIAL_EFFORT;
+  const desired = override ?? (preferred && efforts.options[preferred] ? preferred : DEFAULT_INITIAL_EFFORT);
   if (efforts.options[desired]) return desired;
   return override === undefined ? null : efforts.defaultId ?? null;
 }
@@ -296,7 +298,7 @@ export type CreateEffortsInput = {
    * 选的是 harness 自家模型(或没选)就是 null。平台模型的档位 = harness 清单 ∩ 这一组。
    * 自定义模型走同一格,这一组是 `customModelEfforts`(启动时武装的也是它)。
    */
-  platformModel: { reasoningEfforts: readonly string[] | null } | null;
+  platformModel: { reasoningEfforts: readonly string[] | null; defaultReasoningEffort?: string } | null;
   /** 这条会话落在会话页哪条腿上 —— 平台档位能否送到网关按腿声明(#6218)。 */
   leg: 'tui' | 'acp';
 };
@@ -308,10 +310,14 @@ export type CreateEffortsInput = {
  */
 export function platformEffortFacts(
   platformModelId: string | null | undefined,
-  models: readonly { id: string; reasoningEfforts: readonly string[] | null }[]
+  models: readonly { id: string; reasoningEfforts: readonly string[] | null; defaultReasoningEffort?: string }[]
 ): CreateEffortsInput['platformModel'] {
   if (!platformModelId) return null;
-  return { reasoningEfforts: models.find((model) => model.id === platformModelId)?.reasoningEfforts ?? null };
+  const entry = models.find((model) => model.id === platformModelId);
+  return {
+    reasoningEfforts: entry?.reasoningEfforts ?? null,
+    ...(entry?.defaultReasoningEffort ? { defaultReasoningEffort: entry.defaultReasoningEffort } : {}),
+  };
 }
 
 /**
@@ -342,10 +348,15 @@ export function resolveCreateEfforts(input: CreateEffortsInput): ResolvedModelEf
       ? null
       : liveEfforts && { options: liveEfforts.options, defaultId: null }
     : liveEfforts ?? resolveModelEfforts(input.effortCapability, effectiveModelsCapability, input.model);
-  return resolveEffortCatalog(
+  const resolved = resolveEffortCatalog(
     declaredEfforts,
     live,
     effortSourceFor(input.platformModel !== null, input.effortCapability, input.leg),
     input.platformModel?.reasoningEfforts ?? null,
   );
+  // gugu-dev#1556 A platform model's default is the directory's, when it is one of the levels on offer.
+  const directoryDefault = input.platformModel?.defaultReasoningEffort;
+  return resolved && directoryDefault && resolved.options[directoryDefault]
+    ? { ...resolved, defaultId: directoryDefault }
+    : resolved;
 }

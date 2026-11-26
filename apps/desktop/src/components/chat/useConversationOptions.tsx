@@ -95,7 +95,7 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
   // Fast's cost comes from the running provider's declaration (the host already filtered Fast to what it offers).
   const provider = useAgent(options?.fast ? options.modelMenu?.providerId : null)
   const model = options?.modelMenu && options.model ? sessionModelView(options.modelMenu, options.model) : null
-  const permissions = options?.mode ? Object.fromEntries(options.mode.available.map(item => [item.id, { name: item.name, description: item.description, disabled: item.disabled, reviewByHaiku: item.reviewByHaiku }])) : null
+  const permissions = options?.mode ? Object.fromEntries(options.mode.available.map(item => [item.id, { name: item.name, description: item.description, disabled: item.disabled, reviewByHaiku: item.reviewByHaiku, reviewer: item.reviewer }])) : null
   const reviewCostSource = reviewCostSourceOf(options?.modelMenu)
   const props: Partial<ComponentProps<typeof AgentConversationComposer>> = {
     modelOptions: model ? Object.fromEntries(model.groups.flatMap(group => group.items.map(({ id, ...option }) => [id, option]))) : undefined,

@@ -24,7 +24,16 @@ import {
   resolveNodeInterpreter,
 } from '../../helpers/node-interpreter';
 import { connectClaudeWithReview } from './auto-review-connection';
-import { claudeReviewConfig } from './auto-review';
+import { claudeReviewConfig, type ClaudeReviewVerdict } from './auto-review';
+import type { AcpReviewContext } from '@gugu/session-core/agents/plugins';
+
+const claudeReviewVerdict = (context: AcpReviewContext | undefined): ClaudeReviewVerdict => ({
+  ...(context?.autoReviewAllowed !== undefined ? { allowed: context.autoReviewAllowed } : {}),
+  ...(context?.autoReviewUnavailable ? { unavailable: true } : {}),
+  ...(context?.autoReviewByHaiku ? { byHaiku: true } : {}),
+  ...(context?.autoReviewer ? { reviewer: context.autoReviewer } : {}),
+  ...(context?.autoReviewReason ? { reason: context.autoReviewReason } : {}),
+});
 import { buildClaudeLoginCommand, claudeAuthStatus } from './auth';
 import { claudeSubscriptionBehavior } from './subscription';
 import { buildClaudeHookConfig } from './hooks';
@@ -435,8 +444,8 @@ export const provider = registerPluginBehavior(plugin, {
       };
     },
     // ACP v2:一轮在前台 idle 处结束,后台子智能体不再扣住这一轮的结局(子智能体在跑时下一句不进队列)。
-    filterPermissionConfig: (options, context) => claudeReviewConfig(options, context.cliVersion, context.autoReviewAllowed, context.autoReviewUnavailable, context.autoReviewByHaiku),
-    connect: (io, toClient, context) => connectClaudeWithReview(io, toClient, context?.cliVersion, context?.autoReviewAllowed, context?.autoReviewUnavailable, context?.autoReviewByHaiku),
+    filterPermissionConfig: (options, context) => claudeReviewConfig(options, context.cliVersion, claudeReviewVerdict(context)),
+    connect: (io, toClient, context) => connectClaudeWithReview(io, toClient, context?.cliVersion, claudeReviewVerdict(context)),
   },
   auth: {
     checkStatus: claudeAuthStatus,

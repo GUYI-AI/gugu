@@ -8,7 +8,7 @@ import {
 } from '@gugu/session-core/agents/plugins';
 import { claudePlatformModelOption } from '@gugu/session-core/acp/platform-model-address';
 import { harnessPlatform } from './platform';
-import { claudeReviewSettings } from './auto-review';
+import { CLAUDE_REVIEWER_MODEL, claudeReviewSettings } from './auto-review';
 
 /**
  * `--settings` 的**文档内容** —— 把这次会话的中转地址与令牌钉在**高于用户 settings 文件**的那一层。
@@ -78,6 +78,7 @@ function claudeSettingsOverride(
   selectedWindow?: number | null,
   callableRoutes?: PlatformCallableRoutes,
   sessionSettings: Record<string, boolean> = {},
+  reviewer: string | null = CLAUDE_REVIEWER_MODEL,
 ): Pick<PlatformModelLoad, 'settingsOverride'> {
   if (!platformSettingsEnv || Object.keys(platformSettingsEnv).length === 0) {
     return Object.keys(sessionSettings).length > 0 ? { settingsOverride: sessionSettings } : {}
@@ -101,7 +102,15 @@ function claudeSettingsOverride(
   // The access token always authorizes the designated model. If the control plane does not
   // return a switchable_models list, keep that one alias as the complete safe set so Claude's
   // built-in native rows cannot ride the platform token to an unauthorized model.
-  const availableModels = modelPicker.map((entry) => entry.model)
+  // The Auto mode reviewer is an allowed model too: Claude Code ignores CLAUDE_CODE_AUTO_MODE_MODEL when the
+  // session's model policy excludes it and reviews with its default instead — on the relay that lands on the
+  // session's own model (2.1.309: "ignoring … model policy does not allow it"). Listing it adds no picker row.
+  const pickerModels = modelPicker.map((entry) => entry.model)
+  const bare = (id: string) => id.replace(/\[[^\]]*\]$/, '')
+  const availableModels = reviewer === null || pickerModels.some((id) => bare(id) === reviewer) ? pickerModels : [...pickerModels, reviewer]
+  const deny = platformStandaloneSearchGranted(callableRoutes, selectedModel) ? { deny: ['WebSearch'] } : {}
+  // No reviewer the host can stand behind: remove Auto mode rather than name one the CLI would swap.
+  const autoMode = reviewer === null ? { disableAutoMode: 'disable' } : {}
 
   return {
     settingsOverride: {
@@ -119,10 +128,8 @@ function claudeSettingsOverride(
       // failed with "Unable to verify if domain … is safe to fetch" (mac1 10-07: 6/6; with this key, it reads the
       // page). Only platform sessions get this document, so a user's own Claude account keeps its own setting.
       skipWebFetchPreflight: true,
-      ...(platformStandaloneSearchGranted(callableRoutes, selectedModel)
-        ? { permissions: { deny: ['WebSearch'] } }
-        : {}),
-      env: claudeReviewSettings({ env: platformSettingsEnv }).env,
+      ...(Object.keys(deny).length > 0 || reviewer === null ? { permissions: { ...deny, ...autoMode } } : {}),
+      env: reviewer === null ? { ...platformSettingsEnv } : claudeReviewSettings({ env: platformSettingsEnv }, reviewer).env,
     },
   }
 }
@@ -189,6 +196,7 @@ export const platformModel: IPlatformModelBehavior = {
     ...(input.platformProvider && input.platformModels ? { platformModels: input.platformModels } : {}),
     ...(input.platformAccess && Object.keys(input.callableRoutes).length > 0 ? { platformCallableRoutes: input.callableRoutes } : {}),
     ...(input.contextWindow !== undefined ? { contextWindow: input.contextWindow } : {}),
+    ...(input.platformAccess && input.autoReviewModel !== undefined ? { autoReviewModel: input.autoReviewModel } : {}),
     // 同一张协议表说了算(❌ 不在这里另写一遍变量名):这一家就是 Anthropic 那一面,
     // 所以直接问协议表要「把一个 anthropic 协议的 harness 指向平台中转」的那组环境变量。
     // 用 platformAccess.relayUrl 而不是 platformProvider.baseUrl —— 后者带着 /v1。
@@ -254,6 +262,7 @@ export const platformModel: IPlatformModelBehavior = {
         model.contextWindow,
         model.platformCallableRoutes,
         sessionSettings,
+        model.autoReviewModel === null ? null : model.autoReviewModel?.trim() || CLAUDE_REVIEWER_MODEL,
       ),
     }
   },

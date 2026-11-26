@@ -7,7 +7,7 @@ import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme';
 import { useTheme } from '@/store/theme';
 import { LibraryHostProvider, machineLibraryHost } from '@renderer/features/library/library-host';
-import { useId, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { observer } from 'mobx-react-lite';
 import { Pencil, Trash2, Link, RefreshCw, Globe, Plus, Settings2 } from '@/lib/icons';
 import { useReplica, valueOf } from '@/lib/replica';
@@ -21,9 +21,9 @@ import { customModelApiUrl, type CustomModelConnection, type CustomModelEntry } 
 import { providerPresets } from '@gugu/session-core/models/provider-presets';
 import { vendorName } from '@/i18n/vendorName';
 import { modelProviderIcon } from '@renderer/features/sessions/session-config/model-provider-icon';
+import { numberSharedLabels } from '@renderer/features/sessions/session-config/custom-model-options';
 import { useSelectedRemoteDevice } from '@renderer/features/remote-hosts/device-scope-picker';
 import { settingsDeviceStore } from '@renderer/features/remote-hosts/device-scope-store';
-import { Collapse } from '@/components/ui/Collapse';
 import { SettingsGroup, SettingsNote, SettingsRow, Toggle } from './SettingsPrimitives';
 import { CustomModelDialog } from './CustomModelDialog';
 import { CodingPlanGroup } from './CodingPlanGroup';
@@ -60,8 +60,7 @@ const AvailableCustomModelsGroup = observer(function AvailableCustomModelsGroup(
 const CustomModels = observer(function CustomModels({ machine, addRequested, onAddClose, providedModels }: { machine: string | null } & AddRequest) {
   const { translate } = useSessionMessages();
   const reading = useReplica(customModels, [machine]);
-  const connectionGroups = groupByApiUrl(valueOf(reading) ?? []);
-  const conflicts = new Map(connectionGroups.filter(([, connections]) => connections.length > 1));
+  const connectionNames = numberSharedLabels(valueOf(reading) ?? [], connectionName);
   const agents = valueOf(useAgents());
   const accountAgents = agents?.filter(agent => agent.id === 'claude' || agent.id === 'codex' || agent.id === 'antigravity') ?? [];
   const planAgents = agents?.filter(agent => agent.id !== 'claude' && agent.id !== 'codex' && agent.id !== 'antigravity' &&
@@ -84,17 +83,6 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
   const [busy, setBusy] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ group: ModelGroup; text: string } | null>(null);
   const refresh = () => { void customModels.refresh(machine); };
-  const keepKey = async (connection: CustomModelConnection) => {
-    setBusy(connection.id); setFeedback(null);
-    try {
-      const client = await getAgentConfigRuntimeClient(machine);
-      const result = await client.saveCustomModel({ id: connection.id, name: connection.name, apiUrl: customModelApiUrl(connection),
-        preset: connection.preset, endpoints: connection.endpoints, models: connection.models, resolveUrlConflict: true });
-      if (!result.success) throw new Error(errorText(result.error));
-      await customModels.refresh(machine);
-    } catch (error) { setFeedback({ group: 'custom', text: errorText(error) }); }
-    finally { setBusy(null); }
-  };
   const setModelEnabled = async (connection: CustomModelConnection, modelId: string, enabled: boolean) => {
     setBusy(connection.id); setFeedback(null);
     try {
@@ -165,26 +153,22 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
         : reading.state === 'unknown' ? <SettingsRow control={<Unknown className="w-32" />} /> : <>
           {group === 'custom' && <RefreshFailed reading={reading} />}
           {group === 'coding-plan' ? providerPresets.filter(preset => preset.group === group).map(preset => {
-            const connections = reading.value.filter(connection => connection.preset === preset.id && !conflicts.has(customModelApiUrl(connection)));
+            const connections = reading.value.filter(connection => connection.preset === preset.id);
             if (!connections.length) return null;
             const icon = modelProviderIcon({ id: preset.id, name: preset.name, iconKey: preset.icon });
             return <CodingPlanGroup key={preset.id} id={preset.id} name={vendorName(preset.name)} icon={icon}>
               {connections.map(renderPlan)}
             </CodingPlanGroup>;
-          }) : connectionGroups.filter(([, connections]) => connections.length > 1 || groupOf(connections[0]!) === group).map(([apiUrl, connections]) => {
-            const actions = (connection: CustomModelConnection) => ({
+          }) : reading.value.filter(connection => groupOf(connection) === group).map(connection => {
+            const actions = {
               busy: busy === connection.id,
               onEdit: () => editModel(connection, ""),
               onEditModel: (modelId: string) => editModel(connection, modelId),
               onTest: () => void testConnection(connection),
               onToggleModel: (modelId: string, enabled: boolean) => void setModelEnabled(connection, modelId, enabled),
               onRemove: () => void removeConnection(connection),
-            });
-            if (connections.length === 1) {
-              const singleConnection = connections[0]!;
-              return <ModelConnectionGroup key={singleConnection.id} connection={singleConnection} showAddress={reading.value.some(other => other.id !== singleConnection.id && endpointHost(other) === endpointHost(singleConnection))} {...actions(singleConnection)} />;
-            }
-            return <AddressConflict key={apiUrl} apiUrl={apiUrl} connections={connections} busy={busy !== null} onKeepKey={connection => void keepKey(connection)} />;
+            };
+            return <ModelConnectionGroup key={connection.id} connection={connection} name={connectionNames.get(connection)!} showAddress={reading.value.some(other => other.id !== connection.id && endpointHost(other) === endpointHost(connection))} {...actions} />;
           })}
         </>}
     </SettingsGroup>;
@@ -219,11 +203,10 @@ type ConnectionActions = {
   onRemove: () => void;
 };
 
-function ModelConnectionGroup({ connection, showAddress, busy, onEdit, onTest, onEditModel, onToggleModel, onRemove }: { connection: CustomModelConnection; showAddress: boolean } & ConnectionActions) {
+function ModelConnectionGroup({ connection, name, showAddress, busy, onEdit, onTest, onEditModel, onToggleModel, onRemove }: { connection: CustomModelConnection; name: string; showAddress: boolean } & ConnectionActions) {
   const { translate } = useSessionMessages();
   const preset = providerPresets.find(({ id }) => id === connection.preset);
   const icon = preset ? modelProviderIcon({ id: preset.id, name: preset.name, iconKey: preset.icon }) : null;
-  const name = preset ? vendorName(preset.name) : connection.name || endpointHost(connection) || customModelApiUrl(connection);
   const [expanded, setExpanded] = useState(false);
   const entries = [...connection.models, ...(connection.disabledModels ?? [])];
   const count = entries.length;
@@ -232,6 +215,7 @@ function ModelConnectionGroup({ connection, showAddress, busy, onEdit, onTest, o
     showAddress ? customModelApiUrl(connection) : null,
     count === 0 ? translate('customModels.noModel') : null,
     !connection.keySaved ? translate('customModels.keyMissing') : null,
+    connection.unverified ? translate('customModels.unverified') : null,
   ].filter(Boolean).join(' · ');
   return <div data-custom-connection={connection.id}>
     <ModelProviderRow icon={icon ?? <Globe aria-hidden="true" />} name={name} description={details || undefined}
@@ -265,38 +249,10 @@ export function ModelProviderRow({ icon, name, description, manageLabel, onManag
     </div>} />;
 }
 
-function groupByApiUrl(connections: readonly CustomModelConnection[]) {
-  const groups = new Map<string, CustomModelConnection[]>();
-  for (const connection of connections) {
-    const url = customModelApiUrl(connection);
-    const group = groups.get(url) ?? [];
-    group.push(connection);
-    groups.set(url, group);
-  }
-  return Array.from(groups);
-}
-
-function AddressConflict({ apiUrl, connections, busy, onKeepKey }: {
-  apiUrl: string;
-  connections: readonly CustomModelConnection[];
-  busy: boolean;
-  onKeepKey: (connection: CustomModelConnection) => void;
-}) {
-  const { translate } = useSessionMessages();
-  const [open, setOpen] = useState(false);
-  const panelId = useId();
-  return <>
-    <SettingsRow title={apiUrl} description={translate('customModels.urlConflict')}
-      control={<Button size="sm" variant="outline" aria-expanded={open} aria-controls={panelId}
-        onClick={() => setOpen(!open)}>{translate('customModels.chooseKey')}</Button>} />
-    <Collapse id={panelId} open={open} onOpenChange={setOpen} className="pl-6">
-      {connections.map((connection, index) => <SettingsRow key={connection.id} data-custom-connection={connection.id}
-        title={(connection.keyLast4 ?? connection.discovered?.keyLast4) ? `••••${connection.keyLast4 ?? connection.discovered?.keyLast4}` : translate('customModels.numberedConnection', { count: index + 1 })}
-        description={connection.models.map(model => model.label || model.id).join(', ') || translate('customModels.noModel')}
-        control={<Button size="sm" variant="outline" disabled={busy || !connection.keySaved}
-          onClick={() => onKeepKey(connection)}>{translate('customModels.keepKey')}</Button>} />)}
-    </Collapse>
-  </>;
+/** What a connection reads as in Settings: its provider when it has one, else the name or address it was saved with. */
+function connectionName(connection: CustomModelConnection): string {
+  const preset = providerPresets.find(({ id }) => id === connection.preset);
+  return preset ? vendorName(preset.name) : connection.name || endpointHost(connection) || customModelApiUrl(connection);
 }
 
 function endpointHost(connection: CustomModelConnection): string | undefined {

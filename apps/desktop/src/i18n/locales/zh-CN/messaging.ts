@@ -842,7 +842,8 @@ export default {
       "keepFailed": "更改失败",
       "copy": "复制",
       "copyLink": "复制链接",
-      "openLink": "打开链接",
+      "openLink": "在咕咕浏览器中打开",
+      "openLinkSystem": "在系统浏览器中打开",
       "selectText": "选择文本",
       "delete": "删除",
       "deleteConfirm": "删除这条消息？删除后无法恢复。",
@@ -902,6 +903,11 @@ export default {
       }
     },
     "showQuoted": "跳到被引用的消息",
+    "htmlRender": {
+      "close": "关闭",
+      "expand": "展开",
+      "title": "渲染的页面"
+    },
     "svgFigure": {
       "invalid": "这段 SVG 无法显示：不是格式正确的 SVG 文档",
       "noViewbox": "这段 SVG 无法显示：根元素缺少 viewBox",
