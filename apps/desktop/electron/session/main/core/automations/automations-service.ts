@@ -244,7 +244,7 @@ export class AutomationsService implements Hookable<AutomationsServiceHooks> {
   }
 
   /**
-   * 「已安排」每一行的最近一次与下一次,一台机器一条语句读完(与 getLatestRun / getNextScheduledRun 同一个口径)。
+   * Read latest and next runs for a machine in one RPC. Each uses the same filters and ordering as the per-row RPC.
    * ❌ 每行各问两次:几百行就是几百次往返,每次还各扫一遍 sessions(automation_run_id 没有索引)。
    */
   async listRunHeads(): Promise<AutomationRunHeads> {
