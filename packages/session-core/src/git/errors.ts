@@ -128,6 +128,7 @@ export function classifyFetchError(error: unknown, remote: string | undefined): 
     message.includes('network is unreachable') ||
     message.includes('connection refused') ||
     message.includes('connection timed out') ||
+    message.includes('could not resolve proxy') ||
     message.includes('no route to host') ||
     message.includes('network is down') ||
     message.includes('could not resolve hostname') ||

@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { computeCheckBucket, computeCheckRunsSummary, formatCheckDuration } from '../../../../apps/desktop/src/session/renderer/utils/github/utils'
-import { classifyPushError, classifyPullError } from '../../../../packages/session-core/src/git/errors'
+import { classifyFetchError, classifyPushError, classifyPullError } from '../../../../packages/session-core/src/git/errors'
 import { GitRepository, type GitRepositoryOptions } from '../../../../packages/session-core/src/git/git-repository'
 import { parseNumstat } from '../../../../packages/session-core/src/git/parsers/numstat-parser'
 
@@ -54,4 +54,9 @@ it('reports proxy DNS errors during push as network failures', () => {
 it('reports proxy DNS errors during pull as network failures', () => {
   const message = 'fatal: Could not resolve proxy: proxy.test'
   expect(classifyPullError(new Error(message))).toEqual({ type: 'network_error', message })
+})
+
+it('reports proxy DNS errors during fetch as network failures', () => {
+  const message = "fatal: unable to access 'https://example.test/repo.git/': Could not resolve proxy: proxy.test"
+  expect(classifyFetchError(new Error(message), 'origin')).toEqual({ type: 'network_error', message })
 })
