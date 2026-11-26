@@ -5,7 +5,8 @@ import { useEffect } from 'react';
 import type { ServerMachineNotice } from '@gugu/core/cloud/serverMachineHealth';
 import type { DeviceServerUpdate } from '@gugu/core/shared/types/deviceHost';
 import { dismissNotice, notify, type Notice } from '@/lib/notices';
-import { machineBlockIsStatus, machineNoticeLabel, machineUnavailableReason, type HostConnectionState, type Translate } from './connection-status';
+import { openDeviceRecovery } from '@/lib/deviceActionsIntent';
+import { isSshAttention, machineBlockIsStatus, machineNoticeLabel, machineUnavailableReason, type HostConnectionState, type Translate } from './connection-status';
 
 /**
  * 正在连 / 重连的提示等这么久才出现:一次转瞬的重连(几百毫秒)不值得打扰人 ——
@@ -30,16 +31,17 @@ export function machineNotice(input: {
   serverUpdate?: DeviceServerUpdate;
   /** 要先登录时提示条上那一段「登录」(登录的提问浮在窗口顶上那张卡片里)。 */
   signIn?: () => void;
+  deviceId?: string;
   translate: Translate;
 }): MachineNoticeSpec | null {
   const { connection, label, dials, translate } = input;
   const update = connection === 'connected' ? undefined : input.serverUpdate;
   const versionNotice = machineNoticeLabel(input.notices, label ?? '', translate, { protocolOnly: true, serverUpdate: update });
-  if (versionNotice && (update || (connection !== 'updating' && connection !== 'update-failed'))) {
+  if (versionNotice && !isSshAttention(connection) && connection !== 'sign-in' && connection !== 'reconnecting' && (update || (connection !== 'updating' && connection !== 'update-failed'))) {
     const updateNotice = input.notices?.some(notice => notice.kind === 'desktop-too-old') ? undefined : update;
     return { title: versionNotice, tier: updateNotice && updateNotice.state !== 'failed' ? 'info' : 'error', waiting: updateNotice?.state === 'downloading', delayed: false };
   }
-  if (connection === 'connected') return null;
+  if (connection === 'connected' || connection === 'disconnected') return null;
   const trying = connection === 'connecting' || connection === 'reconnecting';
   // 第一次拨不算「重试」;连上过的机器断了,拨的每一次都是。
   const retries = connection === 'connecting' ? dials - 1 : dials;
@@ -49,7 +51,10 @@ export function machineNotice(input: {
     // 离线 / 休眠 / 正在连只是那台此刻用不了;叫醒没成、要先登录、版本太旧是要人知道、可能要人去做点什么的事。
     tier: machineBlockIsStatus(connection, input.signInExpiredAt) ? 'info' : 'error',
     waiting: trying || connection === 'waking' || connection === 'updating',
-    action: connection === 'sign-in' && input.signIn ? { label: translate('remoteHost.signIn'), onClick: input.signIn } : undefined,
+    action: connection === 'sign-in' && input.signIn ? { label: translate('remoteHost.signIn'), onClick: input.signIn }
+      : input.deviceId && isSshAttention(connection) ? {
+          label: translate('remoteHost.ssh.settings'), onClick: () => openDeviceRecovery(input.deviceId!),
+        } : undefined,
     delayed: trying,
   };
 }

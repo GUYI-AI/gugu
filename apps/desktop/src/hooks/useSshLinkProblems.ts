@@ -5,7 +5,7 @@ import { useSelect } from '../lib/selectStore'
 export { useSshMachineIds } from './useSshMachines'
 
 /** 每台远程 SSH 机器的设备连接此刻的问题(没有 = 连着或还没连过)。 */
-export function useSshLinkProblems(): ReadonlyMap<string, SshLinkFailure> {
+export function useSshLinkProblems(): ReadonlyMap<string, SshLinkFailure | null> {
   return useSelect(sshLinkProblems, (problems) => problems, Object.is)
 }
 

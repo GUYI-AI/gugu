@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { signInSshMachine } from '../../lib/sshLinkChannel'
 import type { SshLinkOpenResult } from '../../lib/sshLink'
+import { useSessionMessages } from '@/session/renderer/localization/use-session-messages'
+import { SshIdentityDetails } from './addServer/SshHostKeyChanged'
 import { InlineAction } from './addServer/InlineAction'
 
 export function DeviceSshSignIn({ deviceId, name, hostKeyChanged }: {
@@ -10,6 +12,7 @@ export function DeviceSshSignIn({ deviceId, name, hostKeyChanged }: {
   hostKeyChanged: boolean
 }) {
   const { t } = useTranslation('settings')
+  const { translate } = useSessionMessages()
   const [attempt, setAttempt] = useState<'pending' | SshLinkOpenResult | null>(null)
 
   async function signIn() {
@@ -19,7 +22,7 @@ export function DeviceSshSignIn({ deviceId, name, hostKeyChanged }: {
 
   const failure = attempt && attempt !== 'pending' && !attempt.ok ? attempt : null
   const hostKey = failure?.hostKey
-  const summary = t(hostKeyChanged ? 'devices.loginState.sshHostKeyChanged' : 'devices.loginState.sshSignIn')
+  const summary = hostKeyChanged ? translate('remoteHost.ssh.hostKeyChanged') : t('devices.loginState.sshSignIn')
   return (
     <span className="text-[var(--danger-fg)]" data-testid="settings-device-ssh-sign-in">
       {attempt === 'pending' ? (
@@ -29,13 +32,13 @@ export function DeviceSshSignIn({ deviceId, name, hostKeyChanged }: {
           {failure ? (
             <span role="alert">
               {failure.reason === 'hostKeyChanged' ? t('devices.link.hostKeyChanged', { name }) : t('devices.loginState.sshSignInIncomplete')}
-              {hostKey?.fingerprint && <span className="block break-all">{t('devices.addServer.newFingerprint', { fingerprint: hostKey.fingerprint })}</span>}
-              {hostKey?.location && <span className="block break-all">{t('devices.loginState.sshOldEntry', { location: hostKey.location })}</span>}
+              {hostKey && <SshIdentityDetails hostKey={hostKey} />}
             </span>
           ) : summary}
           {' '}<InlineAction onClick={() => void signIn()} testId="settings-device-ssh-sign-in-action">
-            {t(hostKeyChanged ? 'devices.retry' : 'devices.loginState.sshSignInAction')}
+            {hostKeyChanged && !hostKey ? translate('remoteHost.ssh.verify') : t(hostKeyChanged ? 'devices.retry' : 'devices.loginState.sshSignInAction')}
           </InlineAction>
+          {hostKey && <>{' '}<InlineAction onClick={() => setAttempt(null)}>{t('devices.cancel')}</InlineAction></>}
         </>
       )}
     </span>

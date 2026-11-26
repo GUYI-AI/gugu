@@ -240,7 +240,7 @@ export function createSshLinkManager(options: {
       if (!readySettled) return finishReady({ ok: false, ...failure })
       if (wasOpen && !closing.has(link)) {
         log('ssh link: closed', { deviceId, code, detail: failure.detail })
-        options.onClosed(deviceId, failure.reason === 'signInRequired' ? failure : { reason: 'unreachable', detail: failure.detail })
+        options.onClosed(deviceId, failure)
       }
     })
     return link

@@ -540,6 +540,9 @@ export default {
       }
     },
     "link": {
+      "startService": "请在设备上运行 gugu-server start，然后重新连接。",
+      "disconnectFailed": "未能断开设备连接。",
+      "outdated": "{{name}} 上的咕咕需要更新。",
       "connecting": "正在经 SSH 连接「{{name}}」…",
       "signIn": "登录",
       "hostKeyChanged": "「{{name}}」的 SSH 主机指纹已变更。请先向设备管理员核实新指纹，确认后更新 SSH 已知主机文件中这台设备的记录，再重试。",
@@ -555,6 +558,7 @@ export default {
       "reinstall": "「{{name}}」上的咕咕 server 版本过旧，无法自动更新。请在该设备上重新运行安装命令：",
       "refused": "「{{name}}」上的咕咕 server 拒绝了连接。",
       "notSignedIn": "「{{name}}」未登录，请在「设置 → 设备」中重新添加。",
+      "notRunning": "SSH 已接通，咕咕服务未运行。可在设备设置中重新连接。",
       "notInstalled": "「{{name}}」上未安装咕咕 server，请在「设置 → 设备」中重新添加。",
     },
     "approveServer": {

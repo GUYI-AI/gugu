@@ -7,6 +7,9 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { ConnectionStatus } from '@/components/connection/ConnectionStatus';
 import type { ConnectionState } from '@/components/connection/connectionState';
+import { openDeviceRecovery } from '@/lib/deviceActionsIntent';
+import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { isSshAttention } from '@renderer/features/remote-hosts/connection-status';
 import { headerConnectionState } from '@renderer/features/remote-hosts/header-connection-state';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { machineRegistry } from '@renderer/lib/machine-routing';
@@ -17,14 +20,27 @@ export const SessionMachineStatus = observer(function SessionMachineStatus() {
   const { projectId } = useSessionViewContext();
   const deviceId = machineRegistry.machineOf(projectId);
   const device = deviceId ? remoteHostsStore.device(deviceId) : null;
-  const state = deviceId ? headerConnectionState(remoteHostsStore.connectionState(deviceId)) : null;
-  if (!device || !state) return null;
-  return <MachineStatusChip state={state} lastSeenAt={device.lastSeenAt} label={device.label} />;
+  const connection = deviceId ? remoteHostsStore.connectionState(deviceId) : null;
+  const { translate, locale } = useSessionMessages();
+  if (!device || !deviceId) return null;
+  const ssh = !!device.directTerminal && !device.viaTunnel;
+  const state = headerConnectionState(connection) ?? (ssh && connection ? 'device_offline' : null);
+  if (!state) return null;
+  const attention = isSshAttention(connection);
+  const lastList = remoteHostsStore.hosts.get(deviceId)?.lastTaskListAt;
+  const interrupted = ssh && state !== 'online';
+  const detail = interrupted ? [translate('remoteHost.ssh.taskUnknown'), lastList
+    ? translate('remoteHost.ssh.lastSync', { time: new Date(lastList).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) })
+    : null].filter(Boolean).join(' · ') : null;
+  const cause = attention ? translate(`remoteHost.ssh.${connection}`) : connection === 'sign-in' ? translate('machinePicker.needsSignIn')
+    : connection === 'updating' ? translate('machinePicker.updating') : connection === 'outdated' || connection === 'update-failed' ? translate('machinePicker.tooOld') : undefined;
+  return <MachineStatusChip state={state} word={cause} detail={detail} lastSeenAt={device.lastSeenAt} label={device.label}
+    action={interrupted ? { label: translate('remoteHost.ssh.settings'), run: () => openDeviceRecovery(deviceId) } : undefined} />;
 });
 
 const STATE_WORD_KEY = { online: 'connection.online', connecting: 'connection.connecting', device_offline: 'connection.deviceOffline' } as const;
 
-function MachineStatusChip({ state, lastSeenAt, label }: { state: ConnectionState; lastSeenAt: string | null | undefined; label: string }) {
+function MachineStatusChip({ state, lastSeenAt, label, word, detail, action }: { state: ConnectionState; lastSeenAt?: string | null; label: string; word?: string; detail?: string | null; action?: { label: string; run: () => void } }) {
   const { t } = useTranslation('common');
   const ref = useRef<HTMLSpanElement>(null);
   const compact = useCompactWhenTabsSqueezed(ref);
@@ -37,9 +53,11 @@ function MachineStatusChip({ state, lastSeenAt, label }: { state: ConnectionStat
       className="flex min-w-min !shrink items-center overflow-hidden text-xs"
       data-slot="session-machine-status"
       data-compact={compact ? '' : undefined}
-      title={compact ? `${label}: ${t(STATE_WORD_KEY[state])}` : undefined}
+      title={detail ?? (compact ? `${label}: ${word ?? t(STATE_WORD_KEY[state])}` : undefined)}
     >
-      <ConnectionStatus state={state} lastSeenAt={lastSeenAt} subject={label} testId="session-machine-status" />
+      {action ? <button type="button" onClick={action.run} className="min-w-0 text-inherit" aria-label={`${action.label} · ${label} · ${word ?? t(STATE_WORD_KEY[state])}`}>
+        <ConnectionStatus state={state} word={word} subject={label} detail={detail} testId="session-machine-status" />
+      </button> : <ConnectionStatus state={state} lastSeenAt={lastSeenAt} subject={label} testId="session-machine-status" />}
     </span>
   );
 }

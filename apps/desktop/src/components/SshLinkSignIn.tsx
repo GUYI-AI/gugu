@@ -4,7 +4,8 @@ import { serverMachineNotices, serverSupportsConfirmedRestart } from '@gugu/core
 import { readServerVersionSwitchBusyAgents, restartServerVersionNow, retryServerVersionMatch } from '../lib/serverVersionRetry'
 import type { Device } from '@gugu/core/shared/types/chat'
 import { reportedSshUpdate } from '../lib/sshLinkOnline'
-import type { SshLinkFailure } from '../lib/sshLink'
+import { openDeviceRecovery } from '@/lib/deviceActionsIntent'
+import type { SshLinkFailure, SshLinkOpenResult } from '../lib/sshLink'
 import { sshLinkNoticeReason, type SshLinkNotice } from '../lib/sshLinkNotice'
 import {
   answerSshSignInPrompt,
@@ -19,6 +20,7 @@ import type { SshPrompt } from '../session/shared/ssh-prompt'
 import { useDevicesStore } from '../store/devicesContext'
 import { canRestartServerUpdate } from '../lib/deviceRowModel'
 import { useSessionMessages } from '../session/renderer/localization/use-session-messages'
+import { SshIdentityDetails } from './settings/addServer/SshHostKeyChanged'
 import { SshPromptCard, SshPromptFrame } from './settings/addServer/SshPromptCard'
 import { Button } from './ui/Button'
 import { InlineAction } from './settings/addServer/InlineAction'
@@ -73,6 +75,7 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
   const { translate } = useSessionMessages()
   const { toast } = useToast()
   const [dismissed, setDismissed] = useState<SshLinkFailure | null>(null)
+  const [verification, setVerification] = useState<Extract<SshLinkOpenResult, { ok: false }> | null>(null)
   const [signingIn, setSigningIn] = useState(false)
   const [answered, setAnswered] = useState<string | null>(null)
   const [confirmRestart, setConfirmRestart] = useState<{ deviceId: string; busyAgents?: number | null } | null>(null)
@@ -80,13 +83,14 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
   const update = machine.capabilities?.server_update
   const tunnelWaiting = !ssh && machine.is_online && update?.state === 'ready'
     && serverMachineNotices(machine.capabilities).some(notice => notice.kind === 'server-too-old')
-  const reason = signingIn || prompt ? 'signInRequired' : sshLinkNoticeReason(reportedSshUpdate(machine, problem)) ?? (tunnelWaiting ? 'waitingIdle' : null)
+  const reason = prompt ? 'signInRequired' : signingIn ? (problem === 'hostKeyChanged' ? 'hostKeyChanged' : 'signInRequired') : sshLinkNoticeReason(reportedSshUpdate(machine, problem)) ?? (tunnelWaiting ? 'waitingIdle' : null)
   const pendingRestart = reason === 'waitingIdle' || reason === 'confirmationRequired'
+  if (verification && problem !== 'hostKeyChanged') setVerification(null)
   if (confirmRestart && !pendingRestart) setConfirmRestart(null)
   if (dismissed !== null && dismissed !== reason) setDismissed(null)
   const shown = reason && (prompt || signingIn || reason !== dismissed)
     ? { deviceId: machine.device_id, name: machine.label, reason } : null
-  useNotice(`ssh-link:${machine.device_id}:${reason ?? 'clear'}`, shown && card(shown))
+  useNotice(`ssh-link:${machine.device_id}`, shown && card(shown))
   return null
 
   function card(shown: SshLinkNotice): Omit<Notice, 'key'> {
@@ -95,12 +99,14 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
     const startSignIn = () => {
       const deviceId = shown.deviceId
       setSigningIn(true)
-      void signInSshMachine(deviceId).finally(() => {
+      void signInSshMachine(deviceId).then(result => {
+        setVerification(!result.ok && result.reason === 'hostKeyChanged' ? result : null)
+      }).finally(() => {
         setSigningIn(false)
         setAnswered(null)
       })
     }
-    const dismiss = () => setDismissed(shown.reason)
+    const dismiss = () => { setDismissed(shown.reason); setVerification(null) }
     const askRestart = () => {
       const question = { deviceId: shown.deviceId, busyAgents: null }
       setConfirmRestart(question)
@@ -193,6 +199,10 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
                 ) : (
                   <>
                     {t(`devices.link.${shown.reason}`, { name: shown.name })}
+                    {verification?.hostKey && <SshIdentityDetails hostKey={verification.hostKey} />}
+                    {['notSignedIn', 'notInstalled', 'notRunning', 'refused'].includes(shown.reason) && <>
+                      {' '}<InlineAction onClick={() => { dismiss(); openDeviceRecovery(shown.deviceId) }}>{translate('remoteHost.ssh.settings')}</InlineAction>
+                    </>}
                     {shown.reason === 'updateFailed' ? (
                       <>
                         {' '}
@@ -205,7 +215,7 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
                       <>
                         {' '}
                         <InlineAction onClick={startSignIn} testId="ssh-link-sign-in-action">
-                          {t('devices.link.signIn')}
+                          {shown.reason === 'hostKeyChanged' ? (verification ? t('devices.retry') : translate('remoteHost.ssh.verify')) : t('devices.link.signIn')}
                         </InlineAction>
                       </>
                     ) : null}

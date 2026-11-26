@@ -2,7 +2,7 @@
 // 纯数据,不带 React —— 各入口(资源库、已安排、设置、导入会话、新建框)同一份换算,组件在 machine-picker.tsx。
 import { detectPlatform } from '@tanstack/react-hotkeys';
 import { formatRelativeTime } from '@/i18n/format';
-import type { HostConnectionState, Translate } from '@renderer/features/remote-hosts/connection-status';
+import { isSshAttention, type SshAttentionState, type HostConnectionState, type Translate } from '@renderer/features/remote-hosts/connection-status';
 import type { RemoteHostDevice } from '@/session/shared/remote-hosts';
 
 export interface MachineChoice {
@@ -17,6 +17,7 @@ export interface MachineChoice {
   notResponding?: boolean;
   /** #6264 远程 SSH 的机器要先登录(侧栏那颗点是「要先登录」)。 */
   needsSignIn?: boolean;
+  sshAttention?: SshAttentionState;
   /** #6264 那台机器的咕咕 server 太旧:正在替它更新 / 没更新成 / 空闲时自己更新(与侧栏同一个判据)。 */
   outdated?: 'updating' | 'failed' | 'idle';
   /** 那台机器报的系统(`linux` / `darwin` / `win32`…);缺席 = 不标。 */
@@ -73,7 +74,8 @@ export function machineChoiceFromHost(
     id: device.id,
     label: device.label,
     isLocal: false,
-    isOnline: device.isOnline,
+    isOnline: device.isOnline && !isSshAttention(connection),
+    ...(isSshAttention(connection) ? { sshAttention: connection } : {}),
     notResponding: connection === 'reconnecting',
     ...(connection === 'sign-in' ? { needsSignIn: true } : {}),
     ...(connection === 'updating'
@@ -136,6 +138,7 @@ export function machineMeta(
   translate: Translate,
   { withLink = false, nowMs }: { withLink?: boolean; nowMs?: number } = {}
 ): string | null {
+  if (machine.sshAttention) return translate(`remoteHost.ssh.${machine.sshAttention}`);
   if (machine.needsSignIn) return translate('machinePicker.needsSignIn');
   if (machine.outdated === 'updating') return translate('machinePicker.updating');
   if (machine.outdated) return translate('machinePicker.tooOld');

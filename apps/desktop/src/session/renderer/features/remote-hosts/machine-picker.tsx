@@ -1,3 +1,4 @@
+import { openDeviceRecovery } from '@/lib/deviceActionsIntent';
 // #6264 选机器的那一个组件。凡是「选一台机器」的地方都用它:资源库、已安排、设置(通用 / 仓库 / 存储)、
 // 导入会话、新建框。❌ 各处再写一个自己的样子 —— owner:「如果设备是关键,你是否应该放到更显眼的位置,
 // 并且那个组件统一且好看」。
@@ -225,7 +226,7 @@ export function MachinePicker({
               <span className="min-w-0 max-w-[160px] truncate">{selected.label}</span>
               {selectedOffline ? (
                 <span data-slot="machine-offline" className="shrink-0 text-foreground-passive">
-                  {translate('machinePicker.offline')}
+                  {selected?.sshAttention ? translate(`remoteHost.ssh.${selected.sshAttention}`) : translate('machinePicker.offline')}
                 </span>
               ) : null}
             </span>
@@ -306,7 +307,7 @@ export function MachinePicker({
                   data-device-id={machine.id}
                   data-online={offline ? 'false' : 'true'}
                   data-selected={isSelected ? 'true' : 'false'}
-                  disabled={offline && !offlineSelectable}
+                  disabled={offline && !offlineSelectable && !machine.sshAttention}
                   // 选中那行用 kit 自己「已选」那一档(同 DropdownMenuRadioItem 的 data-checked);离线的退成 passive 字色。
                   className={cn(
                     sidebar && 'gap-3 py-1',
@@ -320,6 +321,7 @@ export function MachinePicker({
                       void remoteHostsStore.wakeCloudComputer(machine.id);
                     }
                     // 选一台要先登录的远程 SSH 机器 = 要用它:当场登录(提问浮在窗口顶上那张卡片里)。
+                    if (machine.sshAttention && !offlineSelectable) { openDeviceRecovery(machine.id); return; }
                     if (machine.needsSignIn) void remoteHostsStore.signIn(machine.id);
                     onSelect(machine.id);
                   }}

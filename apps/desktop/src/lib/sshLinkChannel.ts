@@ -205,9 +205,9 @@ export function wantTunnels(wants: readonly TunnelWant[]): void {
  * 浮卡和设备设置共用这个原因；用户手动登录时，调用方也收到本次尝试的结果。
  */
 // ④ 跨组件的瞬时状态:这个渲染层自己的连接结果,属于这台设备(不随换号清:清单本身跟账号走,别人的机器不在里面)。
-const linkProblems = createSelectStore<ReadonlyMap<string, SshLinkFailure>>(new Map())
+const linkProblems = createSelectStore<ReadonlyMap<string, SshLinkFailure | null>>(new Map(), { scope: 'account' })
 /** For `useSelect`: each SSH machine's link problem right now. */
-export const sshLinkProblems: Readable<ReadonlyMap<string, SshLinkFailure>> = linkProblems
+export const sshLinkProblems: Readable<ReadonlyMap<string, SshLinkFailure | null>> = linkProblems
 
 export type SshLinkHandle = {
   /** 接上了才 resolve;接不上 reject SshLinkError(带原因)。 */
@@ -219,10 +219,37 @@ export type SshLinkHandle = {
 type LinkHandlers = { onMessage(message: unknown): void; onClosed(reason: SshLinkFailure): void }
 
 const handlersByDevice = new Map<string, LinkHandlers>()
+
+/** This window's device link, independently of remote tasks and the host's account. */
+export function sshDisconnected(deviceId: string): boolean {
+  return linkProblems.get().get(deviceId) === 'disconnected'
+}
+
+export async function disconnectSshDevice(deviceId: string): Promise<void> {
+  const electron = bridge()
+  if (!electron || !isSshMachine(deviceId) || sshDisconnected(deviceId)) return
+  const handlers = handlersByDevice.get(deviceId)
+  handlersByDevice.delete(deviceId)
+  patch(linkProblems, deviceId, 'disconnected')
+  handlers?.onClosed('disconnected')
+  try {
+    await electron.invoke(SSH_LINK_CHANNELS.close, deviceId)
+  } catch (error) {
+    if (sshDisconnected(deviceId)) patch(linkProblems, deviceId, 'unreachable')
+    throw error
+  }
+}
+
+export function resumeSshDevice(deviceId: string): void {
+  if (!sshDisconnected(deviceId)) return
+  patch(linkProblems, deviceId, undefined)
+  for (const listener of [...signedInListeners]) listener(deviceId)
+}
 let eventsWired = false
 
 // A repeated protocol mismatch is a link observation. The updater owns the outcome of the attempt.
 function recordLinkProblem(deviceId: string, reason: SshLinkFailure): void {
+  if (sshDisconnected(deviceId)) return
   if (reason === 'outdated' || reason === 'updating') {
     const latest = linkProblems.get().get(deviceId)
     if (latest === 'waitingIdle' || latest === 'confirmationRequired' || latest === 'updateFailed' || latest === 'updating') return
@@ -249,28 +276,31 @@ function wireEvents(electron: ElectronBridge): void {
 
 export function openSshLink(deviceId: string, handlers: LinkHandlers): SshLinkHandle {
   const electron = bridge()
-  if (!electron) {
+  if (!electron || sshDisconnected(deviceId)) {
+    const error = new SshLinkError(electron ? 'disconnected' : 'unmapped', deviceId)
     return {
-      ready: Promise.reject(new SshLinkError('unmapped', deviceId)),
-      send: () => Promise.reject(new SshLinkError('unmapped', deviceId)),
+      ready: Promise.reject(error),
+      send: () => Promise.reject(error),
       close: () => undefined,
     }
   }
   wireEvents(electron)
   handlersByDevice.set(deviceId, handlers)
   let closed = false
+  const current = () => !closed && handlersByDevice.get(deviceId) === handlers
   const ready = (electron.invoke(SSH_LINK_CHANNELS.open, deviceId) as Promise<SshLinkOpenResult>).then(
     (result) => {
+      if (sshDisconnected(deviceId)) throw new SshLinkError('disconnected', deviceId)
       if (!result || !result.ok) {
         const reason = result && !result.ok ? result.reason : 'unreachable'
-        if (!(result && !result.ok && result.via === 'tunnel')) recordLinkProblem(deviceId, reason)
+        if (current() && !(result && !result.ok && result.via === 'tunnel')) recordLinkProblem(deviceId, reason)
         if (result && !result.ok && result.controlOnly) return
         throw new SshLinkError(reason, deviceId)
       }
-      patch(linkProblems, deviceId, undefined)
+      if (current()) patch(linkProblems, deviceId, null)
     },
     () => {
-      patch(linkProblems, deviceId, 'unreachable')
+      if (current()) recordLinkProblem(deviceId, 'unreachable')
       throw new SshLinkError('unreachable', deviceId)
     },
   )
@@ -283,7 +313,9 @@ export function openSshLink(deviceId: string, handlers: LinkHandlers): SshLinkHa
     close() {
       if (closed) return
       closed = true
-      if (handlersByDevice.get(deviceId) === handlers) handlersByDevice.delete(deviceId)
+      if (handlersByDevice.get(deviceId) !== handlers) return
+      handlersByDevice.delete(deviceId)
+      if (linkProblems.get().get(deviceId) === null) patch(linkProblems, deviceId, undefined)
       void electron.invoke(SSH_LINK_CHANNELS.close, deviceId).catch(() => undefined)
     },
   }
@@ -293,7 +325,17 @@ export function openSshLink(deviceId: string, handlers: LinkHandlers): SshLinkHa
  * 人点「登录」:经提问卡片问一次(密码 / 口令 / 新主机指纹),登上后主进程接着把设备连接开好。
  * 成了之后这台的「连不上」清掉,还在听推送的订阅者随之重新接上(deviceRpc.ts 的重开)。
  */
-export async function signInSshMachine(deviceId: string): Promise<SshLinkOpenResult> {
+const signIns = new Map<string, Promise<SshLinkOpenResult>>()
+
+export function signInSshMachine(deviceId: string): Promise<SshLinkOpenResult> {
+  const active = signIns.get(deviceId)
+  if (active) return active
+  const attempt = performSignIn(deviceId).finally(() => signIns.delete(deviceId))
+  signIns.set(deviceId, attempt)
+  return attempt
+}
+
+async function performSignIn(deviceId: string): Promise<SshLinkOpenResult> {
   const electron = bridge()
   if (!electron) return { ok: false, reason: 'unmapped' }
   let result: SshLinkOpenResult
@@ -302,8 +344,9 @@ export async function signInSshMachine(deviceId: string): Promise<SshLinkOpenRes
   } catch {
     result = { ok: false, reason: 'unreachable' }
   }
+  if (sshDisconnected(deviceId)) return { ok: false, reason: 'disconnected' }
   if (result.ok) {
-    patch(linkProblems, deviceId, undefined)
+    patch(linkProblems, deviceId, null)
     for (const listener of [...signedInListeners]) listener(deviceId)
   } else {
     recordLinkProblem(deviceId, result.reason)
@@ -337,6 +380,13 @@ export function applyUpgradeEvent(event: SshUpgradeEvent | null): void {
   if (!event || typeof event.deviceId !== 'string') return
   const { deviceId } = event
   for (const listener of [...upgradeEventListeners]) listener(event)
+  const current = linkProblems.get().get(deviceId)
+  // Upgrade events describe software on the host. They cannot clear a later SSH or service failure.
+  if (current && !['updating', 'outdated', 'updateFailed', 'waitingIdle', 'confirmationRequired'].includes(current)) {
+    patch(upgrades, deviceId, undefined)
+    if (event.phase === 'done') for (const listener of [...signedInListeners]) listener(deviceId)
+    return
+  }
   if (event.phase === 'failed' && event.reinstall) reinstallCommands.set(deviceId, event.reinstall)
   else reinstallCommands.delete(deviceId)
   if (event.phase === 'updating') {
@@ -420,7 +470,7 @@ export async function ensureSshMachineUsable(deviceId: string): Promise<boolean>
   await sshMachinesReady()
   if (!isSshMachine(deviceId)) return false
   const problem = linkProblems.get().get(deviceId) ?? null
-  if (problem === 'signInRequired' || problem === 'hostKeyChanged' || problem === 'notSignedIn') {
+  if (problem === 'disconnected' || problem === 'signInRequired' || problem === 'hostKeyChanged' || problem === 'notSignedIn') {
     throw new SshLinkError(problem, deviceId)
   }
   return true

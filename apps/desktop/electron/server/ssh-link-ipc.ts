@@ -21,7 +21,7 @@ import type { TunnelMachines } from './tunnel-machines'
 import type { SshKeyInstallOutcome } from '../../src/session/shared/ssh-prompt'
 import type { DirectTerminalAskpass } from '../session/main/core/pty/direct-terminal/ssh-connect'
 import { createSshAutoUpgrader, sshServerUpgradeRunner, type SshAutoUpgrader } from './ssh-install/auto-upgrade'
-import { buildEnsureMasterArgs, changedHostKey, classifySshFailure } from './ssh-install/logic'
+import { buildEnsureMasterArgs, changedHostKey, classifySshFailure, hostForKnownHosts } from './ssh-install/logic'
 import { systemSpawnSsh } from './ssh-install/system'
 import type { DeviceCapabilities } from '@gugu/core/shared/types/chat'
 import type { DeviceRpcRequester } from '@gugu/core/cloud/deviceRpcRequester'
@@ -51,12 +51,12 @@ export function openOutcome(
 }
 
 /** 登录那一下的 ssh 结束了:成没成、没成为什么。纯函数。 */
-export function classifySignInExit(code: number | null, stderr: string): SshLinkOpenResult {
+export function classifySignInExit(code: number | null, stderr: string, host = ''): SshLinkOpenResult {
   if (code === 0) return { ok: true }
   const failure = classifySshFailure(stderr)
   if (failure === 'authFailed' || failure === 'hostKeyRejected') return { ok: false, reason: 'signInRequired' }
   if (failure === 'hostKeyChanged') {
-    return { ok: false, reason: 'hostKeyChanged', hostKey: changedHostKey(stderr, '') }
+    return { ok: false, reason: 'hostKeyChanged', hostKey: changedHostKey(stderr, host) }
   }
   return { ok: false, reason: 'unreachable' }
 }
@@ -252,7 +252,7 @@ export function registerSshLinkIpc(options: {
           child.on('error', (error) => resolve({ code: null, stderr: error.message }))
           child.on('close', (code) => resolve({ code, stderr }))
         })
-        const outcome = classifySignInExit(exit.code, exit.stderr)
+        const outcome = classifySignInExit(exit.code, exit.stderr, hostForKnownHosts(sshTargetOf(machine)))
         if (!outcome.ok) {
           options.log?.('ssh link: sign-in failed', { deviceId, code: exit.code, detail: exit.stderr.trim().split(/\r?\n/).slice(-3).join('\n') })
           return outcome

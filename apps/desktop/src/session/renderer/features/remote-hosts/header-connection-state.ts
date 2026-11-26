@@ -2,9 +2,10 @@
 // richer per-machine state (hostConnectionState). Only the link is said here; sign-in and version problems are not a
 // connection state and keep their own outlet (the scope notice / chat row), so the header shows nothing for them.
 import type { ConnectionState } from '@/components/connection/connectionState';
-import type { HostConnectionState } from './connection-status';
+import { isSshAttention, type HostConnectionState } from './connection-status';
 
 export function headerConnectionState(state: HostConnectionState | null): ConnectionState | null {
+  if (isSshAttention(state)) return state === 'waitingIdle' ? 'connecting' : 'device_offline';
   switch (state) {
     case 'connected':
       return 'online';

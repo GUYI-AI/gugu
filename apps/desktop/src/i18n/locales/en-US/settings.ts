@@ -540,6 +540,9 @@ export default {
       }
     },
     "link": {
+      "startService": "Run gugu-server start on the device, then reconnect.",
+      "disconnectFailed": "Could not disconnect the device.",
+      "outdated": "Gugu on {{name}} needs an update.",
       "connecting": "Connecting to {{name}} over SSH…",
       "signIn": "Sign in",
       "hostKeyChanged": "{{name}}’s SSH host key changed. Verify the new fingerprint with the device administrator, then update this device’s entry in your SSH known hosts file and retry.",
@@ -555,6 +558,7 @@ export default {
       "reinstall": "Gugu server on {{name}} is too old to update automatically. Run the install command on the device again:",
       "refused": "Gugu server on {{name}} refused the connection.",
       "notSignedIn": "{{name}} is not signed in. Re-add it in Settings → Devices.",
+      "notRunning": "SSH connected. The Gugu service is stopped; open Device settings to reconnect it.",
       "notInstalled": "Gugu server is not installed on {{name}}. Re-add it in Settings → Devices.",
     },
     "approveServer": {

@@ -10,6 +10,7 @@ const NOTICE_REASONS: ReadonlySet<SshLinkFailure> = new Set([
   'confirmationRequired',
   'notSignedIn',
   'notInstalled',
+  'notRunning',
 ])
 
 export type SshLinkNotice = { deviceId: string; name: string; reason: SshLinkFailure }

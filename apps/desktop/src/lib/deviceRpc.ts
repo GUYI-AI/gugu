@@ -22,6 +22,7 @@ import {
 } from '@gugu/core/cloud/deviceRpcRequester'
 import {
   onSshMachineSignedIn,
+  sshDisconnected,
   openSshLink,
   sshMachinesReady,
   subscribeSshMachineIds,
@@ -347,7 +348,7 @@ async function openSshPipe(deviceId: string, handlers: DeviceRpcPipeHandlers): P
 
 /** 还有人在听这台机器的推送,就隔一会儿再开一条;没人听 = 下一次调用时再开。 */
 function scheduleSshReopen(deviceId: string): void {
-  if (!hasEventListeners(deviceId)) {
+  if (sshDisconnected(deviceId) || !hasEventListeners(deviceId)) {
     sshReopen.delete(deviceId)
     return
   }

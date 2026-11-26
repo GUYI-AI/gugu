@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import type { SshLinkFailure } from '@/lib/sshLink';
+import { remoteLinkFacts, reportedSshUpdate } from '@/lib/sshLinkOnline';
+import { machineNotice } from './machine-notice';
 import { describe, expect, it, vi } from 'vitest';
 import { installRemoteHostsBridge, type RemoteHostDevice } from '@/session/shared/remote-hosts';
 import {
@@ -560,5 +563,41 @@ describe('#7199 打开云电脑上的会话:醒着也现问管家(设备表里�
     expect(store.wakeFailure('cloud')).not.toBeNull();
     expect(wakeCloudComputer).toHaveBeenCalledTimes(2);
     off();
+  });
+});
+
+describe('SSH observations across the device list, task and notice', () => {
+  const expected = {
+    disconnected: 'disconnected', unmapped: 'unmapped', unreachable: 'reconnecting',
+    signInRequired: 'sign-in', hostKeyChanged: 'hostKeyChanged', refused: 'refused',
+    notRunning: 'notRunning', notInstalled: 'notInstalled', notSignedIn: 'notSignedIn',
+    outdated: 'outdated', updating: 'updating', updateFailed: 'update-failed',
+    waitingIdle: 'waitingIdle', confirmationRequired: 'confirmationRequired',
+  } as const satisfies Record<SshLinkFailure, string>;
+
+  it.each(Object.entries(expected) as Array<[SshLinkFailure, typeof expected[SshLinkFailure]]>)(
+    'preserves %s with a stale protocol report and either cloud heartbeat',
+    (reason, state) => {
+      for (const online of [true, false]) {
+        const facts = remoteLinkFacts('box', new Set(['box']), reason, online);
+        expect(facts.sshLink).toBe(reason);
+        const connection = machineConnectionState({
+          device: device({ ...facts, notices: [{ kind: 'server-too-old' }] }), link: 'tooOld', synced: true,
+        });
+        expect(connection).toBe(state);
+        const notice = machineNotice({ connection, deviceId: 'box', label: 'Box', dials: 2, translate: key => key,
+          notices: [{ kind: 'server-too-old' }], signIn: vi.fn() });
+        if (reason === 'disconnected') expect(notice).toBeNull();
+        if (reason === 'hostKeyChanged') expect(notice?.title).toBe('remoteHost.ssh.hostKeyChanged');
+        if (reason === 'signInRequired') expect(notice?.action?.label).toBe('remoteHost.signIn');
+        expect(remoteLinkFacts('other', new Set(['box']), reason, online)).toEqual({ isOnline: online });
+      }
+    }
+  );
+
+  it('keeps identity verification ahead of an update heartbeat and distinguishes an unread directory', () => {
+    const caps = { app_version: '1', server_update: { state: 'ready' as const, version: '2' } };
+    expect(reportedSshUpdate({ is_online: true, capabilities: { terminals: [], runtimes: [], host_runtime_capability: 0, ...caps } }, 'hostKeyChanged')).toBe('hostKeyChanged');
+    expect(remoteLinkFacts('box', null, null, false)).toEqual({ isOnline: false, linkUnknown: true });
   });
 });

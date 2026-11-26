@@ -1,3 +1,9 @@
+import { useState } from 'react'
+import type { ServerSshInstallFailure } from '../../../lib/serverSshInstall'
+import { platform } from '../../../platform'
+import { useToast } from '../../toastContext'
+import { messageForUser } from '../../../lib/userFacingError'
+import { InlineAction } from './InlineAction'
 import { useTranslation } from 'react-i18next'
 import { cn } from '../../../lib/cn'
 import { CommandBlock } from './CommandBlock'
@@ -9,11 +15,30 @@ import { knownHostsRemoveCommand } from './addServerFormat'
 const text = 'text-[length:var(--font-body)] leading-[1.5]'
 const caption = 'text-[length:var(--font-caption)] leading-[1.5]'
 
+type Identity = NonNullable<ServerSshInstallFailure['hostKey']>
+
+export function SshIdentityDetails({ hostKey }: { hostKey: Identity }) {
+  const { t } = useTranslation('settings')
+  const { toast } = useToast()
+  const [copied, setCopied] = useState<string | null>(null)
+  const fingerprint = hostKey.fingerprint
+  return <span className="block break-all select-all">
+    {hostKey.host && <span className="block">{hostKey.host}</span>}
+    {fingerprint && <span className="block">{t('devices.addServer.newFingerprint', { fingerprint })}{' '}
+      <InlineAction onClick={() => {
+        void platform.writeClipboardText(fingerprint).then(() => setCopied(fingerprint),
+          error => toast(t('actions.copyFailed', { ns: 'common' }), 'error', messageForUser(error)))
+      }}>{t(copied === fingerprint ? 'devices.addServer.copied' : 'devices.addServer.copy')}</InlineAction>
+    </span>}
+    {hostKey.location && <span className="block">{t('devices.loginState.sshOldEntry', { location: hostKey.location })}</span>}
+  </span>
+}
+
 export function SshHostKeyChanged({
   hostKey,
   explain = false,
 }: {
-  hostKey: { host: string; fingerprint: string | null }
+  hostKey: Identity
   /** 带上「为什么停、下一步做什么」那段话(添加机器的失败卡片已经在上面说过了,不带)。 */
   explain?: boolean
 }) {
@@ -21,11 +46,7 @@ export function SshHostKeyChanged({
   return (
     <>
       {explain && <div className={cn(text, 'text-[var(--fg)]')}>{t('devices.addServer.reasons.hostKeyChanged')}</div>}
-      {hostKey.fingerprint && (
-        <div className={cn(caption, 'break-all text-[var(--muted-fg)]')}>
-          {t('devices.addServer.newFingerprint', { fingerprint: hostKey.fingerprint })}
-        </div>
-      )}
+      <div className={cn(caption, 'text-[var(--muted-fg)]')}><SshIdentityDetails hostKey={hostKey} /></div>
       {hostKey.host && <CommandBlock command={knownHostsRemoveCommand(hostKey.host)} testId="ssh-host-key-remove" />}
     </>
   )

@@ -53,6 +53,7 @@ export const SSH_LINK_CHANNELS = {
  *  · notInstalled:那台机器上找不到咕咕 server。
  */
 export type SshLinkFailure =
+  | 'disconnected'
   | 'unmapped'
   | 'unreachable'
   | 'signInRequired'
@@ -76,9 +77,8 @@ export function sshPathFailed(reason: SshLinkFailure): boolean {
   return reason === 'unreachable' || reason === 'signInRequired' || reason === 'hostKeyChanged'
 }
 
-/** 界面上一台远程 SSH 机器的设备连接状况(设备行、侧栏、新建页同一个说法;缺席 / null = 连着)。 */
-export type SshLinkState = 'signInRequired' | 'unreachable' | 'outdated' | 'updateFailed' | 'updating' | 'waitingIdle' | 'confirmationRequired'
-
+/** Keep the observed link cause intact. The directory and SSH answer different questions. */
+export type SshLinkState = SshLinkFailure
 /**
  * via = 'tunnel':这条设备连接开在远程隧道上(这台电脑没有它的 SSH 映射)。连不上的原因由远程隧道自己报
  * (tunnelMachines.ts),❌ 记成远程 SSH 的「要先登录」;主进程当场标,渲染层 ❌ 靠清单加载先后去猜。
@@ -108,6 +108,7 @@ export type SshUpgradeEvent = {
 
 /** 设备 RPC 调用在设备连接上失败时抛的错误码(调用方按码说人话,见 remoteFailureKind)。 */
 export const SSH_LINK_ERROR_CODE: Record<SshLinkFailure, string> = {
+  disconnected: 'ssh_disconnected',
   unmapped: 'ssh_unmapped',
   unreachable: 'ssh_unreachable',
   signInRequired: 'ssh_sign_in_required',

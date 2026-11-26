@@ -1,6 +1,7 @@
 // #6264「会话页里的别的机器」:和别的机器的连接此刻处在哪一步,以及每一步给人看的那句话。
 // 侧栏机器名旁那颗点、聊天界面消息列表末尾那一行、真终端最后一行状态,都从这里取判据与措辞 ——
 // 三处说同一件事,❌ 各写一套。纯函数(翻译函数注入),每条判据都有单测。
+import type { SshLinkState } from '@/lib/sshLink';
 import type { RemoteHostDevice } from '../../../shared/remote-hosts';
 import { formatBytes, type ServerMachineNotice } from '@gugu/core/cloud/serverMachineHealth';
 import { cloudComputerFailureKindOf } from '@gugu/core/cloud/cloudComputer';
@@ -35,6 +36,7 @@ export function formatAgo(lastSeenAt: string | null | undefined, now: number, tr
  *  · 连接中 = 在线,第一份会话列表还没到手。
  */
 export type HostConnectionState =
+  | SshAttentionState
   | 'connecting'
   | 'connected'
   | 'reconnecting'
@@ -52,6 +54,25 @@ export type HostConnectionState =
   /** #7199 叫醒云电脑没成(原因由叫醒的那一处说)。 */
   | 'wake-failed';
 
+const sshConnectionStates = {
+  disconnected: 'disconnected', unmapped: 'unmapped', unreachable: 'reconnecting', signInRequired: 'sign-in',
+  hostKeyChanged: 'hostKeyChanged', notRunning: 'notRunning', notInstalled: 'notInstalled',
+  notSignedIn: 'notSignedIn', refused: 'refused', outdated: 'outdated', updating: 'updating',
+  updateFailed: 'update-failed', waitingIdle: 'waitingIdle', confirmationRequired: 'confirmationRequired',
+} as const satisfies Record<SshLinkState, string>;
+
+const sshAttention = {
+  disconnected: 'reconnect', unmapped: 'settings', hostKeyChanged: 'verify', notRunning: 'reconnect', notInstalled: 'settings',
+  notSignedIn: 'settings', refused: 'reconnect', waitingIdle: 'settings', confirmationRequired: 'settings',
+} as const;
+
+export type SshAttentionState = keyof typeof sshAttention;
+export function isSshAttention(state: string | null): state is SshAttentionState {
+  return state !== null && Object.hasOwn(sshAttention, state);
+}
+
+
+
 export function hostConnectionState(input: {
   online: boolean;
   /** 第一份会话列表还没到手。 */
@@ -68,12 +89,7 @@ export function hostConnectionState(input: {
   linkUnknown?: boolean;
 }): HostConnectionState {
   if (input.linkUnknown) return 'connecting';
-  // 远程 SSH 的机器只看 SSH 这一条:要先登录就说要先登录,❌ 与顶上那张卡片各说各的(「重连中」vs「要先登录」)。
-  if (input.sshLink === 'signInRequired') return 'sign-in';
-  if (input.sshLink === 'updating') return 'updating';
-  if (input.sshLink === 'waitingIdle' || input.sshLink === 'confirmationRequired' || input.sshLink === 'outdated') return 'outdated';
-  if (input.sshLink === 'updateFailed') return 'update-failed';
-  if (input.sshLink === 'unreachable') return 'reconnecting';
+  if (input.sshLink) return sshConnectionStates[input.sshLink];
   // 云电脑:管家说的睡 / 醒压过库里的在线与否(睡下后租约还要 2 分钟才过期)。
   // A completed refusal/timeout wins over stale manager progress until a new explicit attempt or an awake snapshot.
   if (input.wake === 'failed' && input.cloudComputer !== 'awake') return 'wake-failed';
@@ -97,6 +113,7 @@ export function hostStatusLabel(
 ): string {
   // 照 VS Code Tunnels / Tailscale「Expired」:离线 ≠ 登录没了,后者说清下一步。
   if (state === 'offline' && signInExpiredAt !== undefined) return translate('remoteHost.status.signedOut', { device });
+  if (isSshAttention(state)) return translate(`remoteHost.ssh.${state}`);
   switch (state) {
     case 'sign-in':
       return translate('remoteHost.status.signInRequired', { device });
@@ -145,6 +162,9 @@ export function machineBlockIsStatus(
 ): boolean {
   if (connection === 'offline' && signInExpiredAt !== undefined) return false;
   return (
+    connection === 'disconnected' ||
+    connection === 'waitingIdle' ||
+    connection === 'updating' ||
     connection === 'asleep' ||
     connection === 'waking' ||
     connection === 'offline' ||
@@ -168,6 +188,7 @@ export function machineUnavailableReason(
 ): string {
   const device = label ?? translate('task.deviceOffline');
   if (connection === 'offline' && signInExpiredAt !== undefined) return translate('remoteHost.status.signedOut', { device });
+  if (isSshAttention(connection)) return translate(`remoteHost.ssh.${connection}`);
   switch (connection) {
     // 云电脑:休眠中 = 开始输入就叫醒它(看一眼不叫);正在醒 = 醒了发送键自己亮;❌ 说「离线」。
     case 'asleep':

@@ -104,7 +104,7 @@ describe('DevicesSection interaction', () => {
       await act(async () => { root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection))) })
       await flush()
       const action = () => container.querySelector<HTMLElement>('[data-testid="settings-device-ssh-sign-in-action"]')!
-      expect(action().parentElement?.textContent).toContain('主机指纹已变更')
+      expect(action().parentElement?.textContent).toContain('设备身份已变化')
       await act(async () => { action().click() })
       expect(container.querySelector('[role="status"]')?.textContent).toContain('SSH')
       await act(async () => { pending.resolve(refused) })
