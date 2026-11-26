@@ -32,3 +32,9 @@ it('compares equivalent Windows slash spellings without folding case', () => {
   expect(sameFolder('C:\\work\\repo', 'C:/work/repo/')).toBe(true)
   expect(sameFolder('/Work', '/work')).toBe(false)
 })
+
+it('preserves an absolute drive root when normalizing file-tree paths', () => {
+  expect(normalizeFileTreePath('C:/')).toBe('C:/')
+  expect(normalizeFileTreePath('C:\\')).toBe('C:/')
+  expect(normalizeFileTreePath('/')).toBe('/')
+})
