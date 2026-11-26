@@ -47,7 +47,7 @@ function plainSegment(text: string): string {
   // A backslash escape and a numeric character reference (`&#91;`, markdownLiteral) both stand for the bare character.
   const escaped = text.replace(/\\([!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~])|&#(\d{1,7}|[xX][0-9a-fA-F]{1,6});/g, (_, char: string | undefined, code: string | undefined) => {
     const point = char === undefined ? (code![0] === 'x' || code![0] === 'X' ? parseInt(code!.slice(1), 16) : Number(code)) : null;
-    literals.push(char ?? String.fromCodePoint(point! > 0x10ffff ? 0xfffd : point!));
+    literals.push(char ?? String.fromCodePoint(point === 0 || point! > 0x10ffff ? 0xfffd : point!));
     return `\uE000${literals.length - 1}\uE000`;
   });
   return replaceInlineLinks(escaped)

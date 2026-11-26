@@ -4,3 +4,7 @@ import { markdownPlainText } from '../../../../apps/desktop/src/lib/markdownPlai
 it('replaces numeric references beyond Unicode without throwing', () => {
   expect(markdownPlainText('before &#1114112; &#xFFFFFF; after')).toBe('before � � after')
 })
+
+it('replaces NUL numeric references with the replacement character', () => {
+  expect(markdownPlainText('a&#0;b &#x0;')).toBe('a�b �')
+})
