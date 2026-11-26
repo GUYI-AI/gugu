@@ -18,3 +18,9 @@ it("recognizes C++ headers and source aliases already supported by the MIME tabl
     expect(fileFamily(name, mime)).toBe(family)
   }
 })
+
+it("keeps bash and zsh source files in the code family", () => {
+  for (const [name, mime, family] of [["build.bash", "", "code"], ["profile.zsh", "", "code"], ["script", "text/x-shellscript", "code"]]) {
+    expect(fileFamily(name, mime)).toBe(family)
+  }
+})
