@@ -85,12 +85,18 @@ async function enrichModelEntries(entries: readonly CustomModelEntry[]): Promise
   });
 }
 
+/** A key this device stores but cannot read right now (the system keychain refused it): not the same as no key (#4043). */
+const UNREADABLE_KEY = Symbol('unreadable key');
+type StoredKey = string | null | typeof UNREADABLE_KEY;
+
 /** What a renderer may read of a stored connection: never the key, never the discovery identity. */
-function viewRow(row: StoredRow, key: string | null): CustomModelConnection {
+function viewRow(row: StoredRow, key: StoredKey): CustomModelConnection {
   const { discovery, mergedInto: _mergedInto, suppresses: _suppresses, ...meta } = row.meta!.customModel!;
+  const readable = typeof key === 'string' ? key : null;
   return {
-    id: row.accountId, name: row.meta?.displayName || row.accountId, credentialRef: row.credentialRef, keySaved: Boolean(key), ...meta,
-    ...(key ? { keyLast4: keyLast4(key) } : {}),
+    id: row.accountId, name: row.meta?.displayName || row.accountId, credentialRef: row.credentialRef, keySaved: Boolean(readable), ...meta,
+    ...(readable ? { keyLast4: keyLast4(readable) } : {}),
+    ...(key === UNREADABLE_KEY ? { keyUnreadable: true as const } : {}),
     ...(discovery ? { discovered: { source: discovery.source, keyLast4: discovery.keyLast4 } } : {}),
   };
 }
@@ -124,10 +130,12 @@ async function scanLocal(): Promise<DiscoveredConnection[]> {
  * The discovered connections nobody has stored yet. A stored connection hides its candidate when it is that candidate's
  * own record (removed ones included, so a removal sticks) or when it has the same address and key.
  */
-async function unstoredCandidates(rows: StoredRow[], secretOf: (id: string) => Promise<string | null>, candidates?: DiscoveredConnection[]): Promise<DiscoveredConnection[]> {
+async function unstoredCandidates(rows: StoredRow[], secretOf: (id: string) => Promise<StoredKey>, candidates?: DiscoveredConnection[]): Promise<DiscoveredConnection[]> {
   candidates ??= await scanLocal();
   if (candidates.length === 0) return [];
   const taken = new Set<string>();
+  // A stored key that cannot be read may be any candidate's key at its address: none there is offered (or stored) again.
+  const unreadableAt = new Set<string>();
   await Promise.all(rows.map(async (row) => {
     const meta = row.meta?.customModel;
     if (!meta) return;
@@ -135,10 +143,11 @@ async function unstoredCandidates(rows: StoredRow[], secretOf: (id: string) => P
     for (const identity of meta.suppresses ?? []) taken.add(identity);
     if (!meta.discovery) {
       const key = await secretOf(row.accountId);
-      if (key) for (const { baseUrl } of meta.endpoints) taken.add(discoveryIdentity(baseUrl, key));
+      if (key === UNREADABLE_KEY) for (const { baseUrl } of meta.endpoints) unreadableAt.add(baseUrl);
+      else if (key) for (const { baseUrl } of meta.endpoints) taken.add(discoveryIdentity(baseUrl, key));
     }
   }));
-  return candidates.filter(candidate => !taken.has(candidate.identity));
+  return candidates.filter(candidate => !taken.has(candidate.identity) && !candidate.endpoints.some(({ baseUrl }) => unreadableAt.has(baseUrl)));
 }
 
 const discoveredProbes = new Map<string, Promise<CustomModelMeta['endpoints']>>();
@@ -168,9 +177,13 @@ function candidateView(candidate: DiscoveredConnection): CustomModelConnection {
   };
 }
 
-function secretReader(): (id: string) => Promise<string | null> {
-  const cache = new Map<string, Promise<string | null>>();
-  return (id) => cache.get(id) ?? cache.set(id, registry.resolveSecret(namespace, id)).get(id)!;
+/** Each stored key read once per pass; one the keychain refuses is that connection's state, never the whole list's failure. */
+function secretReader(): (id: string) => Promise<StoredKey> {
+  const cache = new Map<string, Promise<StoredKey>>();
+  return (id) => cache.get(id) ?? cache.set(id, registry.resolveSecret(namespace, id).catch((error: unknown) => {
+    log.warn('[custom-models] a saved key could not be read on this device', { connectionId: id, error: error instanceof Error ? error.name : 'unknown' });
+    return UNREADABLE_KEY;
+  })).get(id)!;
 }
 
 let writes = Promise.resolve();
@@ -266,7 +279,11 @@ export async function listCustomModels(): Promise<CustomModelConnection[]> {
   migrateCustomModelConnections();
   return serializeCustomModelWrite(async () => {
     const candidates = await scanLocal();
-    await importHarnessConnections(candidates);
+    // Storing what this machine already has configured is a side effect of listing: when it cannot write (a refused
+    // keychain), the list still shows what is stored, and the next listing tries again.
+    await importHarnessConnections(candidates).catch((error: unknown) => {
+      log.warn('[custom-models] the existing connections on this machine could not be saved', { error: error instanceof Error ? error.name : 'unknown' });
+    });
     const rows = await registry.listAccounts(namespace);
     const secretOf = secretReader();
     const nativeHarnesses = await Promise.all((['claude', 'codex'] as const).map(async harness => {

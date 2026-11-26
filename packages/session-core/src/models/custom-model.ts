@@ -230,6 +230,8 @@ export const customModelConnectionSchema = z.object({
   name: z.string(),
   credentialRef: z.string(),
   keySaved: z.boolean(),
+  /** A key is stored but this device cannot read it now (the system keychain refused it); `keySaved` is false (#4043). */
+  keyUnreadable: z.literal(true).optional(),
   managedNativeHarnesses: z.array(z.enum(['codex', 'claude'])).optional(),
   keyLast4: z.string().max(4).optional(),
   ...customModelMetaSchema.shape,

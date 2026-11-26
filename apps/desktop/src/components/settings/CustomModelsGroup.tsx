@@ -127,7 +127,7 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
     {MODEL_GROUPS.map(({ id: group, testId, addId, title, add }) => {
       const renderPlan = (connection: CustomModelConnection) => <SettingsRow
         key={connection.id} data-custom-connection={connection.id} title={connection.name}
-        description={!connection.keySaved ? translate('customModels.keyMissing') : undefined}
+        description={connection.keyUnreadable ? translate('customModels.keyUnreadable') : !connection.keySaved ? translate('customModels.keyMissing') : undefined}
         control={<div className="flex items-center gap-1">
           <Button className="gg-model-icon-button" size="icon" variant="ghost" aria-label={translate('customModels.edit')} onClick={() => setEditing(connection)}><Pencil className="size-4" /></Button>
           <Button className="gg-model-icon-button" size="icon" variant="ghost" aria-label={translate('customModels.remove')} disabled={busy === connection.id} onClick={() => void removeConnection(connection)}><Trash2 className="size-4" /></Button>
@@ -214,7 +214,7 @@ function ModelConnectionGroup({ connection, name, showAddress, busy, onEdit, onT
   const details = [
     showAddress ? customModelApiUrl(connection) : null,
     count === 0 ? translate('customModels.noModel') : null,
-    !connection.keySaved ? translate('customModels.keyMissing') : null,
+    connection.keyUnreadable ? translate('customModels.keyUnreadable') : !connection.keySaved ? translate('customModels.keyMissing') : null,
   ].filter(Boolean).join(' · ');
   return <div data-custom-connection={connection.id}>
     <ModelProviderRow icon={icon ?? <Globe aria-hidden="true" />} name={name} description={details || undefined}

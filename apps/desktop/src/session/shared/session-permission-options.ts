@@ -1,6 +1,9 @@
 import { GUGU_PERMISSION_MODES, type ProviderPermissionModeMap } from '@gugu/session-core/acp/client';
 import type { SessionOptionGroup } from '@gugu/session-core/session-record/contract';
 
+/** Why Auto mode is off when the host's options could not be read at all (a failed read, not an unfinished one). */
+export const PERMISSION_OPTIONS_UNREADABLE = 'taskConfig.reviewOptionsUnreadable';
+
 export type NativePermissionChoice = { id: string; name: string; description?: string };
 
 /** The only permission-option assembler. Lifecycle is deliberately not an input. */
