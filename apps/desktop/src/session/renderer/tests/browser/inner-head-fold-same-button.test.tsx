@@ -133,3 +133,33 @@ it('the two-line group button covers the avatar and lower row, with independent 
   expect(hoverLayer().content).toBe('""');
   expect([hoverLayer().left, hoverLayer().right, hoverLayer().borderRadius]).toEqual(['0px', '32px', '12px']);
 });
+
+it('pointing at the collapse button lights the button alone, not the group block beside it', async () => {
+  harness = createReactHarness();
+  await harness.render(
+    <div className="gugu-skin emlight" style={{ position: 'fixed', inset: 0 }}>
+      <SessionLocalizationProvider>
+        <div data-region="inner-sidebar" style={{ width: 219 }}>
+          <InnerHeadRowLayout headKey="group" name="产品讨论群" active onOpen={() => {}} trailingButtons={1}
+            avatar={<span className="block size-10" />}
+            createAction={{ label: '创建智能体', onClick: () => {} }}
+          >
+            <InnerSidebarFoldButton />
+          </InnerHeadRowLayout>
+        </div>
+      </SessionLocalizationProvider>
+    </div>
+  );
+  const head = harness.container.querySelector<HTMLElement>('[data-inner-head]')!;
+  const blockHover = () => getComputedStyle(head, '::before').content;
+  const fold = harness.container.querySelector<HTMLElement>('[data-inner-head-fold]')!;
+
+  await page.elementLocator(fold).hover();
+  expect(fold.matches(':hover'), 'the pointer is on the collapse button').toBe(true);
+  expect(blockHover(), 'the group block does not light up with it').toBe('none');
+  expect(getComputedStyle(fold).backgroundColor, 'the button shows its own hover').not.toBe('rgba(0, 0, 0, 0)');
+
+  // The block's own hover is unchanged.
+  await page.getByRole('button', { name: '产品讨论群', exact: true }).hover({ position: { x: 20, y: 42 } });
+  expect(blockHover()).toBe('""');
+});
