@@ -25,7 +25,12 @@ export async function assistantHomePath(root: string, path: unknown, options: { 
     let actual: string | null = null
     try {
       const info = await lstat(current)
-      actual = await realpath(current)
+      // An existing link whose destination is missing cannot authorize creation at that destination.
+      if (info.isSymbolicLink()) {
+        actual = await realpath(current).catch(() => { throw new Error('HOME_PATH_UNRESOLVED_LINK') })
+      } else {
+        actual = await realpath(current)
+      }
       if (index < segments.length - 1 && !info.isDirectory() && !info.isSymbolicLink()) throw new Error('HOME_PATH_NOT_DIRECTORY')
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error

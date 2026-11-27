@@ -6,6 +6,13 @@ import { createAssistantPanelFiles } from '@gugu/core/cloud/assistantPanelFiles'
 import { assistantPanelCollection } from '@gugu/core/cloud/assistantPanel';
 import { assistantHomePaths } from '@gugu/core/shared/assistantPolicy';
 
+vi.mock('@main/core/runtime/runtime-manager', async () => {
+  const { FilesRuntime } = await import('@gugu/session-core/files');
+  return { runtimeManager: { acquire: async () => {
+    const files = new FilesRuntime();
+    return { value: { files }, release: () => files.dispose() };
+  } } };
+});
 vi.mock('@main/db/client', () => ({ db: {} }));
 vi.mock('@gugu/core', () => ({ listAgents: async () => [] }));
 const { createAssistantHomeStore } = await import('./assistant-home-store');
@@ -59,6 +66,25 @@ describe('reading the home', () => {
     const plan = await store.client.resource(AGENT, 'files', 'docs/plan.txt');
     expect(new TextDecoder().decode(await store.readBody(plan!))).toBe('week');
     expect(await store.client.resource(AGENT, 'memory', 'nothing.md')).toBeNull();
+  });
+
+  it('hears an external edit in a nested home folder through the workspace feed', async () => {
+    const { paths, store } = open();
+    const nested = join(paths.memoryDir, 'notes');
+    await mkdir(nested);
+    const file = join(nested, 'morning.md');
+    await writeFile(file, 'before');
+    const lifetime = new AbortController();
+    const heard = vi.fn();
+    try {
+      await store.watch(lifetime.signal, heard);
+      await writeFile(file, 'after');
+      await vi.waitFor(() => expect(heard).toHaveBeenCalled());
+      const item = await store.client.resource(AGENT, 'memory', 'notes/morning.md');
+      expect(new TextDecoder().decode(await store.readBody(item!))).toBe('after');
+    } finally {
+      lifetime.abort();
+    }
   });
 
   it('refuses another assistant, and a path out of the home', async () => {

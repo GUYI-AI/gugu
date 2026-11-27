@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, rmdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
+import { createWorkspaceUploads, currentEtag, WorkspaceTransferError } from '@main/core/files/workspace-transfer';
+import { REMOTE_WORKSPACE_CHUNK_BYTES, WORKSPACE_CONFLICT_CODE } from '@gugu/session-core/session-record/contract';
 import { KeyedMutex } from '@gugu/session-core/lib';
 import { eq } from 'drizzle-orm';
 import { listAgents } from '@gugu/core';
@@ -14,6 +16,7 @@ import { db } from '@main/db/client';
 import { sessions, workspaces } from '@main/db/schema';
 import { SESSIONPAGE_SESSION_CACHE_KEY } from '@main/core/sessionpage/sessionpage-session-agent';
 import { atomicWriteText } from '@gugu/core/local/state/paths';
+import { watchAssistantHome } from './assistant-home-watch';
 import { assistantHomePath } from './assistant-home-path';
 
 /**
@@ -36,11 +39,13 @@ const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest(
 // The binding protocol accepts opaque revisions as up to 19 decimal digits. Reserve 0 for missing and 1 for markers.
 const revisionOf = (identity: string) => (createHash('sha256').update(identity).digest().readBigUInt64BE() % ((1n << 63n) - 2n) + 2n).toString();
 const writes = new KeyedMutex();
+const workspaceWrites = createWorkspaceUploads({ maxBytes: Number.MAX_SAFE_INTEGER, createMode: 0o600 });
 const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
 const refused = (code: string, message: string, key?: string, domain?: string) => new AssistantPanelError(code, message, key, domain);
 
 export type AssistantHomeStore = {
   client: Pick<AssistantPanelClient, 'snapshot' | 'resource' | 'commit'>;
+  watch(signal: AbortSignal, changed: () => void): Promise<void>;
   readBody(item: AssistantPanelItem, maxBytes?: number): Promise<Uint8Array>;
   upload(label: string, bytes: Uint8Array): Promise<{ itemId: string; sha256: string }>;
   discard(itemId: string): Promise<void>;
@@ -145,10 +150,27 @@ export function createAssistantHomeStore(input: {
     if (itemId.startsWith(LOCAL_BODY)) return new Uint8Array(await readFile(await at(itemId.slice(LOCAL_BODY.length), domain)));
     throw refused('22023', 'Unknown content');
   }
-  async function replace(target: string, bytes: Uint8Array) {
-    const temporary = `${target}.${randomUUID()}.tmp`;
-    try { await writeFile(temporary, bytes, { mode: 0o600 }); await rename(temporary, target); }
-    finally { await rm(temporary, { force: true }); }
+  async function replace(target: string, bytes: Uint8Array, expectedRevision: string, absentRevision = '0') {
+    const uploadId = randomUUID();
+    const expectedEtag = await currentEtag(target);
+    const validate = async (file: string) => {
+      const info = await stat(file, { bigint: true }).catch((error: unknown) => { if (missing(error)) return null; throw error; });
+      const revision = info ? revisionOf(`${info.mtimeNs}:${sha256(await readFile(file))}`) : absentRevision;
+      if (revision !== expectedRevision) throw new WorkspaceTransferError(WORKSPACE_CONFLICT_CODE, 'The assistant file has changed');
+    };
+    try {
+      let offset = 0;
+      do {
+        const end = Math.min(bytes.length, offset + REMOTE_WORKSPACE_CHUNK_BYTES);
+        const data = Buffer.from(bytes.subarray(offset, end)).toString('base64');
+        await workspaceWrites.write(anchor, { path: target, uploadId, offset, data, total: bytes.length, final: end === bytes.length, expectedEtag }, validate);
+        offset = end;
+      } while (offset < bytes.length);
+    } catch (error) {
+      await workspaceWrites.abort(uploadId);
+      if (error instanceof WorkspaceTransferError && error.code === WORKSPACE_CONFLICT_CODE) throw refused('PT409', 'This resource changed: read it again');
+      throw error;
+    }
   }
 
   async function apply(change: AssistantPanelCommit, item: AssistantPanelItem | null): Promise<void> {
@@ -157,7 +179,7 @@ export function createAssistantHomeStore(input: {
       if (change.operation !== 'save' || typeof change.data?.text !== 'string') throw refused('22023', 'The personality is only ever saved, as text');
       const target = await at(null, domain, true);
       const now = await readFile(target, 'utf8').catch((error: unknown) => { if (missing(error)) return ''; throw error; });
-      await atomicWriteText(target, composeInstructions(now, change.data.text));
+      await replace(target, Buffer.from(composeInstructions(now, change.data.text)), change.expectedRevision, '1');
       return;
     }
     const data = change.data ?? {};
@@ -193,7 +215,7 @@ export function createAssistantHomeStore(input: {
     }
     const bytes = await bytesOf(change.body.itemId, domain);
     if (sha256(bytes) !== change.body.sha256) throw refused('22023', 'The content does not match its digest');
-    await replace(target, bytes);
+    await replace(target, bytes, change.expectedRevision);
     if (change.body.itemId.startsWith(UPLOAD_BODY)) uploads.delete(change.body.itemId);
   }
 
@@ -228,10 +250,12 @@ export function createAssistantHomeStore(input: {
       },
       commit: (assistant, change) => writes.runExclusive(anchor, () => commit(assistant, change)),
     },
+    watch: (signal, changed) => watchAssistantHome(input.home, signal, changed),
     async readBody(item, maxBytes) {
       if (!item.body_item_id) throw refused('body-unavailable', 'No content');
       const bytes = await bytesOf(item.body_item_id, item.domain as FileDomain);
       if (maxBytes !== undefined && bytes.byteLength > maxBytes) throw Object.assign(refused('too-large', 'Too large'), { size: bytes.byteLength });
+      if (item.body_sha256 !== sha256(bytes)) throw refused('PT409', 'The file changed during this read');
       return bytes;
     },
     async upload(_label, bytes) {

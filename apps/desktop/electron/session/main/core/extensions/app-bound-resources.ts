@@ -15,7 +15,7 @@ export { domainState, reasonOf, refusedOrUnavailable, savedData, unavailable };
 import { account, current, member } from './app-unread-bindings';
 import { assistantServingChat } from './app-assistant-serving';
 import { extensionsService } from './extensions-root';
-import { addResourceWatch, notifyAgentResourcesChanged, stopResourceWatch } from './app-resource-watches';
+import { type ResourceWatch, forgetResourceWatch, notifyResourceWatch, addResourceWatch, notifyAgentResourcesChanged, stopResourceWatch } from './app-resource-watches';
 import { assistantHomeHere, createAssistantHomeStore, type AssistantHomeStore } from './assistant-home-store';
 
 /**
@@ -302,10 +302,19 @@ export async function appResourceWatch(
   }
   const bound = await boundAgent(extensionId, name, ['resources'], null);
   if (!bound) return { name, state: 'unbound' };
-  const held = addResourceWatch({
+  const watch: ResourceWatch = {
+    lifetime: new AbortController(),
     pageId, watchId, extensionId, name, ownerId: bound.ownerId, handle: bound.handle, agentId: bound.agentId,
     hear: (event) => hear(watchId, event),
-  });
-  if (!held) throw denied('Conversation binding changed');
+  };
+  if (!addResourceWatch(watch)) throw denied('Conversation binding changed');
+  try {
+    const store = await bound.store();
+    await store.watch(watch.lifetime.signal, () => { void notifyResourceWatch(watch); });
+    await bound.recheck();
+  } catch (error) {
+    // An away binding has no disk subscription here. Keep its existing grant/account lifetime.
+    if (codeOf(error) !== 'elsewhere') { forgetResourceWatch(watch); throw error; }
+  }
   return { name, state: 'watching' };
 }

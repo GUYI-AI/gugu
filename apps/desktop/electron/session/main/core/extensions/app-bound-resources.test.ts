@@ -131,6 +131,7 @@ vi.mock('./assistant-home-store', async () => {
     isHomeBody: () => false,
     assistantHomeHere: async () => (state.home ? { paths: {}, anchor: '/home' } : null),
     createAssistantHomeStore: () => ({
+      watch: async () => undefined,
       client: createAssistantPanelClient(async (name, args) => identityRpc(name, args), () => state.owner || null),
       readBody: (item: Item, maxBytes?: number) => bodies.readAssistantPanelBody(item as never, { token: state.owner, ownerId: OWNER, chatId: CHAT, maxBytes, accountId: async () => OWNER }),
       upload: (label: string, bytes: Uint8Array) => bodies.uploadAssistantPanelBody({ token: state.owner, ownerId: OWNER, chatId: CHAT, label, bytes, accountId: async () => OWNER }),
