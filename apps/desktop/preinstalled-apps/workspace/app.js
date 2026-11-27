@@ -556,7 +556,7 @@ const state = {
   folder: null, // the folder the list shows (子文件夹): a folder entry's id, null for the top
   listed: new Set(), // the folders whose contents are known ('' the top): both roots are read one folder at a time
   more: new Map(), // the chat folders read so far ('' the top): { last } the last row read; the rest is read when wanted
-  found: null, // a search's answer from the whole chat: { needle, entries, full } (full: there may be more)
+  searched: null, // a search's answer from the whole chat: { needle, entries, full } (full: there may be more)
   rootOf: null, // a working copy's root once known, for the path of the file open here: { workspace, root }
   folderWatches: new Map(), // the listed folders below the top that are heard, each by its own watch
   dragging: null, // the entry being dragged onto a folder (desktop)
@@ -876,7 +876,7 @@ function forgetListed() {
   state.entries = []
   state.listed = new Set()
   state.more = new Map()
-  state.found = null
+  state.searched = null
 }
 
 // What a chat folder's list reads at a time: its folders, all of them, and a page of the rest, the latest change first (the
@@ -1054,7 +1054,7 @@ function take(change) {
   const listsKeep = state.entries.some((entry) => 'keep' in entry)
   const fresh = new Map(change.entries.map((entry) => [entry.id, 'keep' in entry || !before.has(entry.id) || !('keep' in before.get(entry.id)) ? entry : { ...listed(before.get(entry.id)), ...entry }]))
   state.entries = [...state.entries.filter((entry) => !fresh.has(entry.id) && !change.gone.includes(entry.id)), ...fresh.values()]
-  if (state.found) state.found = { ...state.found, entries: state.found.entries.filter((entry) => !change.gone.includes(entry.id)) }
+  if (state.searched) state.searched = { ...state.searched, entries: state.searched.entries.filter((entry) => !change.gone.includes(entry.id)) }
   if (!listsKeep) return []
   // An item come into, moved in or out of, or gone from a folder not read yet changes the count its row says
   // (childCount): the folder that row is listed in is read again.
@@ -1211,7 +1211,7 @@ function renderList() {
   // A search: what the database found by name across the chat, with what is read here (fresher, its changes heard). A
   // folder read so far: its rows down to the last one read; past that, its next page.
   const here = state.folder ?? ''
-  const found = needle && state.found?.needle === state.filter.trim() ? state.found : null
+  const found = needle && state.searched?.needle === state.filter.trim() ? state.searched : null
   const partial = !needle && state.more.has(here)
   const shown = (needle ? [...new Map([...(found?.entries ?? []), ...state.entries].map((e) => [e.id, e])).values()]
     : inside(state.folder ?? null).filter((e) => !partial || readSoFar(e, here)))
@@ -1615,12 +1615,12 @@ async function find(more = false) {
   const needle = state.filter.trim()
   const chat = state.ctx?.chat?.id
   if (!needle || !chat || state.root !== 'chat') return
-  const had = more && state.found?.needle === needle ? state.found.entries : []
+  const had = more && state.searched?.needle === needle ? state.searched.entries : []
   try {
     const page = await gugu.files.list({ chat, name: needle, offset: had.length, limit: SEARCH_PAGE })
     if (state.filter.trim() !== needle || state.ctx?.chat?.id !== chat) return
     const held = new Set(had.map((entry) => entry.id))
-    state.found = { needle, entries: [...had, ...page.filter((entry) => !held.has(entry.id))], full: page.length === SEARCH_PAGE }
+    state.searched = { needle, entries: [...had, ...page.filter((entry) => !held.has(entry.id))], full: page.length === SEARCH_PAGE }
   } catch (error) {
     return showBanner(error.code === 'denied' ? state.t.denied : fmt(state.t.failed, { e: error.message }), 'error')
   }
