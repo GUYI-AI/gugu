@@ -614,6 +614,7 @@ const FOLDER_CODES: Readonly<Record<string, AppFileError['code']>> = {
   workspace_folder_not_empty: 'invalid',
   workspace_mkdir: 'invalid',
   workspace_move: 'invalid',
+  workspace_document_type: 'invalid',
   workspace_not_member: 'denied',
   workspace_item_not_found: 'not-found',
   workspace_no_version: 'not-found',
@@ -760,14 +761,15 @@ async function resolve(surface: FileSurface, account: { token: string; userId: s
 }
 
 /** A live text file: what `files.create` makes, and what an upload of a text file becomes (F19). A name another file of
- * that folder has gets 「 (n)」 from the database (子文件夹). */
+ * that folder has gets 「 (n)」 from the database (子文件夹). Its format is its name: the database takes the content type
+ * from the name's suffix and refuses a name without a text one (`workspace_document_type`), for every door alike. */
 function insertDocument(
   token: string,
-  doc: { chatId: string; name: string; contentType: string; content: string; sourceMessageIds: readonly string[]; parentId: string | null },
+  doc: { chatId: string; name: string; content: string; sourceMessageIds: readonly string[]; parentId: string | null },
   actor: string,
 ): Promise<ItemRow> {
   return agentRow(token, 'workspace_create_document_as', { p_chat_id: doc.chatId, p_as_user_id: actor, p_title: doc.name,
-    p_content: doc.content, p_content_type: doc.contentType, p_source_message_ids: doc.sourceMessageIds, p_folder: doc.parentId });
+    p_content: doc.content, p_source_message_ids: doc.sourceMessageIds, p_folder: doc.parentId });
 }
 
 /**
@@ -1265,14 +1267,13 @@ export function createAppFiles(platform: FilesPlatform) {
       const candidate = fileOpenersFor(name, [manifest], 'chat').find((opener) => opener.tabKind === `${manifest.id}.${tab.name}`);
       if (!candidate) throw new AppFileError('invalid', `${manifest.id}.${tab.name} does not open ${name} in a chat`);
       const { token, userId } = await platform.account();
-      const contentType = contentTypeOf(name);
       const row = await madeOnce(token, chatId, undefined, name, userId, () =>
-        insertDocument(token, { chatId, name, contentType, content: /json/i.test(contentType) ? '{}' : '', sourceMessageIds: [], parentId: null }, userId));
+        insertDocument(token, { chatId, name, content: contentTypeOf(name) === 'application/json' ? '{}' : '', sourceMessageIds: [], parentId: null }, userId));
       return { open: { ...(await this.groupFile(chatId, row.id)), choice: { kind: 'one', candidate } } };
     },
 
     /** `folder` (子文件夹): the folder it goes in, made all the way down when it is not there; not given, the top. */
-    async create(chatId: string, args: { name: string; content: string; contentType?: string; sourceMessageIds?: unknown; folder?: unknown; ifExists?: unknown },
+    async create(chatId: string, args: { name: string; content: string; sourceMessageIds?: unknown; folder?: unknown; ifExists?: unknown },
       as: { asAgent?: string | null; extensionId?: string } = {}): Promise<AppFileEntry> {
       const { token, userId } = await platform.account();
       const name = String(args.name ?? '').trim();
@@ -1280,8 +1281,7 @@ export function createAppFiles(platform: FilesPlatform) {
       const sourceMessageIds = sourceMessageIdsOf(args.sourceMessageIds);
       const folder = folderOf(args.folder);
       const content = String(args.content ?? '');
-      const contentType = typeof args.contentType === 'string' && args.contentType ? args.contentType : 'text/markdown';
-      if (/json/i.test(contentType)) {
+      if (contentTypeOf(name) === 'application/json') {
         let parsed: unknown;
         try {
           parsed = JSON.parse(content);
@@ -1294,7 +1294,7 @@ export function createAppFiles(platform: FilesPlatform) {
         }
       }
       const actor = as.asAgent ?? userId;
-      const make = async () => insertDocument(token, { chatId, name, contentType, content, sourceMessageIds, parentId: await folderIdFor(token, chatId, folder, actor) }, actor);
+      const make = async () => insertDocument(token, { chatId, name, content, sourceMessageIds, parentId: await folderIdFor(token, chatId, folder, actor) }, actor);
       if (args.ifExists !== undefined && args.ifExists !== 'use') throw new AppFileError('invalid', "files.create: ifExists is 'use' or not given");
       return entryOne(token, args.ifExists === 'use' ? await madeOnce(token, chatId, folder, name, actor, make) : await make(), actor);
     },
@@ -1448,18 +1448,16 @@ export function createAppFiles(platform: FilesPlatform) {
         throw new AppFileError('denied', 'Not permitted: replacing a file other than the one this page was opened for needs "files:write"');
       }
       if (row.kind === 'folder') throw notAFile(row);
-      if (row.kind !== 'file') {
-        throw new AppFileError('invalid', `${row.filename} is a live text file: change it through files.open, it is never replaced`, { reason: 'live-text-file' });
-      }
       if (file.bytes.byteLength > APP_FILE_MAX_BYTES) throw tooLargeError([row.filename]);
       // Gone by already: refused before a byte goes. The database checks again.
       if (row.version !== expected) throw replacedSinceError(row.filename, row.version, expected);
       const contentType = file.contentType || row.content_type;
       const actor = surface.asAgent ?? userId;
-      // The shared publisher keeps the new version on this device. Null: the ordinary cloud path decides.
+      // The shared publisher keeps a stored file's new version on this device. Null: the ordinary cloud path decides. A text
+      // document's next version goes to the server, which checks it against the live text (as message_send's does).
       let published: ItemRow | null = null;
       try {
-        published = await platform.publishFile?.(row.chat_id, { name: row.filename, contentType, bytes: file.bytes }, row.parent_id, actor,
+        if (row.kind === 'file') published = await platform.publishFile?.(row.chat_id, { name: row.filename, contentType, bytes: file.bytes }, row.parent_id, actor,
           undefined, { next: { itemId: row.id, expectedVersion: expected } }) ?? null;
       } catch (error) {
         if (/File revision conflict/.test(error instanceof Error ? error.message : String(error))) {
@@ -1481,6 +1479,10 @@ export function createAppFiles(platform: FilesPlatform) {
       } catch (error) {
         const changed = error instanceof AttachmentsError && error.code === 'version_conflict' ? /got (\d+)/.exec(error.message) : null;
         if (changed) throw replacedSinceError(row.filename, Number(changed[1]), expected);
+        // A text document someone changed (live) since that version: the file service's refusal, nothing written.
+        if (error instanceof AttachmentsError && (error.code === 'content-changed' || error.code === 'version-conflict')) {
+          throw new AppFileError('content-changed', `${row.filename} changed since version ${expected}, and nothing was written: read it again and make your change on that`, { reason: 'replaced-since', name: row.filename, expected });
+        }
         throw new AppFileError(refusalCode(error), `${row.filename} was not replaced: ${error instanceof Error ? error.message : String(error)}`);
       }
       // Versions older than the 50 kept, from before the switch, still have their bytes in the workspace bucket.
@@ -1495,8 +1497,9 @@ export function createAppFiles(platform: FilesPlatform) {
     },
 
     /**
-     * Upload each file into a chat's workspace. A text file (F19, `workspaceUploadKind` — the one rule) becomes a live document, as `create` makes; anything else is a file item:
-     * the bytes to OSS, then the server puts the file in the folder (attachments/place) — an upload it refused is nobody's and expires.
+     * Upload each file into a chat's workspace: the bytes to OSS, then the server puts the file in the folder
+     * (attachments/place) — a text file (F19, `workspaceUploadKind`, the one rule, applied there) as a live document,
+     * anything else as a file item; an upload it refused is nobody's and expires. A project's stored bytes stay on this device.
      * Every size is checked before the first byte goes. Not a transaction across files: if one
      * fails, the ones before it stay, and the rejection names what did not get in.
      */
@@ -1533,12 +1536,10 @@ export function createAppFiles(platform: FilesPlatform) {
               stagingKey => placeAttachment(endpoint, { staging_key: stagingKey, chat_id: chatId, file_name: name, folder: folder ?? null,
                 as_user_id: actor, source_message_ids: sourceMessageIds, content_type: contentType, ...(keep ? { keep } : {}) })) as unknown as ItemRow;
           };
-          const asText = workspaceUploadKind(name, contentType, new Uint8Array(file.bytes));
-          if (asText.kind === 'document') {
-            rows.push(await insertDocument(token, { chatId, name, contentType: asText.contentType, content: asText.text, sourceMessageIds, parentId }, actor));
-            continue;
-          }
-          const published = await platform.publishFile?.(chatId, { ...file, contentType }, parentId, actor, store);
+          // A text file goes to the server, which makes it a live document by the shared classifier — as message_send's and
+          // the composer's uploads do; only stored bytes are published from a project.
+          const published = workspaceUploadKind(name, contentType, new Uint8Array(file.bytes)).kind === 'document'
+            ? null : await platform.publishFile?.(chatId, { ...file, contentType }, parentId, actor, store);
           if (published) { rows.push(published); continue; }
           // #7290 gugu-3: a stored file's bytes go to OSS (attachments/upload); the server puts it in the folder (attachments/place),
           // as the agent or the person — the folder made all the way down when it is not there, as folderIdFor does.

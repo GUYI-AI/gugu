@@ -122,7 +122,48 @@ export function useSessionHistoryDirectories(query: SessionHistoryDirectoryQuery
   return { byMachine, refresh: refreshSessionHistory };
 }
 
-/** 全部机器、全部筛选的页都标旧,正在显示的那几份当场重读(归档 / 恢复 / 导入之后)。 */
-function refreshSessionHistory(): void {
-  void directoryPages.refresh();
+/** 「选中筛选出的全部」时连节一起拿全:节数不封顶。 */
+const ALL_DIRECTORIES = 100_000;
+
+/**
+ * 一台机器在一套筛选下能勾的一共几条(活跃 + 已归档,各节计数相加,不带行)—— 底部条「选中筛选出的全部 N 条」的 N。
+ * 目录页按节分页,手上那几页的计数加起来不是全部,所以单独数一次(只读缓存,不扫盘)。
+ */
+const selectableTotals = replica({
+  name: 'sessionHistorySelectableTotals',
+  scope: 'account',
+  networkMode: 'always',
+  read: async (_owner, machine: string, query: string): Promise<number> => {
+    const page = await rpcOn(machine === LOCAL_IMPORT_DEVICE ? null : machine).sessionHistory.listDirectories({
+      ...(JSON.parse(query) as SessionHistoryDirectoryQuery),
+      limit: ALL_DIRECTORIES,
+      sessionsPerDirectory: 0,
+      mode: 'cached' as const,
+    });
+    return page.rows.reduce((sum, row) => sum + row.countsByStatus.active + row.countsByStatus.archived, 0);
+  },
+});
+
+/**
+ * 当前筛选下全部问得到的机器上能勾的一共几条;`enabled` 为假(没在多选)不数。读法照 replica:
+ * 有一台还没数出来(unknown)或数不了(error)就是 `known: false`,底部条不给「全部」那个链接。
+ */
+export function useSessionHistorySelectableTotal(
+  query: SessionHistoryDirectoryQuery,
+  machines: readonly string[],
+  enabled: boolean
+): { known: false } | { known: true; total: number } {
+  const key = serialize({ ...query, limit: ALL_DIRECTORIES });
+  const readings = useReplicas(selectableTotals, enabled ? machines.map((machine) => [machine, key] as [string, string]) : []);
+  let total = 0;
+  for (const reading of readings) {
+    if (reading.state !== 'value') return { known: false };
+    total += reading.value;
+  }
+  return enabled ? { known: true, total } : { known: false };
+}
+
+/** 全部机器、全部筛选的页都标旧,正在显示的那几份当场重读(归档 / 恢复 / 导入之后)。读回来才兑现。 */
+function refreshSessionHistory(): Promise<void> {
+  return Promise.all([directoryPages.refresh(), selectableTotals.refresh()]).then(() => undefined);
 }

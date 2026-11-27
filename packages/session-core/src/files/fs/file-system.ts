@@ -110,17 +110,25 @@ export class FileSystem implements IFileSystem {
         return ok({ bytes: new Uint8Array(), truncated: true, totalSize: stat.size });
       }
 
-      const readSize = stat.size;
-      if (readSize === 0) {
-        return ok({ bytes: new Uint8Array(), truncated: false, totalSize: stat.size });
-      }
-
       const handle = await fs.open(validated.data, 'r');
       try {
+        // 路径在 stat 与 open 之间可能被替换，正文和大小必须来自同一个打开的文件。
+        const opened = await handle.stat();
+        if (!opened.isFile()) throw Object.assign(new Error(`Path is not a file: ${validated.data}`), { code: 'EISDIR' });
+        if (opened.size > maxBytes) return ok({ bytes: new Uint8Array(), truncated: true, totalSize: opened.size });
+        const readSize = opened.size;
         const buffer = Buffer.alloc(readSize);
-        const { bytesRead } = await handle.read(buffer, 0, readSize, 0);
-        // 到这里文件整份都在限内,读的就是全部。
-        return ok({ bytes: buffer.subarray(0, bytesRead), truncated: false, totalSize: stat.size });
+        let read = 0;
+        while (read < readSize) {
+          const { bytesRead } = await handle.read(buffer, read, readSize - read, read);
+          if (bytesRead === 0) throw Object.assign(new Error('File changed during read'), { code: 'FILE_CHANGED' });
+          read += bytesRead;
+        }
+        const after = await handle.stat();
+        if (after.size !== opened.size || after.mtimeMs !== opened.mtimeMs || after.ctimeMs !== opened.ctimeMs) {
+          throw Object.assign(new Error('File changed during read'), { code: 'FILE_CHANGED' });
+        }
+        return ok({ bytes: buffer, truncated: false, totalSize: opened.size });
       } finally {
         await handle.close();
       }

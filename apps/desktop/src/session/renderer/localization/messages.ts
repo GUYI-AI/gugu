@@ -8,6 +8,7 @@ import { enUSRemotePortMessages, zhCNRemotePortMessages } from './messages-remot
 import { enUSSubscriptionMessages, zhCNSubscriptionMessages } from './messages-subscriptions';
 import { enUSSessionWorkflowMessages, zhCNSessionWorkflowMessages } from './messages-session-workflows';
 import { enUSLegacyDmMessages, zhCNLegacyDmMessages } from './messages-legacy-dm';
+import { enUSSessionHistoryBatchMessages, zhCNSessionHistoryBatchMessages } from './messages-session-history-batch';
 import { enUSSessionScheduleMessages, zhCNSessionScheduleMessages } from './messages-session-schedules';
 import { enUSAgentStatusMessages, zhCNAgentStatusMessages } from './messages-agent-status';
 import { enUSResourceKindMessages, zhCNResourceKindMessages } from './messages-resource-kinds';
@@ -1220,7 +1221,6 @@ const enUSCoreMessages = {
   'transcript.reasonSetConfigFailed': 'the configuration could not be applied',
   'transcript.reasonSetModeFailed': 'the mode could not be changed',
   'transcript.reasonCancelledByUser': 'Stopped',
-  'transcript.reasonInterruptedForMessage': 'paused to take a new message',
   'transcript.continueTurn': 'Continue',
   'transcript.continueTurnHint': 'Ask the agent to pick up where it stopped (sends a new prompt)',
   'transcript.discardTurn': 'Discard',
@@ -2553,7 +2553,6 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'transcript.reasonSetConfigFailed': '配置未能应用',
   'transcript.reasonSetModeFailed': '模式未能切换',
   'transcript.reasonCancelledByUser': '已停止',
-  'transcript.reasonInterruptedForMessage': '因新消息而暂停',
   'transcript.continueTurn': '继续',
   'transcript.continueTurnHint': '让 agent 从停止处继续（会发送一条新指令）',
   'transcript.discardTurn': '丢弃',
@@ -2756,6 +2755,7 @@ export const enUSMessages = {
   ...enUSCoreMessages,
   ...enUSAnnotationMessages,
   ...enUSSessionWorkflowMessages,
+  ...enUSSessionHistoryBatchMessages,
   ...enUSLegacyDmMessages,
   ...enUSProjectMessages,
   ...enUSCapabilityMessages,
@@ -2784,6 +2784,7 @@ export const zhCNMessages: Record<SessionMessageKey, string> = {
   ...zhCNCoreMessages,
   ...zhCNAnnotationMessages,
   ...zhCNSessionWorkflowMessages,
+  ...zhCNSessionHistoryBatchMessages,
   ...zhCNLegacyDmMessages,
   ...zhCNProjectMessages,
   ...zhCNCapabilityMessages,

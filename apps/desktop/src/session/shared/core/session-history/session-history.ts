@@ -56,6 +56,11 @@ export type SessionHistoryParams = {
   directory?: string | null;
   /** 只看这个时刻(epoch ms)之后更新过的。 */
   since?: number;
+  /**
+   * 只看最后更新在这个时刻(epoch ms)**之前**的(owner 2026-11-27「按时间删」:筛选栏「时间」一周前 / 一个月前 /
+   * 三个月前 / 自定义日期)。旧版本的机器不认它、照旧全给 —— 要动手的那一刻渲染层按同一个判据再筛一遍。
+   */
+  before?: number;
   /** 关键词:匹配标题、目录、项目名、session id / conversation id,空格分词全部命中。 */
   query?: string;
   sort?: SessionHistorySort;
@@ -260,11 +265,12 @@ export function compareSessionHistorySections(
  */
 export function matchesSessionHistoryFilters(
   row: SessionHistoryRow,
-  filters: Pick<SessionHistoryParams, 'source' | 'status' | 'since' | 'query'>
+  filters: Pick<SessionHistoryParams, 'source' | 'status' | 'since' | 'before' | 'query'>
 ): boolean {
   if (filters.source && row.source !== filters.source) return false;
   if (filters.status && row.status !== filters.status) return false;
   if (filters.since !== undefined && row.updatedAt < filters.since) return false;
+  if (filters.before !== undefined && row.updatedAt >= filters.before) return false;
   const haystack = [row.title, row.directory ?? '', row.projectName ?? '', row.providerSessionId ?? '', row.gugu?.sessionId ?? '']
     .join('\n')
     .toLowerCase();

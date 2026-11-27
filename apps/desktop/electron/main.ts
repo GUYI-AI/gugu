@@ -334,6 +334,7 @@ import {
   type SessionTuiHostContext,
   type SessionTuiStartInfo as EmdashPtySessionpageStartInfo,
 } from './sessionpage/session-tui-host-start'
+import { hostedMcpToolsListedGate } from './sessionpage/mcp-ready-gate'
 import { resolveBootOwner, type BootOwnerAnswer } from './sessionpage/boot-owner'
 import { reconcileSessionpageAgents } from './sessionpage/sessionpage-agent-reaper'
 import { startSessionpageAgentArchivalSync } from './sessionpage/sessionpage-agent-archival'
@@ -5771,6 +5772,12 @@ app.whenReady().then(async () => {
     // spec agent-provisioning:显式命名过的会话用那个名字开户;缺席才落到「<引擎 label> <序号>」。
     emdash.setEmdashIdentityProvisioner(request =>
       provisionSessionpageAgentForSession({ ...request, surface: 'acp' }, sessionpageIdentityDeps))
+    /** The native conversation an ACP start opens: the one it forks from, else the one it resumes; absent for a new one. */
+    const openedProviderSession = (info: { forkFromProviderSessionId?: string; providerSessionId?: string | null }): string | undefined =>
+      info.forkFromProviderSessionId ?? info.providerSessionId ?? undefined
+    /** 订阅要在起引擎进程之前(注入器返回之后才起),错不过那几次 `tools/list`;等与预算在开通道那一步。 */
+    const sessionToolsListed = (servers: Parameters<typeof hostedMcpToolsListedGate>[1], sessionId: string): (() => Promise<void>) =>
+      hostedMcpToolsListedGate([primaryGuguMcpHost, integrationMcpHost, extensionGatewayHost], servers, sessionId)
     emdash.setEmdashMcpInjector(async (info, provisioned, applyMaterialization = (apply) => apply()) => {
       const persistedSessionId = info.sourceSessionId ?? info.sessionId
       if (!provisioned) {
@@ -5859,6 +5866,7 @@ app.whenReady().then(async () => {
           const forkCapabilities = loadSessionAcpCapabilities(info.providerId, forkBundle, {
             cwd: info.cwd,
             lifecycle: info.lifecycle,
+            providerSessionId: openedProviderSession(info),
           })
           await applyMaterialization(() => applySessionMaterialization({
             cwd: info.cwd,
@@ -5871,6 +5879,9 @@ app.whenReady().then(async () => {
           )
           return {
             mcpServers: forkCapabilities.sessionNewPatch?.mcpServers ?? [],
+            ...(forkCapabilities.promptAwaitsGuguTools
+              ? { awaitToolsListed: sessionToolsListed(forkBundle.mcpServers, info.sessionId) }
+              : {}),
             extensionDelivery: sessionExtensionDelivery(forkBundle),
             spawnEnv: forkCapabilities.spawnEnv,
             spawnArgs: forkCapabilities.extraArgs,
@@ -5941,7 +5952,7 @@ app.whenReady().then(async () => {
           // 与实际工具面不符,由工具缺席自己说话:调不存在的工具当场拿到错误。
           promptBlocks: { platform: GUGU_PLATFORM_BLOCK },
           packages: PRODUCT_CAPABILITY_PACKAGES,
-        }, { cwd: info.cwd, lifecycle: info.lifecycle })
+        }, { cwd: info.cwd, lifecycle: info.lifecycle, providerSessionId: openedProviderSession(info) })
         await applyMaterialization(() => applySessionMaterialization({
           cwd: info.cwd,
           guguHome: resolveGuguHome(process.env),
@@ -5954,6 +5965,9 @@ app.whenReady().then(async () => {
         )
         return {
           mcpServers: sessionCapabilities.sessionNewPatch?.mcpServers ?? [],
+          ...(sessionCapabilities.promptAwaitsGuguTools
+            ? { awaitToolsListed: sessionToolsListed(sessionMcp, info.sessionId) }
+            : {}),
           spawnEnv: sessionCapabilities.spawnEnv,
           spawnArgs: sessionCapabilities.extraArgs,
           sessionMeta: sessionCapabilities.sessionNewPatch?.meta,
@@ -6146,6 +6160,7 @@ app.whenReady().then(async () => {
         const loaded = loadSessionAcpCapabilities(info.providerId, bundle, {
           cwd: info.cwd,
           lifecycle: info.lifecycle,
+          providerSessionId: openedProviderSession(info),
         })
         const panelStatePath = assistantRole && assistantResourceOwner ? await assistantPanel.bind({
           sessionId: persistedSessionId,assistantId: provisioned.guguAgentUserId,ownerId: assistantResourceOwner,cwd: info.cwd,
@@ -6192,6 +6207,9 @@ app.whenReady().then(async () => {
         console.log(`[sessionpage] injected the gugu MCP into session-page conv ${info.sessionId} (agent ${provisioned.guguAgentUserId}, chat ${provisionedChatId}) via ${capabilities.report.adapterId} session adapter`)
         return {
           mcpServers: mapped,
+          ...(capabilities.promptAwaitsGuguTools
+            ? { awaitToolsListed: sessionToolsListed(bundle.mcpServers, info.sessionId) }
+            : {}),
           extensionDelivery: sessionExtensionDelivery(bundle),
           ...(firstTurn ? { firstTurn } : {}),
           spawnEnv: capabilities.spawnEnv,

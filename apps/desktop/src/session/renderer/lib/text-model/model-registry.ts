@@ -50,6 +50,7 @@ interface DiskModelEntry {
   language: string;
   /** True when filePath is an absolute path outside every workspace (see EXTERNAL_MODEL_ROOT). */
   external: boolean;
+  maxBytes: number;
 }
 
 interface GitModelEntry {
@@ -292,6 +293,7 @@ export class TextModelRegistry {
 
     if (existing?.type === 'disk') {
       existing.refs += 1;
+      existing.maxBytes = Math.max(existing.maxBytes, maxBytes);
       const timer = this.evictionTimers.get(diskUri);
       if (timer !== undefined) {
         clearTimeout(timer);
@@ -356,6 +358,13 @@ export class TextModelRegistry {
       throw err;
     }
 
+    // 多个视图可能共享读取，但读取完成后也只能创建一个模型。
+    const registered = this.modelMap.get(diskUri);
+    if (registered?.type === 'disk') {
+      registered.refs += 1;
+      registered.maxBytes = Math.max(registered.maxBytes, maxBytes);
+      return uri;
+    }
     const model = new Model(diskUri, language, content);
     const entry: DiskModelEntry = {
       type: 'disk',
@@ -366,6 +375,7 @@ export class TextModelRegistry {
       filePath,
       language,
       external,
+      maxBytes,
     };
     this.modelMap.set(diskUri, entry);
 
@@ -425,6 +435,8 @@ export class TextModelRegistry {
       throw error;
     }
 
+    const registered = this.modelMap.get(gitUri);
+    if (registered?.type === 'git') { registered.refs += 1; return uri; }
     const model = new Model(gitUri, language, content ?? '');
     const entry: GitModelEntry = {
       type: 'git',
@@ -896,13 +908,13 @@ export class TextModelRegistry {
           entry.projectId,
           entry.workspaceId,
           entry.filePath,
-          EDITOR_CONFIRM_FILE_BYTES
+          entry.maxBytes
         )
       : await workspaceRpc(entry.projectId).files.readFile(
           entry.projectId,
           entry.workspaceId,
           entry.filePath,
-          EDITOR_CONFIRM_FILE_BYTES
+          entry.maxBytes
         );
     const bufferUri = uri.replace(/^disk:\/\//, 'file://');
     if (!res.success) {

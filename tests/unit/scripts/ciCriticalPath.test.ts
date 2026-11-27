@@ -146,8 +146,20 @@ it('only persistent Mac checkouts preserve caches, without changing either immut
     const checkout = current.jobs[id].steps.find((step: Step) => step.uses === 'actions/checkout@v4')
     expect(checkout.with.clean).toBe("${{ runner.environment != 'self-hosted' }}")
     delete checkout.with.clean
+    if (id === 'build') {
+      // The Mac build keeps only its macOS-specific payload: darwin tool bundles and the native rebuild.
+      const build = previous.jobs.build
+      delete build.env
+      build.steps[build.steps.findIndex((step: Step) => step.run === 'pnpm build:app:ci')] = { run: 'pnpm build:vendor' }
+    }
     expect(current).toEqual(previous)
   }
+})
+
+it('build:vendor is the macOS-specific prefix that build:app and build:app:ci share', () => {
+  const scripts = JSON.parse(readFileSync('package.json', 'utf8')).scripts
+  expect(scripts['build:vendor'].split(' && ')).toEqual(['tmux', 'acp', 'mise', 'frpc', 'cc-switch'].map(name => 'pnpm build:' + name))
+  for (const name of ['build:app', 'build:app:ci']) expect(scripts[name].split(' && ').slice(0, 2)).toEqual(['pnpm preflight:env', 'pnpm build:vendor'])
 })
 
 it.each([false, true])('the real cleanup removes stale source but preserves nested dependencies and external files (symlink=%s)', linked => {

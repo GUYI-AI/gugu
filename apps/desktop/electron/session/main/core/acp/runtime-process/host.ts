@@ -62,7 +62,8 @@ import { recordAcpForkHandshake } from '@main/core/agents/fork-legs';
 import { log } from '@main/lib/logger';
 import { pushIdleCompactionSetting } from '../idle-compaction-setting';
 import { sessionStartStageChannel } from '@shared/core/sessions/sessionEvents';
-import { desktopWorkerPath } from '@main/worker-manifest';
+import { desktopWorkerPath, guguMcpStdioRelayEntryPath } from '@main/worker-manifest';
+import { GUGU_MCP_STDIO_RELAY_ENTRY_ENV } from '@gugu/session-plugins/agents';
 import { harnessWorkerHost } from '@main/harness-worker-host';
 import { stripUntrustedSessionAuthority, trustedPlatformInputPatch } from './session-meta';
 import { withSessionBrowserEnv } from '../../pty/server-browser-env';
@@ -415,7 +416,7 @@ function decorateAcpRuntimeHandle(handle: AcpRuntimeProcessHandle): AcpRuntimeHa
 // servers, but still carries trusted session metadata and keeps the same host-selected permission mode.
 // 合并说明:`effort`(本 PR,起始推理档)与 `startupOrigin`/`initialMessageId`/`initialQueue`
 // (dev #4612,聊天页首轮走信封)是两侧各自的纯新增,没有语义冲突 —— 取并集,❌ 别二选一。
-export async function withEmdashMcpInjection<T extends { input: { sessionId: string; sourceSessionId?: string; projectId: string; workspaceId: string; providerId: string; cwd: string; providerSessionId?: string | null; permissionMode?: GuguPermissionMode; effort?: string | null; startupOrigin?: 'chat-page' | 'session-page'; initialMessageId?: string; taskChatId?: string; initialQueue?: Array<{ text: string; hiddenContext?: string }> } }>(
+export async function withEmdashMcpInjection<T extends { input: { sessionId: string; sourceSessionId?: string; projectId: string; workspaceId: string; providerId: string; cwd: string; providerSessionId?: string | null; forkFromProviderSessionId?: string; permissionMode?: GuguPermissionMode; effort?: string | null; startupOrigin?: 'chat-page' | 'session-page'; initialMessageId?: string; taskChatId?: string; initialQueue?: Array<{ text: string; hiddenContext?: string }> } }>(
   input: T,
   lifecycle: 'fresh' | 'fork' | 'resume',
   facts: SessionInjectionFacts,
@@ -435,6 +436,7 @@ export async function withEmdashMcpInjection<T extends { input: { sessionId: str
   platformAccessSessionId?: string;
   extensionDelivery?: SessionExtensionDelivery;
   firstTurn?: EmdashSessionCapabilityInjection['firstTurn'];
+  awaitToolsListed?: () => Promise<void>;
 }> {
   const injector = getEmdashMcpInjector();
   // ⚠️ 档位必须在**调注入器之前**解析：会话包是在 spawn 那一刻物化的，晚一步递过去
@@ -446,6 +448,9 @@ export async function withEmdashMcpInjection<T extends { input: { sessionId: str
   // 解析出的档写回 input,运行时拿到的一定是显式档。
   const permissionMode = resolveSessionPermissionMode(input.input);
   if (!injector) return { command: { ...input, input: { ...input.input, permissionMode } } };
+  // 随 app 发的程序入口是应用级事实:聊天面板腿经配置文件中继送 MCP 的物化器(Antigravity)要把它写进托管配置,
+  // 与终端腿(local-session)同一个登记。幂等,已有值不覆盖(打包产物或测试可以从外面钉死)。
+  process.env[GUGU_MCP_STDIO_RELAY_ENTRY_ENV] ||= guguMcpStdioRelayEntryPath();
   const injection = await injector({
     sessionId: input.input.sessionId,
     sourceSessionId: input.input.sourceSessionId,
@@ -482,6 +487,7 @@ export async function withEmdashMcpInjection<T extends { input: { sessionId: str
     // 要不要再投一次 ⇒ 读错的后果是**开场白重投**或**启动被误拒**,而两者都不会指向真因。
     // 同一次 start 的两级注入必须看同一个值,❌ 不许一级读记录、另一级读渲染端。
     providerSessionId: facts.providerSessionId,
+    ...(input.input.forkFromProviderSessionId ? { forkFromProviderSessionId: input.input.forkFromProviderSessionId } : {}),
   }, identity, applyMaterialization);
   if (process.env.GUGU_DEBUG_AUTONOMY === '1') {
     log.warn('autonomy-debug: ACP start input', {
@@ -511,6 +517,7 @@ export async function withEmdashMcpInjection<T extends { input: { sessionId: str
     platformModel: injection.platformModel,
     platformAccessSessionId: injection.platformAccessSessionId,
     extensionDelivery: injection.extensionDelivery,
+    awaitToolsListed: injection.awaitToolsListed,
   };
 }
 

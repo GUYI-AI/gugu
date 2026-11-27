@@ -162,6 +162,20 @@ async function applyJsonOverlay(guguHome: string, overlay: JsonOverlay): Promise
   await atomicWrite(file, `${JSON.stringify(merged, null, 2)}\n`, overlay.mode)
 }
 
+const overlayWrites = new Map<string, Promise<void>>()
+
+/**
+ * 同一份文件的合并写排队:读—合并—改名不是一步,几条会话同时起、写同一份共用配置(Antigravity 的
+ * `mcp_config.json`)时,后落盘的那份会丢掉先落盘的键。
+ */
+function oneWriterAtATime(file: string, write: () => Promise<void>): Promise<void> {
+  const next = (overlayWrites.get(file) ?? Promise.resolve()).catch(() => undefined).then(write)
+  overlayWrites.set(file, next)
+  return next.finally(() => {
+    if (overlayWrites.get(file) === next) overlayWrites.delete(file)
+  })
+}
+
 /**
  * 深合并,**补丁赢**。表(TOML 的 `[a.b]`)递归合并,其余整格替换 ——
  * ❌ 数组不做逐项合并:`support_efforts = [...]` 这类是一份**完整声明**,
@@ -296,7 +310,7 @@ export async function applySessionMaterialization(input: {
     await applyTomlOverlay(guguHome, overlay)
   }
   for (const overlay of input.materialization.jsonOverlays ?? []) {
-    await applyJsonOverlay(guguHome, overlay)
+    await oneWriterAtATime(resolve(overlay.path), () => applyJsonOverlay(guguHome, overlay))
   }
   for (const link of input.materialization.symlinks ?? []) {
     await applySymlink(guguHome, link)

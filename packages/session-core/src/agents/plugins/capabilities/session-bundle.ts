@@ -1446,6 +1446,11 @@ export interface ISessionBundleBehavior {
        * 只在极端路径显形」——那一发不是降级，是**引擎拒绝启动**。
        */
       isResuming?: boolean;
+      /**
+       * 这次起进程要打开的引擎原生会话(续接的那条,或分叉的来源);新开一条时缺席。
+       * 谁需要它:按会话存档分两个程序、两个程序收 MCP 的通道又不同的家(Antigravity 聊天面板腿)。
+       */
+      providerSessionId?: string;
     },
     bundle: SessionCapabilityBundle
   ): SessionMaterialization;
@@ -1458,6 +1463,11 @@ export type CapabilityUnit = 'mcp' | 'env' | 'model' | 'autonomy' | 'promptBlock
 export interface SessionMaterialization {
   argsAppend: readonly string[];
   env: Readonly<Record<string, string>>;
+  /**
+   * 咕咕投递的工具不随开会话请求一起到,要等引擎自己来连、来列:本会话里由咕咕托管的每一台送出 `tools/list` 应答
+   * 之前宿主 ❌ 发首句(`hostedMcpToolsListedGate`)。缺席 = 不用等。
+   */
+  promptAwaitsGuguTools?: true;
   /** Native per-thread config overrides for app-server style session-open calls. */
   threadConfig?: Readonly<Record<string, unknown>>;
   /** Native fields for the provider's thread/start call, kept out of process argv. */

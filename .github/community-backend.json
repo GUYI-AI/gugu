@@ -1,5 +1,5 @@
 {
   "repository": "GUYI-AI/gugu-supabase",
-  "ref": "da8a7f22b4a58795a8a5993f4fef4c2b4e8d0297",
-  "status": "Backend #421 merged on dev: agent presence carries model_name and set_agent_runtime_state takes a trailing p_model_name."
+  "ref": "497873bf4b647b039417dc1e481d296cb77665ac",
+  "status": "Backend #426 merged on dev: identity.purge_owned_agent_history(p_agent_user_ids text[]) for permanently deleting archived sessions; two ahead of the #422 pin (35baf6a5), so it also carries #424 (attachment GC lease reclaim), #422 (a document name without a text suffix is refused), #421 and #413."
 }

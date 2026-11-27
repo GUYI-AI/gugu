@@ -12,6 +12,7 @@ import { LocalFolderProjectModal } from '@renderer/features/projects/components/
 import { AgentSignInModal } from '@renderer/features/settings/agents-page/AgentSignInModal'
 import { GithubConnectModal } from '@renderer/features/settings/components/github-connect-modal'
 import { AddRemoteModal } from '@renderer/features/sessions/add-remote-modal'
+import { PermanentDeleteDialog } from '@renderer/features/session-history/permanent-delete-dialog'
 import { HarnessLoginRequiredModal } from '@renderer/features/sessions/session-config/harness-login-required-modal'
 import { CreatePrModal } from '@renderer/features/sessions/diff-view/changes-panel/components/pr-entry/create-pr-modal'
 import { ConfirmActionDialog } from '@renderer/lib/components/confirm-action-dialog'
@@ -38,6 +39,8 @@ export const modalRegistry = {
   mcpServerModal: createModal(McpServerModal, { size: 'lg' }),
   createPrModal: createModal(CreatePrModal, { size: 'md' }),
   renameSessionModal: createModal(RenameSessionModal, { size: 'xs' }),
+  // 已归档会话的永久删除(两条以上才问):只有取消 / 永久删除,没有默认按钮。
+  permanentDeleteSessionsModal: createModal(PermanentDeleteDialog, { size: 'xs' }),
   integrationSetupModal: createModal(IntegrationSetupModal, { size: 'md' }),
   githubConnectModal: createModal(GithubConnectModal, { size: 'md' }),
   agentSignInModal: createModal(AgentSignInModal, { size: 'md' }),
