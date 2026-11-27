@@ -91,7 +91,7 @@ export interface PhoneBindingPorts {
 /** The page asking: which App, which of its tabs (`tabId`), and whether the person works it (a phone page always is). */
 export type PhoneBindingPage = { extensionId: string; tabId: string }
 
-const coded = (code: 'denied' | 'invalid' | 'failed' | 'not-found', message: string) => Object.assign(new Error(message), { code })
+const coded = (code: 'denied' | 'invalid' | 'failed' | 'not-found' | 'elsewhere', message: string) => Object.assign(new Error(message), { code })
 const codeOf = (error: unknown) => (error as { code?: unknown } | null)?.code
 function argsOf<T extends z.ZodType>(schema: T, input: unknown, what: string): z.infer<T> {
   const parsed = schema.safeParse(input)
@@ -731,7 +731,6 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
       offStatus()
       offWork()
       pageGone(page.pageId)
-      for (const [key, stop] of [...scheduleWatches]) if (key.startsWith(`${page.pageId}/`)) stop()
     }
   }
 

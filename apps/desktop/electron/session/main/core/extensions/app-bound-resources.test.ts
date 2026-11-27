@@ -25,7 +25,7 @@ type Item = {
   observed_at: string | null; updated_at: string; stale_at?: string | null;
 };
 const state = vi.hoisted(() => ({
-  owner: '', selectedBy: '', handle: 'h1', installed: true, enabled: true, member: true,
+  owner: '', selectedBy: '', handle: 'h1', installed: true, enabled: true, member: true, home: true,
   grants: {} as Record<string, boolean>, domains: {} as Record<string, string[]>,
   provisions: [] as Record<string, unknown>[], provisionsError: false, provisionFilters: [] as [string, unknown][],
   hooks: {} as Partial<Record<'afterMember' | 'afterSnapshot' | 'afterResource' | 'afterUpload' | 'beforeCommit' | 'afterBody', () => void>>,
@@ -119,6 +119,25 @@ function identityRpc(name: string, args: Record<string, unknown>) {
   }
   return { data: null, error: { message: 'unknown', code: '42883' }, status: 404 };
 }
+/**
+ * The assistant's home store, as the backend contract above models it (the store's revisions, receipts and refusals are the
+ * same whether its home answers them or the cloud did): the host reads and changes it through `bound.store()`. Its home on
+ * another computer (`state.home` false) is `elsewhere`. The real home store is tested in assistant-home-store.test.ts.
+ */
+vi.mock('./assistant-home-store', async () => {
+  const { createAssistantPanelClient } = await import('@gugu/core/cloud/assistantPanel');
+  const bodies = await import('@gugu/core/cloud/assistantPanelBodies');
+  return {
+    isHomeBody: () => false,
+    assistantHomeHere: async () => (state.home ? { paths: {}, anchor: '/home' } : null),
+    createAssistantHomeStore: () => ({
+      client: createAssistantPanelClient(async (name, args) => identityRpc(name, args), () => state.owner || null),
+      readBody: (item: Item, maxBytes?: number) => bodies.readAssistantPanelBody(item as never, { token: state.owner, ownerId: OWNER, chatId: CHAT, maxBytes, accountId: async () => OWNER }),
+      upload: (label: string, bytes: Uint8Array) => bodies.uploadAssistantPanelBody({ token: state.owner, ownerId: OWNER, chatId: CHAT, label, bytes, accountId: async () => OWNER }),
+      discard: async (itemId: string) => { store.discarded.push(itemId); },
+    }),
+  };
+});
 vi.mock('@gugu/core/cloud/supabase', () => ({
   createGuguSupabaseClient: ({ schema }: { schema: string }) => ({
     rpc: (name: string, args: Record<string, unknown>) => {
@@ -171,7 +190,7 @@ const save = (key: string, content: string, expectedRevision: string, operationI
   appResourceSave('assistant', { name: 'main', domain, key, operationId, expectedRevision, content });
 
 beforeEach(() => {
-  Object.assign(state, { owner: OWNER, selectedBy: OWNER, handle: 'h1', installed: true, enabled: true, member: true, provisionsError: false, hooks: {},
+  Object.assign(state, { owner: OWNER, selectedBy: OWNER, handle: 'h1', installed: true, enabled: true, member: true, home: true, provisionsError: false, hooks: {},
     grants: { unread: true, resources: true, 'resources:write': true },
     domains: { resources: ['memory', 'files', 'personality', 'skills', 'voice-notes'], 'resources:write': ['memory', 'files', 'personality', 'skills'] },
     provisions: [ASSISTANT], provisionFilters: [] });
@@ -569,5 +588,20 @@ describe('the same records as the assistant\'s own pages', () => {
       const at = String(theirs.data.modifiedAt);
       expect(savedData(domain, key, existing as never, text, at)).toEqual(theirs.data);
     }
+  });
+});
+
+describe('an assistant living on another computer', () => {
+  it('is elsewhere for reading and changing alike: nothing of a copy its home no longer keeps is shown or changed', async () => {
+    state.home = false;
+    const calls = store.calls;
+    expect(await list('memory')).toEqual({ name: 'main', domain: 'memory', state: 'unavailable', reason: 'elsewhere' });
+    expect(await read('memory', 'owner-profile.md')).toEqual({ name: 'main', domain: 'memory', key: 'owner-profile.md', state: 'unavailable', reason: 'elsewhere' });
+    expect(await save('notes/a.md', 'hello', '0')).toEqual({ name: 'main', domain: 'memory', key: 'notes/a.md', state: 'unavailable', reason: 'elsewhere' });
+    expect(await appResourceRemove('assistant', { name: 'main', domain: 'memory', key: 'owner-profile.md', operationId: OP2, expectedRevision: '4' }))
+      .toEqual({ name: 'main', domain: 'memory', key: 'owner-profile.md', state: 'unavailable', reason: 'elsewhere' });
+    expect(store.calls).toBe(calls);
+    expect(store.commits).toEqual([]);
+    expect(store.uploads).toEqual([]);
   });
 });
