@@ -55,6 +55,7 @@ import { redactSecrets } from '@gugu/session-shared/logger';
 import type { SessionpageLeg } from '@shared/core/sessions/sessions';
 import type { AgentAuthStatus } from '@gugu/session-core/agents/plugins';
 import { flattenSelectOptions, decodeConfigOptions, type AcpPlatformInjection } from '@gugu/session-core/acp';
+import type { SessionCommandDefinition } from '@gugu/session-core/acp';
 import type { SessionConfigSelectOptions } from '@agentclientprotocol/sdk';
 import { mergeTrustedSessionMeta } from '../acp/runtime-process/session-meta';
 import { createLogger } from '../../../../lib/logger';
@@ -182,6 +183,12 @@ export type HarnessCatalogState =
      * 不是连接的目录 = 缺席。
      */
     connectionModels?: string[];
+    /**
+     * The slash commands this harness advertised to the probe's session (`availableCommands` on `session/new`, or its
+     * latest `available_commands_update`). Before an agent has a session of its own this is the only list of its
+     * commands: the new-agent composer and a session whose engine has not started yet offer these. Absent = none heard.
+     */
+    commands?: SessionCommandDefinition[];
   }
   /** harness 没装（起不来）。界面引导安装。 */
   | { kind: 'not-installed' }
@@ -1020,10 +1027,14 @@ class AcpProbeClient extends AcpProbeRpcClient {
   constructor(child: ChildProcessWithoutNullStreams) {
     super(child, payload => new AcpRpcError(payload), (method, params) => {
       if (method !== 'session/update') return;
-      const update = (params as { update?: { sessionUpdate?: unknown; configOptions?: RawConfigOption[] } } | undefined)?.update;
+      const update = (params as { update?: { sessionUpdate?: unknown; configOptions?: RawConfigOption[]; availableCommands?: unknown } } | undefined)?.update;
       if (update?.sessionUpdate === 'config_option_update') this.onConfigUpdate(update.configOptions ?? []);
+      // A full list each time (ACP): the latest one heard is the harness's list.
+      if (update?.sessionUpdate === 'available_commands_update') this.advertisedCommands = toCommands(update.availableCommands);
     });
   }
+
+  private advertisedCommands: SessionCommandDefinition[] | null = null;
 
   private updatedConfigOptions: RawConfigOption[] = [];
   private modelOptionsArrived?: () => void;
@@ -1201,7 +1212,7 @@ class AcpProbeClient extends AcpProbeRpcClient {
     if (signIn?.kind === 'unauthenticated' && signIn.reason !== 'expired') return { kind: 'auth-required', authMethods: initAuthMethods, efforts, selectedEffort };
     if (models.length === 0) {
       // 这家 harness 说了 ACP，但没有模型选择这回事。不是错误，就是没得选。
-      return { kind: 'ready', models: [], selected: null, efforts, selectedEffort };
+      return { kind: 'ready', models: [], selected: null, efforts, selectedEffort, ...this.commandsOf(created) };
     }
     return {
       kind: 'ready',
@@ -1218,8 +1229,26 @@ class AcpProbeClient extends AcpProbeRpcClient {
       autoReview, reviewerAvailable,
       ...(reviewPermission?.cliVersion ? { cliVersion: reviewPermission.cliVersion } : {}),
       ...(fastMode ? { fastMode } : {}),
+      ...this.commandsOf(created),
     };
   }
+
+  /** The probe session's commands: its latest update, else the list `session/new` answered with; none heard = absent. */
+  private commandsOf(created: unknown): { commands?: SessionCommandDefinition[] } {
+    const commands = this.advertisedCommands ?? toCommands((created as { availableCommands?: unknown } | null)?.availableCommands);
+    return commands.length > 0 ? { commands } : {};
+  }
+}
+
+/** ACP `AvailableCommand`s as the session reducer keeps them (name, description, the input hint). */
+function toCommands(raw: unknown): SessionCommandDefinition[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry) => {
+    const command = entry as { name?: unknown; description?: unknown; input?: { hint?: unknown } | null } | null;
+    if (typeof command?.name !== 'string' || !command.name) return [];
+    const hint = typeof command.input?.hint === 'string' ? command.input.hint : undefined;
+    return [{ name: command.name, description: typeof command.description === 'string' ? command.description : '', ...(hint ? { input: { hint } } : {}) }];
+  });
 }
 
 /**

@@ -125,6 +125,16 @@ async function openSession(rig: ReturnType<typeof start>) {
 const prompt = (text: string) => [{ type: 'text', text }, { type: 'text', text: 'host context that is not the goal' }]
 
 describe('Codex ACP /goal is codex thread goal', () => {
+  // gugu-dev#1644: the host's harness probe keeps a session only for a moment, so the commands this leg implements itself
+  // ride the `session/new` answer rather than only the later update (which waits on the skills).
+  it('answers session/new with its own commands, /goal and its hint included', async () => {
+    const rig = start()
+    await rig.reply(rig.send('initialize', { protocolVersion: 2, capabilities: {} }), 'initialize')
+    const created = (await rig.reply(rig.send('session/new', { cwd: dir, mcpServers: [] }), 'session/new')) as { availableCommands?: { name: string; input?: unknown }[] }
+    expect(created.availableCommands?.map((command) => command.name)).toEqual(['compact', 'goal'])
+    expect(created.availableCommands?.find((command) => command.name === 'goal')?.input).toEqual({ type: 'text', hint: expect.stringContaining('--tokens') })
+  })
+
   it('advertises /goal with its token budget argument', async () => {
     const rig = start()
     await openSession(rig)

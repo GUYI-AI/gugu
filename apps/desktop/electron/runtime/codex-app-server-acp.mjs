@@ -1055,6 +1055,20 @@ async function runGoalCommand(command, insertion) {
  *
  * `enabled === false` 的不报:那是用户自己关掉的。
  */
+/**
+ * The commands this leg implements itself, the same in every session: `/compact` (handed to `thread/compact/start`, see
+ * session/prompt) and `/goal` (codex's own `thread/goal/*`, see runGoalCommand). They also ride the `session/new` answer,
+ * so a reader that keeps a session only for a moment (the host's harness probe, which offers them before an agent has a
+ * session) has them without waiting for the skills.
+ * ACP v2 keeps an input only with its `type`; without it the hint is dropped on the client and the host cannot see that
+ * this /goal takes `--tokens`.
+ */
+const CODEX_OWN_COMMANDS = [
+  { name: 'compact', description: 'Compact the conversation context' },
+  { name: 'goal', description: 'Set a goal Codex keeps working toward until it is done',
+    input: { type: 'text', hint: `[${GOAL_TOKENS_FLAG} N] <goal> | clear | pause | resume` } },
+]
+
 async function publishAvailableCommands(cwd, extraRoots) {
   // ⚠️ 这个函数是被 `void` 调起来的,而进程没装 `unhandledRejection` —— 里面**任何**没接住的
   // 抛出都会带走整条 adapter,那与它自己声明的「报不出命令不该弄死会话」正好相反。
@@ -1090,15 +1104,7 @@ async function publishAvailableCommandsInner(cwd, extraRoots) {
     return
   }
   const seen = new Set()
-  // `/compact` 是这条腿自己实现的那一条(session/prompt 里交给 `thread/compact/start`)。
-  const availableCommands = [
-    { name: 'compact', description: 'Compact the conversation context' },
-    // `/goal` 交给 codex 自己的 `thread/goal/*`(见 session/prompt 里的 runGoalCommand)。
-    // ACP v2 keeps an input only with its `type`; without it the hint is dropped on the client and the host cannot see
-    // that this /goal takes `--tokens`.
-    { name: 'goal', description: 'Set a goal Codex keeps working toward until it is done',
-      input: { type: 'text', hint: `[${GOAL_TOKENS_FLAG} N] <goal> | clear | pause | resume` } },
-  ]
+  const availableCommands = [...CODEX_OWN_COMMANDS]
   for (const entry of Array.isArray(response?.data) ? response.data : []) {
     for (const skill of Array.isArray(entry?.skills) ? entry.skills : []) {
       const raw = typeof skill?.name === 'string' ? skill.name.trim() : ''
@@ -2531,6 +2537,7 @@ async function handleAcpRequest(message) {
     const models = await modelCatalogOnce()
     respond(id, {
       sessionId,
+      availableCommands: CODEX_OWN_COMMANDS,
             configOptions: withModelConfigOptions(
         withPermissionModeConfigOptions(started?.configOptions, responseModes),
         selectedModel,

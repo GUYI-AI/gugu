@@ -103,6 +103,36 @@ function handle(msg) {
     const state = await probeHarnessModelCatalog('antigravity', 'acp');
     expect(state).toMatchObject({ kind: 'ready', models: [{ id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5' }] });
   });
+  // gugu-dev#1644: before an agent has a session, its harness's commands are what the probe heard: the `session/new`
+  // answer's own list, or the latest `available_commands_update` (a full list each time) when one arrived.
+  it('keeps the commands the harness advertised to the probe, hint included', async () => {
+    await useAgent(`
+function handle(msg) {
+  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1 });
+  if (msg.method === 'session/new') return reply(msg.id, { sessionId: 'probe', availableCommands: [
+    { name: 'goal', description: 'Set a goal', input: { type: 'text', hint: '[--tokens N] <goal>' } }, { name: 'compact', description: 'Compact' }],
+    configOptions: [{ id: 'model', category: 'model', type: 'select', currentValue: 'a', options: [{ value: 'a', name: 'a' }] }] });
+}
+`)
+    expect(await probeHarnessModelCatalog('codex', 'acp')).toMatchObject({ kind: 'ready', commands: [
+      { name: 'goal', description: 'Set a goal', input: { hint: '[--tokens N] <goal>' } }, { name: 'compact', description: 'Compact' }] })
+
+    await useAgent(`
+function handle(msg) {
+  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1 });
+  if (msg.method === 'session/new') {
+    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'probe', update: {
+      sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'goal', description: 'Set a goal' }, { name: 'review', description: 'Review' }] } } }) + '\\n');
+    return reply(msg.id, { sessionId: 'probe', configOptions: [] });
+  }
+}
+`)
+    const heard = await probeHarnessModelCatalog('claude', 'acp')
+    expect(heard).toMatchObject({ kind: 'ready', commands: [{ name: 'goal', description: 'Set a goal' }, { name: 'review', description: 'Review' }] })
+
+    await useAgent(SESSION_WITH_MODELS)
+    expect('commands' in await probeHarnessModelCatalog('claude', 'acp')).toBe(false)
+  })
   it('binds native Fast to the selected model and drops the fact for an unsupported target', async () => {
     await useAgent(`
 const options = model => [
