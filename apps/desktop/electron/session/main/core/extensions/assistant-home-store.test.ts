@@ -18,7 +18,7 @@ const OWNER = 'owner-1';
 const AGENT = 'agent-1';
 let root: string;
 let workdir: string;
-let changed: ReturnType<typeof vi.fn>;
+let changed: () => void;
 const open = () => {
   const paths = assistantHomePaths(join(root, 'home'), workdir, 'computer');
   return { paths, store: createAssistantHomeStore({ ownerId: OWNER, assistantId: AGENT, deviceId: 'this-device', home: { paths, anchor: workdir }, changed }) };
