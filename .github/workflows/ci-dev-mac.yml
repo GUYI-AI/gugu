@@ -22,19 +22,11 @@ jobs:
       contents: read
       actions: read
       issues: write
-    env:
-      GUGU_CLOUD_COMPUTER_ENABLED: 'false'
-      VITE_GUGU_CLOUD_COMPUTER_ENABLED: 'false'
-      GUGU_PLATFORM_MODELS_ENABLED: 'false'
-      VITE_GUGU_PLATFORM_MODELS_ENABLED: 'false'
-      NODE_OPTIONS: --max-old-space-size=6144
     steps:
       - uses: actions/checkout@v4
       - run: command -v tmux || brew install tmux
       - uses: ./.github/actions/setup-community
-      - run: pnpm build:app:ci
-        env:
-          GUGU_BUILD_SERIAL: '1'
+      - run: pnpm build:vendor
       - run: pnpm rebuild:native
       - name: Report a failed dev Mac build
         if: failure()
