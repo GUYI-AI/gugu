@@ -258,6 +258,24 @@ it.each(['default', 'same'] as const)('delivers the global reviewer through the 
   expect(JSON.stringify(spawn)).not.toContain('fixture-upstream-key');
 });
 
+// A tool that joins mid-session (a new Gugu MCP tool) reaches the model through tool search behind any gateway; an
+// Anthropic-compatible API that does not know those blocks answers 422. Off for such upstreams, on for Anthropic's own.
+it('turns Claude Code tool search off on an Anthropic-compatible upstream, in both the spawn env and the settings document', async () => {
+  await claudeOnCompatibleConnection();
+  const spawn = await acpSpawn('claude');
+  expect(spawn.env.ENABLE_TOOL_SEARCH).toBe('false');
+  expect((await claudeSessionSettings()).env.ENABLE_TOOL_SEARCH).toBe('false');
+});
+
+it('leaves Claude Code tool search to Claude Code on Anthropic\'s own API', async () => {
+  const key = await saveCustomModel({ name: 'Provider', apiKey: 'claude-secret', preset: null, endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://api.anthropic.com' }], models: [{ id: 'model-two' }] });
+  state.fixture!.sqlite.exec("INSERT OR IGNORE INTO projects (id,name,path) VALUES ('project','Project','/repo')");
+  state.fixture!.sqlite.prepare('INSERT INTO sessions (id,project_id,provider,runtime,config) VALUES (?,?,?,?,?)').run('session-1', 'project', 'claude', 'acp', JSON.stringify({ version: '1', type: 'acp', model: customModelOptionId({ connectionId: key.id, modelId: 'model-two' }) }));
+  const spawn = await acpSpawn('claude');
+  expect(spawn.env.ENABLE_TOOL_SEARCH).toBeUndefined();
+  expect((await claudeSessionSettings()).env.ENABLE_TOOL_SEARCH).toBeUndefined();
+});
+
 // unreviewable: GLM on an Anthropic-format connection, whose verdict the CLI cannot parse.
 it.each(['missing', 'unlisted', 'unreviewable'] as const)('turns Auto mode off when the picked reviewer is gone or cannot review (%s), never reviewing with the main model', async change => {
   const connection = await claudeOnCompatibleConnection();
