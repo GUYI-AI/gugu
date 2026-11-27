@@ -16,6 +16,15 @@ export function attachmentChangeCount(messageId: string | undefined): number {
   return messageId ? changes.get(messageId) ?? 0 : 0
 }
 
+/** The next time this message's file changes: a reader drawn outside React (a task's transcript) reads it again then. */
+export function nextAttachmentChange(messageId: string): Promise<void> {
+  const seen = attachmentChangeCount(messageId)
+  return new Promise(resolve => {
+    const listener = () => { if (attachmentChangeCount(messageId) !== seen) { listeners.delete(listener); resolve() } }
+    listeners.add(listener)
+  })
+}
+
 export function useAttachmentChange(messageId: string | undefined): number {
   return useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }, () => attachmentChangeCount(messageId))
 }
