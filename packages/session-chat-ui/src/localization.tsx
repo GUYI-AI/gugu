@@ -281,7 +281,6 @@ const fallbackMessages = {
   'transcript.reasonSetConfigFailed': 'the configuration could not be applied',
   'transcript.reasonSetModeFailed': 'the mode could not be changed',
   'transcript.reasonCancelledByUser': 'Stopped',
-  'transcript.reasonInterruptedForMessage': 'paused to take a new message',
   'transcript.continueTurn': 'Continue',
   'transcript.continueTurnHint': 'Ask the agent to pick up where it stopped (sends a new prompt)',
   'transcript.discardTurn': 'Discard',
