@@ -2,13 +2,45 @@
 # @@@check-app-running - electron-builder's default check starts three PowerShell processes before every install
 # (availability, execution policy, then a Win32_Process query): about 13 s on a cold machine (gugu-dev#1598). Its own
 # fallback finds and closes the app with tasklist/taskkill by image name for the current user; take that path always.
-# The template includes the process-info helper itself only when this macro is not defined.
+# taskkill /F returns before the processes are gone (a renderer stays listed 1-3 s), and the template's loop re-checks
+# at once and asks the user to close the app by hand after two rounds; so after the force kill, wait for the app to
+# leave the list before asking. The template includes the process-info helper itself only when this macro is not defined.
 !include "getProcessInfo.nsh"
 Var pid
 !macro customCheckAppRunning
   Var /GLOBAL IsPowerShellAvailable
   StrCpy $IsPowerShellAvailable 1
-  !insertmacro _CHECK_APP_RUNNING
+  ${GetProcessInfo} 0 $pid $1 $2 $3 $4
+  ${If} $3 != "${APP_EXECUTABLE_FILENAME}"
+    ${If} ${isUpdated}
+      Sleep 300
+    ${EndIf}
+    !insertmacro FIND_PROCESS "${APP_EXECUTABLE_FILENAME}" $R0
+    ${If} $R0 == 0
+      ${IfNot} ${isUpdated}
+        MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(appRunning)" /SD IDOK IDOK +2
+        Quit
+      ${EndIf}
+      DetailPrint "$(appClosing)"
+      guguCloseApp:
+      !insertmacro KILL_PROCESS "${APP_EXECUTABLE_FILENAME}" 0
+      Sleep 1000
+      !insertmacro KILL_PROCESS "${APP_EXECUTABLE_FILENAME}" 1
+      StrCpy $R1 0
+      guguWaitAppExit:
+        !insertmacro FIND_PROCESS "${APP_EXECUTABLE_FILENAME}" $R0
+        ${If} $R0 == 0
+        ${AndIf} $R1 < 20
+          IntOp $R1 $R1 + 1
+          Sleep 500
+          Goto guguWaitAppExit
+        ${EndIf}
+      ${If} $R0 == 0
+        MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDCANCEL IDRETRY guguCloseApp
+        Quit
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
 !macroend
 Var guguStage
 Var guguPowerShell
