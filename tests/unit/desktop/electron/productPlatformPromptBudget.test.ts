@@ -55,7 +55,9 @@ describe('platform block carries no per-harness tool naming (#6192)', () => {
     }
     // The chat leg may carry the leftover `gugu` of a conversation opened before the rename: say which one to use.
     expect(guguSessionSurfaceBlock('acp', 'antigravity', true)).toContain('if a call on `gugu` fails, repeat it on `gugu-mcp`')
-    expect(guguSessionSurfaceBlock('acp', 'antigravity', true)).toContain('Use `gugu` only when no `gugu-mcp` server is listed')
+    // A conversation of the legacy server has its tools on `gugu`, beside an empty `gugu-mcp` another session wrote.
+    expect(guguSessionSurfaceBlock('acp', 'antigravity', true))
+      .toContain('When `gugu-mcp` is not listed or lists no tools, use `gugu`')
     expect(guguSessionSurfaceBlock('tui', 'antigravity', true)).not.toContain('gugu-mcp')
   })
 })

@@ -436,7 +436,7 @@ export async function withEmdashMcpInjection<T extends { input: { sessionId: str
   platformAccessSessionId?: string;
   extensionDelivery?: SessionExtensionDelivery;
   firstTurn?: EmdashSessionCapabilityInjection['firstTurn'];
-  toolsListed?: Promise<void>;
+  awaitToolsListed?: () => Promise<void>;
 }> {
   const injector = getEmdashMcpInjector();
   // ⚠️ 档位必须在**调注入器之前**解析：会话包是在 spawn 那一刻物化的，晚一步递过去
@@ -517,7 +517,7 @@ export async function withEmdashMcpInjection<T extends { input: { sessionId: str
     platformModel: injection.platformModel,
     platformAccessSessionId: injection.platformAccessSessionId,
     extensionDelivery: injection.extensionDelivery,
-    toolsListed: injection.toolsListed,
+    awaitToolsListed: injection.awaitToolsListed,
   };
 }
 

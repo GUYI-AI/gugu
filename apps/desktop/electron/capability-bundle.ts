@@ -1115,10 +1115,11 @@ function guguToolNamingLine(
       return `Your harness exposes Gugu tools under \`${names.namespace}\`.\n`
     case 'server-proxied': {
       // server 名默认是咕咕那台 server 注册时用的名字(与写进配置的键同一个常量,❌ 别另写一个字面量);
-      // 某一腿改了名由能力声明给出,此时旧名那台还可能挂着(修前开的会话、旧服务的会话)⇒ 把先后说清。
+      // 某一腿改了名由能力声明给出,此时旧名那台还可能挂着(修前开的会话),而同一腿上旧服务的会话里只有旧名
+      // 那台有工具(新名那台是别的会话写下的空条目)⇒ 按「哪台列得出工具」把先后说清。
       const server = names.server ?? GUGU_MCP_SERVER_NAME
       const older = server === GUGU_MCP_SERVER_NAME ? ''
-        : ` A \`${GUGU_MCP_SERVER_NAME}\` server beside it is an older, incomplete entry: use \`${server}\`, and if a call on \`${GUGU_MCP_SERVER_NAME}\` fails, repeat it on \`${server}\`. Use \`${GUGU_MCP_SERVER_NAME}\` only when no \`${server}\` server is listed.`
+        : ` A \`${GUGU_MCP_SERVER_NAME}\` server may be listed too. While \`${server}\` lists tools, \`${GUGU_MCP_SERVER_NAME}\` is an older, incomplete entry: use \`${server}\`, and if a call on \`${GUGU_MCP_SERVER_NAME}\` fails, repeat it on \`${server}\`. When \`${server}\` is not listed or lists no tools, use \`${GUGU_MCP_SERVER_NAME}\`.`
       return `Your harness does not list Gugu tools one by one: call them through its \`${names.proxyTool}\` tool with \`${names.serverArg}\` set to \`${server}\` and \`${names.toolArg}\` set to the bare tool name (e.g. \`message_send\`).${older}\n`
     }
     case 'unmeasured':

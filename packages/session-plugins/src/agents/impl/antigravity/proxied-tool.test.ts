@@ -35,9 +35,15 @@ describe('antigravity proxied MCP calls', () => {
     }
   });
 
+  it('a server Gugu hosts reads back under its own name, which the live window and cards go by', () => {
+    expect(seen(call('browser-use-gugu')).event.toolName).toBe('mcp__browser-use__message_send');
+    expect(seen(call('browser-use-gugu')).permission.toolName).toBe('mcp__browser-use__message_send');
+  });
+
   it('another server keeps the name the call targeted', () => {
-    expect(seen(call('browser-use-mcp')).event.toolName).toBe('mcp__browser-use-mcp__message_send');
-    expect(seen(call('browser-use-mcp')).permission.toolName).toBe('mcp__browser-use-mcp__message_send');
+    expect(seen(call('context7-mcp')).event.toolName).toBe('mcp__context7-mcp__message_send');
+    expect(seen(call('context7-mcp')).permission.toolName).toBe('mcp__context7-mcp__message_send');
+    expect(seen(call('gugu-gugu')).event.toolName).toBe('mcp__gugu-gugu__message_send');
   });
 
   it('leaves everything else as it came', () => {

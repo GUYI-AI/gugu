@@ -5775,8 +5775,8 @@ app.whenReady().then(async () => {
     /** The native conversation an ACP start opens: the one it forks from, else the one it resumes; absent for a new one. */
     const openedProviderSession = (info: { forkFromProviderSessionId?: string; providerSessionId?: string | null }): string | undefined =>
       info.forkFromProviderSessionId ?? info.providerSessionId ?? undefined
-    /** 订阅要在起引擎进程之前(注入器返回之后才起),错不过那几次 `tools/list`。 */
-    const sessionToolsListed = (servers: Parameters<typeof hostedMcpToolsListedGate>[1], sessionId: string): Promise<void> =>
+    /** 订阅要在起引擎进程之前(注入器返回之后才起),错不过那几次 `tools/list`;等与预算在开通道那一步。 */
+    const sessionToolsListed = (servers: Parameters<typeof hostedMcpToolsListedGate>[1], sessionId: string): (() => Promise<void>) =>
       hostedMcpToolsListedGate([primaryGuguMcpHost, integrationMcpHost, extensionGatewayHost], servers, sessionId)
     emdash.setEmdashMcpInjector(async (info, provisioned, applyMaterialization = (apply) => apply()) => {
       const persistedSessionId = info.sourceSessionId ?? info.sessionId
@@ -5880,7 +5880,7 @@ app.whenReady().then(async () => {
           return {
             mcpServers: forkCapabilities.sessionNewPatch?.mcpServers ?? [],
             ...(forkCapabilities.promptAwaitsGuguTools
-              ? { toolsListed: sessionToolsListed(forkBundle.mcpServers, info.sessionId) }
+              ? { awaitToolsListed: sessionToolsListed(forkBundle.mcpServers, info.sessionId) }
               : {}),
             extensionDelivery: sessionExtensionDelivery(forkBundle),
             spawnEnv: forkCapabilities.spawnEnv,
@@ -5966,7 +5966,7 @@ app.whenReady().then(async () => {
         return {
           mcpServers: sessionCapabilities.sessionNewPatch?.mcpServers ?? [],
           ...(sessionCapabilities.promptAwaitsGuguTools
-            ? { toolsListed: sessionToolsListed(sessionMcp, info.sessionId) }
+            ? { awaitToolsListed: sessionToolsListed(sessionMcp, info.sessionId) }
             : {}),
           spawnEnv: sessionCapabilities.spawnEnv,
           spawnArgs: sessionCapabilities.extraArgs,
@@ -6208,7 +6208,7 @@ app.whenReady().then(async () => {
         return {
           mcpServers: mapped,
           ...(capabilities.promptAwaitsGuguTools
-            ? { toolsListed: sessionToolsListed(bundle.mcpServers, info.sessionId) }
+            ? { awaitToolsListed: sessionToolsListed(bundle.mcpServers, info.sessionId) }
             : {}),
           extensionDelivery: sessionExtensionDelivery(bundle),
           ...(firstTurn ? { firstTurn } : {}),

@@ -32,31 +32,34 @@ describe('antigravity chat leg MCP delivery', () => {
     mcpServers: [
       { name: 'gugu', transport: 'http', url: 'http://127.0.0.1:1/mcp', authorizationEnv: 'GUGU_MCP_TOKEN', owner: 'gugu' },
       { name: 'browser-use', transport: 'http', url: 'http://127.0.0.1:2/mcp', authorizationEnv: 'APP_TOKEN', owner: 'integration' },
-      { name: 'mine', transport: 'stdio', command: 'x', args: ['serve'], env: { KEY: 'MINE_KEY' }, owner: 'integration' },
+      { name: 'mine', transport: 'stdio', command: 'x', args: ['serve'], env: { KEY: 'MINE_KEY' }, owner: 'integration', library: true },
+      { name: 'remote', transport: 'http', url: 'https://example.invalid/mcp', authorizationEnv: 'REMOTE_AUTH', owner: 'integration', library: true },
     ],
-    env: { GUGU_HOME: guguHome, GUGU_MCP_TOKEN: 'Bearer tok-1', APP_TOKEN: 'Bearer tok-2', MINE_KEY: 'k' },
+    env: { GUGU_HOME: guguHome, GUGU_MCP_TOKEN: 'Bearer tok-1', APP_TOKEN: 'Bearer tok-2', MINE_KEY: 'k', REMOTE_AUTH: 'Basic abc' },
     model: null,
     autonomy: null,
     promptBlocks: { platform: 'P', identity: 'I' },
     packages: [],
   });
 
-  it('agy: HTTP servers go through the managed config relay under new names, only stdio stays on session/new, the first prompt waits', () => {
+  it('agy: hosted servers go through the managed config relay under new names, the person\'s own stay on session/new', () => {
     const result = materializeAntigravitySessionBundle(acp, bundle());
-    expect(result.acp?.mcpServers.map((server) => server.name)).toEqual(['mine']);
+    expect(result.acp?.mcpServers.map((server) => server.name)).toEqual(['mine', 'remote']);
+    // Their own credential travels as they wrote it; the relay speaks Bearer only.
+    expect(result.acp?.mcpServers[1]).toMatchObject({ headers: [{ name: 'Authorization', value: 'Basic abc' }] });
     expect(result.jsonOverlays).toEqual([{
       sourcePath: join(managed(), 'config', 'mcp_config.json'),
       path: join(managed(), 'config', 'mcp_config.json'),
       // A conversation stored these servers under their own names, and a same-named entry would stay eager.
-      patch: { mcpServers: { 'gugu-mcp': entry('gugu-mcp'), 'browser-use-mcp': entry('browser-use-mcp') } },
+      patch: { mcpServers: { 'gugu-mcp': entry('gugu-mcp'), 'browser-use-gugu': entry('browser-use-gugu') } },
       conflict: 'gugu-owns',
       mode: 0o600,
     }]);
     expect(result.env).toMatchObject({
       GUGU_SESSION_MCP_URL_GUGU_MCP: 'http://127.0.0.1:1/mcp',
       GUGU_SESSION_MCP_BEARER_GUGU_MCP: 'tok-1',
-      GUGU_SESSION_MCP_URL_BROWSER_USE_MCP: 'http://127.0.0.1:2/mcp',
-      GUGU_SESSION_MCP_BEARER_BROWSER_USE_MCP: 'tok-2',
+      GUGU_SESSION_MCP_URL_BROWSER_USE_GUGU: 'http://127.0.0.1:2/mcp',
+      GUGU_SESSION_MCP_BEARER_BROWSER_USE_GUGU: 'tok-2',
       MINE_KEY: 'k',
     });
     // A `gugu` entry the terminal leg left in the shared file gets no upstream in a chat session.
@@ -75,7 +78,7 @@ describe('antigravity chat leg MCP delivery', () => {
 
     stored('antigravity-acp');
     const legacy = materializeAntigravitySessionBundle(resumed, bundle());
-    expect(legacy.acp?.mcpServers.map((server) => server.name)).toEqual(['gugu', 'browser-use', 'mine']);
+    expect(legacy.acp?.mcpServers.map((server) => server.name)).toEqual(['gugu', 'browser-use', 'mine', 'remote']);
     expect(legacy.jsonOverlays).toBeUndefined();
     expect(legacy.promptAwaitsGuguTools).toBeUndefined();
     expect(Object.keys(legacy.env).filter((key) => key.startsWith('GUGU_SESSION_MCP_'))).toEqual([]);
@@ -84,11 +87,24 @@ describe('antigravity chat leg MCP delivery', () => {
   it('a new name another session server already has takes one more suffix', () => {
     const base = bundle();
     const given: SessionCapabilityBundle = { ...base, mcpServers: [...base.mcpServers,
-      { name: 'browser-use-mcp', transport: 'stdio', command: 'y', args: [], env: {}, owner: 'integration' }] };
+      { name: 'browser-use-gugu', transport: 'stdio', command: 'y', args: [], env: {}, owner: 'integration', library: true }] };
     const result = materializeAntigravitySessionBundle(acp, given);
-    expect(result.acp?.mcpServers.map((server) => server.name)).toEqual(['mine', 'browser-use-mcp']);
+    expect(result.acp?.mcpServers.map((server) => server.name)).toEqual(['mine', 'remote', 'browser-use-gugu']);
     expect(Object.keys((result.jsonOverlays![0]!.patch as { mcpServers: object }).mcpServers))
-      .toEqual(['gugu-mcp', 'browser-use-mcp-mcp']);
+      .toEqual(['gugu-mcp', 'browser-use-gugu-gugu']);
+  });
+
+  it('no other server answers to `gugu-mcp`, so nothing else is addressed or approved as Gugu', () => {
+    const base = bundle();
+    const given: SessionCapabilityBundle = { ...base, mcpServers: [...base.mcpServers,
+      { name: 'gugu-mcp', transport: 'stdio', command: 'y', args: [], env: {}, owner: 'integration', library: true }] };
+    const result = materializeAntigravitySessionBundle(acp, given);
+    expect(result.acp?.mcpServers.map((server) => server.name)).toEqual(['mine', 'remote', 'gugu-mcp-library']);
+    expect(Object.keys((result.jsonOverlays![0]!.patch as { mcpServers: object }).mcpServers))
+      .toEqual(['gugu-mcp', 'browser-use-gugu']);
+    stored('antigravity-acp');
+    const legacy = materializeAntigravitySessionBundle({ ...acp, lifecycle: 'resume', providerSessionId: CONVERSATION }, given);
+    expect(legacy.acp?.mcpServers.map((server) => server.name)).not.toContain('gugu-mcp');
   });
 
   it('a session without Gugu\'s own server has nothing to wait for', () => {
@@ -125,7 +141,7 @@ describe('antigravity pre-approval', () => {
 
   it('still asks for every other tool', () => {
     // Exact names: another renamed server shares the suffix, and a lookalike is not Gugu's.
-    expect(ask(proxied('browser-use-mcp', 'browser_click'))).toBeUndefined();
+    expect(ask(proxied('browser-use-gugu', 'browser_click'))).toBeUndefined();
     expect(ask(proxied('my-gugu-mcp', 'message_send'))).toBeUndefined();
     expect(ask(proxied('gugu-mcp-mcp', 'message_send'))).toBeUndefined();
     expect(ask(proxied('browser-use', 'browser_click'))).toBeUndefined();

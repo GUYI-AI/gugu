@@ -411,7 +411,8 @@ export const antigravitySessionBundleDescriptor = {
      *    缺席(6/6),等了 8/8 全在。
      *  · 聊天面板腿两种情况照旧走 `session/new`:**旧服务的会话**(`agy_acp_server`,按会话存档认)—— 它把那条
      *    通道的工具列为按需加载(1.4.5 实测 200 个 skill 时 20/20),而配置文件里的中继它首句之前不列工具(等
-     *    40 秒无);**资源库里勾的 stdio server** —— 要每会话的环境值,写不进共用文件(它们仍受那份预算约束)。
+     *    40 秒无);**这个人自己的 server**(资源库里勾的,http 与 stdio)—— 凭据形状与网络环境是他的(中继只说
+     *    Bearer、不走代理),stdio 的每会话环境值也写不进共用文件(它们仍受那份预算约束)。
      *  · 终端腿(`agy`):只收 http。实测(agy 1.2.9,影子 HOME):中继被拉起、假 MCP 收到 initialize / tools/list;
      *    模型请求的系统提示里出现 `# gugu\nLazy:\n<tool>`、工具表多出通用的 `call_mcp_tool`。
      *    ⚠️ 已知欠账:以 `-i` 起的**第一回合**看不到咕咕的工具 —— agy 在任何 stdio server 应答之前就拼好了那一轮的
@@ -560,22 +561,39 @@ export function sessionMcpBearerEnv(name: string): string {
 }
 
 type RelayMcpDelivery = { overlay: JsonOverlay; env: Record<string, string> };
+type SessionServer = SessionCapabilityBundle['mcpServers'][number];
 
-/** The chat leg's name for Gugu's own server on `agy acp`, and the one its leftover `session/new` entry keeps. */
+/** The chat leg's name for Gugu's own server on `agy acp`; a stored conversation may still carry it as `gugu`. */
 export const ANTIGRAVITY_ACP_GUGU_SERVER = 'gugu-mcp';
 export const ANTIGRAVITY_GUGU_SERVERS: readonly string[] = [ANTIGRAVITY_ACP_GUGU_SERVER, 'gugu'];
+/** Ends the chat leg's name for every other server Gugu hosts; unlike `-mcp`, people do not name theirs this way. */
+const HOSTED_SUFFIX = '-gugu';
+
+/** Gugu's own server and the ones it hosts for the session (connected apps, App servers): local, Bearer grants. */
+function hostedByGugu(server: SessionServer): boolean {
+  return server.transport !== 'stdio' && (server.owner === 'gugu' || (server.owner === 'integration' && !server.library));
+}
 
 /**
- * 聊天面板腿(`agy acp`)配置文件里的名字 = `<名>-mcp`。❌ 沿用原名:`agy` 把开会话时 `session/new` 收到的
- * server(名字与地址)存进会话存档,`session/load` 时照样装回来、仍按 eager 算,配置文件里**同名**条目只换掉
- * 连接、换不掉 eager —— 修前开的会话续跑后工具照样被丢。换个名字的条目按需加载,存档里那台不再列给模型,
- * 模型仍按旧名调时它要么调通、要么立刻回错(1.5.3 / 1.5.18 + 本地假端点实测 2026-11-27)。
- * 与另一台 session/new 上的(资源库 stdio)撞名时再追一节。
+ * 聊天面板腿(`agy acp`)配置文件里的名字:咕咕那台 `gugu-mcp`,其余托管的 `<名>-gugu`。❌ 沿用原名:`agy` 把
+ * 开会话时 `session/new` 收到的 server(名字与地址)存进会话存档,`session/load` 时照样装回来、仍按 eager 算,
+ * 配置文件里**同名**条目只换掉连接、换不掉 eager —— 修前开的会话续跑后工具照样被丢。换个名字的条目按需加载,
+ * 存档里那台不再列给模型,模型仍按旧名调时它要么调通、要么立刻回错(1.5.3 / 1.5.18 + 本地假端点实测 2026-11-27)。
+ * 与另一台 session/new 上的撞名时再追一节。
  */
-function acpRelayName(name: string, taken: ReadonlySet<string>): string {
-  let delivered = `${name}-mcp`;
-  while (taken.has(delivered)) delivered += '-mcp';
+function acpRelayName(server: SessionServer, taken: ReadonlySet<string>): string {
+  if (server.owner === 'gugu') return ANTIGRAVITY_ACP_GUGU_SERVER;
+  let delivered = `${server.name}${HOSTED_SUFFIX}`;
+  while (taken.has(delivered)) delivered += HOSTED_SUFFIX;
   return delivered;
+}
+
+/** The name Gugu knows a server by, from the name `agy` calls it: the reverse of `acpRelayName`. */
+export function antigravityServerName(called: string): string {
+  if (called === ANTIGRAVITY_ACP_GUGU_SERVER) return 'gugu';
+  const base = called.endsWith(HOSTED_SUFFIX) ? called.slice(0, -HOSTED_SUFFIX.length) : '';
+  // Gugu's own server is never delivered with the suffix, so no suffixed name may read as it.
+  return base && base !== 'gugu' ? base : called;
 }
 
 /**
@@ -598,14 +616,14 @@ function acpRelayName(name: string, taken: ReadonlySet<string>): string {
  *    用户机器上不要求装 node。
  * ⚠️ **key 级合并**(`conflict: 'gugu-owns'`):文件首次是从用户 `~/.gemini` 整份带过来的,只改咕咕那几个名字。
  * ⚠️ stdio server 不接:它要每会话的环境值,写进共用文件就串了 ⇒ 响亮失败。终端腿由宿主按 `transports: ['http']`
- *    把资源库里的 stdio 那几台留在外面,聊天面板腿由调用方留在 `session/new` 上。
+ *    把资源库里的 stdio 那几台留在外面,聊天面板腿只递咕咕托管的那几台(`hostedByGugu`)。
  * `deliveredName`:条目、中继参数与环境变量用同一个名字;同一份文件里别的名字的条目(终端腿写下的 `gugu`)
  * 在这条会话里拿不到环境值,退化成没有工具的 server。
  */
 function relayMcpDelivery(
   bundle: SessionCapabilityBundle,
   mcpServers: SessionCapabilityBundle['mcpServers'],
-  deliveredName: (name: string) => string = (name) => name
+  deliveredName: (server: SessionServer) => string = (server) => server.name
 ): RelayMcpDelivery | null {
   if (mcpServers.length === 0) return null;
   const relay = process.env[GUGU_MCP_STDIO_RELAY_ENTRY_ENV]?.trim();
@@ -624,7 +642,7 @@ function relayMcpDelivery(
       );
     }
     const credential = sessionMcpAuthorization(server, bundle.env, 'Antigravity');
-    const name = deliveredName(server.name);
+    const name = deliveredName(server);
     servers[name] = {
       command: process.execPath,
       args: [relay, name],
@@ -719,14 +737,17 @@ export function materializeAntigravitySessionBundle(
   if (ctx.surface === 'tui') return materializeSessionTui(ctx, bundle, env);
 
   // 聊天面板腿的两条通道(理由见 descriptor 的 `units.mcp`):旧服务的会话全部随 `session/new`;
-  // 其余会话 http 走配置文件中继,stdio 仍随 `session/new`。
+  // 其余会话咕咕托管的走配置文件中继,这个人自己的仍随 `session/new`。
   const legacy = ctx.providerSessionId !== undefined
     && isLegacyAntigravityConversation(managedRootPath(bundle), ctx.providerSessionId);
-  const relayed: SessionCapabilityBundle['mcpServers'] = legacy
-    ? [] : bundle.mcpServers.filter((server) => server.transport !== 'stdio');
-  const sessionOnly = bundle.mcpServers.filter((server) => !relayed.includes(server));
+  // `gugu-mcp` 是这一腿认咕咕自己那台(自述点名、免批)的名字:别的 server 不许顶着它。
+  const servers = bundle.mcpServers.map((server) =>
+    server.owner !== 'gugu' && server.name === ANTIGRAVITY_ACP_GUGU_SERVER
+      ? { ...server, name: `${server.name}-library` } : server);
+  const relayed = legacy ? [] : servers.filter(hostedByGugu);
+  const sessionOnly = servers.filter((server) => !relayed.includes(server));
   const taken = new Set(sessionOnly.map((server) => server.name));
-  const mcp = relayMcpDelivery(bundle, relayed, (name) => acpRelayName(name, taken));
+  const mcp = relayMcpDelivery(bundle, relayed, (server) => acpRelayName(server, taken));
   const mcpServers = sessionMcpProtocolServers({ ...bundle, mcpServers: sessionOnly }, 'Antigravity');
   const prompt = sessionContextPrompt(bundle.promptBlocks);
   return {

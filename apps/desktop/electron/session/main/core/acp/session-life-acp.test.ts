@@ -427,7 +427,7 @@ describe('session-life ACP leg', () => {
     const listed = Promise.withResolvers<void>();
     const controller = new AbortController();
     const have = { process, cli: { command: { input: { providerId: 'antigravity', projectId: 'p', cwd: '/repo' } } },
-      platform: { injected: false }, capabilities: { injection: { toolsListed: listed.promise }, facts: {} } } as never;
+      platform: { injected: false }, capabilities: { injection: { awaitToolsListed: () => listed.promise }, facts: {} } } as never;
     let admitted = false;
     const channel = adapter.run('channel', have, { gen, signal: controller.signal }).then(value => { admitted = true; return value; });
     await vi.waitFor(() => expect(h.startSession).toHaveBeenCalled());

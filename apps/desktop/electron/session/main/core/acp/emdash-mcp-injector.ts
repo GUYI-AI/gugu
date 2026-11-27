@@ -111,9 +111,9 @@ export type EmdashSessionCapabilityInjection = {
   platformAccessSessionId?: string;
   /**
    * Present when this start's Gugu tools only arrive once the engine has connected: resolves when `tools/list` has been
-   * answered (or its budget ran out). The first prompt waits for it.
+   * answered, or the budget that starts with this call ran out. The first prompt waits for it.
    */
-  toolsListed?: Promise<void>;
+  awaitToolsListed?: () => Promise<void>;
 };
 
 /**
