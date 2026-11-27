@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AssistantPanelItem, AssistantPanelSnapshot } from '@gugu/core/cloud/assistantPanel'
-import { answerPhoneBinding, createPhoneBindings, type PhoneBindingPorts, type PhoneInstalledApp, type PhonePickedFile } from '../../../../apps/desktop/src/components/appSlot/phoneAppBindings'
+import { answerPhoneBinding, createPhoneBindings, type PhoneBindingPorts, type PhoneInstalledApp } from '../../../../apps/desktop/src/components/appSlot/phoneAppBindings'
 import type { AppSurfaceIntent } from '../../../../apps/desktop/src/session/shared/extensions/unread-binding'
 import { ASSISTANT_APP_ID, assistantLayerEntry, type AssistantAppInstall } from '../../../../apps/desktop/src/session/shared/extensions/assistant-entry'
 import { PHONE_ASSISTANT_SCREENS, PHONE_BINDING_API_VERSION } from '../../../../apps/desktop/src/session/shared/extensions/phone-binding'
@@ -69,7 +69,6 @@ type World = {
   /** Runs inside the next wait: the world changing under a call. */
   during: (() => void) | null
   /** What the phone's picker gives (null: cancelled). */
-  picked: PhonePickedFile[] | null
 }
 let world: World
 const actions = { move: vi.fn(), open: vi.fn(), openWork: vi.fn(), rename: vi.fn(async (_agentId: string, _name: string) => undefined),
@@ -101,7 +100,6 @@ function ports(): PhoneBindingPorts {
     },
     draft: async (chatId, text) => { drafted.push({ chatId, text }) },
     renameAssistant: (agentId, name) => actions.rename(agentId, name),
-    pickFiles: () => wait(() => world.picked),
     confirmRemoval: (question) => actions.confirmRemoval(question),
     panel: {
       client: {
@@ -114,10 +112,6 @@ function ports(): PhoneBindingPorts {
       } as never,
       snapshot: () => wait(() => world.snapshot),
       resource: () => wait(() => null),
-      commit: async (_owner, _agent, change) => {
-        commits.push(change)
-        return { operationId: change.operationId, revision: '5', status: 'pending' }
-      },
       readBody: async () => new Uint8Array(),
       uploadBody: async () => ({ itemId: 'body', sha256: 'a'.repeat(64) }),
       discard: async () => undefined,
@@ -138,7 +132,6 @@ function ports(): PhoneBindingPorts {
       },
     },
     randomUUID: () => crypto.randomUUID(),
-    sha256: async () => 'b'.repeat(64),
   }
 }
 const FOUND: AppAssistantStatus = {
@@ -154,7 +147,6 @@ beforeEach(() => {
     status: { ownerId: OWNER, status: FOUND }, work: null, openWork: null,
     snapshot: { version: 1, revision: '9', items: [panelItem('memory', '__collection__', { state: 'ready' }), panelItem('memory', 'notes/a.md', { title: 'A', relativePath: 'notes/a.md', secret: 'x' })], application: [] },
     during: null,
-    picked: null,
   }
   intentListeners.clear()
   actions.confirmRemoval.mockReset()
@@ -308,7 +300,6 @@ describe('API 50 on a phone: what the built-in pages did is done there, the rest
     capabilities: [...base.permissions!.capabilities!.filter((c) => c !== 'assistant:rename'), 'chat:voice-notes:manage'],
     bindings: [{ ...binding, actions: [...binding.actions.filter((a) => a !== 'assistant-rename'), 'voice-notes:manage'],
       domains: { resources: ['memory', 'files', 'voice-notes'], 'resources:write': ['memory', 'files'] } }] } }) })
-  const picked = (name: string, size = 3, contentType = 'text/plain'): PhonePickedFile => ({ name, size, contentType, read: async () => new TextEncoder().encode('abc') })
   const withVoiceNote = () => {
     world.snapshot = { ...world.snapshot, items: [...world.snapshot.items, panelItem('voice-notes', '__collection__', { state: 'ready' }),
       panelItem('voice-notes', 'n1', { noteId: 'n1', kind: 'directory' }), panelItem('voice-notes', 'n1/note.json', { noteId: 'n1', kind: 'note.json' })] }
@@ -331,39 +322,9 @@ describe('API 50 on a phone: what the built-in pages did is done there, the rest
     expect(actions.confirmRemoval).not.toHaveBeenCalled()
   })
 
-  it('upload: the phone\'s picker, the built-in page\'s rules, each file written into 给助理的资料 as that page wrote it', async () => {
+  it('upload (resources:write): refused, nothing picked or committed', async () => {
     world.app = withManage()
-    world.picked = [picked('a.md'), picked('film.mp4', 3, 'video/mp4'), picked('big.pdf', 60 * 1024 * 1024, 'application/pdf')]
-    const answer = await answerPhoneBinding(createPhoneBindings(ports()), 'bindingsUpload', PAGE, { name: 'main', folder: 'docs' }, () => undefined)
-    expect(answer).toEqual({ name: 'main', state: 'done',
-      uploaded: [{ key: 'docs/a.md', name: 'a.md', receipt: { operationId: expect.any(String), revision: '4', status: 'pending' } }],
-      refused: [{ name: 'film.mp4', why: 'unsupported' }, { name: 'big.pdf', why: 'too-large' }] })
-    expect(commits).toEqual([expect.objectContaining({ domain: 'files', key: 'docs/a.md', operation: 'save', data: expect.objectContaining({ path: 'docs/a.md', kind: 'file' }) })])
-  })
-
-  it('upload: cancelled picks nothing; refused at API 49, without files writable, for another binding, an account switched while picking', async () => {
-    world.app = withManage()
-    const bindings = createPhoneBindings(ports())
-    expect(await bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main' })).toEqual({ name: 'main', state: 'cancelled' })
-    expect(await codeOf(bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main', folder: '../x' }))).toBe('invalid')
-    expect(await codeOf(bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'other' }))).toBe('denied')
-    // The account switched while the picker was up: refused before a picked file is even read.
-    const read = vi.fn(async () => new Uint8Array())
-    // The picker answers as the account switches (only once it is up: the binding was checked before).
-    Object.defineProperty(world, 'picked', { configurable: true, get: () => { world.account = { token: 't', ownerId: OTHER }; return [{ ...picked('a.md'), read }] } })
-    expect(await codeOf(bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main' }))).toBe('denied')
-    expect(read).not.toHaveBeenCalled()
-    Object.defineProperty(world, 'picked', { configurable: true, writable: true, value: null })
-    world.account = { token: 't', ownerId: OWNER }
-    // Files writable at API 49 (no voice-note managing there): upload is an App's of API 50 only.
-    world.app = install({ manifest: assistantManifest({ permissions: { ...base.permissions,
-      bindings: [{ ...binding, domains: { ...binding.domains, 'resources:write': ['memory', 'files'] } }] } }) })
-    expect(await codeOf(bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main' }))).toBe('denied')
-    world.app = install()
-    expect(await codeOf(bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main' }))).toBe('denied')
-    world.app = withManage()
-    world.assistant = null
-    expect(await bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main' })).toEqual({ name: 'main', state: 'unbound' })
+    expect(await codeOf(createPhoneBindings(ports()).manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main', folder: 'docs' }))).toBe('denied')
     expect(commits).toEqual([])
   })
 
@@ -554,13 +515,14 @@ describe('resources, schedules and work on a phone', () => {
     expect(await codeOf(bindings.resources(ASSISTANT_APP_ID, { name: 'main', domain: 'integrations' }))).toBe('denied')
     expect(await codeOf(bindings.save(ASSISTANT_APP_ID, { name: 'main', domain: 'files', key: 'a', operationId: crypto.randomUUID(), expectedRevision: '0', content: 'x' }))).toBe('denied')
   })
-  it('saves through the store as the person: committed with a receipt', async () => {
-    const operationId = crypto.randomUUID()
-    expect(await createPhoneBindings(ports()).save(ASSISTANT_APP_ID, { name: 'main', domain: 'memory', key: 'notes/b.md', operationId, expectedRevision: '0', content: '# B' }))
-      .toMatchObject({ state: 'committed', receipt: { operationId, status: 'pending' } })
-    expect(commits).toHaveLength(1)
+  it('a save or a removal is refused: nothing is committed', async () => {
+    const bindings = createPhoneBindings(ports())
+    const change = { name: 'main', domain: 'memory', key: 'notes/b.md', operationId: crypto.randomUUID(), expectedRevision: '0' }
+    expect(await codeOf(bindings.save(ASSISTANT_APP_ID, { ...change, content: '# B' }))).toBe('denied')
+    expect(await codeOf(bindings.remove(ASSISTANT_APP_ID, change))).toBe('denied')
+    expect(commits).toEqual([])
   })
-  it('reads the assistant\'s schedules through its panel and pauses one once per operation id', async () => {
+  it('reads the assistant\'s schedules through its panel; a change to one is refused', async () => {
     world.snapshot = { version: 1, revision: '9', application: [], items: [
       panelItem('schedules', '__collection__', { state: 'ready' }),
       panelItem('schedules', SCHEDULE, { title: 'Daily', prompt: 'p', cron: '0 9 * * *', enabled: true }),
@@ -569,12 +531,8 @@ describe('resources, schedules and work on a phone', () => {
     const listed = await bindings.schedules(ASSISTANT_APP_ID, { name: 'main' })
     expect(listed).toMatchObject({ state: 'ready', schedules: [{ id: `schedule:${SCHEDULE}`, revision: '3', title: 'Daily', state: 'active' }] })
     const change = { name: 'main', operationId: 'op-pause-0001', op: 'pause', scheduleId: `schedule:${SCHEDULE}`, revision: '3' }
-    const first = await bindings.controlSchedule(ASSISTANT_APP_ID, change)
-    expect(first).toMatchObject({ status: 'pending', scheduleId: `schedule:${SCHEDULE}` })
-    await bindings.controlSchedule(ASSISTANT_APP_ID, change)
-    expect(commits.map((commit) => (commit as { operationId: string }).operationId)).toEqual([expect.any(String), (commits[0] as { operationId: string }).operationId])
-    expect(await codeOf(bindings.controlSchedule(ASSISTANT_APP_ID, { ...change, revision: '2' }))).toBe('invalid')
-    expect(await codeOf(bindings.controlSchedule(ASSISTANT_APP_ID, { name: 'main', operationId: 'op-register-01', op: 'register', prompt: 'x', at: '2027-01-01T00:00:00Z' }))).toBe('invalid')
+    expect(await codeOf(bindings.controlSchedule(ASSISTANT_APP_ID, change))).toBe('denied')
+    expect(commits).toEqual([])
   })
   it('gives the work list by opaque handles and opens a task\'s conversation by one', async () => {
     const bindings = createPhoneBindings(ports())

@@ -94,19 +94,13 @@ type PanelRow = { key: string; revision: number; data: Record<string, unknown>; 
 type PanelChange = { request: string; revision: number; key: string; status: 'pending' | 'failed' | 'applied' | 'superseded'; operation: string };
 
 /**
- * The assistant's panel in the cloud, as `assistant_panel_snapshot` / `assistant_panel_commit` keep it (gugu-supabase
- * 20261026041500_assistant_panel_state.sql): a resent operation id with the same request answers that change's status, a
- * different one is 23505; a stale revision is PT409; a newer change to a resource supersedes its outstanding one. Only the
- * home's acknowledgement (`homeApplies`, `homeRefuses`) moves a change on.
+ * The assistant's panel in the cloud, as `assistant_panel_snapshot` reads it (gugu-supabase
+ * 20261026041500_assistant_panel_state.sql). Nothing may commit to it: `changes` records any commit that would arrive.
  */
 class FakePanel {
   revision = 10;
   ready = true;
   down = false;
-  /** The commit is made but its answer is lost on the way back. */
-  loseAnswer = false;
-  /** The commit never arrives (reads still do). */
-  dropCommit = false;
   calls = 0;
   rows = new Map<string, PanelRow>();
   changes = new Map<string, PanelChange>();
@@ -114,14 +108,6 @@ class FakePanel {
     this.rows.set(key, { key, revision: ++this.revision, data, deleted: false, updated: Date.now() });
   }
   tell() { for (const word of [...state.panelWords]) if (word.assistantId === AGENT) word.changed(); }
-  homeApplies() {
-    for (const change of this.changes.values()) if (change.status === 'pending' || change.status === 'failed') change.status = 'applied';
-    // The home publishes what it now has, as it does after each applied change.
-    for (const row of this.rows.values()) if (!row.deleted) Object.assign(row, { revision: ++this.revision, updated: Date.now() });
-    this.tell();
-  }
-  homeRefuses(operationId: string) { this.changes.get(operationId)!.status = 'failed'; this.tell(); }
-  pendingOf() { return [...this.changes.entries()].filter(([, change]) => change.status === 'pending').map(([id]) => id); }
   item(row: PanelRow) {
     return { assistant_user_id: AGENT, owner_user_id: OWNER, domain: 'schedules', resource_key: row.key, device_id: HOME_DEVICE,
       revision: String(row.revision), data: row.deleted ? {} : row.data, body_item_id: null, body_sha256: null,
@@ -140,25 +126,8 @@ class FakePanel {
       error: null };
     }
     if (name !== 'assistant_panel_commit') throw new Error(`unexpected ${name}`);
-    if (this.dropCommit) throw new Error('fetch failed');
-    const operationId = String(args.p_operation_id);
-    const request = JSON.stringify([args.p_domain, args.p_resource_key, args.p_expected_revision, args.p_operation, args.p_data, args.p_device_id]);
-    const existing = this.changes.get(operationId);
-    if (existing) {
-      if (existing.request !== request) return { data: null, error: { message: 'used for a different request', code: '23505' }, status: 409 };
-      return { data: { operationId, revision: String(existing.revision), status: existing.status }, error: null };
-    }
-    const row = this.rows.get(String(args.p_resource_key));
-    if (String(row?.revision ?? 0) !== String(args.p_expected_revision)) return { data: null, error: { message: 'changed', code: 'PT409' }, status: 409 };
-    for (const change of this.changes.values()) if (change.key === row!.key && (change.status === 'pending' || change.status === 'failed')) change.status = 'superseded';
-    const revision = ++this.revision;
-    Object.assign(row!, { revision, updated: Date.now() });
-    if (args.p_operation === 'remove') row!.deleted = true;
-    else row!.data = { ...row!.data, enabled: args.p_operation === 'enable' };
-    this.changes.set(operationId, { request, revision, key: row!.key, status: 'pending', operation: String(args.p_operation) });
-    this.tell();
-    if (this.loseAnswer) throw new Error('fetch failed');
-    return { data: { operationId, revision: String(revision), status: 'pending' }, error: null };
+    this.changes.set(String(args.p_operation_id), { request: JSON.stringify(args), revision: this.revision, key: String(args.p_resource_key), status: 'pending', operation: String(args.p_operation) });
+    return { data: null, error: { message: 'unexpected commit', code: 'XX000' }, status: 500 };
   }
 }
 
@@ -575,9 +544,8 @@ describe('the person\'s assistant living on another computer or in the cloud: it
     assistantElsewhere();
     state.roster = [{ gugu_user_id: AGENT, status: 'active', cache: { emdash_session_id: SESSION, sessionpage_owner_user_id: OWNER } }];
     expect(await list()).toMatchObject({ state: 'ready', schedules: [expect.objectContaining({ id: s1 }), expect.objectContaining({ id: s2 })] });
-    expect(await control({ operationId: op(), op: 'pause', scheduleId: s1, revision: '11' })).toMatchObject({ status: 'pending', scheduleId: s1 });
-    expect([...panel().changes.values()]).toEqual([expect.objectContaining({ key: K1, operation: 'disable', status: 'pending' })]);
-    await expect(control({ operationId: op(), op: 'register', prompt: 'x', cron: '0 8 * * *' })).rejects.toMatchObject({ code: 'elsewhere' });
+    await expect(control({ operationId: op(), op: 'pause', scheduleId: s1, revision: '11' })).rejects.toMatchObject({ code: 'denied' });
+    expect(panel().changes.size).toBe(0);
     expect(rows()).toEqual([{ id: left.slice('schedule:'.length), enabled: 1, deleted_at: null }]);
     // Its home is this computer: the schedule store here, and the panel is not asked.
     state.thisDevice = HOME_DEVICE;
@@ -587,104 +555,19 @@ describe('the person\'s assistant living on another computer or in the cloud: it
     expect(await control({ operationId: op(), op: 'pause', scheduleId: left, revision: (await current(left)).revision })).toMatchObject({ status: 'applied', scheduleId: left });
     expect(rows()).toEqual([{ id: left.slice('schedule:'.length), enabled: 0, deleted_at: null }]);
     expect(panel().calls).toBe(calls);
-    expect(panel().changes.size).toBe(1);
+    expect(panel().changes.size).toBe(0);
   });
 
-  it('pauses, resumes and removes by the panel\'s commit at the revision read: pending until its home applies it, the same id telling where it is', async () => {
+  it('a change for it is refused — its panel takes none: nothing is sent, and the same id stays refused', async () => {
     assistantElsewhere();
     const pauseId = op();
-    const paused = await control({ operationId: pauseId, op: 'pause', scheduleId: s1, revision: '11' });
-    expect(paused).toEqual({ name: 'main', operationId: pauseId, op: 'pause', status: 'pending', scheduleId: s1, revision: '13', at: new Date(NOW).toISOString() });
-    expect([...panel().changes.values()]).toEqual([expect.objectContaining({ key: K1, operation: 'disable', status: 'pending',
-      request: JSON.stringify(['schedules', K1, '11', 'disable', {}, HOME_DEVICE]) })]);
-    expect(await current(s1)).toMatchObject({ state: 'paused', nextRunAt: null, revision: '13' });
-    // Asked again while its home has not applied it: still pending, and no second change.
-    vi.setSystemTime(NOW + 60_000);
-    expect(await control({ operationId: pauseId, op: 'pause', scheduleId: s1, revision: '11' })).toEqual(paused);
-    expect(panel().changes.size).toBe(1);
-    panel().homeApplies();
-    expect(await control({ operationId: pauseId, op: 'pause', scheduleId: s1, revision: '11' })).toEqual({ ...paused, status: 'applied' });
-    // Settled: answered from the record alone.
-    const calls = panel().calls;
-    expect(await control({ operationId: pauseId, op: 'pause', scheduleId: s1, revision: '11' })).toEqual({ ...paused, status: 'applied' });
-    expect(panel().calls).toBe(calls);
-    // A stale revision is a conflict with the current one, and nothing is sent.
-    const { revision } = await current(s1);
-    expect(await control({ operationId: op(), op: 'resume', scheduleId: s1, revision: '13' })).toMatchObject({ status: 'conflict', scheduleId: s1, revision });
-    const resumed = await control({ operationId: op(), op: 'resume', scheduleId: s1, revision });
-    expect(resumed).toMatchObject({ status: 'pending', scheduleId: s1 });
-    expect(await current(s1)).toMatchObject({ state: 'active', revision: (resumed as { revision: string }).revision });
-    panel().homeApplies();
-    const removeId = op();
-    const removing = { operationId: removeId, op: 'remove', scheduleId: s2, revision: (await current(s2)).revision };
-    const removed = await control(removing);
-    expect(removed).toMatchObject({ status: 'pending', scheduleId: s2, revision: null });
-    expect(await list()).toMatchObject({ state: 'ready', schedules: [expect.objectContaining({ id: s1 })] });
-    panel().homeApplies();
-    expect(await control(removing)).toMatchObject({ status: 'applied', revision: null });
-    expect(await control({ ...removing, operationId: op(), op: 'pause' })).toMatchObject({ status: 'missing', scheduleId: s2 });
-    expect([...panel().changes.values()].map((change) => change.operation)).toEqual(['disable', 'enable', 'remove']);
-    // Adding or retiming is asking the assistant there, not a panel change; another change under a used id is the caller's mistake.
-    await expect(control({ operationId: op(), op: 'register', prompt: 'x', cron: '0 8 * * *' })).rejects.toMatchObject({ code: 'elsewhere' });
-    await expect(control({ operationId: op(), op: 'update', scheduleId: s1, revision: '1', title: 'New' })).rejects.toMatchObject({ code: 'elsewhere' });
-    await expect(control({ operationId: pauseId, op: 'resume', scheduleId: s1, revision: '11' })).rejects.toMatchObject({ code: 'invalid' });
-    expect(panel().changes.size).toBe(3);
+    for (const change of [{ operationId: pauseId, op: 'pause', scheduleId: s1, revision: '11' }, { operationId: pauseId, op: 'pause', scheduleId: s1, revision: '11' },
+      { operationId: op(), op: 'remove', scheduleId: s2, revision: '12' }, { operationId: op(), op: 'register', prompt: 'x', cron: '0 8 * * *' }]) {
+      await expect(control(change)).rejects.toMatchObject({ code: 'denied' });
+    }
+    expect(panel().changes.size).toBe(0);
+    expect(await current(s1)).toMatchObject({ state: 'active', revision: '11' });
     expect(rows()).toEqual([]);
-  });
-
-  it('its home offline: accepted changes stay pending, a later one supersedes, a refused one is failed and the list unavailable', async () => {
-    assistantElsewhere();
-    const first = op();
-    const paused = await control({ operationId: first, op: 'pause', scheduleId: s1, revision: '11' });
-    expect(paused).toMatchObject({ status: 'pending', revision: '13' });
-    expect(await control({ operationId: first, op: 'pause', scheduleId: s1, revision: '11' })).toMatchObject({ status: 'pending' });
-    // The person changes their mind before the home is back: the newer change is the one it will apply.
-    const second = op();
-    expect(await control({ operationId: second, op: 'resume', scheduleId: s1, revision: '13' })).toMatchObject({ status: 'pending', revision: '14' });
-    expect(await control({ operationId: first, op: 'pause', scheduleId: s1, revision: '11' })).toMatchObject({ status: 'superseded' });
-    panel().homeRefuses(panel().pendingOf()[0]!);
-    expect(await control({ operationId: second, op: 'resume', scheduleId: s1, revision: '13' })).toMatchObject({ status: 'failed' });
-    expect(await list()).toEqual({ name: 'main', state: 'unavailable' });
-    await expect(control({ operationId: op(), op: 'pause', scheduleId: s2, revision: '12' })).rejects.toMatchObject({ code: 'unavailable' });
-    // Applied on its next try: the failed one is applied after all.
-    panel().homeApplies();
-    expect(await control({ operationId: second, op: 'resume', scheduleId: s1, revision: '13' })).toMatchObject({ status: 'applied' });
-    expect(await list()).toMatchObject({ state: 'ready' });
-  });
-
-  it('an answer lost on the way, or the cloud down, is unavailable; the same id again finds the one change instead of making another', async () => {
-    assistantElsewhere();
-    const lost = op();
-    panel().loseAnswer = true;
-    await expect(control({ operationId: lost, op: 'pause', scheduleId: s1, revision: '11' })).rejects.toMatchObject({ code: 'unavailable' });
-    panel().loseAnswer = false;
-    expect(await control({ operationId: lost, op: 'pause', scheduleId: s1, revision: '11' })).toMatchObject({ status: 'pending', scheduleId: s1, revision: '13' });
-    expect(panel().changes.size).toBe(1);
-    // Down before anything was sent: nothing changes, and asking again later sends it once.
-    const down = op();
-    panel().down = true;
-    await expect(control({ operationId: down, op: 'pause', scheduleId: s2, revision: '12' })).rejects.toMatchObject({ code: 'unavailable' });
-    panel().down = false;
-    expect(panel().changes.size).toBe(1);
-    expect(await control({ operationId: down, op: 'pause', scheduleId: s2, revision: '12' })).toMatchObject({ status: 'pending', scheduleId: s2 });
-    expect(await control({ operationId: down, op: 'pause', scheduleId: s2, revision: '12' })).toMatchObject({ status: 'pending', scheduleId: s2 });
-    expect(panel().changes.size).toBe(2);
-    // Never arrived, and the schedule changed since: asked again, the panel refuses the stale revision — a conflict.
-    const dropped = op();
-    panel().dropCommit = true;
-    const { revision } = await current(s1);
-    await expect(control({ operationId: dropped, op: 'resume', scheduleId: s1, revision })).rejects.toMatchObject({ code: 'unavailable' });
-    panel().dropCommit = false;
-    panel().put(K1, { ...panel().rows.get(K1)!.data, title: 'Renamed at home' });
-    expect(await control({ operationId: dropped, op: 'resume', scheduleId: s1, revision })).toMatchObject({ status: 'conflict', scheduleId: s1, revision: (await current(s1)).revision });
-    expect(panel().changes.size).toBe(2);
-    // Authority as everywhere: another account, a withdrawn grant — refused, nothing sent.
-    (state.service as ExtensionsService).setPermissionGranted(ID, 'chat:schedules:control', false);
-    await expect(control({ operationId: op(), op: 'resume', scheduleId: s2, revision: '14' })).rejects.toMatchObject({ code: 'denied' });
-    (state.service as ExtensionsService).setPermissionGranted(ID, 'chat:schedules:control', true);
-    state.cloud.owned = false;
-    await expect(list()).rejects.toMatchObject({ code: 'denied' });
-    expect(panel().changes.size).toBe(2);
   });
 
   it('hears the panel\'s word only when the schedules or their outstanding changes differ, an unreadable panel once, and stops for good once the grant goes', async () => {
@@ -697,28 +580,25 @@ describe('the person\'s assistant living on another computer or in the cloud: it
     panel().tell();
     await settle();
     expect(heard).not.toHaveBeenCalled();
-    await control({ operationId: op(), op: 'pause', scheduleId: s1, revision: '11' });
+    // Its home published a change to one: heard.
+    panel().put(K1, { ...panel().rows.get(K1)!.data, title: 'Renamed at home' });
+    panel().tell();
     await vi.waitFor(() => expect(heard).toHaveBeenCalledOnce(), wait);
-    // The home refusing it changes no schedule, only where the change is: heard.
-    panel().homeRefuses(panel().pendingOf()[0]!);
-    await vi.waitFor(() => expect(heard).toHaveBeenCalledTimes(2), wait);
-    panel().homeApplies();
-    await vi.waitFor(() => expect(heard).toHaveBeenCalledTimes(3), wait);
     // The cloud unreachable: one word, then quiet until it answers again.
     panel().down = true;
     panel().tell();
-    await vi.waitFor(() => expect(heard).toHaveBeenCalledTimes(4), wait);
+    await vi.waitFor(() => expect(heard).toHaveBeenCalledTimes(2), wait);
     panel().tell();
     await settle();
-    expect(heard).toHaveBeenCalledTimes(4);
+    expect(heard).toHaveBeenCalledTimes(2);
     panel().down = false;
     panel().tell();
-    await vi.waitFor(() => expect(heard).toHaveBeenCalledTimes(5), wait);
+    await vi.waitFor(() => expect(heard).toHaveBeenCalledTimes(3), wait);
     (state.service as ExtensionsService).setPermissionGranted(ID, 'chat:schedules', false);
     panel().put(K2, { title: 'Bank', prompt: 'Call the bank', at: null, cron: '0 9 * * *', tz: 'Asia/Shanghai', enabled: true, nextRunAt: null, lastRun: null });
     panel().tell();
     await vi.waitFor(() => expect(ended).toHaveBeenCalledOnce(), wait);
-    expect(heard).toHaveBeenCalledTimes(5);
+    expect(heard).toHaveBeenCalledTimes(3);
     expect(state.panelWords.size).toBe(0);
     stop();
     expect(ended).toHaveBeenCalledOnce();

@@ -22,7 +22,6 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/insta
 vi.mock('../../../../apps/desktop/src/components/ui/sheetStack', async original => ({ ...await original<object>(), useBackLayer() {} }))
 vi.mock('../../../../apps/desktop/src/session/renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }))
 vi.mock('../../../../apps/desktop/src/session/renderer/localization/locale-store', async original => ({ ...await original<object>(), translateSessionMessage: () => 'Waiting for host' }))
-vi.mock('../../../../apps/desktop/src/lib/outbox/kinds/assistantNotice', () => ({ assistantNoticeOutboxKind: { name: 'assistantNotice', lane: () => 'assistant', send: async () => {} } }))
 vi.mock('../../../../apps/desktop/src/lib/outbox/legacy', () => ({ importLegacyWrites: async () => {} }))
 const harness = createReactHarness()
 // The window's one outbox for this account (the app's follows the replica's account).

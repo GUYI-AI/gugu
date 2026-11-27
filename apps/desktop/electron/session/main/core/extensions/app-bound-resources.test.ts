@@ -162,7 +162,7 @@ function put(domain: string, key: string, text: string, data: Record<string, unk
   store.items.set(`${domain}\0${key}`, row(domain, key, { revision, data, body_item_id: id, body_sha256: sha(text) }));
 }
 
-const { appResourceList, appResourceRead, appResourceSave, appResourceRemove, appResourceWatch, savedData } = await import('./app-bound-resources');
+const { appResourceList, appResourceRead, appResourceSave, appResourceRemove, appResourceWatch } = await import('./app-bound-resources');
 const { addResourceWatch, heldResourceWatches, notifyAgentResourcesChanged, stopResourceWatches } = await import('./app-resource-watches');
 
 const read = (domain: string, key: string) => appResourceRead('assistant', { name: 'main', domain, key });
@@ -365,110 +365,13 @@ describe('reading the agent\'s resources', () => {
   });
 });
 
-describe('changing the agent\'s resources through the store', () => {
-  it('saves as the assistant\'s own pages do, uploads to the private folder, and answers the store\'s receipt', async () => {
-    const answer = await save('notes/tea.md', '---\ntype: user\n---\n# Tea\nGreen', '0');
-    expect(answer).toEqual({ name: 'main', domain: 'memory', key: 'notes/tea.md', state: 'committed', receipt: { operationId: OP, revision: '11', status: 'pending' } });
-    expect(store.commits).toEqual([expect.objectContaining({ p_operation_id: OP, p_domain: 'memory', p_resource_key: 'notes/tea.md', p_expected_revision: '0',
-      p_operation: 'save', p_device_id: null, p_body_item_id: store.uploads[0], p_body_sha256: sha('---\ntype: user\n---\n# Tea\nGreen'),
-      p_data: { relativePath: 'notes/tea.md', title: 'Tea', modifiedAt: expect.any(String), kind: 'user' } })]);
-    expect(await read('memory', 'notes/tea.md')).toMatchObject({ state: 'ready', content: '---\ntype: user\n---\n# Tea\nGreen', resource: { revision: '11' } });
-    // Personality keeps its text inline: the managed block is the host's, not the App's.
-    expect(await save('instructions', '<!-- 咕咕管家 -->x<!-- /咕咕管家 -->\nBe warm.', '2', OP2, 'personality')).toMatchObject({ state: 'committed' });
-    expect(store.commits.at(-1)).toMatchObject({ p_domain: 'personality', p_data: { text: 'Be warm.' }, p_body_item_id: null });
-  });
-
-  it('a stale expected revision is a conflict, not an error string — nothing uploaded; a race the store catches discards its upload', async () => {
-    expect(await save('owner-profile.md', '# Changed', '3')).toEqual({ name: 'main', domain: 'memory', key: 'owner-profile.md', state: 'conflict' });
-    expect([store.uploads, store.commits]).toEqual([[], []]);
-    // Changed by someone else between our read and the commit.
-    state.hooks.beforeCommit = () => { if (store.items.get('memory\0owner-profile.md')!.revision === '4') store.items.get('memory\0owner-profile.md')!.revision = '5'; };
-    expect(await save('owner-profile.md', '# Changed', '4')).toMatchObject({ state: 'conflict' });
-    expect(store.discarded).toEqual(store.uploads);
-    expect(await save('instructions', 'x', '1', OP2, 'personality')).toMatchObject({ state: 'conflict' });
-    expect(await appResourceRemove('assistant', { name: 'main', domain: 'memory', key: 'owner-profile.md', operationId: OP2, expectedRevision: '1' })).toMatchObject({ state: 'conflict' });
-  });
-
-  it('the same operation id again answers the same receipt, status now — no second upload; for a different change it is refused', async () => {
-    const first = await save('notes/a.md', '# A', '0');
-    expect(store.uploads).toHaveLength(1);
-    (store.changes.get(OP)!.receipt as { status: string }).status = 'applied';
-    const again = await save('notes/a.md', '# A', '0');
-    expect(again).toEqual({ ...first, receipt: { ...(first as { receipt: object }).receipt, status: 'applied' } });
-    expect(store.uploads).toHaveLength(1);
-    expect(store.items.get('memory\0notes/a.md')!.revision).toBe('11');
-    // Same id, other content: the store's own refusal, and the upload made for it goes.
-    await expect(save('notes/a.md', '# B', '11')).rejects.toMatchObject({ code: 'invalid' });
-    expect(store.discarded).toEqual([store.uploads[1]]);
-    // A remove replayed, and a personality save replayed.
-    const removed = await appResourceRemove('assistant', { name: 'main', domain: 'memory', key: 'notes/a.md', operationId: OP2, expectedRevision: '11' });
-    expect(await appResourceRemove('assistant', { name: 'main', domain: 'memory', key: 'notes/a.md', operationId: OP2, expectedRevision: '11' })).toEqual(removed);
-  });
-
-  it('a deleted resource stays deleted: read as a tombstone, and a domain that cannot bring it back says so', async () => {
-    const removed = await appResourceRemove('assistant', { name: 'main', domain: 'memory', key: 'owner-profile.md', operationId: OP, expectedRevision: '4' });
-    expect(removed).toMatchObject({ state: 'committed', receipt: { revision: '11' } });
-    expect(await read('memory', 'owner-profile.md')).toMatchObject({ state: 'missing', revision: '11', deleted: true });
-    expect(await list('memory')).toMatchObject({ state: 'ready', resources: [] });
-    // An old revision does not bring it back.
-    expect(await save('owner-profile.md', '# Again', '4', OP2)).toMatchObject({ state: 'conflict' });
-    store.items.set('personality\0instructions', row('personality', 'instructions', { revision: '12', deleted_at: '2026-11-11T00:00:00Z' }));
-    expect(await save('instructions', 'Be warm.', '12', OP2, 'personality')).toMatchObject({ state: 'deleted' });
-    // The personality is only ever saved; a folder is removed file by file.
-    await expect(appResourceRemove('assistant', { name: 'main', domain: 'personality', key: 'instructions', operationId: OP2, expectedRevision: '2' })).rejects.toMatchObject({ code: 'invalid' });
-    store.items.set('files\0dir', row('files', 'dir', { revision: '6', data: { name: 'dir', path: 'dir', kind: 'directory' } }));
-    await expect(appResourceRemove('assistant', { name: 'main', domain: 'files', key: 'dir', operationId: OP2, expectedRevision: '6' })).rejects.toMatchObject({ code: 'invalid' });
-  });
-
-  it('without the write action or grant, for a domain not listed for writing, or with reading withdrawn: refused, nothing written', async () => {
-    for (const set of [
-      () => { state.grants['resources:write'] = false; },
-      () => { state.grants.resources = false; },
-      () => { state.domains['resources:write'] = ['personality']; },
-    ]) {
-      Object.assign(state, { grants: { unread: true, resources: true, 'resources:write': true }, domains: { resources: ['memory', 'personality'], 'resources:write': ['memory', 'personality'] } });
-      set();
-      await expect(save('a.md', 'x', '0')).rejects.toMatchObject({ code: 'denied' });
-    }
-    Object.assign(state, { grants: { unread: true, resources: true, 'resources:write': true } });
-    state.domains = { resources: ['voice-notes'], 'resources:write': ['voice-notes'] };
-    await expect(appResourceSave('assistant', { name: 'main', domain: 'voice-notes', key: 'n1', operationId: OP, expectedRevision: '0', content: 'x' })).rejects.toMatchObject({ code: 'invalid' });
-    expect([store.uploads, store.commits]).toEqual([[], []]);
-  });
-
-  it('refuses a forged change: owner, agent, a non-UUID operation id, a malformed revision, a skill path, content too large', async () => {
-    for (const extra of [{ ownerId: OWNER }, { agentId: AGENT }, { device: 'd' }]) {
-      await expect(appResourceSave('assistant', { name: 'main', domain: 'memory', key: 'a.md', operationId: OP, expectedRevision: '0', content: 'x', ...extra })).rejects.toMatchObject({ code: 'invalid' });
-    }
-    await expect(save('a.md', 'x', '0', 'not-a-uuid')).rejects.toMatchObject({ code: 'invalid' });
-    await expect(save('a.md', 'x', '-1')).rejects.toMatchObject({ code: 'invalid' });
-    await expect(save('team/SKILL.md', 'x', '0', OP, 'skills')).rejects.toMatchObject({ code: 'invalid' });
-    await expect(save('a.md', 'a'.repeat(20 * 1024 * 1024 + 1), '0')).rejects.toMatchObject({ code: 'invalid' });
-    await expect(appResourceRemove('assistant', { name: 'main', domain: 'memory', key: 'a.md', operationId: OP, expectedRevision: '0', content: 'x' })).rejects.toMatchObject({ code: 'invalid' });
-    expect([store.uploads, store.commits]).toEqual([[], []]);
-  });
-
-  it('a grant revoked, the App uninstalled or the account switched mid-change: refused, its upload discarded, nothing committed', async () => {
-    for (const withdraw of [() => { state.grants['resources:write'] = false; }, () => { state.installed = false; }, () => { state.owner = OTHER; }, () => { state.handle = 'h9'; }]) {
-      Object.assign(state, { owner: OWNER, handle: 'h1', installed: true, grants: { unread: true, resources: true, 'resources:write': true } });
-      state.hooks = { afterUpload: withdraw };
-      await expect(save('notes/b.md', '# B', '0')).rejects.toMatchObject({ code: 'denied' });
-    }
+describe('changing the agent\'s resources', () => {
+  it('a save or a removal is refused: nothing is uploaded or committed, whatever was granted', async () => {
+    await expect(save('notes/a.md', 'hello', '0')).rejects.toMatchObject({ code: 'denied' });
+    await expect(appResourceRemove('assistant', { name: 'main', domain: 'memory', key: 'owner-profile.md', operationId: OP2, expectedRevision: '4' }))
+      .rejects.toMatchObject({ code: 'denied' });
     expect(store.commits).toEqual([]);
-    expect(store.discarded).toEqual(store.uploads);
-    // Withdrawn while the store committed it: the change landed, its receipt is withheld.
-    Object.assign(state, { owner: OWNER, handle: 'h1', installed: true, grants: { unread: true, resources: true, 'resources:write': true } });
-    state.hooks = { beforeCommit: () => { state.installed = false; } };
-    await expect(save('notes/c.md', '# C', '0')).rejects.toMatchObject({ code: 'denied' });
-  });
-
-  it('a store that does not answer the commit: unavailable, the upload kept for the same call again', async () => {
-    store.commitFails = { code: 'PGRST003', status: 503 };
-    expect(await save('notes/d.md', '# D', '0')).toMatchObject({ state: 'unavailable' });
-    expect(store.discarded).toEqual([]);
-    store.commitFails = { code: '42501', status: 403 };
-    await expect(save('notes/d.md', '# D', '0')).rejects.toMatchObject({ code: 'denied' });
-    expect(store.discarded).toEqual([store.uploads[1]]);
+    expect(store.uploads).toEqual([]);
   });
 });
 
@@ -536,38 +439,5 @@ describe('hearing that the agent\'s resources changed', () => {
     expect(heldResourceWatches()).toBe(0);
     expect(state.listeners.size).toBe(0);
     expect(hear).not.toHaveBeenCalled();
-  });
-});
-
-describe('the same records as the assistant\'s own pages', () => {
-  it('what a save stores is what the assistant\'s page stores for that text (assistantPanelFiles write)', async () => {
-    const { createAssistantPanelFiles } = await import('@gugu/core/cloud/assistantPanelFiles');
-    const committed: { domain: string; key: string; data: Record<string, unknown> }[] = [];
-    const items = [row('memory', 'notes/x.md', { revision: '3', data: { relativePath: 'notes/x.md', title: 'Old', kind: 'reference' } })];
-    const cloud = {
-      snapshot: async () => ({ version: 1 as const, revision: '9', application: [], items: [...items,
-        ...['memory', 'files', 'skills', 'personality'].map((domain) => row(domain, '__collection__', { data: { state: 'ready', schemaVersion: 1, itemCount: 0 } }))] }),
-      resource: async () => null,
-      commit: async (_assistant: string, change: { domain: string; key: string; data?: Record<string, unknown> }) => {
-        committed.push({ domain: change.domain, key: change.key, data: change.data ?? {} });
-        return { operationId: OP, revision: '10', status: 'pending' as const };
-      },
-    };
-    const panel = createAssistantPanelFiles({ assistantId: AGENT, deviceId: 'home-device', ownerId: OWNER, cloud: cloud as never, assertCurrent: () => undefined,
-      readBody: async () => new Uint8Array(), upload: async () => ({ itemId: 'body', sha256: sha('') }), discard: async () => undefined, changed: () => undefined });
-    const text = '---\ntype: feedback\n---\n# Prefers mornings\nbody';
-    const cases = [
-      { path: '记忆/notes/x.md', domain: 'memory' as const, key: 'notes/x.md', existing: items[0]! },
-      { path: '记忆/owner-profile.md', domain: 'memory' as const, key: 'owner-profile.md', existing: null },
-      { path: '给助理的资料/plans/week.txt', domain: 'files' as const, key: 'plans/week.txt', existing: null },
-      { path: '技能/tea/SKILL.md', domain: 'skills' as const, key: 'tea', existing: null },
-    ];
-    for (const { path, domain, key, existing } of cases) {
-      await panel.write(path, new TextEncoder().encode(text), 'text/plain');
-      const theirs = committed.at(-1)!;
-      expect({ domain: theirs.domain, key: theirs.key }).toEqual({ domain, key });
-      const at = String(theirs.data.modifiedAt);
-      expect(savedData(domain, key, existing as never, text, at)).toEqual(theirs.data);
-    }
   });
 });
