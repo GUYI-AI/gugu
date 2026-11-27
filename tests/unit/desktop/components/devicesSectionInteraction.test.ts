@@ -215,6 +215,24 @@ describe('DevicesSection interaction', () => {
     expect(value.remove).not.toHaveBeenCalled()
   })
 
+  it('Escape cancels a device rename and returns to the expanded row inside Settings', async () => {
+    const value = store({ devices: [device({ is_current_device: true })] })
+    const closeSettings = vi.fn()
+    await act(async () => { root.render(createElement(DevicesContext.Provider, { value },
+      createElement(Sheet, { onClose: closeSettings, children: createElement(DevicesSection) }))) })
+    await openMenu(0, document.body)
+    await act(async () => { document.body.querySelector<HTMLElement>('[data-testid="settings-device-rename-button"]')!.click() })
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="device-rename-input"]')!
+    expect(document.activeElement).toBe(input)
+    await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })) })
+    expect(input.isConnected).toBe(false)
+    expect(value.rename).not.toHaveBeenCalled()
+    expect(closeSettings).not.toHaveBeenCalled()
+    const summary = document.body.querySelector('[data-testid="settings-device-summary"]')
+    expect(summary?.getAttribute('aria-expanded')).toBe('true')
+    expect(document.activeElement).toBe(summary)
+  })
+
   it('Escape closes only the versions list above the settings sheet without removing a version', async () => {
     const value = store({ devices: [device({ device_id: 'old', machine_id: 'same-mac', is_online: false }),
       device({ device_id: 'active', machine_id: 'same-mac', tier: 'beta' })] })
