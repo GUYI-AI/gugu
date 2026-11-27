@@ -114,6 +114,24 @@ describe('changing the home', () => {
     expect(await readFile(join(paths.memoryDir, 'tea.md'), 'utf8')).toBe('# Tea\nGreen');
   });
 
+  it('only applies one of two simultaneous edits based on the same revision', async () => {
+    const { paths, store } = open();
+    const file = join(paths.memoryDir, 'shared.md');
+    await writeFile(file, 'initial');
+    const initial = await store.client.resource(AGENT, 'memory', 'shared.md');
+    const run = async (text: string) => open().store.client.commit(AGENT, {
+      domain: 'memory', key: 'shared.md', operation: 'save', expectedRevision: initial!.revision,
+      operationId: text, body: await store.upload('shared.md', Buffer.from(text)),
+    });
+    const results = await Promise.allSettled([run('first'), run('second')]);
+    expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.find(result => result.status === 'rejected')).toMatchObject({ reason: { code: 'PT409' } });
+    const winner = await readFile(file, 'utf8');
+    await expect(store.client.commit(AGENT, { domain: 'memory', key: 'shared.md', operation: 'remove',
+      expectedRevision: initial!.revision, operationId: winner })).rejects.toMatchObject({ code: '23505' });
+    expect(await readFile(file, 'utf8')).toBe(winner);
+  });
+
   it('detects edits with identical length and mtime in resources and snapshots, and refuses the old revision', async () => {
     const { paths, store } = open();
     const path = join(paths.memoryDir, 'note.md');

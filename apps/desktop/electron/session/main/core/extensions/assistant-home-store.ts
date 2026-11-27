@@ -53,7 +53,7 @@ export type AssistantHomeStore = {
 
 // Within one host process: an upload waits for the change that takes it; a change asked again answers its receipt.
 const uploads = new Map<string, Uint8Array>();
-const receipts = new Map<string, AssistantPanelReceipt>();
+const receipts = new Map<string, { intent: string; receipt: AssistantPanelReceipt }>();
 const RECEIPTS_KEPT = 500;
 
 export type AssistantHomeHere = { paths: AssistantHomePaths; anchor: string };
@@ -224,7 +224,13 @@ export function createAssistantHomeStore(input: {
     if (!(DOMAINS as readonly string[]).includes(change.domain)) throw refused('22023', `The ${change.domain} resources are not kept here`);
     const receiptKey = JSON.stringify([input.ownerId, input.assistantId, anchor, change.operationId]);
     const done = receipts.get(receiptKey);
-    if (done) return done;
+    const intent = JSON.stringify([change.domain, change.key, change.expectedRevision, change.operation, change.data?.text,
+      change.data?.path ?? change.data?.relativePath ?? change.key, change.data?.kind === 'directory', change.body?.sha256]);
+    if (done) {
+      if (done.intent !== intent) throw refused('23505', 'This operation was used for a different change');
+      if (change.body?.itemId.startsWith(UPLOAD_BODY)) uploads.delete(change.body.itemId);
+      return done.receipt;
+    }
     const domain = change.domain as HomeDomain;
     const item = await current(domain, change.key);
     if ((item?.revision ?? '0') !== change.expectedRevision) throw refused('PT409', 'This resource changed: read it again', change.key, domain);
@@ -232,7 +238,7 @@ export function createAssistantHomeStore(input: {
     const after = await current(domain, domain === 'files' && typeof change.data?.path === 'string' ? change.data.path
       : domain === 'memory' && typeof change.data?.relativePath === 'string' ? change.data.relativePath : change.key);
     const receipt: AssistantPanelReceipt = { operationId: change.operationId, revision: after?.revision ?? item?.revision ?? '0', status: 'applied' };
-    receipts.set(receiptKey, receipt);
+    receipts.set(receiptKey, { intent, receipt });
     for (const old of [...receipts.keys()].slice(0, Math.max(0, receipts.size - RECEIPTS_KEPT))) receipts.delete(old);
     input.changed();
     return receipt;

@@ -552,7 +552,7 @@ describe('hearing that the agent\'s resources changed', () => {
   it('a grant withdrawn between the last check and holding the watch: not held', async () => {
     const hear = vi.fn();
     state.handle = 'h5';
-    expect(addResourceWatch({ pageId: 41, watchId: '8', extensionId: 'assistant', name: 'main', ownerId: OWNER, handle: 'h1', agentId: AGENT, hear })).toBe(false);
+    expect(addResourceWatch({ lifetime: new AbortController(), pageId: 41, watchId: '8', extensionId: 'assistant', name: 'main', ownerId: OWNER, handle: 'h1', agentId: AGENT, hear })).toBe(false);
     expect(heldResourceWatches()).toBe(0);
     expect(state.listeners.size).toBe(0);
     expect(hear).not.toHaveBeenCalled();
