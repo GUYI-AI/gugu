@@ -308,7 +308,10 @@ export interface ChatComposerProps {
   onSubmitWhileWorking?: (text: string) => void | Promise<void>;
   onStop?: () => void;
   onAttach?: () => void;
-  /** Context-window usage data for the toolbar donut indicator. Hidden when null/undefined. */
+  /**
+   * The session's context-window usage, for the toolbar ring. `null`: a session with no usage yet (the ring shows the
+   * model's window, empty, next to the model); not given: no session yet (a new task's composer), so no ring.
+   */
   contextUsage?: ContextUsage | null;
   contextThresholds?: ComposerContextThresholds;
 
@@ -1123,7 +1126,7 @@ export function ChatComposer({
                   「模型」和「推理强度」结构对称,各自显示当前值并向右飞出二级。
                   解剖与那批注释随组件一起搬去了 `composer-model-menu.tsx`(#4981 A1),
                   渲染出来的 DOM 一个字节都没变。 */}
-              {((contextUsage?.size ?? 0) > 0 || currentContextThreshold) && (
+              {contextUsage !== undefined && ((contextUsage?.size ?? 0) > 0 || currentContextThreshold) && (
                 <ContextUsageIndicator usage={contextUsage} threshold={currentContextThreshold}
                   harness={selectedAgentItem ?? undefined} disabled={disabled} />
               )}

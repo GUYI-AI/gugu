@@ -609,6 +609,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
           // @@@6357 悬浮 token = MessagePreview(它最近在做的事,不按 chat 过滤,#6573)。
           previewChatId={activeChatId}
           tokens={groupRunTokens}
+          onTokenOpen={onOpenUserChat}
           onTokenClick={(id) => {
             const agent = groupCollabSnapshot?.agents.find((a) => a.id === id)
             if (agent) setMentionToInsert({ id: agent.id, name: identitiesById[agent.id]?.display_name ?? '' })
