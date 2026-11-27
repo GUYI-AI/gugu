@@ -258,22 +258,23 @@ it.each(['default', 'same'] as const)('delivers the global reviewer through the 
   expect(JSON.stringify(spawn)).not.toContain('fixture-upstream-key');
 });
 
-// A tool that joins mid-session (a new Gugu MCP tool) reaches the model through tool search behind any gateway; an
-// Anthropic-compatible API that does not know those blocks answers 422. Off for such upstreams, on for Anthropic's own.
-it('turns Claude Code tool search off on an Anthropic-compatible upstream, in both the spawn env and the settings document', async () => {
-  await claudeOnCompatibleConnection();
-  const spawn = await acpSpawn('claude');
-  expect(spawn.env.ENABLE_TOOL_SEARCH).toBe('false');
-  expect((await claudeSessionSettings()).env.ENABLE_TOOL_SEARCH).toBe('false');
-});
-
-it('leaves Claude Code tool search to Claude Code on Anthropic\'s own API', async () => {
-  const key = await saveCustomModel({ name: 'Provider', apiKey: 'claude-secret', preset: null, endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://api.anthropic.com' }], models: [{ id: 'model-two' }] });
+it.each([
+  { name: 'disables tool search for the DeepSeek preset', preset: 'deepseek', baseUrl: 'https://api.deepseek.com/anthropic', flag: 'false' },
+  { name: 'leaves the default for the official Anthropic preset', preset: 'anthropic', baseUrl: 'https://api.anthropic.com/v1/messages', flag: undefined },
+  { name: 'disables tool search for a manually entered address', preset: null, baseUrl: 'https://api.anthropic.com', flag: 'false' },
+  { name: 'disables tool search for an overridden route on the Anthropic preset', preset: 'anthropic', baseUrl: 'https://api.anthropic.com',
+    routeUrl: 'https://compatible.example/v1', flag: 'false' },
+])('$name in both the spawn env and the settings document', async ({ preset, baseUrl, routeUrl, flag }) => {
+  const key = await saveCustomModel({
+    name: 'Provider', apiKey: 'claude-secret', preset, models: [{ id: 'model-two' }],
+    endpoints: [{ protocol: 'anthropic-messages', baseUrl }],
+    ...(routeUrl ? { routes: [{ id: '00000000-0000-4000-8000-000000000001', incoming: 'any', outgoing: 'anthropic-messages', baseUrl: routeUrl }] } : {}),
+  });
   state.fixture!.sqlite.exec("INSERT OR IGNORE INTO projects (id,name,path) VALUES ('project','Project','/repo')");
   state.fixture!.sqlite.prepare('INSERT INTO sessions (id,project_id,provider,runtime,config) VALUES (?,?,?,?,?)').run('session-1', 'project', 'claude', 'acp', JSON.stringify({ version: '1', type: 'acp', model: customModelOptionId({ connectionId: key.id, modelId: 'model-two' }) }));
   const spawn = await acpSpawn('claude');
-  expect(spawn.env.ENABLE_TOOL_SEARCH).toBeUndefined();
-  expect((await claudeSessionSettings()).env.ENABLE_TOOL_SEARCH).toBeUndefined();
+  expect(spawn.env.ENABLE_TOOL_SEARCH).toBe(flag);
+  expect((await claudeSessionSettings()).env.ENABLE_TOOL_SEARCH).toBe(flag);
 });
 
 // unreviewable: GLM on an Anthropic-format connection, whose verdict the CLI cannot parse.

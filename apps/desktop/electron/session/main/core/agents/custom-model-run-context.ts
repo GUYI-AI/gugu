@@ -26,11 +26,9 @@ async function reviewResolution(custom: ResolvedCustomModel, scope: ClaudeSettin
 function claudeModelEnv(custom: ResolvedCustomModel, reviewer: string | undefined): Record<string, string> {
   return {
     ...claudeApiKeyEnv(custom.apiKey, custom.endpoint, custom.models[0]),
-    // From 2.1.304 Claude Code defers MCP tools behind any ANTHROPIC_BASE_URL and loads a tool that joins mid-session
-    // through tool-search blocks, which Anthropic-compatible APIs such as DeepSeek's reject (422 on `tool_definition`).
-    // `false` declares every MCP tool upfront instead (code.claude.com/docs/en/mcp, "Tool search through an LLM gateway").
-    // The address Claude sees is always the local forwarder, so the upstream decides; Anthropic's own API keeps it.
-    ...(new URL(custom.upstreamEndpoint).hostname === 'api.anthropic.com' ? {} : { ENABLE_TOOL_SEARCH: 'false' }),
+    // Claude Code sees a gateway (our loopback forwarder) and defers MCP tools by default. Only an upstream
+    // that declares tool search can accept those blocks. Otherwise declare the tools upfront.
+    ...(custom.supportsToolSearch ? {} : { ENABLE_TOOL_SEARCH: 'false' }),
     // No reviewer = Auto mode is off for this session (the menu says why); nothing else is named in its place.
     ...(reviewer ? { CLAUDE_CODE_AUTO_MODE_MODEL: reviewer, CLAUDE_CODE_AUTO_MODE_SERVER: '0' } : {}),
     ...(custom.capabilities?.contextWindow ? { CLAUDE_CODE_MAX_CONTEXT_TOKENS: String(custom.capabilities.contextWindow) } : {}),
