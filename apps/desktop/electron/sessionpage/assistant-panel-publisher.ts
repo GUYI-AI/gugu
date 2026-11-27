@@ -11,7 +11,12 @@ import type { AssistantPanelBodyFailures } from './assistant-panel-body-failures
 import { assistantPanelPath } from './assistant-panel-paths'
 import { sameStoredJson } from './stored-json'
 
-export type PanelObservation = { key: string; data: Record<string, unknown>; bytes?: Uint8Array }
+type PanelBody = { itemId: string; sha256: string }
+export type PanelObservation = {
+  key: string; data: Record<string, unknown>; bytes?: Uint8Array
+  // Optional file metadata is reconciled only for an accepted, current body.
+  publishedBody?(body: PanelBody, revision: string, uploaded: boolean): Promise<void>
+}
 const deviceDomains: readonly AssistantPanelDomain[] = ['tasks','integrations']
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 
@@ -68,6 +73,7 @@ export async function publishAssistantPanelCollection(input: {
         && sameStoredJson(observed.data,row.data)
         && (digest ? observed.body_item_id && observed.body_sha256 === digest : observed.body_item_id === null)) {
         await input.bodyFailures.clear(input.domain,row.key)
+        if (digest && observed.body_item_id) await row.publishedBody?.({ itemId: observed.body_item_id,sha256: digest },observed.revision,false)
         continue
       }
       const current = await input.cloud.resource(input.assistantId,input.domain,row.key)
@@ -80,8 +86,12 @@ export async function publishAssistantPanelCollection(input: {
         ? { itemId: current.body_item_id,sha256: digest } : undefined
       if (!digest || reused) await input.bodyFailures.clear(input.domain,row.key)
       if (current && !current.stale_at && sameStoredJson(current.data,row.data)
-        && (row.bytes ? reused : current.body_item_id === null)) continue
+        && (row.bytes ? reused : current.body_item_id === null)) {
+        if (reused) await row.publishedBody?.(reused,current.revision,false)
+        continue
+      }
       let body = reused, uploaded = false
+      let revision: string | undefined
       try {
         if (digest && !body) {
           const rejected = await input.bodyFailures.get(input.domain,row.key)
@@ -96,8 +106,8 @@ export async function publishAssistantPanelCollection(input: {
           }
         }
         changed = true
-        await commit(row.key,current?.revision ?? '0','save',row.data,body)
-        await input.bodyFailures.clear(input.domain,row.key)
+        const receipt = await commit(row.key,current?.revision ?? '0','save',row.data,body)
+        if (row.publishedBody && receipt.status === 'applied') revision = receipt.revision
       } catch (error) {
         if (uploaded && body) await input.discard(body.itemId).catch(() => undefined)
         // A deletion which won the version race must also remove the local copy.
@@ -107,6 +117,9 @@ export async function publishAssistantPanelCollection(input: {
         if ((error as { code?: string }).code === 'invalid-body') { invalidBody ??= error; continue }
         throw error
       }
+      // From here the body belongs to the accepted row and must never be discarded.
+      await input.bodyFailures.clear(input.domain,row.key)
+      if (body && revision) await row.publishedBody?.(body,revision,uploaded)
     }
     for (const previous of baseline.items.filter(row => row.domain === input.domain && !row.deleted_at && !row.resource_key.startsWith('__collection__')
       && (!scoped || row.device_id === input.deviceId) && !seen.has(row.resource_key))) {
