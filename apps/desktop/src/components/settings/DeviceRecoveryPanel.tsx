@@ -141,7 +141,7 @@ export function DeviceRecoveryPanel({ deviceId, state, name, address, version, p
       </>}
       {updateReport && <><dt>{key('reportedUpdate')}</dt><dd>{updateReport}{update?.version && ' · ' + update.version}</dd></>}
       {seen && <><dt>{key('lastSync')}</dt><dd>{seen}</dd></>}
-      {manual && <><dt>{key('manual')}</dt><dd><CommandBlock command={manual} /></dd></>}
+      {manual && <><dt>{key('manual')}</dt><dd><CommandBlock command={manual} inline={!inTask} /></dd></>}
       {hostKey?.location && <><dt>{inTask ? key('fingerprint') : t('devices.facts.trustRecord')}</dt><dd><SshIdentityDetails hostKey={hostKey} /></dd></>}
     </dl>
     {error === 'manualTrust' && <Button size="sm" variant="secondary" onClick={() => { cancelVerification(); void signInSshMachine(deviceId).then(showResult) }}>{key('manualReconnect')}</Button>}

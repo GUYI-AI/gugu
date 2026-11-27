@@ -92,6 +92,22 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 describe('DevicesSection interaction', () => {
+  it('opens local permissions inside the device and returns keyboard focus there', async () => {
+    const value = store({ devices: [device({ is_current_device: true })] })
+    await act(async () => { root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection))) })
+    const entry = () => container.querySelector<HTMLButtonElement>('[data-testid="settings-device-actions-entry"]')
+    expect(entry()).toBeNull()
+    await expandDevice(container)
+    expect(container.querySelector('.gg-device-expanded')?.contains(entry())).toBe(true)
+    await act(async () => { entry()!.click() })
+    const back = container.querySelector<HTMLButtonElement>('[data-testid="settings-device-actions-back"]')!
+    await act(async () => { back.click() })
+    expect(document.activeElement).toBe(entry())
+    await act(async () => { entry()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+    expect(entry()).toBeNull()
+    expect(document.activeElement).toBe(container.querySelector('[data-testid="settings-device-summary"]'))
+  })
+
   it('opens recovery for the requested endpoint when a different configuration is currently shown', async () => {
     const value = store({ devices: [
       device({ device_id: 'online-peer', machine_id: 'shared' }),
@@ -103,7 +119,9 @@ describe('DevicesSection interaction', () => {
     window.addEventListener(UI_EVENTS.openSettings, receive, { once: true })
     await act(async () => openDeviceRecovery('missing-link'))
     expect(receive.mock.calls[0]?.[0]).toHaveProperty('detail', { section: 'devices', deviceId: 'missing-link' })
-    expect(document.activeElement?.getAttribute('data-device-id')).toBe('missing-link')
+    const disclosure = container.querySelector('[data-device-id="missing-link"] [data-testid="settings-device-summary"]')
+    expect(document.activeElement).toBe(disclosure)
+    expect(disclosure?.getAttribute('aria-expanded')).toBe('true')
     expect(deviceRecoveryTarget.get()).toBeNull()
   })
 
@@ -449,7 +467,8 @@ describe('DevicesSection interaction', () => {
       const details = expanded.querySelector('dl')!
       expect(details.textContent).toContain('咕咕 server 0.2.99')
       expect(server.textContent).toContain('新版本已就绪')
-      expect(server.textContent).toContain('上次在线 3 小时前')
+      expect(details.textContent).toContain('上次在线')
+      expect(details.textContent).toContain('3 小时前')
       expect(details.textContent).toContain('alice@box:2222')
       const me = Array.from(rows).find((row) => row.dataset.deviceId === 'me')!
       expect(me.textContent).toContain('本机')

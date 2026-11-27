@@ -61,8 +61,6 @@ import { DeviceRenameField } from '../devices/DeviceRenameField'
 import { useDeviceRename } from '../../hooks/useDeviceRename'
 import { cloudSnapshotOf, useCloudComputer } from '../../lib/cloudComputer'
 
-// Every registered device has one disclosure. The expanded row owns its actions and facts;
-// connection status and task recovery still come from the same sources as the task window.
 const log = rendererLogger('devices')
 
 const DEVICE_LIST_CLASS = 'gg-settings-device-list'
@@ -626,7 +624,7 @@ function DeviceRow({
       {sshAddress && <> · {sshAddress} <IconButton size="sm" aria-label={t('devices.menu.copyAddress')} onClick={() => onCopyAddress(sshAddress)}><Copy size={13} /></IconButton></>}
     </dd></>}
     {version && <><dt>{t('devices.recovery.version')}</dt><dd>{version}</dd></>}
-    {lastSeen && <><dt>{t('devices.facts.lastOnline')}</dt><dd>{t('devices.lastSeen', { time: lastSeen })}</dd></>}
+    {lastSeen && <><dt>{t('devices.facts.lastOnline')}</dt><dd>{lastSeen}</dd></>}
     {configurationCount > 1 && <><dt>{t('devices.configurations')}</dt><dd data-testid="settings-device-version-count">{t('devices.configurationCount', { count: configurationCount })}</dd></>}
     {device.capabilities.runs_as_root && <><dt>{t('devices.facts.runsAs')}</dt><dd title={t('devices.runsAsRootHint')} data-testid="settings-device-runs-as-root">{t('devices.runsAsRoot')}</dd></>}
     {model.notices.length > 0 && <><dt>{t('devices.facts.notices')}</dt><dd>{model.notices.map(n => <DeviceNotice key={n.kind} notice={n} />)}</dd></>}
@@ -641,7 +639,7 @@ function DeviceRow({
         }
       }}>
       {editing ? <DeviceRenameField label={device.label} onSave={onCommitRename} onCancel={onCancelRename} /> : (
-        <Button ref={summaryRef} variant="ghost" className="gg-device-summary" aria-expanded={expanded} aria-controls={detailsId}
+        <Button ref={summaryRef} variant="ghost" className="gg-device-summary" aria-expanded={expanded} aria-controls={expanded ? detailsId : undefined}
           onClick={() => onExpand(!expanded)} data-testid="settings-device-summary">
           <RowIcon size={18} aria-hidden />
           <span className="gg-device-identity"><strong>{device.label}</strong>
@@ -666,20 +664,19 @@ function DeviceRow({
           version={model.version} address={sshAddress} progress={upgradePercent} onDone={closeDetails} listFacts={facts} /> : <>
           {(model.update || signedOutText) && <div className="gg-device-update">
             {restarting && <span data-testid="settings-device-restarting">{t('devices.update.restarting')}</span>}
-              {!restarting && (model.update?.state === 'ready' || model.update?.state === 'downloading') && (
-                <span
-                  title={supervisorReady ? readyText : t(model.update.state === 'ready' ? 'devices.update.readyHint' : 'devices.update.downloadingHint', { version: model.update.version })}
-                  data-testid="settings-device-update"
-                >
-                  {model.update.state === 'ready'
-                    ? readyText
-                    : t('devices.update.downloading', { version: model.update.version })}
-                </span>
-              )}
-              {restartable && model.update?.state === 'ready' && !restarting && onRestartVersionNow && asking === null && (
-                <Button size="sm" onClick={askRestart} data-testid="settings-device-update-now">{t('devices.update.updateNow')}</Button>
-              )}
-            {/* 「现在重启更新」的当面确认:单独一行,❌ 挤进名字那一行把机器名压成省略号。 */}
+            {!restarting && (model.update?.state === 'ready' || model.update?.state === 'downloading') && (
+              <span
+                title={supervisorReady ? readyText : t(model.update.state === 'ready' ? 'devices.update.readyHint' : 'devices.update.downloadingHint', { version: model.update.version })}
+                data-testid="settings-device-update"
+              >
+                {model.update.state === 'ready'
+                  ? readyText
+                  : t('devices.update.downloading', { version: model.update.version })}
+              </span>
+            )}
+            {restartable && model.update?.state === 'ready' && !restarting && onRestartVersionNow && asking === null && (
+              <Button size="sm" onClick={askRestart} data-testid="settings-device-update-now">{t('devices.update.updateNow')}</Button>
+            )}
             {restartable && onRestartVersionNow && asking && (
               <div className="mt-[6px] flex flex-wrap items-center gap-2" data-testid="settings-device-update-now-confirm">
                 <span className="min-w-0 flex-1 text-[length:var(--font-caption)] text-[var(--muted-fg)]">{t(typeof asking.busyAgents === 'number' ? 'devices.update.updateNowConfirmCount' : 'devices.update.updateNowConfirm', { name: device.label, count: asking.busyAgents ?? undefined })}</span>
@@ -699,29 +696,29 @@ function DeviceRow({
                 </Button>
               </div>
             )}
-                {failedUpdate !== null && (
-                  <span className={retrying || restarting ? undefined : 'text-[var(--danger-fg)]'} data-testid="settings-device-match-failed">
-                    {retrying || restarting ? t('devices.loginState.matchRetrying') : t('devices.loginState.matchFailed')}
-                    {!retrying && !restarting && bootFailed && restartable && onRestartVersionNow && asking === null && (
-                      <>{' '}<InlineAction onClick={askRestart} testId="settings-device-match-restart-now">{t('devices.update.updateNow')}</InlineAction></>
-                    )}
-                    {!retrying && !bootFailed && onRetryVersionMatch && (
-                      <>{' '}<InlineAction
-                        onClick={() => {
-                          setRetriedFor(failedUpdate)
-                          // 一分钟后还报同一次失败(又没成)= 重新给「重试」;心跳 30 秒一次,够它报回「正在下载」。
-                          const reset = () => setRetriedFor((current) => (current === failedUpdate ? null : current))
-                          const failed = (error?: unknown) => {
-                            reset()
-                            toast(t('devices.loginState.matchFailed'), 'error', error ? messageForUser(error) : undefined)
-                          }
-                          void onRetryVersionMatch().then((ok) => (ok ? void setTimeout(reset, 60_000) : failed()), failed)
-                        }}
-                        testId="settings-device-match-retry"
-                      >{t('devices.loginState.retryUpdate')}</InlineAction></>
-                    )}
-                  </span>
+            {failedUpdate !== null && (
+              <span className={retrying || restarting ? undefined : 'text-[var(--danger-fg)]'} data-testid="settings-device-match-failed">
+                {retrying || restarting ? t('devices.loginState.matchRetrying') : t('devices.loginState.matchFailed')}
+                {!retrying && !restarting && bootFailed && restartable && onRestartVersionNow && asking === null && (
+                  <>{' '}<InlineAction onClick={askRestart} testId="settings-device-match-restart-now">{t('devices.update.updateNow')}</InlineAction></>
                 )}
+                {!retrying && !bootFailed && onRetryVersionMatch && (
+                  <>{' '}<InlineAction
+                    onClick={() => {
+                      setRetriedFor(failedUpdate)
+                      // 一分钟后还报同一次失败(又没成)= 重新给「重试」;心跳 30 秒一次,够它报回「正在下载」。
+                      const reset = () => setRetriedFor((current) => (current === failedUpdate ? null : current))
+                      const failed = (error?: unknown) => {
+                        reset()
+                        toast(t('devices.loginState.matchFailed'), 'error', error ? messageForUser(error) : undefined)
+                      }
+                      void onRetryVersionMatch().then((ok) => (ok ? void setTimeout(reset, 60_000) : failed()), failed)
+                    }}
+                    testId="settings-device-match-retry"
+                  >{t('devices.loginState.retryUpdate')}</InlineAction></>
+                )}
+              </span>
+            )}
             {signedOutText && <span data-testid="settings-device-signed-out">{signedOutText}</span>}
             {signedOutText && onRelogin && <InlineAction onClick={onRelogin} testId="settings-device-relogin">{t('devices.loginState.relogin')}</InlineAction>}
           </div>}
@@ -740,7 +737,7 @@ function DeviceRow({
 }
 
 /**
- * #6264 一台 server 有件事要人知道:标签说是什么,悬停说后果与怎么办(与 update 那颗标签同一个形态)。
+ * The notice names the condition; its title gives the consequence and recovery.
  * 版本对不上、磁盘快满会让操作失败 → warn;升级被退回已经自愈,只是告知 → default。
  */
 function DeviceNotice({ notice }: { notice: ServerMachineNotice }) {

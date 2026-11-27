@@ -1,5 +1,4 @@
 .gg-device-tools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-.gg-settings-device-list .gg-settings-device-row { min-height: 0; padding: 0; }
 .gg-device-summary[data-slot] {
   display: grid; grid-template-columns: 20px minmax(0,1fr) auto 14px; align-items: center; gap: 12px;
   width: 100%; min-height: 56px; height: auto; padding: 9px 16px; border: 0;
@@ -13,8 +12,10 @@
 .gg-recovery-status { display: inline-flex; align-items: center; gap: 6px; }
 .gg-recovery-status i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--muted-fg); }
 .gg-recovery-status[data-state='connected'] i { background: var(--live); }
-.gg-recovery-status:is([data-state='attention'],[data-state='outdated'],[data-state='notInstalled'],[data-state='unmapped'],[data-state='refused'],[data-state='confirmationRequired'],[data-state='notRunning'],[data-state='signInRequired'],[data-state='notSignedIn'],[data-state='updateFailed']) i { background: var(--warn); }
+.gg-device-summary .gg-recovery-status:is([data-state='attention'],[data-state='outdated'],[data-state='notInstalled'],[data-state='unmapped'],[data-state='refused'],[data-state='confirmationRequired']) i,
+.gg-recovery-status:is([data-state='notRunning'],[data-state='signInRequired'],[data-state='notSignedIn'],[data-state='updateFailed']) i { background: var(--warn); }
 .gg-recovery-status[data-state='hostKeyChanged'] i { background: var(--danger-fg); }
+.gg-device-summary .gg-recovery-status:is([data-state='attention'],[data-state='notRunning'],[data-state='signInRequired'],[data-state='hostKeyChanged'],[data-state='notSignedIn'],[data-state='updateFailed']) { color: var(--fg); }
 .gg-device-chevron { color: var(--faint-fg); flex: none; }
 .gg-device-summary[aria-expanded='true'] .gg-device-chevron, .gg-recovery-details[open] > summary svg { transform: rotate(90deg); }
 .gg-device-expanded { display: grid; gap: 14px; padding: 2px 16px 14px 48px; color: var(--fg); font-size: var(--font-caption); }
@@ -33,7 +34,7 @@
 .gg-recovery-details > summary::-webkit-details-marker { display: none; }
 .gg-device-facts { display: grid; grid-template-columns: minmax(0, 7rem) minmax(0, 1fr); gap: 4px 12px; margin: 0; font-size: var(--font-caption); }
 .gg-device-facts dt { color: var(--muted-fg); }
-.gg-device-recovery > .gg-device-facts:not(:first-child) { margin-block-start: 12px; }
+.gg-device-recovery > :is(p,.gg-recovery-actions) ~ .gg-device-facts { margin-block-start: 12px; }
 .gg-recovery-details .gg-device-facts { grid-template-columns: auto minmax(0, 1fr); margin-block-start: 8px; }
 .gg-device-facts dd { min-width: 0; overflow-wrap: anywhere; margin: 0; color: var(--fg); user-select: text; white-space: normal; }
 .gg-recovery-fingerprint { display: grid; gap: 6px; margin-top: 12px; font-size: var(--font-caption); }
