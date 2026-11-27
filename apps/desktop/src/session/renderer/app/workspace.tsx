@@ -130,7 +130,7 @@ const ScreenArea = observer(function ScreenArea({
       ),
     []
   );
-  // Hidden, the screen keeps its width: this area widens when a group's inner column folds, in the frame the screen is hidden.
+  // Hidden, the screen keeps its size: this area grows when a group's inner column folds, in the frame the screen is hidden.
   const areaRef = useRef<HTMLDivElement>(null);
   const hiddenStyle = useRetainedHiddenStyle(areaRef, onSessionView);
   return (

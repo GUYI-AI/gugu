@@ -20,23 +20,24 @@ export const RETAINED_SURFACE_HIDDEN_STYLE: CSSProperties = { position: 'absolut
 
 /**
  * The hidden style for a surface whose area can change size while it is hidden (`area`: the element the surface is laid out in).
- * The hidden surface keeps the width it last had on screen, as the area's own observer delivered it while `shown` (no layout
- * read): laid out once at another width while hidden, its rows reflow, and a list at its end has its scroll position clamped
- * that no observer sees (no ResizeObserver delivery reaches a skipped subtree) — shown again at its old width, it is left
- * above its end. (The session page's screen: leaving a group folds the group's inner column in the frame the screen is hidden.)
+ * The hidden surface keeps the size it last had on screen, as the area's own observer delivered it while `shown` (no layout
+ * read): laid out once at another size while hidden, its rows reflow, and a list at its end has its scroll position clamped
+ * that no observer sees (no ResizeObserver delivery reaches a skipped subtree) — shown again at its old size, it is left above
+ * its end. (The session page's screen: leaving a group folds the group's inner column in the frame the screen is hidden, and
+ * the area it is laid out in grows wider and taller.)
  */
 export function useRetainedHiddenStyle(area: RefObject<HTMLElement | null>, shown: boolean): CSSProperties {
   const shownRef = useRef(shown)
   shownRef.current = shown
-  const width = useRef<number | null>(null)
+  const size = useRef<{ width: number; height: number } | null>(null)
   useLayoutEffect(() => {
     const element = area.current
     if (!element) return
-    const observer = new ResizeObserver(([entry]) => { if (entry && shownRef.current) width.current = entry.contentRect.width })
+    const observer = new ResizeObserver(([entry]) => { if (entry && shownRef.current) size.current = { width: entry.contentRect.width, height: entry.contentRect.height } })
     observer.observe(element)
     return () => observer.disconnect()
   }, [area])
-  return width.current === null ? RETAINED_SURFACE_HIDDEN_STYLE : { ...RETAINED_SURFACE_HIDDEN_STYLE, right: 'auto', width: width.current }
+  return size.current === null ? RETAINED_SURFACE_HIDDEN_STYLE : { ...RETAINED_SURFACE_HIDDEN_STYLE, right: 'auto', bottom: 'auto', ...size.current }
 }
 
 // 「在不在屏上」只有这一个答案:保留面藏起来时它为 false,里面的东西据此挂起(不跑计时器、不画动效),重新显示时一次补齐。
