@@ -65,12 +65,6 @@ jobs:
     needs: route
     runs-on: ${{ fromJSON(needs.route.outputs.runner) }}
     timeout-minutes: 45
-    env:
-      GUGU_CLOUD_COMPUTER_ENABLED: 'false'
-      VITE_GUGU_CLOUD_COMPUTER_ENABLED: 'false'
-      GUGU_PLATFORM_MODELS_ENABLED: 'false'
-      VITE_GUGU_PLATFORM_MODELS_ENABLED: 'false'
-      NODE_OPTIONS: --max-old-space-size=6144
     steps:
       - name: Bind isolated application paths
         shell: bash
@@ -86,8 +80,8 @@ jobs:
           persist-credentials: false
       - run: command -v tmux || brew install tmux
       - uses: ./.github/actions/setup-community
-      - run: pnpm build:app:ci
-        env:
-          GUGU_BUILD_SERIAL: '1'
+      # Only the macOS-specific part of build:app:ci: the darwin tool bundles and the Electron-ABI native rebuild.
+      # The renderer and Electron bundles are platform-independent and built by the Linux desktop job.
+      - run: pnpm build:vendor
       - run: pnpm rebuild:native
     if: ${{ inputs.build-required == 'true' }}
