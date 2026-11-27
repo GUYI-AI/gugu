@@ -54,10 +54,13 @@ function buttonByText(root: ParentNode, text: string): HTMLButtonElement {
   if (!button) throw new Error(`button not found: ${text}`)
   return button as HTMLButtonElement
 }
+async function expandDevice(deviceRow: ParentNode): Promise<void> {
+  const summary = deviceRow.querySelector<HTMLButtonElement>('[data-testid="settings-device-summary"]')!
+  if (summary.getAttribute('aria-expanded') === 'false') await act(async () => { summary.click() })
+}
 async function openMenu(row = 0, scope: ParentNode = container): Promise<void> {
   const deviceRow = scope.querySelectorAll<HTMLElement>('[data-testid="settings-device-row"]')[row]!
-  const summary = deviceRow.querySelector<HTMLButtonElement>('[data-testid="settings-device-summary"]')
-  if (summary?.getAttribute('aria-expanded') === 'false') await act(async () => { summary.click() })
+  await expandDevice(deviceRow)
   const trigger = deviceRow.querySelector<HTMLElement>('[data-testid="settings-device-menu-button"]')!
   await act(async () => {
     trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
@@ -134,7 +137,7 @@ describe('DevicesSection interaction', () => {
       expect(action().disabled).toBe(true)
       await act(async () => { pending.resolve(refused) })
       expect(container.querySelector('.gg-recovery-fingerprint')?.textContent).toContain('SHA256:newKey')
-      expect(container.querySelector('.gg-recovery-details')?.textContent).toContain('/test/known_hosts:17')
+      expect(container.querySelector('.gg-device-facts')?.textContent).toContain('/test/known_hosts:17')
       expect(action().disabled).toBe(true)
       await act(async () => { container.querySelector<HTMLInputElement>('input[type=checkbox]')!.click() })
       await act(async () => { action().click() })
@@ -156,6 +159,7 @@ describe('DevicesSection interaction', () => {
       await flush()
     }
     await render()
+    await expandDevice(container)
     expect(container.querySelector('[data-testid="settings-device-restarting"]')).not.toBeNull()
     await render({ is_online: false, status: 'offline' })
     expect(container.querySelector('[data-testid="settings-device-restarting"]')).not.toBeNull()
@@ -280,8 +284,9 @@ describe('DevicesSection interaction', () => {
       device({ device_id: 'active', machine_id: 'same-mac', tier: 'beta' })] })
     await act(async () => { root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection))) })
     expect(container.querySelectorAll('[data-testid="settings-device-row"]')).toHaveLength(1)
+    await expandDevice(container)
     expect(container.querySelector('[data-testid="settings-device-version-count"]')?.textContent).toBe('2 个版本')
-    await openMenuItem('settings-device-open-actions')
+    await act(async () => { container.querySelector<HTMLElement>('[data-testid="settings-device-open-actions"]')!.click() })
     const configurations = container.querySelector('[data-testid="device-machine-configurations"]')!
     expect(configurations.textContent).toContain('咕咕 Beta')
     expect(configurations.textContent).toContain('acceptance-tasks431')
@@ -361,6 +366,7 @@ describe('DevicesSection interaction', () => {
     await act(async () => { root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection))) })
     const row = (id: string) => container.querySelector(`[data-device-id="${id}"]`) as HTMLElement
     expect(row('new').querySelector('[data-testid="settings-device-replaced"]'), 'the online one is not the one said of').toBeNull()
+    await expandDevice(row('old'))
     const hint = row('old').querySelector<HTMLButtonElement>('[data-testid="settings-device-replaced-hint"]')!
     expect(hint.textContent).toBe('可能已被「GF server」顶替')
     expect(hint.title).toContain('两台机器也可能同名')
@@ -439,9 +445,8 @@ describe('DevicesSection interaction', () => {
       await act(async () => { summary.click() })
       const expanded = document.getElementById(summary.getAttribute('aria-controls')!)!
       expect(expanded.querySelector('[data-testid="settings-device-menu-button"]')?.textContent).toBe('设备操作')
-      const details = server.querySelector<HTMLDetailsElement>('details')!
-      await act(async () => { details.querySelector('summary')!.click() })
-      expect(details.open).toBe(true)
+      expect(expanded.querySelector('details')).toBeNull()
+      const details = expanded.querySelector('dl')!
       expect(details.textContent).toContain('咕咕 server 0.2.99')
       expect(server.textContent).toContain('新版本已就绪')
       expect(server.textContent).toContain('上次在线 3 小时前')
@@ -471,6 +476,7 @@ describe('DevicesSection interaction', () => {
       root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection)))
     })
     await flush()
+    await expandDevice(container)
     const row = container.querySelector<HTMLElement>('[data-testid="settings-device-match-failed"]')!
     expect(row.textContent).toContain('更新失败')
     // 不再挂一颗「更新中 / 有新版本」的标签。
@@ -497,6 +503,7 @@ describe('DevicesSection interaction', () => {
       root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection)))
     })
     await flush()
+    await expandDevice(container)
     expect(container.querySelector('[data-testid="settings-device-match-retry"]')).toBeNull()
     await act(async () => {
       container.querySelector<HTMLElement>('[data-testid="settings-device-match-restart-now"]')!.click()
@@ -542,7 +549,7 @@ describe('DevicesSection interaction', () => {
       expect(row('ssh-srv').textContent).toContain('SSH')
       expect(row('ssh-srv').textContent).not.toContain('alice@box')
       await act(async () => { row('ssh-srv').querySelector<HTMLButtonElement>('[aria-expanded]')!.click() })
-      expect(row('ssh-srv').querySelector('details')?.textContent).toContain('alice@box')
+      expect(row('ssh-srv').querySelector('dl')?.textContent).toContain('alice@box')
       expect(row('ssh-srv').textContent).not.toContain('远程隧道')
       const otherSummary = row('other-ssh').querySelector<HTMLButtonElement>('[aria-expanded]')!
       expect(otherSummary.textContent).toContain('SSH')
@@ -550,10 +557,14 @@ describe('DevicesSection interaction', () => {
       expect(row('other-ssh').textContent).toContain('咕咕云')
       expect(row('other-ssh').querySelector('[data-testid=device-recovery-primary]')).toBeNull()
       expect(row('tunnel-srv').textContent).toContain('远程隧道')
+      expect(row('tunnel-srv').querySelectorAll('button')).toHaveLength(1)
+      await expandDevice(row('tunnel-srv'))
+      expect(otherSummary.getAttribute('aria-expanded')).toBe('false')
+      expect(row('tunnel-srv').querySelector('dl')?.textContent).toContain('咕咕云')
       expect(row('other-mac').dataset.kind).toBe('desktop')
       expect(row('other-mac').textContent).not.toContain('远程')
       // 「是台什么机器」写成元信息里的一个词,❌ 只靠一枚带 aria-label 的图标(icon standing in for a label)。
-      expect(row('other-mac').querySelector('[data-testid="settings-device-kind"]')?.textContent).toBe('电脑')
+      expect(row('other-mac').querySelector('[data-testid="settings-device-kind"]')?.textContent).toContain('电脑')
     } finally {
       delete (window as unknown as { electronAPI?: unknown }).electronAPI
     }

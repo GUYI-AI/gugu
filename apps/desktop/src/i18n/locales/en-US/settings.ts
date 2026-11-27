@@ -304,6 +304,17 @@ export default {
     "usageWindows": "Usage windows"
   },
   "devices": {
+    "facts": {
+      "attention": "Needs attention",
+      "connection": "Connection",
+      "lastOnline": "Last online",
+      "runsAs": "Runs as",
+      "notices": "Notices",
+      "actions": "What this device can do",
+      "trustRecord": "Previous trust record",
+      "manualTrust": "Verify the fingerprint independently, then follow the instructions below to update the trust record.",
+      "failed": "The device has not reconnected. Check its connection details below and retry."
+    },
     "recovery": {
       "notRunning": {
         "status": "Service stopped",

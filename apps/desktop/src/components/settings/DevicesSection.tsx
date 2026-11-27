@@ -31,11 +31,10 @@ import type { SshSignInState } from '../../lib/serverSshMachines'
 import { useDevicesStore } from '../../store/devicesContext'
 import { platform } from '../../platform'
 import { desktopIpc } from '../../platform/desktopIpc'
-import { ChevronRight, Monitor, Server, Smartphone, Copy, ListChecks, MoreHorizontal, Pencil, Plus, RefreshCw, SquarePen, Trash2, Unplug } from '@/lib/icons'
+import { ChevronDown, ChevronRight, Monitor, Server, Smartphone, Copy, Pencil, Plus, RefreshCw, SquarePen, Trash2, Unplug } from '@/lib/icons'
 import { canOpenNewSessionOnDevice, canReconnectDevice, openNewSessionOnDevice, reconnectDevice } from '../../lib/sessionpageNewSessionBridge'
 import { useToast } from '../toastContext'
 import { Button } from '../ui/Button'
-import { Chip } from '../ui/Chip'
 import { IconButton } from '../ui/IconButton'
 import { DropdownMenu, MenuItem, MenuSeparator } from '../ui/Menu'
 import { SearchField } from '../ui/SearchField'
@@ -51,7 +50,7 @@ import { consumeAddServerIntent } from '../../lib/addServerIntent'
 import { useSelect } from '../../lib/selectStore'
 import { deviceRecoveryTarget, consumeDeviceActionsIntent } from '../../lib/deviceActionsIntent'
 import { useDeviceRemoval } from './useDeviceRemoval'
-import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
+import { SettingsGroup, SettingsNote, SettingsPage } from './SettingsPrimitives'
 import { DeviceActionsPage } from './DeviceActionsPage'
 import { deviceAcceptsWork } from '@gugu/core/cloud/cloudComputer'
 import { withoutAssistantHome } from '../../lib/assistantHome'
@@ -62,22 +61,9 @@ import { DeviceRenameField } from '../devices/DeviceRenameField'
 import { useDeviceRename } from '../../hooks/useDeviceRename'
 import { cloudSnapshotOf, useCloudComputer } from '../../lib/cloudComputer'
 
-// #1749 设备管理 → #6264 做成能上线的「设置 → 设备」:
-//  · 每行:名字、是台什么机器(本机 / 电脑 / 服务器)、系统与架构、咕咕版本 + 升级状态、在线或「上次在线」、
-//    怎么连着的(经 SSH:用户@主机 / 经云端);
-//  · 可展开的行在详情里提供设备操作,其余行从行尾菜单进入。动作分组:改名、复制地址 | 移除这台机器、从这台机器上卸载咕咕 server;
-//  · 机器多了能搜、能按在线状态筛;只有本机时说明「添加一台机器」能带来什么。
-// 列表 ❌ 按「怎么装上的」分组:SSH 只是一种装法(product spec),「经 SSH」只是行内一格事实。
-// store 为单一事实源(列表/排序/实时/动作),设计见 docs/design/devices-abstraction-design.md。
-// 形态照 design.md 的 line budget:整张列表是一块密度面板,行靠节奏与 hover 填色分开,
-// ❌ 每行一张带框卡片(四十行四十圈框是一只笼子);「是台什么机器」写成元信息里的一个词,
-// ❌ 只靠一枚图标表达(icon standing in for a label)。
-
+// Every registered device has one disclosure. The expanded row owns its actions and facts;
+// connection status and task recovery still come from the same sources as the task window.
 const log = rendererLogger('devices')
-
-/** 行内元信息之间的分隔点:画在样式里,❌ 拼进译文(各语言的标点与间距不同)。 */
-// 每一项前面一个 16px 的「·」格;整行往左挪 16px、外层裁掉 ⇒ 换行后落在行首的那一项,它的点在裁掉的那 16px 里,
-// ❌ 出现「· 咕咕 0.2.51」那种孤零零挂在行首的分隔符。第一项(状态)用同宽的左内边距占位。
 
 const DEVICE_LIST_CLASS = 'gg-settings-device-list'
 
@@ -125,9 +111,16 @@ export function DevicesSection({
   // #7199 第二步:正在看哪台设备「能做的事」(设备页里的一个内页:点设备进它的连接应用页)。
   // #7199 助理主页点了一台设备 = 一进来就是那台的「能做的事」(deviceActionsIntent)。
   const [actionsFor, setActionsFor] = useState<string | null>(() => consumeDeviceActionsIntent())
+  const actionsReturn = useRef<string | null>(null)
+  useEffect(() => {
+    if (!actionsFor && actionsReturn.current) {
+      const row = document.getElementById(`settings-device-row-${actionsReturn.current}`)
+      row?.querySelector<HTMLElement>('[data-device-permissions]')?.focus()
+      actionsReturn.current = null
+    }
+  }, [actionsFor])
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const recoveryTarget = useSelect(deviceRecoveryTarget, value => value)
-  const thisDevice = machines.find(machine => machine.current)?.configurations.find(device => device.is_current_device) ?? null
 
   // 离线的 SSH 机器:问清是没开机 / 连不上,还是登录没了(照 VS Code Tunnels / Tailscale「Expired」)。
   const signIns = useSshSignInStates(devices, addressOf)
@@ -147,6 +140,7 @@ export function DevicesSection({
   const [archiveOpen, setArchiveOpen] = useState(false)
   const archivedIds = new Set(archived.flatMap(machine => machine.configurations.map(device => device.device_id)))
   const visibleActive = visible.filter(device => !archivedIds.has(device.device_id))
+    .sort((a, b) => Number(b.is_current_device === true) - Number(a.is_current_device === true))
   const visibleArchived = visible.filter(device => archivedIds.has(device.device_id))
   useEffect(() => {
     if (!recoveryTarget) return
@@ -168,7 +162,7 @@ export function DevicesSection({
       setArchiveOpen(true)
       return
     }
-    const row = document.getElementById(`settings-device-row-${recoveryTarget}`)
+    const row = document.getElementById(`settings-device-row-${recoveryTarget}`)?.querySelector<HTMLButtonElement>('[data-testid="settings-device-summary"]')
     if (row) {
       setExpandedId(recoveryTarget)
       row.focus()
@@ -213,7 +207,7 @@ export function DevicesSection({
       onRemoveVersions={() => openVersions(device)}
       replacedBy={replaced.get(device.device_id) ?? null}
       onUninstall={() => openUninstall(device)}
-      onOpenActions={() => setActionsFor(device.device_id)}
+      onOpenActions={() => { actionsReturn.current = device.device_id; setActionsFor(device.device_id) }}
       signIn={signIns.get(device.device_id) ?? null}
       sshLink={sshMachines.state === 'unknown' ? 'unknown' : sshMachineIds?.has(device.device_id) ? (linkProblems.has(device.device_id) ? linkProblems.get(device.device_id) : 'checking') : undefined}
       upgradePercent={upgrades.get(device.device_id) ?? null}
@@ -259,46 +253,28 @@ export function DevicesSection({
 
       {loading && devices.length === 0 && <SettingsNote>{t('devices.loading')}</SettingsNote>}
 
-      {thisDevice && canAddServer && (
-        <SettingsGroup presentation="navigation">
-          <SettingsRow
-            data-testid="settings-device-actions-entry"
-            leading={<ListChecks size={18} />}
-            title={t('devices.deviceActions.entryTitle')}
-            description={t('devices.deviceActions.entryHint')}
-            control={<ChevronRight size={16} />}
-            onClick={() => setActionsFor(thisDevice.device_id)}
-          />
-        </SettingsGroup>
-      )}
-
-      {showTools && (
-        <div className="flex flex-wrap items-center gap-2" data-testid="settings-devices-tools">
-          <SearchField
-            className="min-w-[180px] flex-1"
+      {(showTools || (canAddServer && !addingServer)) && (
+        <div className="gg-device-tools" data-testid="settings-devices-tools">
+          {showTools && <SearchField
+            className="min-w-0 flex-1"
             value={query}
             placeholder={t('devices.search')}
             onChange={(e) => setQuery(e.currentTarget.value)}
             clearLabel={t('devices.cancel')}
             onClear={() => setQuery('')}
             data-testid="settings-devices-search"
-          />
-          <SegmentedTabs items={filterItems} value={filter} onChange={setFilter} variant="underline" ariaLabel={t('devices.filter.label')} />
+          />}
+          {canAddServer && !addingServer && <AddServerButton defaultOpen={addMenuFromIntent} onPick={setAddingServer} />}
         </div>
       )}
-
-      <SettingsGroup>
+      {showTools && <SegmentedTabs items={filterItems} value={filter} onChange={setFilter} variant="underline" ariaLabel={t('devices.filter.label')} />}
+      {(visibleActive.length > 0 || visibleArchived.length > 0) && <SettingsGroup>
         <div className={cn(DEVICE_LIST_CLASS, visibleActive.length === 0 && 'hidden')} role="list">
           {visibleActive.map(renderRow)}
         </div>
-        {/* Adding a machine is the group's last row, and the row itself is the action; where this host cannot add one, the row still says what it brings. */}
-        {!addingServer && (canAddServer || !showTools) && (
-          <AddServerRow canAdd={canAddServer} defaultOpen={addMenuFromIntent} onPick={setAddingServer}
-            description={!showTools ? t('devices.empty.hint') : undefined} />
-        )}
-      </SettingsGroup>
-
-      <DeviceMachineArchive expanded={archiveOpen} onExpand={setArchiveOpen} count={visibleArchived.length} listClassName={DEVICE_LIST_CLASS}>{visibleArchived.map(renderRow)}</DeviceMachineArchive>
+        <DeviceMachineArchive expanded={archiveOpen} onExpand={setArchiveOpen} count={visibleArchived.length} listClassName={DEVICE_LIST_CLASS}>{visibleArchived.map(renderRow)}</DeviceMachineArchive>
+      </SettingsGroup>}
+      {!showTools && !addingServer && <SettingsNote data-testid="settings-devices-empty">{t('devices.empty.hint')}</SettingsNote>}
 
       {showTools && visible.length === 0 && (
         <div className="text-[length:var(--font-body)] text-[var(--muted-fg)]" data-testid="settings-devices-no-match">{t('devices.noMatch')}</div>
@@ -310,40 +286,18 @@ export function DevicesSection({
   )
 }
 
-/**
- * 「添加一台机器」这一行本身就是动作:先挑装法,两个动作(照 VS Code 的 Remote - SSH / Remote - Tunnels 分成两条)。
- * 远程 SSH 排第一:SSH 能连就用它,天然成本低;连不上才用远程隧道。菜单同设备操作,键盘可达。
- * 这台主机加不了机器(`canAdd` 为假)⇒ 同一行只说明添加机器带来什么,不可点。
- */
-function AddServerRow({
-  canAdd,
-  onPick,
-  description,
-  defaultOpen = false,
-}: {
-  canAdd: boolean
+function AddServerButton({ onPick, defaultOpen }: {
   onPick: (method: AddServerMethod) => void
-  description?: string
-  defaultOpen?: boolean
+  defaultOpen: boolean
 }) {
   const { t } = useTranslation('settings')
   const [open, setOpen] = useState(defaultOpen)
-  // 挑了一种装法 ⇒ 这一行随即卸掉、那一块接手焦点(它自己把焦点放进输入框 / 复制按钮)。
-  // 菜单关上时❌ 再「归还焦点」:触发的行已不在,Base UI 会退回它记着的上一个焦点元素 —— 可能是设置窗口背后会话页的输入框,
-  // 接着打的字就进了那里(2026-09-24 实测:打的 ssh 命令在背后开了一条真会话)。没挑(Esc / 点外面)照常回到这一行上。
+  // Picking an installer transfers focus to its form. Dismissing the menu returns to Add.
   const pickedRef = useRef(false)
-  const row = (onClick?: () => void) => (
-    <SettingsRow
-      data-testid={canAdd ? 'settings-add-server-button' : 'settings-devices-empty'}
-      leading={<Plus size={18} />}
-      title={t('devices.addServer.open')}
-      description={description}
-      onClick={onClick}
-    />
-  )
-  if (!canAdd) return row()
-  // 远程隧道暂不开放(REMOTE_TUNNEL_OPEN):只剩远程 SSH 一种,点这一行直接展开它,❌ 弹一个只有一项的菜单。
-  if (!REMOTE_TUNNEL_OPEN) return row(() => onPick('ssh'))
+  const trigger = <Button data-testid="settings-add-server-button" onClick={REMOTE_TUNNEL_OPEN ? undefined : () => onPick('ssh')}>
+    <Plus size={15} />{t('devices.addServer.open')}
+  </Button>
+  if (!REMOTE_TUNNEL_OPEN) return trigger
   const item = (method: AddServerMethod) => (
     <MenuItem data-testid={`settings-add-server-${method}`} onClick={() => { pickedRef.current = true; onPick(method) }}>
       <span className="flex flex-col gap-[2px]">
@@ -356,7 +310,7 @@ function AddServerRow({
   )
   return (
     <DropdownMenu.Root open={open} modal={false} onOpenChange={(next) => { if (next) pickedRef.current = false; setOpen(next) }}>
-      <DropdownMenu.Trigger aria-haspopup="menu" nativeButton={false} render={row(() => undefined)} />
+      <DropdownMenu.Trigger aria-haspopup="menu" render={trigger} />
       {open && (
         <DropdownMenu.Content
           side="bottom"
@@ -500,10 +454,10 @@ function DeviceRow({
   const { toast } = useToast()
   const { translate } = useSessionMessages()
   const [menuOpen, setMenuOpen] = useState(false)
-  // 「改名」同「添加一台机器」:选中后菜单入口随即卸掉、改名框自己接焦点,菜单关上时❌ 再归还焦点(理由见 AddServerRow)。
+  // 「改名」同「添加一台机器」:选中后菜单入口随即卸掉、改名框自己接焦点,菜单关上时❌ 再归还焦点(理由见 AddServerButton)。
   const renamingRef = useRef(false)
   const sshAddress = model.connection.via === 'ssh' ? model.connection.address : null
-  const lastSeen = device.is_online && sshLink !== 'checking' ? null : formatRelativeTime(device.last_seen_at, { mode: 'elapsed', dateAfterDays: 30 })
+  const lastSeen = formatRelativeTime(device.last_seen_at, { mode: 'elapsed', dateAfterDays: 30 })
   // 「登录已失效」「那台机器上已退出登录」替掉「上次在线」:机器是离线的,但真正的原因是这个,下一步是重新登录。
   const link = sshLink === undefined || sshLink === 'unknown' || sshLink === 'checking' ? null : sshLinkFacts(true, reportedSshUpdate(device, sshLink), device.is_online).sshLink ?? null
   // 点了「重试」、那台机器的心跳还没报回新状态之前:先说「正在更新」;报回来(不再是这一次失败)就让位给它。
@@ -561,16 +515,20 @@ function DeviceRow({
     : isDeviceOnline(device.status) && model.update?.state === 'ready' ? 'waitingIdle'
     : isDeviceOnline(device.status) && (model.update?.state === 'downloading' || model.update?.state === 'switching') ? 'updating'
     : isDeviceOnline(device.status) && failedUpdate ? 'updateFailed' : 'connected')
-  const sshElsewhere = model.connection.via === 'sshElsewhere'
-  const localSummary = ssh || model.kind === 'this'
-  const compactRow = localSummary || sshElsewhere
-  const summaryMeta = model.kind === 'this' ? [t('devices.current'), model.system] : [model.system, t('devices.addServer.method.ssh')]
-  const reportedStatus = sshElsewhere && device.is_online && model.update
-    ? (restarting || model.update.state === 'switching' ? t('devices.update.restarting')
-      : model.update.state === 'failed' ? t('devices.loginState.matchFailed')
-      : model.update.state === 'ready' ? t('devices.update.ready')
-      : model.update.state === 'downloading' ? t('devices.recovery.updating.status') : null)
-    : null
+  const connection = model.connection.via
+  const kind = t(`devices.kind.${model.kind}`)
+  const method = ssh || connection === 'sshElsewhere' ? t('devices.addServer.method.ssh')
+    : model.kind === 'server' && connection === 'cloud' ? t('devices.via.tunnel') : null
+  const summaryMeta = method ? [model.system, method] : [model.kind === 'this' ? t('devices.current') : kind, model.system]
+  const reportedStatus = restarting ? t('devices.update.restarting')
+    : device.is_online && model.update?.state === 'failed' ? t(retrying ? 'devices.loginState.matchRetrying' : 'devices.loginState.matchFailed')
+    : device.is_online && model.update?.state === 'ready' ? t('devices.update.ready')
+    : device.is_online && (model.update?.state === 'downloading' || model.update?.state === 'switching') ? t('devices.recovery.updating.status') : null
+  const bootFailures = device.capabilities.server_boot_failures ?? []
+  const attention = bootFailures.length > 0 || !!replacedBy
+  const rowStatus = reportedStatus ?? signedOutText ?? (attention ? t('devices.facts.attention')
+    : !device.is_online && lastSeen ? t('devices.lastSeen', { time: lastSeen })
+    : t(device.is_online ? 'devices.online' : 'devices.offline'))
   const closeDetails = () => {
     onExpand(false)
     summaryRef.current?.focus()
@@ -584,7 +542,7 @@ function DeviceRow({
     ? t('devices.update.supervisorReady', { version: model.update?.version })
     : t(hasBusyTasks ? 'devices.update.readyCount' : 'devices.update.ready', { count: model.update?.busy_agents })
 
-  const managementMenu = !editing && (!compactRow || expanded) && (
+  const managementMenu = (
     <DropdownMenu.Root
       open={menuOpen}
       modal={false}
@@ -593,18 +551,12 @@ function DeviceRow({
       <DropdownMenu.Trigger
         data-testid="settings-device-menu-button"
         aria-haspopup="menu"
-        render={compactRow ? (
-          <Button size="sm" variant="ghost">{t('devices.actions')}</Button>
-        ) : (
-          <IconButton size="sm" on={menuOpen || undefined} aria-label={t('devices.actions')}>
-            <MoreHorizontal />
-          </IconButton>
-        )}
+        render={<Button size="sm" variant="ghost">{t('devices.actions')}<ChevronDown size={12} /></Button>}
       />
       {menuOpen && (
         <DropdownMenu.Content
           side="bottom"
-          align={compactRow ? 'start' : 'end'}
+          align="start"
           sideOffset={4}
           zIndex="var(--z-settings-modal)"
           className="min-w-[200px]"
@@ -627,9 +579,6 @@ function DeviceRow({
               {t('devices.menu.reconnect')}
             </MenuItem>
           )}
-          <MenuItem data-testid="settings-device-open-actions" icon={<ListChecks size={16} />} onClick={onOpenActions}>
-            {t('devices.deviceActions.menu')}
-          </MenuItem>
           {sshAddress && sshLink === null && (
             <MenuItem icon={<Unplug size={16} />} data-testid="settings-device-ssh-disconnect" onClick={() => {
               void disconnectSshDevice(device.device_id).catch(error => toast(t('devices.link.disconnectFailed'), 'error', messageForUser(error)))
@@ -671,65 +620,65 @@ function DeviceRow({
     </DropdownMenu.Root>
   )
 
+  const facts = <>
+    {model.kind !== 'this' && <><dt>{t('devices.facts.connection')}</dt><dd>
+      {connection === 'sshElsewhere' ? t('devices.via.sshElsewhereHint') : (connection === 'cloud' && model.kind === 'server' ? t('devices.via.tunnelHint') : method) ?? (connection === 'unknown' ? <Unknown className="w-24" /> : kind)}
+      {sshAddress && <> · {sshAddress} <IconButton size="sm" aria-label={t('devices.menu.copyAddress')} onClick={() => onCopyAddress(sshAddress)}><Copy size={13} /></IconButton></>}
+    </dd></>}
+    {version && <><dt>{t('devices.recovery.version')}</dt><dd>{version}</dd></>}
+    {lastSeen && <><dt>{t('devices.facts.lastOnline')}</dt><dd>{t('devices.lastSeen', { time: lastSeen })}</dd></>}
+    {configurationCount > 1 && <><dt>{t('devices.configurations')}</dt><dd data-testid="settings-device-version-count">{t('devices.configurationCount', { count: configurationCount })}</dd></>}
+    {device.capabilities.runs_as_root && <><dt>{t('devices.facts.runsAs')}</dt><dd title={t('devices.runsAsRootHint')} data-testid="settings-device-runs-as-root">{t('devices.runsAsRoot')}</dd></>}
+    {model.notices.length > 0 && <><dt>{t('devices.facts.notices')}</dt><dd>{model.notices.map(n => <DeviceNotice key={n.kind} notice={n} />)}</dd></>}
+  </>
   return (
-    <div
-      role="listitem"
-      id={`settings-device-row-${device.device_id}`}
-      tabIndex={-1}
-      data-testid={AUTOMATION_TEST_IDS.settingsDeviceRow}
-      data-device-id={device.device_id}
-      data-kind={model.kind}
-      className={cn('gg-settings-device-row flex items-start gap-3', { 'gg-settings-compact-row': compactRow })}
-      data-expanded={compactRow && expanded ? '' : undefined}
-    >
-      {!compactRow && <RowIcon size={19} className="gg-device-leading-icon" aria-hidden />}
-      <div className="min-w-0 flex-1">
-        {editing ? (
-          <DeviceRenameField label={device.label} onSave={onCommitRename} onCancel={onCancelRename} />
-        ) : compactRow && (
-          <Button ref={summaryRef} variant="ghost" className="gg-device-summary" aria-expanded={expanded} aria-controls={detailsId}
-            onClick={() => onExpand(!expanded)} data-testid="settings-device-summary">
-            <span className="gg-device-icon"><RowIcon size={19} aria-hidden /></span>
-            <span className="gg-device-identity"><strong>{device.label}</strong>
-              <small>{summaryMeta.filter(Boolean).join(' · ')}</small></span>
-            {ssh ? <DeviceRecoveryStatus deviceId={device.device_id} state={recovery} /> :
-              <span className="gg-recovery-status" data-state={device.is_online ? 'connected' : 'offline'}>
-                <i aria-hidden="true" />{reportedStatus ?? signedOutText ?? t(device.is_online ? 'devices.online' : 'devices.offline')}
-              </span>}
-            <ChevronRight className="gg-device-chevron" size={14} aria-hidden />
-          </Button>
-        )}
-        {(!compactRow || (expanded && !editing)) && <div id={detailsId} className={compactRow ? 'gg-device-expanded' : undefined} onKeyDown={event => {
-          if (compactRow && !menuOpen && event.key === 'Escape' && !event.defaultPrevented) { event.stopPropagation(); closeDetails() }
-        }}>
-          {localSummary ? <>
-            {ssh ? <DeviceRecoveryPanel key={device.device_id + recovery} deviceId={device.device_id} state={recovery} name={device.label}
-              version={model.version} address={sshAddress} progress={upgradePercent} onDone={closeDetails} /> : version && <p>{version}</p>}
-            {model.notices.filter(n => !ssh || n.kind !== 'server-too-old' || !link).map(n => <DeviceNoticeChip key={n.kind} notice={n} />)}
-            {device.capabilities.runs_as_root && <span title={t('devices.runsAsRootHint')}>{t('devices.runsAsRoot')}</span>}
-            {configurationCount > 1 && <span>{t('devices.configurationCount', { count: configurationCount })}</span>}
-          </> : <>
-            {sshElsewhere && <p>{t('devices.via.sshElsewhereHint')}</p>}
-            <div className="flex min-w-0 flex-wrap items-center gap-[7px]">
-              {!compactRow && !editing && <span className="truncate text-[length:var(--font-body)] text-[var(--fg)]">{device.label}</span>}
-              {restarting && <Chip tone="accent" data-testid="settings-device-restarting">{t('devices.update.restarting')}</Chip>}
+    <div role="listitem" id={`settings-device-row-${device.device_id}`} data-testid={AUTOMATION_TEST_IDS.settingsDeviceRow}
+      data-device-id={device.device_id} data-kind={model.kind} className="gg-settings-device-row"
+      onKeyDown={event => {
+        if (expanded && !editing && !menuOpen && event.key === 'Escape' && !event.defaultPrevented && event.currentTarget.contains(event.target as Node)) {
+          event.stopPropagation()
+          closeDetails()
+        }
+      }}>
+      {editing ? <DeviceRenameField label={device.label} onSave={onCommitRename} onCancel={onCancelRename} /> : (
+        <Button ref={summaryRef} variant="ghost" className="gg-device-summary" aria-expanded={expanded} aria-controls={detailsId}
+          onClick={() => onExpand(!expanded)} data-testid="settings-device-summary">
+          <RowIcon size={18} aria-hidden />
+          <span className="gg-device-identity"><strong>{device.label}</strong>
+            <small data-testid="settings-device-kind">{summaryMeta.filter(Boolean).join(' · ')}</small></span>
+          {ssh && (!attention || recovery !== 'connected') ? <DeviceRecoveryStatus deviceId={device.device_id} state={recovery} /> :
+            signInPending && !attention && !reportedStatus ? <Unknown className="w-24" /> : (
+            <span role="status" className="gg-recovery-status" data-state={attention || signedOutText || failedUpdate ? 'attention' : device.is_online ? 'connected' : 'offline'}>
+              <i aria-hidden="true" />{rowStatus}
+            </span>)}
+          <ChevronRight className="gg-device-chevron" size={14} aria-hidden />
+        </Button>
+      )}
+      {expanded && !editing && <div id={detailsId} className="gg-device-expanded">
+        {bootFailures.map((failure) => (
+          <div key={`${failure.operation}:${failure.taskId}`} role="alert" className="mt-1 text-[length:var(--font-caption)] text-[var(--danger-fg)]" data-testid="settings-device-boot-failure">
+            {t('devices.bootTaskFailed', { task: failure.taskId, operation: failure.operation, message: failure.message })}
+          </div>
+        ))}
+
+        {replacedBy && <ReplacedHint by={replacedBy} onRemove={onRemove} />}
+        {ssh ? <DeviceRecoveryPanel key={device.device_id + recovery} deviceId={device.device_id} state={recovery} name={device.label}
+          version={model.version} address={sshAddress} progress={upgradePercent} onDone={closeDetails} listFacts={facts} /> : <>
+          {(model.update || signedOutText) && <div className="gg-device-update">
+            {restarting && <span data-testid="settings-device-restarting">{t('devices.update.restarting')}</span>}
               {!restarting && (model.update?.state === 'ready' || model.update?.state === 'downloading') && (
-                <Chip
-                  tone={model.update.state === 'ready' && !supervisorReady ? 'accent' : 'default'}
+                <span
                   title={supervisorReady ? readyText : t(model.update.state === 'ready' ? 'devices.update.readyHint' : 'devices.update.downloadingHint', { version: model.update.version })}
                   data-testid="settings-device-update"
                 >
                   {model.update.state === 'ready'
                     ? readyText
                     : t('devices.update.downloading', { version: model.update.version })}
-                </Chip>
+                </span>
               )}
               {restartable && model.update?.state === 'ready' && !restarting && onRestartVersionNow && asking === null && (
                 <Button size="sm" onClick={askRestart} data-testid="settings-device-update-now">{t('devices.update.updateNow')}</Button>
               )}
-              {model.notices.map(n => <DeviceNoticeChip key={n.kind} notice={n} />)}
-            </div>
-
             {/* 「现在重启更新」的当面确认:单独一行,❌ 挤进名字那一行把机器名压成省略号。 */}
             {restartable && onRestartVersionNow && asking && (
               <div className="mt-[6px] flex flex-wrap items-center gap-2" data-testid="settings-device-update-now-confirm">
@@ -750,14 +699,7 @@ function DeviceRow({
                 </Button>
               </div>
             )}
-            <div className="mt-[3px] flex flex-wrap items-center gap-x-2 gap-y-[2px] text-[length:var(--font-caption)] text-[var(--muted-fg)]">
-              <span className="inline-flex items-center gap-[5px]">
-                {/* 状态点:在线 = connected = live 蓝(design.md 唯一的 accent);离线退成墨色最淡一档。 */}
-                <span
-                  aria-hidden
-                  className={cn('size-[7px] shrink-0 rounded-[var(--radius-circle)]', device.is_online ? 'bg-live' : 'bg-[var(--faint-fg)]')}
-                />
-                {failedUpdate !== null ? (
+                {failedUpdate !== null && (
                   <span className={retrying || restarting ? undefined : 'text-[var(--danger-fg)]'} data-testid="settings-device-match-failed">
                     {retrying || restarting ? t('devices.loginState.matchRetrying') : t('devices.loginState.matchFailed')}
                     {!retrying && !restarting && bootFailed && restartable && onRestartVersionNow && asking === null && (
@@ -779,55 +721,20 @@ function DeviceRow({
                       >{t('devices.loginState.retryUpdate')}</InlineAction></>
                     )}
                   </span>
-                ) : device.is_online ? (
-                  t('devices.online')
-                ) : signedOutText ? (
-                  <span className="text-[var(--danger-fg)]" data-testid="settings-device-signed-out">{signedOutText}</span>
-                ) : signInPending ? (
-                  <Unknown className="w-24" />
-                ) : (
-                  <span title={model.kind === 'server' ? t('devices.loginState.offlineHint') : undefined}>
-                    {lastSeen ? t('devices.lastSeen', { time: lastSeen }) : t('devices.offline')}
-                  </span>
                 )}
-                {signedOutText && onRelogin && (
-                  <span title={t('devices.loginState.reloginHint')}>
-                    <InlineAction onClick={onRelogin} testId="settings-device-relogin">{t('devices.loginState.relogin')}</InlineAction>
-                  </span>
-                )}
-              </span>
-              {/* 本机那一行名字旁已有「本机」标签,❌ 再说一遍。 */}
-              <span data-testid="settings-device-kind">{t(`devices.kind.${model.kind}`)}</span>
-              {model.system && <span>{model.system}</span>}
-              {version && <span>{version}</span>}
-              {configurationCount > 1 && <span data-testid="settings-device-version-count">{t('devices.configurationCount', { count: configurationCount })}</span>}
-              {/* #6264 root 跑的 server:上面的智能体能改整台机器,如实写出来(隧道装的也看得到)。 */}
-              {model.kind === 'server' && device.capabilities?.runs_as_root && (
-                <span title={t('devices.runsAsRootHint')} data-testid="settings-device-runs-as-root">{t('devices.runsAsRoot')}</span>
-              )}
-              {/* 连法(远程 SSH / 远程隧道)只标在咕咕 server 上:那是「添加一台机器」的两种装法;
-                  另一台登着同一账号的咕咕桌面不是这么加进来的,只有「电脑」这个类别,❌ 标连法。 */}
-              {model.kind === 'server' && model.connection.via === 'unknown' && <Unknown className="w-24" />}
-              {model.kind === 'server' && model.connection.via === 'cloud' && (
-                <span title={t('devices.via.tunnelHint')}>{t('devices.via.tunnel')}</span>
-              )}
-            </div>
-          </>}
-          {compactRow && managementMenu}
-        </div>}
-        {device.capabilities?.server_boot_failures?.map((failure) => (
-          <div key={`${failure.operation}:${failure.taskId}`} role="alert" className="mt-1 text-[length:var(--font-caption)] text-[var(--danger-fg)]" data-testid="settings-device-boot-failure">
-            {t('devices.bootTaskFailed', { task: failure.taskId, operation: failure.operation, message: failure.message })}
-          </div>
-        ))}
-
-        {replacedBy && <ReplacedHint by={replacedBy} onRemove={onRemove} />}
-        {renameFailed && (
-          <div className="mt-1 text-[length:var(--font-caption)] text-[var(--danger-fg)]">{renameFailed}</div>
-        )}
-      </div>
-
-      {!compactRow && managementMenu}
+            {signedOutText && <span data-testid="settings-device-signed-out">{signedOutText}</span>}
+            {signedOutText && onRelogin && <InlineAction onClick={onRelogin} testId="settings-device-relogin">{t('devices.loginState.relogin')}</InlineAction>}
+          </div>}
+          <dl className="gg-device-facts">{facts}</dl>
+        </>}
+        <div className="gg-device-foot">
+          <Button variant="ghost" size="sm" data-device-permissions="" data-testid={model.kind === 'this' ? 'settings-device-actions-entry' : 'settings-device-open-actions'} onClick={onOpenActions}>
+            {t(model.kind === 'this' ? 'devices.deviceActions.entryTitle' : 'devices.facts.actions')}<ChevronRight size={12} />
+          </Button>
+          {managementMenu}
+        </div>
+      </div>}
+      {renameFailed && <p role="alert" className="text-[var(--danger-fg)]">{renameFailed}</p>}
     </div>
   )
 }
@@ -836,24 +743,24 @@ function DeviceRow({
  * #6264 一台 server 有件事要人知道:标签说是什么,悬停说后果与怎么办(与 update 那颗标签同一个形态)。
  * 版本对不上、磁盘快满会让操作失败 → warn;升级被退回已经自愈,只是告知 → default。
  */
-function DeviceNoticeChip({ notice }: { notice: ServerMachineNotice }) {
+function DeviceNotice({ notice }: { notice: ServerMachineNotice }) {
   const { t } = useTranslation('settings')
   switch (notice.kind) {
     case 'desktop-too-old':
-      return <Chip tone="warn" title={t('devices.notice.desktopTooOldHint')} data-testid="settings-device-notice">{t('devices.notice.desktopTooOld')}</Chip>
+      return <span className="gg-device-notice" title={t('devices.notice.desktopTooOldHint')} data-testid="settings-device-notice">{t('devices.notice.desktopTooOld')}</span>
     case 'server-too-old':
-      return <Chip tone="warn" title={t('devices.notice.serverTooOldHint')} data-testid="settings-device-notice">{t('devices.notice.serverTooOld')}</Chip>
+      return <span className="gg-device-notice" title={t('devices.notice.serverTooOldHint')} data-testid="settings-device-notice">{t('devices.notice.serverTooOld')}</span>
     case 'disk-low':
       return (
-        <Chip tone="warn" title={t('devices.notice.diskLowHint', { free: formatBytes(notice.freeBytes) })} data-testid="settings-device-notice">
+        <span className="gg-device-notice" title={t('devices.notice.diskLowHint', { free: formatBytes(notice.freeBytes) })} data-testid="settings-device-notice">
           {t('devices.notice.diskLow')}
-        </Chip>
+        </span>
       )
     case 'rolled-back':
       return (
-        <Chip title={t('devices.notice.rolledBackHint', { version: notice.version, restored: notice.restored })} data-testid="settings-device-notice">
+        <span title={t('devices.notice.rolledBackHint', { version: notice.version, restored: notice.restored })} data-testid="settings-device-notice">
           {t('devices.notice.rolledBack')}
-        </Chip>
+        </span>
       )
   }
 }

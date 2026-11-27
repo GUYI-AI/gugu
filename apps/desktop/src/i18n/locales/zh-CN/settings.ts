@@ -304,6 +304,17 @@ export default {
     "usageWindows": "用量窗口"
   },
   "devices": {
+    "facts": {
+      "attention": "需要处理",
+      "connection": "连接",
+      "lastOnline": "上次在线",
+      "runsAs": "运行身份",
+      "notices": "提醒",
+      "actions": "这台设备能做的事",
+      "trustRecord": "原信任记录",
+      "manualTrust": "请独立核对指纹，再按下方说明更新信任记录。",
+      "failed": "设备尚未重连。请检查下方连接信息后重试。"
+    },
     "recovery": {
       "notRunning": {
         "status": "服务已停止",
