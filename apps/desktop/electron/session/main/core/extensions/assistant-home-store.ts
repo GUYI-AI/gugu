@@ -79,8 +79,9 @@ export function createAssistantHomeStore(input: {
         const info = await stat(await at(path, domain), { bigint: true });
         const revision = String(info.mtimeNs), modifiedAt = info.mtime.toISOString();
         if (entry.isDirectory()) {
-          if (domain === 'files') rows.push({ key: path, path, data: { name: entry.name, path, kind: 'directory', modifiedAt }, revision, at: info.mtime });
-          if (domain === 'voice-notes') rows.push({ key: path, path, data: { noteId: path.split('/')[0], kind: 'directory' }, revision, at: info.mtime });
+          // A folder has no content of its own: its time moves with what is put in it, so it is not its revision.
+          if (domain === 'files') rows.push({ key: path, path, data: { name: entry.name, path, kind: 'directory', modifiedAt }, revision: '1', at: info.mtime });
+          if (domain === 'voice-notes') rows.push({ key: path, path, data: { noteId: path.split('/')[0], kind: 'directory' }, revision: '1', at: info.mtime });
           await walk(path);
         } else if (entry.isFile()) {
           if (domain === 'skills' && (!relative || relative.includes('/') || entry.name !== 'SKILL.md')) continue;

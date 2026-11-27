@@ -110,8 +110,6 @@ function ports(): PhoneBindingPorts {
           return { operationId: change.operationId, revision: '4', status: 'pending' as const }
         },
       } as never,
-      snapshot: () => wait(() => world.snapshot),
-      resource: () => wait(() => null),
       readBody: async () => new Uint8Array(),
       uploadBody: async () => ({ itemId: 'body', sha256: 'a'.repeat(64) }),
       discard: async () => undefined,
@@ -322,9 +320,20 @@ describe('API 50 on a phone: what the built-in pages did is done there, the rest
     expect(actions.confirmRemoval).not.toHaveBeenCalled()
   })
 
-  it('upload (resources:write): refused, nothing picked or committed', async () => {
+  it('upload: elsewhere once its grant holds — the assistant lives on another computer; refused at API 49, without files writable, for another binding', async () => {
     world.app = withManage()
-    expect(await codeOf(createPhoneBindings(ports()).manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main', folder: 'docs' }))).toBe('denied')
+    const bindings = createPhoneBindings(ports())
+    expect(await bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main', folder: 'docs' })).toEqual({ name: 'main', state: 'unavailable', reason: 'elsewhere' })
+    expect(await codeOf(bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main', folder: '../x' }))).toBe('invalid')
+    expect(await codeOf(bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'other' }))).toBe('denied')
+    world.app = install({ manifest: assistantManifest({ permissions: { ...base.permissions,
+      bindings: [{ ...binding, domains: { ...binding.domains, 'resources:write': ['memory', 'files'] } }] } }) })
+    expect(await codeOf(bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main' }))).toBe('denied')
+    world.app = install()
+    expect(await codeOf(bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main' }))).toBe('denied')
+    world.app = withManage()
+    world.assistant = null
+    expect(await bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main' })).toEqual({ name: 'main', state: 'unbound' })
     expect(commits).toEqual([])
   })
 
@@ -506,32 +515,24 @@ describe('the layout signal and the unsupported-here states', () => {
 })
 
 describe('resources, schedules and work on a phone', () => {
-  it('lists a granted domain with the allow-listed fields and refuses one not declared', async () => {
+  it('reads and changes nothing of the assistant\'s resources: they live on its computer (elsewhere); a domain not declared is refused', async () => {
     const bindings = createPhoneBindings(ports())
-    const listed = await bindings.resources(ASSISTANT_APP_ID, { name: 'main', domain: 'memory' })
-    expect(listed).toMatchObject({ state: 'ready', revision: '9', resources: [{ key: 'notes/a.md', data: { title: 'A', relativePath: 'notes/a.md' } }] })
-    expect(JSON.stringify(listed)).not.toContain('secret')
+    expect(await bindings.resources(ASSISTANT_APP_ID, { name: 'main', domain: 'memory' })).toEqual({ name: 'main', domain: 'memory', state: 'unavailable', reason: 'elsewhere' })
+    expect(await bindings.resource(ASSISTANT_APP_ID, { name: 'main', domain: 'memory', key: 'notes/a.md' }))
+      .toEqual({ name: 'main', domain: 'memory', key: 'notes/a.md', state: 'unavailable', reason: 'elsewhere' })
     expect(await codeOf(bindings.resources(ASSISTANT_APP_ID, { name: 'main', domain: 'skills' }))).toBe('denied')
     expect(await codeOf(bindings.resources(ASSISTANT_APP_ID, { name: 'main', domain: 'integrations' }))).toBe('denied')
     expect(await codeOf(bindings.save(ASSISTANT_APP_ID, { name: 'main', domain: 'files', key: 'a', operationId: crypto.randomUUID(), expectedRevision: '0', content: 'x' }))).toBe('denied')
-  })
-  it('a save or a removal is refused: nothing is committed', async () => {
-    const bindings = createPhoneBindings(ports())
     const change = { name: 'main', domain: 'memory', key: 'notes/b.md', operationId: crypto.randomUUID(), expectedRevision: '0' }
-    expect(await codeOf(bindings.save(ASSISTANT_APP_ID, { ...change, content: '# B' }))).toBe('denied')
-    expect(await codeOf(bindings.remove(ASSISTANT_APP_ID, change))).toBe('denied')
+    expect(await bindings.save(ASSISTANT_APP_ID, { ...change, content: '# B' })).toEqual({ name: 'main', domain: 'memory', key: 'notes/b.md', state: 'unavailable', reason: 'elsewhere' })
+    expect(await bindings.remove(ASSISTANT_APP_ID, change)).toEqual({ name: 'main', domain: 'memory', key: 'notes/b.md', state: 'unavailable', reason: 'elsewhere' })
     expect(commits).toEqual([])
   })
-  it('reads the assistant\'s schedules through its panel; a change to one is refused', async () => {
-    world.snapshot = { version: 1, revision: '9', application: [], items: [
-      panelItem('schedules', '__collection__', { state: 'ready' }),
-      panelItem('schedules', SCHEDULE, { title: 'Daily', prompt: 'p', cron: '0 9 * * *', enabled: true }),
-    ] }
+  it('its schedules are elsewhere: listed as such, a change and a watch refused as elsewhere', async () => {
     const bindings = createPhoneBindings(ports())
-    const listed = await bindings.schedules(ASSISTANT_APP_ID, { name: 'main' })
-    expect(listed).toMatchObject({ state: 'ready', schedules: [{ id: `schedule:${SCHEDULE}`, revision: '3', title: 'Daily', state: 'active' }] })
-    const change = { name: 'main', operationId: 'op-pause-0001', op: 'pause', scheduleId: `schedule:${SCHEDULE}`, revision: '3' }
-    expect(await codeOf(bindings.controlSchedule(ASSISTANT_APP_ID, change))).toBe('denied')
+    expect(await bindings.schedules(ASSISTANT_APP_ID, { name: 'main' })).toEqual({ name: 'main', state: 'elsewhere' })
+    expect(await codeOf(bindings.controlSchedule(ASSISTANT_APP_ID, { name: 'main', operationId: 'op-pause-0001', op: 'pause', scheduleId: `schedule:${SCHEDULE}`, revision: '3' }))).toBe('elsewhere')
+    expect(await codeOf(bindings.watchSchedules({ ...PAGE }, { name: 'main', on: true }, () => undefined))).toBe('elsewhere')
     expect(commits).toEqual([])
   })
   it('gives the work list by opaque handles and opens a task\'s conversation by one', async () => {

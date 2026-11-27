@@ -33,8 +33,6 @@ const state = vi.hoisted(() => ({
   rosterReads: 0,
   onTell: undefined as (() => void) | undefined,
   provisions: [] as unknown[],
-  panel: undefined as unknown,
-  panelWords: new Set<{ assistantId: string; changed(): void }>(),
   thisDevice: '',
 }));
 const { boundRows } = await vi.hoisted(async () => await import('./test-support/binding-rpc'));
@@ -50,13 +48,6 @@ vi.mock('@main/core/sessions/session-orchestration', () => ({
   messageSessionFrom: async (_envelope: unknown, _session: string, text: string) => { state.told.push(text); state.onTell?.(); return { id: 'deferred' }; },
 }));
 vi.mock('./account-token', () => ({ currentAccountAccessToken: async () => state.token }));
-vi.mock('./assistant-panel-changes', () => ({
-  onAssistantPanelChanged: (_owner: string, assistantId: string, changed: () => void) => {
-    const word = { assistantId, changed };
-    state.panelWords.add(word);
-    return () => { state.panelWords.delete(word); };
-  },
-}));
 vi.mock('./extensions-root', () => ({ extensionsService: () => state.service, extensionsRoot: () => state.root }));
 vi.mock('@gugu/core', async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -82,54 +73,16 @@ vi.mock('@gugu/core/cloud/supabase', () => ({
       return query;
     },
     rpc: (name: string, args: Record<string, unknown>) => ({
-      abortSignal: async () => name === 'my_app_agent' ? { data: boundRows(state.provisions as never[]), error: null } : (state.panel as FakePanel).rpc(name, args),
+      abortSignal: async () => {
+        if (name !== 'my_app_agent') throw new Error(`unexpected ${name} ${JSON.stringify(args)}`);
+        return { data: boundRows(state.provisions as never[]), error: null };
+      },
     }),
   }),
 }));
 
 const HOME_DEVICE = '55000000-0000-4000-8000-000000000005';
 const K1 = 'a1000000-0000-4000-8000-0000000000a1';
-const K2 = 'a2000000-0000-4000-8000-0000000000a2';
-type PanelRow = { key: string; revision: number; data: Record<string, unknown>; deleted: boolean; stale?: boolean; updated: number };
-type PanelChange = { request: string; revision: number; key: string; status: 'pending' | 'failed' | 'applied' | 'superseded'; operation: string };
-
-/**
- * The assistant's panel in the cloud, as `assistant_panel_snapshot` reads it (gugu-supabase
- * 20261026041500_assistant_panel_state.sql). Nothing may commit to it: `changes` records any commit that would arrive.
- */
-class FakePanel {
-  revision = 10;
-  ready = true;
-  down = false;
-  calls = 0;
-  rows = new Map<string, PanelRow>();
-  changes = new Map<string, PanelChange>();
-  put(key: string, data: Record<string, unknown>) {
-    this.rows.set(key, { key, revision: ++this.revision, data, deleted: false, updated: Date.now() });
-  }
-  tell() { for (const word of [...state.panelWords]) if (word.assistantId === AGENT) word.changed(); }
-  item(row: PanelRow) {
-    return { assistant_user_id: AGENT, owner_user_id: OWNER, domain: 'schedules', resource_key: row.key, device_id: HOME_DEVICE,
-      revision: String(row.revision), data: row.deleted ? {} : row.data, body_item_id: null, body_sha256: null,
-      deleted_at: row.deleted ? new Date(row.updated).toISOString() : null, observed_at: null, updated_at: new Date(row.updated).toISOString(),
-      ...(row.stale ? { stale_at: new Date(row.updated).toISOString() } : {}) };
-  }
-  rpc(name: string, args: Record<string, unknown>) {
-    this.calls += 1;
-    if (this.down) throw new Error('fetch failed');
-    if (args.p_assistant !== AGENT) return { data: null, error: { message: 'not available', code: '42501' }, status: 403 };
-    if (name === 'assistant_panel_snapshot') {
-      const marker = { key: '__collection__', revision: 1, data: { state: this.ready ? 'ready' : 'error' }, deleted: false, updated: NOW };
-      return { data: { version: 1, revision: String(this.revision), items: [marker, ...this.rows.values()].map((row) => this.item(row)),
-        application: [...this.changes.entries()].filter(([, change]) => change.status === 'pending' || change.status === 'failed')
-          .map(([operationId, change]) => ({ operationId, revision: String(change.revision), domain: 'schedules', resourceKey: change.key, status: change.status, errorCode: null })) },
-      error: null };
-    }
-    if (name !== 'assistant_panel_commit') throw new Error(`unexpected ${name}`);
-    this.changes.set(String(args.p_operation_id), { request: JSON.stringify(args), revision: this.revision, key: String(args.p_resource_key), status: 'pending', operation: String(args.p_operation) });
-    return { data: null, error: { message: 'unexpected commit', code: 'XX000' }, status: 500 };
-  }
-}
 
 const { appBoundSchedules, appBoundScheduleControl, watchBoundSchedules, SCHEDULES_HEARD_AFTER_MS } = await import('./app-bound-schedules');
 const { automationsService } = await import('@main/core/automations/automations-service');
@@ -189,10 +142,8 @@ beforeEach(async () => {
     cloud: { kind: 'dm', members: [OWNER, AGENT], owned: true, error: false },
     roster: [{ gugu_user_id: AGENT, status: 'active', cache: { emdash_session_id: SESSION, sessionpage_owner_user_id: OWNER } }] });
   state.taps.clear();
-  state.panelWords.clear();
   state.provisions = [];
   state.thisDevice = 'this-computer';
-  state.panel = new FakePanel();
   installApp();
 });
 
@@ -495,112 +446,34 @@ describe('lifecycle is the host\'s', () => {
   });
 });
 
-describe('the person\'s assistant living on another computer or in the cloud: its panel, as the built-in list', () => {
-  const panel = () => state.panel as FakePanel;
+describe('the person\'s assistant living on another computer or in the cloud', () => {
   const assistantElsewhere = () => {
     state.roster = [];
     state.provisions = [{ agent_user_id: AGENT, device_id: HOME_DEVICE, member_key: 'assistant', phase: 'completed', created_at: '2026-11-01T00:00:00Z', agent: { removed_at: null } }];
-    panel().put(K1, { title: 'Check the inbox', prompt: 'Check the inbox', at: null, cron: '0 8 * * *', tz: 'Asia/Shanghai', enabled: true,
-      nextRunAt: Date.UTC(2026, 10, 12, 0, 0, 0), lastRun: { status: 'done', at: NOW - 3_600_000, errorCode: null } });
-    panel().put(K2, { title: 'Bank', prompt: 'Call the bank', at: NOW + 3 * 3_600_000, cron: '', tz: 'Asia/Shanghai', enabled: true,
-      nextRunAt: NOW + 3 * 3_600_000, lastRun: null });
   };
   const s1 = `schedule:${K1}`;
-  const s2 = `schedule:${K2}`;
-  const settle = () => new Promise((resolve) => setTimeout(resolve, SCHEDULES_HEARD_AFTER_MS * 4));
-  const wait = { timeout: SCHEDULES_HEARD_AFTER_MS * 40 };
 
-  it('lists what its home published; unpublished, stale, unresolved or unreachable is unavailable; an agent of this computer never asks the cloud', async () => {
+  it('is elsewhere: listed as such, a change and a watch refused as elsewhere — nothing is read of a copy its home no longer keeps', async () => {
     assistantElsewhere();
-    const answer = await list();
-    expect(answer).toEqual({ name: 'main', state: 'ready', schedules: [
-      { id: s1, revision: '11', title: 'Check the inbox', prompt: 'Check the inbox', at: null, cron: '0 8 * * *', tz: 'Asia/Shanghai', state: 'active',
-        nextRunAt: '2026-11-12T00:00:00.000Z', lastRun: { status: 'done', at: new Date(NOW - 3_600_000).toISOString() }, updatedAt: new Date(NOW).toISOString() },
-      { id: s2, revision: '12', title: 'Bank', prompt: 'Call the bank', at: new Date(NOW + 3 * 3_600_000).toISOString(), cron: null, tz: 'Asia/Shanghai', state: 'active',
-        nextRunAt: new Date(NOW + 3 * 3_600_000).toISOString(), lastRun: null, updatedAt: new Date(NOW).toISOString() },
-    ] });
-    for (const secret of [AGENT, HOME_DEVICE, OWNER, CHAT]) expect(JSON.stringify(answer)).not.toContain(secret);
-    panel().ready = false;
-    expect(await list()).toEqual({ name: 'main', state: 'unavailable' });
-    panel().ready = true;
-    panel().rows.get(K2)!.stale = true;
-    expect(await list()).toEqual({ name: 'main', state: 'unavailable' });
-    panel().rows.get(K2)!.stale = false;
-    panel().down = true;
-    expect(await list()).toEqual({ name: 'main', state: 'unavailable' });
-    panel().down = false;
-    // Not the person's assistant: no panel, as before.
-    state.provisions = [];
     expect(await list()).toEqual({ name: 'main', state: 'elsewhere' });
-    // Living here again: the schedule store directly, never the cloud's copy.
-    state.roster = [{ gugu_user_id: AGENT, status: 'active', cache: { emdash_session_id: SESSION, sessionpage_owner_user_id: OWNER } }];
-    const calls = panel().calls;
-    expect(await list()).toEqual({ name: 'main', state: 'ready', schedules: [] });
-    expect(panel().calls).toBe(calls);
-  });
-
-  it('still listed on this computer after a move away: its home\'s panel, never the schedules left here; listed and at home here: the store', async () => {
-    const left = await own('Left behind');
-    assistantElsewhere();
-    state.roster = [{ gugu_user_id: AGENT, status: 'active', cache: { emdash_session_id: SESSION, sessionpage_owner_user_id: OWNER } }];
-    expect(await list()).toMatchObject({ state: 'ready', schedules: [expect.objectContaining({ id: s1 }), expect.objectContaining({ id: s2 })] });
-    await expect(control({ operationId: op(), op: 'pause', scheduleId: s1, revision: '11' })).rejects.toMatchObject({ code: 'denied' });
-    expect(panel().changes.size).toBe(0);
-    expect(rows()).toEqual([{ id: left.slice('schedule:'.length), enabled: 1, deleted_at: null }]);
-    // Its home is this computer: the schedule store here, and the panel is not asked.
-    state.thisDevice = HOME_DEVICE;
-    vi.setSystemTime(NOW + 1000);
-    const calls = panel().calls;
-    expect(await list()).toMatchObject({ state: 'ready', schedules: [expect.objectContaining({ id: left })] });
-    expect(await control({ operationId: op(), op: 'pause', scheduleId: left, revision: (await current(left)).revision })).toMatchObject({ status: 'applied', scheduleId: left });
-    expect(rows()).toEqual([{ id: left.slice('schedule:'.length), enabled: 0, deleted_at: null }]);
-    expect(panel().calls).toBe(calls);
-    expect(panel().changes.size).toBe(0);
-  });
-
-  it('a change for it is refused — its panel takes none: nothing is sent, and the same id stays refused', async () => {
-    assistantElsewhere();
-    const pauseId = op();
-    for (const change of [{ operationId: pauseId, op: 'pause', scheduleId: s1, revision: '11' }, { operationId: pauseId, op: 'pause', scheduleId: s1, revision: '11' },
-      { operationId: op(), op: 'remove', scheduleId: s2, revision: '12' }, { operationId: op(), op: 'register', prompt: 'x', cron: '0 8 * * *' }]) {
-      await expect(control(change)).rejects.toMatchObject({ code: 'denied' });
-    }
-    expect(panel().changes.size).toBe(0);
-    expect(await current(s1)).toMatchObject({ state: 'active', revision: '11' });
+    await expect(control({ operationId: op(), op: 'pause', scheduleId: s1, revision: '11' })).rejects.toMatchObject({ code: 'elsewhere' });
+    await expect(control({ operationId: op(), op: 'register', prompt: 'x', cron: '0 8 * * *' })).rejects.toMatchObject({ code: 'elsewhere' });
+    await expect(watchBoundSchedules(ID, { name: 'main' }, vi.fn(), vi.fn())).rejects.toMatchObject({ code: 'elsewhere' });
     expect(rows()).toEqual([]);
   });
 
-  it('hears the panel\'s word only when the schedules or their outstanding changes differ, an unreadable panel once, and stops for good once the grant goes', async () => {
+  it('still listed on this computer after a move away: elsewhere, never the schedules left here; listed and at home here: the store', async () => {
+    const left = await own('Left behind');
     assistantElsewhere();
-    const heard = vi.fn();
-    const ended = vi.fn();
-    const stop = await watchBoundSchedules(ID, { name: 'main' }, heard, ended);
-    expect(state.panelWords.size).toBe(1);
-    // A word with nothing of the schedules changed (another part of the panel, a resubscription) is not heard.
-    panel().tell();
-    await settle();
-    expect(heard).not.toHaveBeenCalled();
-    // Its home published a change to one: heard.
-    panel().put(K1, { ...panel().rows.get(K1)!.data, title: 'Renamed at home' });
-    panel().tell();
-    await vi.waitFor(() => expect(heard).toHaveBeenCalledOnce(), wait);
-    // The cloud unreachable: one word, then quiet until it answers again.
-    panel().down = true;
-    panel().tell();
-    await vi.waitFor(() => expect(heard).toHaveBeenCalledTimes(2), wait);
-    panel().tell();
-    await settle();
-    expect(heard).toHaveBeenCalledTimes(2);
-    panel().down = false;
-    panel().tell();
-    await vi.waitFor(() => expect(heard).toHaveBeenCalledTimes(3), wait);
-    (state.service as ExtensionsService).setPermissionGranted(ID, 'chat:schedules', false);
-    panel().put(K2, { title: 'Bank', prompt: 'Call the bank', at: null, cron: '0 9 * * *', tz: 'Asia/Shanghai', enabled: true, nextRunAt: null, lastRun: null });
-    panel().tell();
-    await vi.waitFor(() => expect(ended).toHaveBeenCalledOnce(), wait);
-    expect(heard).toHaveBeenCalledTimes(3);
-    expect(state.panelWords.size).toBe(0);
-    stop();
-    expect(ended).toHaveBeenCalledOnce();
+    state.roster = [{ gugu_user_id: AGENT, status: 'active', cache: { emdash_session_id: SESSION, sessionpage_owner_user_id: OWNER } }];
+    expect(await list()).toEqual({ name: 'main', state: 'elsewhere' });
+    await expect(control({ operationId: op(), op: 'pause', scheduleId: left, revision: (await current(left)).revision })).rejects.toMatchObject({ code: 'elsewhere' });
+    expect(rows()).toEqual([{ id: left.slice('schedule:'.length), enabled: 1, deleted_at: null }]);
+    // Its home is this computer: the schedule store here.
+    state.thisDevice = HOME_DEVICE;
+    vi.setSystemTime(NOW + 1000);
+    expect(await list()).toMatchObject({ state: 'ready', schedules: [expect.objectContaining({ id: left })] });
+    expect(await control({ operationId: op(), op: 'pause', scheduleId: left, revision: (await current(left)).revision })).toMatchObject({ status: 'applied', scheduleId: left });
+    expect(rows()).toEqual([{ id: left.slice('schedule:'.length), enabled: 0, deleted_at: null }]);
   });
 });
