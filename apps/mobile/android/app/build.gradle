@@ -201,6 +201,17 @@ dependencies {
     implementation project(':capacitor-cordova-android-plugins')
 }
 
+// connectedDebugAndroidTest resolves the Android Gradle Plugin's unified test platform (its
+// _internal-unified-test-platform-* configurations) only when it runs, and it needs a device. CI's Gradle cache seeder
+// has no emulator, so it runs this instead; otherwise every emulator job downloads the platform again.
+tasks.register('resolveUnifiedTestPlatform') {
+    def platform = configurations.matching { it.name.startsWith('_internal-unified-test-platform') }
+    doLast {
+        if (platform.isEmpty()) throw new GradleException('no _internal-unified-test-platform-* configurations: the Android Gradle Plugin renamed them')
+        platform.each { it.resolve() }
+    }
+}
+
 apply from: 'capacitor.build.gradle'
 
 if (guguFcmEnabled) apply plugin: 'com.google.gms.google-services'
