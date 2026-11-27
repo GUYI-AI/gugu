@@ -182,7 +182,10 @@ export const EXTENSION_WIDGET_READY_API_VERSION = 64;
 // another App's window) the call also brings gugu's window forward first, as a banner's click does. An older host ignores
 // `orChatWith` and answers `not-found`, and opens the session without bringing gugu forward. Desktop only: the phone has no surfaces
 // and answers `not-found` as before.
-export const EXTENSION_API_VERSION = 66;
+// 67 (app-files-core): `files.replace(file, content, { expectedVersion })` takes a text or JSON document too — its next
+// version, refused (`content-changed`) when the text changed since that version, nothing written; and `files.create` takes
+// no `contentType`: a file's name is its format. An older host refuses a document (`live-text-file`).
+export const EXTENSION_API_VERSION = 67;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;

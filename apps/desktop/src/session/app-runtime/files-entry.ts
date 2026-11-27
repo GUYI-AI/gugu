@@ -3,6 +3,7 @@ import { guguError, refOf, type GuguHost } from './host';
 import { askingMain, fileKey, openFiles, OpenFile, storedTextFile } from './open-file';
 import { syncLink } from './sync-link';
 import { workspaceStoredText } from '@gugu/core/shared/workspaceUpload.mjs';
+import { mimeTypeFromName } from '@gugu/core/shared/imageMime.mjs';
 
 export { bindText } from './text-binding';
 
@@ -193,13 +194,17 @@ function checked<T>(read: () => T): T {
   }
 }
 
-/** `files.create({ chat | session, name, folder }, content)`: a new file, named where it goes (`folder`: 子文件夹). */
-export function createFile(host: GuguHost, target: unknown, content: string | object, options?: { contentType?: string; sourceMessageIds?: string[]; ifExists?: 'use' }) {
+/**
+ * `files.create({ chat | session, name, folder }, content)`: a new file, named where it goes (`folder`: 子文件夹). Its name
+ * is its format (`.md`, `.json`…): a chat's folder refuses a name without a text suffix. An object is a JSON file's content.
+ */
+export function createFile(host: GuguHost, target: unknown, content: string | object, options?: { sourceMessageIds?: string[]; ifExists?: 'use' }) {
   const place = where(target);
   const name = (target as { name?: unknown }).name;
   const folder = folderNamed((target as { folder?: unknown }).folder);
   if (typeof name !== 'string' || !name.trim()) throw guguError('invalid', 'A file needs a name: files.create({ chat | session, name }, content)');
-  const isJson = typeof content !== 'string' || (name.endsWith('.json') && !options?.contentType);
+  const isJson = mimeTypeFromName(name) === 'application/json';
+  if (!isJson && typeof content !== 'string') throw guguError('invalid', `An object is a JSON file's content: name it ${name}.json, or give text`);
   const data: unknown = isJson && typeof content === 'string' ? checked(() => JSON.parse(content)) : content;
   if (isJson && (data === null || typeof data !== 'object' || Array.isArray(data))) {
     throw guguError('invalid', 'A JSON file must hold an object at the top (its root is shared per key)');
@@ -208,7 +213,6 @@ export function createFile(host: GuguHost, target: unknown, content: string | ob
     place,
     name,
     content: isJson ? JSON.stringify(data, null, 2) : content as string,
-    ...(options?.contentType ? { contentType: options.contentType } : isJson ? { contentType: 'application/json' } : {}),
     sourceMessageIds: options?.sourceMessageIds,
     ...(folder === undefined ? {} : { folder }),
     ...(options?.ifExists === undefined ? {} : { ifExists: options.ifExists }),

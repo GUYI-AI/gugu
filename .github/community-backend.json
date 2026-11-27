@@ -1,5 +1,5 @@
 {
   "repository": "GUYI-AI/gugu-supabase",
-  "ref": "da8a7f22b4a58795a8a5993f4fef4c2b4e8d0297",
-  "status": "Backend #421 merged on dev: agent presence carries model_name and set_agent_runtime_state takes a trailing p_model_name."
+  "ref": "35baf6a587257acdee2b3c534697c2578a89d170",
+  "status": "Backend #422 merged on dev: a document's content type comes from its name, and a name without a text suffix is refused; retains #421 (agent presence carries model_name) and #413."
 }
