@@ -208,6 +208,7 @@ export default {
       "thinking": "思考中"
     },
     "toolCallUnit": "次工具调用",
+    "openSession": "进入任务对话",
     "viewDetails": "{{name}} {{status}}，查看运行详情",
     "viewMore": "查看另外 {{count}} 个运行中的 Agent",
     "viewMore_one": "查看另外 {{count}} 个运行中的 Agent",
