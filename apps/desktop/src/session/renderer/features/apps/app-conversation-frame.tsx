@@ -2,7 +2,7 @@ import '@/i18n/registerAssistantCatalog';
 import '../assistant/assistant-today.css';
 import { lazy, Suspense, useCallback, useEffect, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { PanelRight } from '@/lib/icons';
+import { PanelToggleIcon } from '@/components/PanelToggleIcon';
 import { readShellSlots } from '@/lib/shellSlots';
 import { appConversationSlotKey, readAppConversationSurfaceBridge } from '@/lib/appConversationSurfaceBridge';
 import { readAppHostLayerBridge } from '@/lib/appHostLayerBridge';
@@ -133,7 +133,7 @@ export function AppConversationFrame({ extensionId, tabKind, windowHandle = fals
               <AppPagePlace extensionId={extensionId} tabKind={tabKind} />
               <div style={CORNER} data-testid="app-conversation-panel-corner">
                 <button type="button" className="ta-circle ta-panel-collapse" style={{ pointerEvents: 'auto' }} aria-label={t('panel.collapse')} title={t('panel.collapse')} onClick={() => setCollapsed(true)} data-testid="app-conversation-panel-collapse">
-                  <PanelRight />
+                  <PanelToggleIcon side="right" open />
                 </button>
               </div>
             </>

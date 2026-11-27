@@ -34,6 +34,7 @@ const innerFrame = vi.hoisted(() => ({ folded: null as boolean | null }));
 vi.mock('@renderer/lib/layout/layout-provider', () => ({
   useInnerSidebarFrame: (folded: boolean) => { innerFrame.folded = folded; },
   useInnerSidebarCrowded: () => false,
+  useInnerColumnMoving: () => false,
   useWorkspaceLayoutContext: () => ({ isLeftOpen: true }),
 }));
 vi.mock('@renderer/lib/stores/app-state', () => ({

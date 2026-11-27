@@ -1,7 +1,8 @@
 import { useDndContext } from '@dnd-kit/core';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Maximize2, Minimize2, PanelRight } from '@/lib/icons';
+import { PanelToggleIcon } from '@/components/PanelToggleIcon';
+import { Maximize2, Minimize2 } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
 import { cn } from '@renderer/utils/utils';
 import { openPanelItem } from '../chats/chat-tabs/chat-layouts';
@@ -193,9 +194,8 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       )}
       {tools && (tabsVisible || mode === 'hidden') && (
         <Button size="icon-sm" variant="ghost" title={toggleLabel} aria-label={toggleLabel} aria-pressed={tabsVisible}
-          className="aria-pressed:bg-row-selected aria-pressed:text-foreground"
           onClick={() => layout.setChatToolLayout(tabsVisible ? 'hidden' : 'split')}>
-          <PanelRight className="size-3.5" />
+          <PanelToggleIcon side="right" open={tabsVisible} className="size-3.5" />
         </Button>
       )}
       {full && (

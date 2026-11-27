@@ -1,4 +1,5 @@
-import { Archive, Clock, FolderPlus, PanelLeft, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
+import { PanelToggleIcon } from '@/components/PanelToggleIcon';
+import { Archive, Clock, FolderPlus, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility';
@@ -236,7 +237,7 @@ function SidebarFoldButton() {
   return (
     <Hint label={shortcut ? `${foldLabel} (${shortcut})` : foldLabel} side={isLeftOpen ? 'bottom' : 'right'}>
       <IconButton size="md" tone="strong" className="window-no-drag-region !h-[26px] !w-[30px] !rounded-[7px]" aria-label={foldLabel} aria-expanded={isLeftOpen} onClick={toggleLeft} data-testid="sidebar-fold">
-        <PanelLeft />
+        <PanelToggleIcon open={isLeftOpen} />
       </IconButton>
     </Hint>
   );

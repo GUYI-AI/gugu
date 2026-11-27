@@ -1,0 +1,18 @@
+/* @@@panel-toggle-icon — see PanelToggleIcon.tsx. Folded is the mirror of open about the chevron's own x=15. */
+[data-panel-toggle-icon='right'] {
+  transform: scaleX(-1);
+}
+[data-panel-toggle-arrow] {
+  transform-box: view-box;
+  transform-origin: 15px 12px;
+  transform: scaleX(-1);
+  transition: transform var(--transition-normal);
+}
+[data-panel-toggle-icon][data-open] [data-panel-toggle-arrow] {
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-panel-toggle-arrow] {
+    transition: none;
+  }
+}

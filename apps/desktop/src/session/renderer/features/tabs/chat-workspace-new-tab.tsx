@@ -1,4 +1,5 @@
-import { PanelRight, Plus } from '@/lib/icons';
+import { PanelToggleIcon } from '@/components/PanelToggleIcon';
+import { Plus } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -12,9 +13,8 @@ export const ChatWorkspaceNewTab = observer(function ChatWorkspaceNewTab({ layou
   const { translate } = useSessionMessages();
   const initial = layout.chatToolLayout === 'empty';
   const name = translate(initial ? 'tabs.showToolTabs' : 'tabs.newWorkspaceTab');
-  const Icon = initial ? PanelRight : Plus;
   return <Button size="icon-sm" variant="ghost" aria-label={name} title={name}
     data-testid="chat-new-workspace-tab" onClick={() => openChatWorkspaceNewTab(layout)}>
-    <Icon className="size-4" />
+    {initial ? <PanelToggleIcon side="right" open={false} className="size-4" /> : <Plus className="size-4" />}
   </Button>;
 });

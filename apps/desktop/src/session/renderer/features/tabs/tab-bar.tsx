@@ -5,6 +5,7 @@ import { Button } from '@renderer/lib/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@renderer/lib/ui/dropdown-menu';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
+import { RESTORE_LANE_FOLLOWER } from '@renderer/lib/components/titlebar/shell-restore-lane';
 import { isStripOverflowing, readStripTabs, wheelToHorizontal, type StripTabEntry } from './tab-bar/tab-overflow';
 import { readRendererPlatform, shellRestoreLane, WINDOW_CONTROL_BAR_HEIGHT_PX } from '@/lib/window-chrome';
 import { PaneContext, usePaneContext } from '@renderer/features/tabs/pane-context';
@@ -255,11 +256,12 @@ export function TabStripShell({
   /** 取证用的名字。引擎那条不需要(它由 .session-tab-bar 定位),草稿那条要能与面板空态区分。 */
   testId?: string;
 }) {
-  const leading = Math.max(
-    TAB_STRIP_LEADING_PX,
-    reserveShellRestoreLane ? shellRestoreLane(readRendererPlatform()) : 0,
-    leadingReservePx
-  );
+  // The strip's leading room. The restore lane's share comes and goes with its button (--shell-restore-lane-shown, written on this
+  // strip, workspace-layout.tsx @@@inner-fold-motion): through the inner column's fold the first tab slides over, ❌ jumps.
+  const base = Math.max(TAB_STRIP_LEADING_PX, leadingReservePx);
+  const lane = reserveShellRestoreLane ? shellRestoreLane(readRendererPlatform()) : 0;
+  const baseCss = base === TAB_STRIP_LEADING_PX ? `var(--tab-strip-edge, ${TAB_STRIP_LEADING_PX}px)` : `${base}px`;
+  const leading = lane > base ? `(${baseCss} + (${lane}px - ${baseCss}) * var(--shell-restore-lane-shown, 1))` : baseCss;
   // 整条多宽:窄了挂标记,右端控制先让位(TAB_STRIP_NARROW_PX)。ResizeObserver,❌ 定时量。
   const barRef = useRef<HTMLDivElement>(null);
   const [narrow, setNarrow] = useState(false);
@@ -279,14 +281,14 @@ export function TabStripShell({
       ref={barRef}
       // 页签条的空白处拖窗口,三个平台、每种块都一样(项目块、对话块、App 块原先这里什么都没有);
       // 页签、按钮这些可交互的东西由 index.css 的 @@@4259 规则默认退订,照常能点。
-      className="session-tab-bar relative flex shrink-0 items-stretch justify-between bg-tab-strip [-webkit-app-region:drag]"
+      className={cn('session-tab-bar relative flex shrink-0 items-stretch justify-between bg-tab-strip [-webkit-app-region:drag]', lane > base && RESTORE_LANE_FOLLOWER)}
       data-testid={testId}
       data-strip-narrow={(restNarrow ?? narrow) ? '' : undefined}
       style={{
         height: `var(--tab-strip-height, ${WINDOW_CONTROL_BAR_HEIGHT_PX}px)`,
         // The plain edge is a variable (default 12px, the first tab's ears): a strip without ears (the tool card's) sets its own.
         // A split block's handle sits at the strip's start: the strip gives it its lane (--block-grip-lane, index.css).
-        paddingInlineStart: `calc(${leading === TAB_STRIP_LEADING_PX ? `var(--tab-strip-edge, ${TAB_STRIP_LEADING_PX}px)` : `${leading}px`} + var(--block-grip-lane, 0px))`,
+        paddingInlineStart: `calc(${leading} + var(--block-grip-lane, 0px))`,
       }}
       onClick={onClick}
     >
@@ -325,7 +327,7 @@ export function TabStripShell({
       {leadingSlot ? (
         <div
           className="absolute inset-y-0 flex items-center justify-center"
-          style={{ insetInlineStart: `${leading - TAB_STRIP_LEADING_PX}px`, width: `${TAB_STRIP_LEADING_PX}px` }}
+          style={{ insetInlineStart: lane > base ? `calc(${base - TAB_STRIP_LEADING_PX}px + ${lane - base}px * var(--shell-restore-lane-shown, 1))` : `${base - TAB_STRIP_LEADING_PX}px`, width: `${TAB_STRIP_LEADING_PX}px` }}
           data-tabstrip-leading=""
         >
           {leadingSlot}

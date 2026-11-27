@@ -69,6 +69,7 @@ const innerFrame = vi.hoisted(() => ({ folded: null as boolean | null }));
 vi.mock('@renderer/lib/layout/layout-provider', () => ({
   useInnerSidebarFrame: (folded: boolean) => { innerFrame.folded = folded; },
   useInnerSidebarCrowded: () => false,
+  useInnerColumnMoving: () => false,
 }));
 vi.mock('@renderer/localization/use-session-messages', () => ({
   useSessionMessages: () => ({ translate: (key: string, params?: Record<string, unknown>) => (params ? `${key}:${Object.values(params).join(',')}` : key) }),

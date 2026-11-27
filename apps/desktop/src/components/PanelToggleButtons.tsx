@@ -1,4 +1,4 @@
-import { PanelLeft } from '@/lib/icons'
+import { PanelToggleIcon } from './PanelToggleIcon'
 import { Button } from '@renderer/lib/ui/button'
 import { useEffect, useRef, useState } from 'react'
 import { readPanelToggle, usePanelToggle, type PanelSlot } from '../lib/panelToggles'
@@ -30,7 +30,9 @@ export function ListColumnToggle({ slot, disabledLabel = '' }: { slot: PanelSlot
     <Button
       size="icon-sm"
       variant="ghost"
-      className="window-no-drag-region"
+      // The ghost button paints aria-expanded as selected; here open/folded is the icon's arrow (PanelToggleIcon), so an open
+      // column's toggle rests like a folded one and keeps the ghost hover / press.
+      className="window-no-drag-region aria-expanded:bg-transparent aria-expanded:text-foreground-muted aria-expanded:hover:bg-row-hover aria-expanded:hover:text-foreground aria-expanded:active:bg-row-press"
       data-titlebar-sidebar-toggle=""
       aria-label={label}
       aria-expanded={panel ? open : undefined}
@@ -50,7 +52,7 @@ export function ListColumnToggle({ slot, disabledLabel = '' }: { slot: PanelSlot
         setJustClicked(false)
       }}
     >
-      <PanelLeft />
+      <PanelToggleIcon open={open} />
     </Button>
   )
 }
