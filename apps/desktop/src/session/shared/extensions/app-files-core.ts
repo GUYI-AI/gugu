@@ -21,6 +21,7 @@ import {
   savedFileName,
   typedFileName,
   type AppFileClaimant,
+  type ChatListOptions,
   type AppFileChunk,
   type AppFileEntry,
   type AppFileRef,
@@ -1058,16 +1059,22 @@ export function createAppFiles(platform: FilesPlatform) {
 
   /**
    * `folder` (子文件夹): only what is directly in it — its path or id, '' the top — found the way the database finds it
-   * (`workspace_list_as`, the person's as an agent's); not given, every file and folder of the chat.
+   * (`workspace_list_as`, the person's as an agent's); not given, every file and folder of the chat. `kind: 'folder'`: only
+   * folders; `name`: only names containing it. Newest change first. `limit`: one page of that order from `offset`
+   * (a page that comes back full may have more after it); not given, every row.
    */
-  async function groupFiles(chatId: string, as: { asAgent?: string | null; folder?: string } = {}): Promise<AppFileEntry[]> {
+  async function groupFiles(chatId: string, as: { asAgent?: string | null } & ChatListOptions = {}): Promise<AppFileEntry[]> {
     const { token, userId } = await platform.account();
-    const actor = as.asAgent ?? userId;
-    if (as.folder !== undefined) {
-      return listedEntriesOf(token, await listedRows(token, { p_chat_id: chatId, p_as_user_id: actor, p_folder: as.folder.replace(/^\/+|\/+$/g, '') }), platform, actor);
-    }
     // Acting for an agent (A2): what the agent sees, by its own membership — never the person's chats (#6492).
-    return listedEntriesOf(token, await rowsOfChat(token, chatId, actor), platform, actor);
+    const actor = as.asAgent ?? userId;
+    const args = {
+      p_chat_id: chatId, p_as_user_id: actor,
+      ...(as.folder === undefined ? {} : { p_folder: as.folder.replace(/^\/+|\/+$/g, '') }),
+      ...(as.kind ? { p_kind: as.kind } : {}),
+      ...(as.name ? { p_name: as.name } : {}),
+    };
+    const rows = as.limit === undefined ? await listedRows(token, args) : await agentRows(token, 'workspace_list_as', { ...args, p_offset: as.offset ?? 0, p_limit: as.limit });
+    return listedEntriesOf(token, rows, platform, actor);
   }
 
   /**

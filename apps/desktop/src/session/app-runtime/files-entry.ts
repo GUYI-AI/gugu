@@ -1,4 +1,4 @@
-import { fileSearchOf, folderOf, placeOf, type AppFileEntry, type AppFileOpened, type AppPlace } from '@shared/extensions/app-runtime-protocol';
+import { chatListOptionsOf, fileSearchOf, folderOf, placeOf, type AppFileEntry, type AppFileOpened, type AppPlace } from '@shared/extensions/app-runtime-protocol';
 import { guguError, refOf, type GuguHost } from './host';
 import { askingMain, fileKey, openFiles, OpenFile, storedTextFile } from './open-file';
 import { syncLink } from './sync-link';
@@ -168,10 +168,10 @@ function folderNamed(value: unknown): string | undefined {
   return checked(() => folderOf(value));
 }
 
-/** `files.list({ chat, folder })`: `folder` (子文件夹) lists only what is directly in it; without it, every file. */
+/** `files.list({ chat, folder, kind, name, offset, limit })` (`ChatListOptions`); a working copy's takes `folder` alone. */
 export function listEntries(host: GuguHost, place: unknown) {
-  const folder = folderNamed((place as { folder?: unknown } | null)?.folder);
-  return host.appFiles.list({ place: where(place), ...(folder === undefined ? {} : { folder }) });
+  const at = where(place);
+  return host.appFiles.list({ place: at, ...checked(() => chatListOptionsOf(place, 'chat' in at)) });
 }
 
 /** `files.search({ query, suffixes, limit })`, checked here: what is not one throws `invalid`. */
