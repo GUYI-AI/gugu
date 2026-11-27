@@ -880,7 +880,7 @@ export default {
       "back": "Change address",
       "close": "Done"
     },
-    "actions": "More actions",
+    "actions": "Device options",
     "appVersion": "Gugu {{version}}",
     "boundAgents_one": "Also deletes your {{count}} agent on this machine.",
     "boundAgents_other": "Also deletes your {{count}} agents on this machine.",

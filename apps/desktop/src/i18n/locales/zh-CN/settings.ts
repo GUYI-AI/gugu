@@ -880,7 +880,7 @@ export default {
       "back": "改地址",
       "close": "完成"
     },
-    "actions": "更多操作",
+    "actions": "设备操作",
     "appVersion": "咕咕 {{version}}",
     "boundAgents_one": "将同时删除这台机器上你的 {{count}} 个智能体。",
     "boundAgents_other": "将同时删除这台机器上你的 {{count}} 个智能体。",

@@ -54,8 +54,11 @@ function buttonByText(root: ParentNode, text: string): HTMLButtonElement {
   if (!button) throw new Error(`button not found: ${text}`)
   return button as HTMLButtonElement
 }
-async function openMenu(row = 0): Promise<void> {
-  const trigger = container.querySelectorAll<HTMLElement>('[data-testid="settings-device-menu-button"]')[row]!
+async function openMenu(row = 0, scope: ParentNode = container): Promise<void> {
+  const deviceRow = scope.querySelectorAll<HTMLElement>('[data-testid="settings-device-row"]')[row]!
+  const summary = deviceRow.querySelector<HTMLButtonElement>('[data-testid="settings-device-summary"]')
+  if (summary?.getAttribute('aria-expanded') === 'false') await act(async () => { summary.click() })
+  const trigger = deviceRow.querySelector<HTMLElement>('[data-testid="settings-device-menu-button"]')!
   await act(async () => {
     trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
     trigger.click()
@@ -218,12 +221,7 @@ describe('DevicesSection interaction', () => {
     const closeSettings = vi.fn()
     await act(async () => { root.render(createElement(DevicesContext.Provider, { value },
       createElement(Sheet, { onClose: closeSettings, testId: 'settings-parent', children: createElement(DevicesSection) }))) })
-    await act(async () => {
-      const trigger = document.body.querySelector<HTMLElement>('[data-testid="settings-device-menu-button"]')!
-      trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
-      trigger.click()
-    })
-    await flush()
+    await openMenu(0, document.body)
     await act(async () => { document.body.querySelector<HTMLElement>('[data-testid="settings-device-remove-versions"]')!.click() })
     await flush()
     const dialog = document.body.querySelector('[data-testid="settings-device-versions-dialog"]')!
@@ -240,12 +238,7 @@ describe('DevicesSection interaction', () => {
     const closeSettings = vi.fn()
     await act(async () => { root.render(createElement(DevicesContext.Provider, { value },
       createElement(Sheet, { onClose: closeSettings, testId: 'settings-parent', children: createElement(DevicesSection) }))) })
-    await act(async () => {
-      const trigger = document.body.querySelector<HTMLElement>('[data-testid="settings-device-menu-button"]')!
-      trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
-      trigger.click()
-    })
-    await flush()
+    await openMenu(0, document.body)
     await act(async () => { document.body.querySelector<HTMLElement>('[data-testid="settings-device-remove-versions"]')!.click() })
     await flush()
     const dialog = document.body.querySelector('[data-testid="settings-device-versions-dialog"]')!
@@ -423,7 +416,11 @@ describe('DevicesSection interaction', () => {
       const summary = server.querySelector<HTMLButtonElement>('[data-testid="settings-device-summary"]')!
       expect(summary.textContent).not.toContain('新版本已就绪')
       expect(summary.getAttribute('aria-expanded')).toBe('false')
+      expect(server.querySelectorAll('button')).toHaveLength(1)
+      expect(server.querySelector('[data-testid="settings-device-menu-button"]')).toBeNull()
       await act(async () => { summary.click() })
+      const expanded = document.getElementById(summary.getAttribute('aria-controls')!)!
+      expect(expanded.querySelector('[data-testid="settings-device-menu-button"]')?.textContent).toBe('设备操作')
       const details = server.querySelector<HTMLDetailsElement>('details')!
       await act(async () => { details.querySelector('summary')!.click() })
       expect(details.open).toBe(true)
@@ -434,7 +431,7 @@ describe('DevicesSection interaction', () => {
       const me = Array.from(rows).find((row) => row.dataset.deviceId === 'me')!
       expect(me.textContent).toContain('本机')
       expect(me.textContent).not.toContain('远程')
-      // 本机的菜单只有改名,没有移除
+      // 打开本机的设备操作后可以改名，不能移除本机。
       await openMenu(0)
       expect(document.body.querySelector('[data-testid="settings-device-rename-button"]')).not.toBeNull()
       expect(document.body.querySelector('[data-testid="settings-device-remove-button"]')).toBeNull()

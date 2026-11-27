@@ -65,7 +65,7 @@ import { cloudSnapshotOf, useCloudComputer } from '../../lib/cloudComputer'
 // #1749 设备管理 → #6264 做成能上线的「设置 → 设备」:
 //  · 每行:名字、是台什么机器(本机 / 电脑 / 服务器)、系统与架构、咕咕版本 + 升级状态、在线或「上次在线」、
 //    怎么连着的(经 SSH:用户@主机 / 经云端);
-//  · 每行一个「⋯」菜单,动作分组:改名、复制地址 | 移除这台机器、从这台机器上卸载咕咕 server;
+//  · 可展开的行在详情里提供设备操作,其余行从行尾菜单进入。动作分组:改名、复制地址 | 移除这台机器、从这台机器上卸载咕咕 server;
 //  · 机器多了能搜、能按在线状态筛;只有本机时说明「添加一台机器」能带来什么。
 // 列表 ❌ 按「怎么装上的」分组:SSH 只是一种装法(product spec),「经 SSH」只是行内一格事实。
 // store 为单一事实源(列表/排序/实时/动作),设计见 docs/design/devices-abstraction-design.md。
@@ -312,7 +312,7 @@ export function DevicesSection({
 
 /**
  * 「添加一台机器」这一行本身就是动作:先挑装法,两个动作(照 VS Code 的 Remote - SSH / Remote - Tunnels 分成两条)。
- * 远程 SSH 排第一:SSH 能连就用它,天然成本低;连不上才用远程隧道。菜单同设备行的「⋯」,键盘可达。
+ * 远程 SSH 排第一:SSH 能连就用它,天然成本低;连不上才用远程隧道。菜单同设备操作,键盘可达。
  * 这台主机加不了机器(`canAdd` 为假)⇒ 同一行只说明添加机器带来什么,不可点。
  */
 function AddServerRow({
@@ -500,7 +500,7 @@ function DeviceRow({
   const { toast } = useToast()
   const { translate } = useSessionMessages()
   const [menuOpen, setMenuOpen] = useState(false)
-  // 「改名」同「添加一台机器」:点了它这颗「⋯」随即卸掉、改名框自己接焦点,菜单关上时❌ 再归还焦点(理由见 AddServerRow)。
+  // 「改名」同「添加一台机器」:选中后菜单入口随即卸掉、改名框自己接焦点,菜单关上时❌ 再归还焦点(理由见 AddServerRow)。
   const renamingRef = useRef(false)
   const sshAddress = model.connection.via === 'ssh' ? model.connection.address : null
   const lastSeen = device.is_online && sshLink !== 'checking' ? null : formatRelativeTime(device.last_seen_at, { mode: 'elapsed', dateAfterDays: 30 })
@@ -550,6 +550,12 @@ function DeviceRow({
       ? t(model.kind === 'server' ? 'devices.serverVersion' : 'devices.appVersion', { version: model.version })
       : t('devices.versionUnknown')
   const summaryRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!editing && renamingRef.current) {
+      renamingRef.current = false
+      if (document.activeElement === document.body) summaryRef.current?.focus()
+    }
+  }, [editing])
   const ssh = !!sshAddress || (sshLink !== undefined && sshLink !== 'unknown')
   const recovery: DeviceRecoveryProps['state'] = link ?? (signedOutText ? 'notSignedIn' : sshLink === 'checking' ? 'checking'
     : isDeviceOnline(device.status) && model.update?.state === 'ready' ? 'waitingIdle'
@@ -577,6 +583,93 @@ function DeviceRow({
   const readyText = supervisorReady
     ? t('devices.update.supervisorReady', { version: model.update?.version })
     : t(hasBusyTasks ? 'devices.update.readyCount' : 'devices.update.ready', { count: model.update?.busy_agents })
+
+  const managementMenu = !editing && (!compactRow || expanded) && (
+    <DropdownMenu.Root
+      open={menuOpen}
+      modal={false}
+      onOpenChange={(open) => { if (open) renamingRef.current = false; setMenuOpen(open) }}
+    >
+      <DropdownMenu.Trigger
+        data-testid="settings-device-menu-button"
+        aria-haspopup="menu"
+        render={compactRow ? (
+          <Button size="sm" variant="ghost">{t('devices.actions')}</Button>
+        ) : (
+          <IconButton size="sm" on={menuOpen || undefined} aria-label={t('devices.actions')}>
+            <MoreHorizontal />
+          </IconButton>
+        )}
+      />
+      {menuOpen && (
+        <DropdownMenu.Content
+          side="bottom"
+          align={compactRow ? 'start' : 'end'}
+          sideOffset={4}
+          zIndex="var(--z-settings-modal)"
+          className="min-w-[200px]"
+          finalFocus={() => !renamingRef.current}
+        >
+          <MenuItem
+            data-testid={AUTOMATION_TEST_IDS.settingsDeviceRenameButton}
+            icon={<Pencil size={16} />}
+            onClick={() => { renamingRef.current = true; onStartRename() }}
+          >
+            {t('devices.menu.rename')}
+          </MenuItem>
+          {model.kind !== 'this' && model.kind !== 'cloud' && acceptsWork && !link && canOpenNewSessionOnDevice() && (
+            <MenuItem data-testid="settings-device-new-session" icon={<SquarePen size={16} />} onClick={() => openNewSessionOnDevice(device.device_id)}>
+              {t('devices.addServer.newTask')}
+            </MenuItem>
+          )}
+          {model.kind !== 'this' && model.kind !== 'cloud' && device.is_online && !link && canReconnectDevice() && (
+            <MenuItem data-testid="settings-device-reconnect" icon={<RefreshCw size={16} />} onClick={() => reconnectDevice(device.device_id)}>
+              {t('devices.menu.reconnect')}
+            </MenuItem>
+          )}
+          <MenuItem data-testid="settings-device-open-actions" icon={<ListChecks size={16} />} onClick={onOpenActions}>
+            {t('devices.deviceActions.menu')}
+          </MenuItem>
+          {sshAddress && sshLink === null && (
+            <MenuItem icon={<Unplug size={16} />} data-testid="settings-device-ssh-disconnect" onClick={() => {
+              void disconnectSshDevice(device.device_id).catch(error => toast(t('devices.link.disconnectFailed'), 'error', messageForUser(error)))
+            }}>{translate('remoteHost.ssh.disconnect')}</MenuItem>
+          )}
+          {sshAddress && (
+            <MenuItem data-testid="settings-device-copy-address" icon={<Copy size={16} />} onClick={() => onCopyAddress(sshAddress)}>
+              {t('devices.menu.copyAddress')}
+            </MenuItem>
+          )}
+          {configurationCount > 1 && (
+            <>
+              <MenuSeparator />
+              <MenuItem danger data-testid="settings-device-remove-versions" icon={<Unplug size={16} />} onClick={onRemoveVersions}>
+                {t('devices.menu.removeVersions')}
+              </MenuItem>
+            </>
+          )}
+          {model.kind !== 'this' && configurationCount === 1 && (
+            <>
+              <MenuSeparator />
+              <MenuItem
+                danger
+                data-testid={AUTOMATION_TEST_IDS.settingsDeviceRemoveButton}
+                icon={<Unplug size={16} />}
+                onClick={onRemove}
+              >
+                {t('devices.menu.remove')}
+              </MenuItem>
+              {sshAddress && model.kind === 'server' && (
+                <MenuItem danger data-testid="settings-device-uninstall-button" icon={<Trash2 size={16} />} onClick={onUninstall}>
+                  {t('devices.menu.uninstall')}
+                </MenuItem>
+              )}
+            </>
+          )}
+        </DropdownMenu.Content>
+      )}
+    </DropdownMenu.Root>
+  )
 
   return (
     <div
@@ -607,7 +700,7 @@ function DeviceRow({
           </Button>
         )}
         {(!compactRow || (expanded && !editing)) && <div id={detailsId} className={compactRow ? 'gg-device-expanded' : undefined} onKeyDown={event => {
-          if (compactRow && event.key === 'Escape' && !event.defaultPrevented) { event.stopPropagation(); closeDetails() }
+          if (compactRow && !menuOpen && event.key === 'Escape' && !event.defaultPrevented) { event.stopPropagation(); closeDetails() }
         }}>
           {localSummary ? <>
             {ssh ? <DeviceRecoveryPanel key={device.device_id + recovery} deviceId={device.device_id} state={recovery} name={device.label}
@@ -720,6 +813,7 @@ function DeviceRow({
               )}
             </div>
           </>}
+          {compactRow && managementMenu}
         </div>}
         {device.capabilities?.server_boot_failures?.map((failure) => (
           <div key={`${failure.operation}:${failure.taskId}`} role="alert" className="mt-1 text-[length:var(--font-caption)] text-[var(--danger-fg)]" data-testid="settings-device-boot-failure">
@@ -733,90 +827,7 @@ function DeviceRow({
         )}
       </div>
 
-      {!editing && (
-        <DropdownMenu.Root
-          open={menuOpen}
-          modal={false}
-          onOpenChange={(open) => { if (open) renamingRef.current = false; setMenuOpen(open) }}
-        >
-          <DropdownMenu.Trigger
-            data-testid="settings-device-menu-button"
-            aria-haspopup="menu"
-            render={(
-              <IconButton size="sm" on={menuOpen || undefined} aria-label={t('devices.actions')}>
-                <MoreHorizontal />
-              </IconButton>
-            )}
-          />
-          {menuOpen && (
-            <DropdownMenu.Content
-              side="bottom"
-              align="end"
-              sideOffset={4}
-              zIndex="var(--z-settings-modal)"
-              className="min-w-[200px]"
-              finalFocus={() => !renamingRef.current}
-            >
-              <MenuItem
-                data-testid={AUTOMATION_TEST_IDS.settingsDeviceRenameButton}
-                icon={<Pencil size={16} />}
-                onClick={() => { renamingRef.current = true; onStartRename() }}
-              >
-                {t('devices.menu.rename')}
-              </MenuItem>
-              {model.kind !== 'this' && model.kind !== 'cloud' && acceptsWork && !link && canOpenNewSessionOnDevice() && (
-                <MenuItem data-testid="settings-device-new-session" icon={<SquarePen size={16} />} onClick={() => openNewSessionOnDevice(device.device_id)}>
-                  {t('devices.addServer.newTask')}
-                </MenuItem>
-              )}
-              {model.kind !== 'this' && model.kind !== 'cloud' && device.is_online && !link && canReconnectDevice() && (
-                <MenuItem data-testid="settings-device-reconnect" icon={<RefreshCw size={16} />} onClick={() => reconnectDevice(device.device_id)}>
-                  {t('devices.menu.reconnect')}
-                </MenuItem>
-              )}
-              <MenuItem data-testid="settings-device-open-actions" icon={<ListChecks size={16} />} onClick={onOpenActions}>
-                {t('devices.deviceActions.menu')}
-              </MenuItem>
-              {sshAddress && sshLink === null && (
-                <MenuItem icon={<Unplug size={16} />} data-testid="settings-device-ssh-disconnect" onClick={() => {
-                  void disconnectSshDevice(device.device_id).catch(error => toast(t('devices.link.disconnectFailed'), 'error', messageForUser(error)))
-                }}>{translate('remoteHost.ssh.disconnect')}</MenuItem>
-              )}
-              {sshAddress && (
-                <MenuItem data-testid="settings-device-copy-address" icon={<Copy size={16} />} onClick={() => onCopyAddress(sshAddress)}>
-                  {t('devices.menu.copyAddress')}
-                </MenuItem>
-              )}
-              {configurationCount > 1 && (
-                <>
-                  <MenuSeparator />
-                  <MenuItem danger data-testid="settings-device-remove-versions" icon={<Unplug size={16} />} onClick={onRemoveVersions}>
-                    {t('devices.menu.removeVersions')}
-                  </MenuItem>
-                </>
-              )}
-              {model.kind !== 'this' && configurationCount === 1 && (
-                <>
-                  <MenuSeparator />
-                  <MenuItem
-                    danger
-                    data-testid={AUTOMATION_TEST_IDS.settingsDeviceRemoveButton}
-                    icon={<Unplug size={16} />}
-                    onClick={onRemove}
-                  >
-                    {t('devices.menu.remove')}
-                  </MenuItem>
-                  {sshAddress && model.kind === 'server' && (
-                    <MenuItem danger data-testid="settings-device-uninstall-button" icon={<Trash2 size={16} />} onClick={onUninstall}>
-                      {t('devices.menu.uninstall')}
-                    </MenuItem>
-                  )}
-                </>
-              )}
-            </DropdownMenu.Content>
-          )}
-        </DropdownMenu.Root>
-      )}
+      {!compactRow && managementMenu}
     </div>
   )
 }
