@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -86,6 +86,29 @@ describe('changing the home', () => {
       data: { relativePath: 'tea.md' }, body: await store.upload('tea.md', new TextEncoder().encode('other')) });
     await expect(stale).rejects.toMatchObject({ code: 'PT409' });
     expect(await readFile(join(paths.memoryDir, 'tea.md'), 'utf8')).toBe('# Tea\nGreen');
+  });
+
+  it('detects edits with identical length and mtime in resources and snapshots, and refuses the old revision', async () => {
+    const { paths, store } = open();
+    const path = join(paths.memoryDir, 'note.md');
+    const fixedTime = new Date('2025-01-01T00:00:00Z');
+    await writeFile(path, 'old');
+    await utimes(path, fixedTime, fixedTime);
+    const before = await store.client.snapshot(AGENT);
+    const note = assistantPanelCollection(before, 'memory').items[0]!;
+    await writeFile(path, 'new');
+    await utimes(path, fixedTime, fixedTime);
+    const after = await store.client.snapshot(AGENT);
+    const edited = assistantPanelCollection(after, 'memory').items[0]!;
+    expect(edited.updated_at).toBe(note.updated_at);
+    expect(edited.revision).not.toBe(note.revision);
+    expect(after.revision).not.toBe(before.revision);
+    expect((await store.client.snapshot(AGENT)).revision).toBe(after.revision);
+    await expect(store.client.commit(AGENT, { operationId: 'old-note', domain: 'memory', key: 'note.md',
+      expectedRevision: note.revision, operation: 'remove' })).rejects.toMatchObject({ code: 'PT409' });
+    expect(await readFile(path, 'utf8')).toBe('new');
+    await rm(path);
+    expect((await store.client.snapshot(AGENT)).revision).not.toBe(after.revision);
   });
 
   it('removes a memory and its line in MEMORY.md; saves the personality into its part of the instructions', async () => {

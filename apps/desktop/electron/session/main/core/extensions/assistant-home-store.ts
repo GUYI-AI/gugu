@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
+import { KeyedMutex } from '@gugu/session-core/lib';
 import { eq } from 'drizzle-orm';
 import { listAgents } from '@gugu/core';
 import { agentsForOwner } from '@gugu/core/local/state/agentOwner';
@@ -19,19 +20,22 @@ import { assistantHomePath } from './assistant-home-path';
  * The personal assistant's home on this computer, answered as the resource store answers an App (the same snapshot, items
  * and receipts as `createAssistantPanelClient`), from the home's own files: reading lists and reads them, a change writes
  * them. Nothing is published or kept anywhere else, and nothing runs between calls. A change is checked against the file
- * as it is now (its revision is its modification time) and applied at once: its receipt is `applied` or it is refused.
+ * as it is now (its revision includes the modification time and content digest) and applied at once: its receipt is `applied` or it is refused.
  */
 
 type FileDomain = 'memory' | 'files' | 'skills' | 'voice-notes';
 const DOMAINS = ['memory', 'files', 'skills', 'personality', 'voice-notes'] as const;
 type HomeDomain = (typeof DOMAINS)[number];
-type Row = { key: string; path: string | null; data: Record<string, unknown>; revision: string; at: Date; bytes?: Uint8Array };
+type Row = { key: string; path: string | null; data: Record<string, unknown>; revision: string; at: Date; bytes?: Uint8Array; digest?: string };
 
 const LOCAL_BODY = 'home:';
 const UPLOAD_BODY = 'upload:';
 /** Whether a resource's content is a file of the home itself (not a file of any conversation). */
 export const isHomeBody = (itemId: string) => itemId.startsWith(LOCAL_BODY);
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+// The binding protocol accepts opaque revisions as up to 19 decimal digits. Reserve 0 for missing and 1 for markers.
+const revisionOf = (identity: string) => (createHash('sha256').update(identity).digest().readBigUInt64BE() % ((1n << 63n) - 2n) + 2n).toString();
+const writes = new KeyedMutex();
 const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
 const refused = (code: string, message: string, key?: string, domain?: string) => new AssistantPanelError(code, message, key, domain);
 
@@ -63,8 +67,9 @@ export function createAssistantHomeStore(input: {
     if (domain === 'personality') {
       const target = await at(null, domain);
       const info = await stat(target, { bigint: true }).catch((error: unknown) => { if (missing(error)) return null; throw error; });
-      const text = info ? await readFile(target, 'utf8') : '';
-      return [{ key: 'instructions', path: null, data: { text: splitInstructions(text).user }, revision: info ? String(info.mtimeNs) : '1', at: info?.mtime ?? new Date(0) }];
+      const bytes = info ? await readFile(target) : null;
+      const text = bytes?.toString('utf8') ?? '';
+      return [{ key: 'instructions', path: null, data: { text: splitInstructions(text).user }, revision: info && bytes ? revisionOf(`${info.mtimeNs}:${sha256(bytes)}`) : '1', at: info?.mtime ?? new Date(0) }];
     }
     const rows: Row[] = [];
     const root = rootOf(domain);
@@ -77,7 +82,7 @@ export function createAssistantHomeStore(input: {
         if (entry.isSymbolicLink()) continue;
         const path = relative ? `${relative}/${entry.name}` : entry.name;
         const info = await stat(await at(path, domain), { bigint: true });
-        const revision = String(info.mtimeNs), modifiedAt = info.mtime.toISOString();
+        const modifiedAt = info.mtime.toISOString();
         if (entry.isDirectory()) {
           // A folder has no content of its own: its time moves with what is put in it, so it is not its revision.
           if (domain === 'files') rows.push({ key: path, path, data: { name: entry.name, path, kind: 'directory', modifiedAt }, revision: '1', at: info.mtime });
@@ -90,7 +95,8 @@ export function createAssistantHomeStore(input: {
           const data = domain === 'files' ? { name: entry.name, path, kind: 'file', sizeBytes: bytes.length, modifiedAt }
             : domain === 'memory' ? { relativePath: path, title: entry.name, modifiedAt, kind: 'file' }
             : domain === 'skills' ? { name: relative, modifiedAt } : { noteId: path.split('/')[0], kind: entry.name };
-          rows.push({ key, path, data, revision, at: info.mtime, bytes });
+          const digest = sha256(bytes);
+          rows.push({ key, path, data, revision: revisionOf(`${info.mtimeNs}:${digest}`), at: info.mtime, bytes, digest });
         }
       }
     }
@@ -113,7 +119,7 @@ export function createAssistantHomeStore(input: {
   const itemOf = (domain: HomeDomain, row: Row): AssistantPanelItem => ({
     assistant_user_id: input.assistantId, owner_user_id: input.ownerId, domain, resource_key: row.key, device_id: input.deviceId,
     revision: row.revision, data: row.data,
-    body_item_id: row.bytes && row.path ? `${LOCAL_BODY}${row.path}` : null, body_sha256: row.bytes ? sha256(row.bytes) : null,
+    body_item_id: row.bytes && row.path ? `${LOCAL_BODY}${row.path}` : null, body_sha256: row.digest ?? null,
     deleted_at: null, observed_at: null, updated_at: row.at.toISOString(),
   });
   const marker = (domain: HomeDomain): AssistantPanelItem => ({
@@ -126,8 +132,8 @@ export function createAssistantHomeStore(input: {
 
   async function snapshot(): Promise<AssistantPanelSnapshot> {
     const all = (await Promise.all(DOMAINS.map(async (domain) => [marker(domain), ...await items(domain)]))).flat();
-    const revision = all.reduce((max, item) => BigInt(item.revision) > max ? BigInt(item.revision) : max, 1n);
-    return { version: 1, revision: String(revision), items: all, application: [] };
+    const revision = revisionOf(JSON.stringify(all.map(item => [item.domain, item.resource_key, item.revision, item.updated_at])));
+    return { version: 1, revision, items: all, application: [] };
   }
 
   async function bytesOf(itemId: string, domain: FileDomain): Promise<Uint8Array> {
@@ -194,7 +200,8 @@ export function createAssistantHomeStore(input: {
   async function commit(assistant: string, change: AssistantPanelCommit): Promise<AssistantPanelReceipt> {
     if (assistant !== input.assistantId) throw refused('42501', 'Personal assistant is not available to this account');
     if (!(DOMAINS as readonly string[]).includes(change.domain)) throw refused('22023', `The ${change.domain} resources are not kept here`);
-    const done = receipts.get(`${input.ownerId}:${change.operationId}`);
+    const receiptKey = JSON.stringify([input.ownerId, input.assistantId, anchor, change.operationId]);
+    const done = receipts.get(receiptKey);
     if (done) return done;
     const domain = change.domain as HomeDomain;
     const item = await current(domain, change.key);
@@ -203,7 +210,7 @@ export function createAssistantHomeStore(input: {
     const after = await current(domain, domain === 'files' && typeof change.data?.path === 'string' ? change.data.path
       : domain === 'memory' && typeof change.data?.relativePath === 'string' ? change.data.relativePath : change.key);
     const receipt: AssistantPanelReceipt = { operationId: change.operationId, revision: after?.revision ?? item?.revision ?? '0', status: 'applied' };
-    receipts.set(`${input.ownerId}:${change.operationId}`, receipt);
+    receipts.set(receiptKey, receipt);
     for (const old of [...receipts.keys()].slice(0, Math.max(0, receipts.size - RECEIPTS_KEPT))) receipts.delete(old);
     input.changed();
     return receipt;
@@ -219,7 +226,7 @@ export function createAssistantHomeStore(input: {
         if (assistant !== input.assistantId) throw refused('42501', 'Personal assistant is not available to this account');
         return (DOMAINS as readonly string[]).includes(domain) ? current(domain as HomeDomain, key) : null;
       },
-      commit,
+      commit: (assistant, change) => writes.runExclusive(anchor, () => commit(assistant, change)),
     },
     async readBody(item, maxBytes) {
       if (!item.body_item_id) throw refused('body-unavailable', 'No content');
@@ -263,10 +270,10 @@ export async function agentSessionHere(ownerId: string, agentId: string): Promis
 export async function assistantHomeHere(ownerId: string, agentId: string, deviceId: string): Promise<AssistantHomeHere | null> {
   if (!(await isThisComputer(deviceId))) return null;
   const sessionId = await agentSessionHere(ownerId, agentId);
-  if (!sessionId) return null;
+  if (!sessionId) throw refused('failed', 'The local assistant session is unavailable');
   const [row] = await db.select({ path: workspaces.path, archivedAt: sessions.archivedAt }).from(sessions)
     .innerJoin(workspaces, eq(workspaces.id, sessions.workspaceId)).where(eq(sessions.id, sessionId)).limit(1);
-  if (!row?.path || row.archivedAt != null) return null;
+  if (!row?.path || row.archivedAt != null) throw refused('failed', 'The local assistant workspace is unavailable');
   const kind = assistantHomeKind(process.env), home = homedir();
   return { paths: assistantHomePaths(home, row.path, kind), anchor: kind === 'cloud' ? home : row.path };
 }
