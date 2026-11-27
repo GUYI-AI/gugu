@@ -138,7 +138,8 @@ describe('Codex ACP /goal is codex thread goal', () => {
     const rig = start()
     const sessionId = await openSession(rig)
     const receipt = await rig.reply(rig.send('session/prompt', { sessionId, prompt: prompt('/goal --tokens 200k ship the fix') }), 'receipt')
-    expect(receipt).toEqual({ messageId: expect.stringMatching(/^goal:/) })
+    // Codex keeps the goal, not the line: the receipt asks the host to journal it.
+    expect(receipt).toEqual({ messageId: expect.stringMatching(/^goal:/), _meta: { guguUnrecorded: true } })
     expect(rig.goalWire()).toEqual([{ method: 'thread/goal/set', params: {
       threadId: 'th-goal', origin: 'user', objective: 'ship the fix', status: 'active', tokenBudget: 200_000 } }])
     // The receipt follows the set answer's own notice; the budget notice is the last one codex sends. Both are in.
@@ -154,7 +155,7 @@ describe('Codex ACP /goal is codex thread goal', () => {
     // The receipt is sent only after the late answer was handled, so every notice is already in.
     expect(rig.notices()).toEqual(['Goal active: 0 / 200,000 tokens', 'Goal stopped, token budget reached: 200,005 / 200,000 tokens'])
     const shown = await rig.reply(rig.send('session/prompt', { sessionId, prompt: prompt('/goal') }), 'show')
-    expect(shown).toEqual({ messageId: expect.stringMatching(/^goal:/) })
+    expect(shown).toEqual({ messageId: expect.stringMatching(/^goal:/), _meta: { guguUnrecorded: true } })
     expect(rig.notices().at(-1)).toBe('Goal stopped, token budget reached: 200,005 / 200,000 tokens')
   })
 

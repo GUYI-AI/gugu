@@ -54,7 +54,7 @@ import {
 import type { Result } from '@gugu/session-shared';
 import { errorDetail, ok, toSerializedError } from '@gugu/session-shared';
 import { GOAL_TOKENS_FLAG, goalAcceptsTokenBudget, invokesCommand, parseGoalCommand } from '@gugu/session-core/acp/commands';
-import { nativePromptMeta } from '@gugu/session-core/acp/native-prompt';
+import { nativePromptMeta, UNRECORDED_PROMPT } from '@gugu/session-core/acp/native-prompt';
 import { inlinePromptParts } from './inline-images';
 import { annotationPromptText } from '@gugu/session-core/acp/client';
 import { classifyTurnFailure, refusedTurnOutcome } from './turn-failure';
@@ -1653,6 +1653,10 @@ export class SessionCell {
     const point = this.deps.revert ? guguRevertPoint(meta) : null;
     if (request && point) {
       this.transcript.setRevertAnchor(request.messageId, point.before, point.files === true);
+      this.emitTranscriptChanged();
+    }
+    if (request && meta?.[UNRECORDED_PROMPT] === true) {
+      this.transcript.markUnrecorded(request.messageId);
       this.emitTranscriptChanged();
     }
   }

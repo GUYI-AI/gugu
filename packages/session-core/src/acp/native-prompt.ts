@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { TranscriptFileRef } from './models/turn-files';
 import type { TurnAnnotation } from './models/turn-annotations';
-import { HOST_PROMPT_HASH } from './native-prompt-key.ts';
+import { HOST_PROMPT_HASH, UNRECORDED_PROMPT } from './native-prompt-key.ts';
 
 /**
  * The text an agent records for a prompt: its text blocks (resources as their text) joined by line, as Hermes submits it
@@ -20,7 +20,7 @@ export function nativePromptText(blocks: unknown): { text: string; images: { dat
   return { text: texts.join('\n'), images };
 }
 
-export { HOST_PROMPT_HASH };
+export { HOST_PROMPT_HASH, UNRECORDED_PROMPT };
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 /**
  * The receipt a host prompt carries for the native text its agent recorded for it. The host keeps the person's words;
