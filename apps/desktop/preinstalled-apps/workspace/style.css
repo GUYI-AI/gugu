@@ -374,6 +374,7 @@ body[data-state='doc'] .doc-message, body.gone .modes { display: none; }
   .place-switch button > .short { display: inline; }
   .files-toolbar:has(> .search:not([hidden])) > .place-switch { display: none; }
 }
+.files-toolbar > .pick-all { display: none; }
 .files-toolbar > .kinds { min-width: 0; overflow: auto; white-space: nowrap; margin: 0; padding: 0; flex-wrap: nowrap; }
 /* The kinds' grey track hugs its four buttons (owner 11-06: 「Other 尾巴很长」). */
 .files-toolbar > .kinds { flex: 0 1 auto; }
@@ -402,6 +403,9 @@ body[data-state='doc'] .doc-message, body.gone .modes { display: none; }
   .file-list:not(.as-grid) { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); column-gap: var(--em-spacing-lg); align-content: start; }
   .file-list:not(.as-grid) > :not(.file) { grid-column: 1 / -1; }
   .file-list:not(.as-grid) > .table-head { display: none; }
+  .files:not(.grid-view) .files-toolbar > .pick-all { display: block; }
+  .files.has-picks .files-toolbar > .pick-all { visibility: visible; }
+  .files:not(.grid-view) > .pick-bar { inset-inline-start: 44px; }
 }
 /* 按名称筛选 (owner 11-07: no jumping; 11-08: the field opens beside the 🔍 that was pressed): the box takes the kinds'
    room, so 🔍 and everything after it keep their place, and the field inside sits at its right end, against 🔍, up to
