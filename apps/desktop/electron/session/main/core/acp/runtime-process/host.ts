@@ -305,7 +305,7 @@ const acpWorker = lazyWorker(
           void conversationPreviews.update(event).catch(error => log.error('Failed to update personal conversation preview', { sessionId: event.sessionId, error }));
         },
       }));
-      // #881 The assistant panel's per-turn notice is prepared here, in the host, for the runtime's provider requests.
+      // #881 Each provider request's turn admission is answered here, in the host, for the runtime.
       handle.scope.add(await connectNativePromptPreparation(handle.client, log));
       // #3005 The worker starts with idle compaction on; tell it the person's setting before any timer can fire.
       void pushIdleCompactionSetting(handle.client as AcpRuntimeProcessClient);

@@ -26,7 +26,6 @@ const state = vi.hoisted(() => ({
   service: undefined as unknown,
   token: '',
   roster: [] as unknown[],
-  blocked: new Map<string, Error>(),
   cloud: { kind: 'dm' as string | null, members: [] as string[], owned: true, error: false },
   afterCloud: undefined as (() => void) | undefined,
   taps: new Set<(channel: string, data: unknown) => void>(),
@@ -50,7 +49,6 @@ vi.mock('@main/core/automations/actions/sessionCreate', () => ({ executeSessionC
 vi.mock('@main/core/sessions/session-orchestration', () => ({
   messageSessionFrom: async (_envelope: unknown, _session: string, text: string) => { state.told.push(text); state.onTell?.(); return { id: 'deferred' }; },
 }));
-vi.mock('@main/core/automations/assistant-panel-schedule-preparation', () => ({ prepareAgentScheduleChanges: async () => state.blocked }));
 vi.mock('./account-token', () => ({ currentAccountAccessToken: async () => state.token }));
 vi.mock('./assistant-panel-changes', () => ({
   onAssistantPanelChanged: (_owner: string, assistantId: string, changed: () => void) => {
@@ -218,7 +216,7 @@ beforeEach(async () => {
   for (const id of [SESSION, ELSE_SESSION]) {
     fixture.sqlite.prepare(`INSERT INTO sessions (id, project_id, provider, runtime, config) VALUES (?, 'project-1', 'claude', 'acp', json_object('version', '1', 'type', 'pty', 'agentDisplayName', 'Agent'))`).run(id);
   }
-  Object.assign(state, { token: OWNER, blocked: new Map(), afterCloud: undefined, told: [], rosterReads: 0, onTell: undefined,
+  Object.assign(state, { token: OWNER, afterCloud: undefined, told: [], rosterReads: 0, onTell: undefined,
     cloud: { kind: 'dm', members: [OWNER, AGENT], owned: true, error: false },
     roster: [{ gugu_user_id: AGENT, status: 'active', cache: { emdash_session_id: SESSION, sessionpage_owner_user_id: OWNER } }] });
   state.taps.clear();
@@ -256,7 +254,7 @@ describe('listing the bound agent\'s schedules', () => {
     for (const secret of [SESSION, ELSE_SESSION, AGENT, CHAT, OWNER, 'project-1']) expect(JSON.stringify(answer)).not.toContain(secret);
   });
 
-  it('no conversation chosen is unbound; an agent living elsewhere is elsewhere; unapplied saved changes are unavailable', async () => {
+  it('no conversation chosen is unbound; an agent living elsewhere is elsewhere; an unreadable store is unavailable', async () => {
     (state.service as ExtensionsService).setConversationUnreadBinding(OWNER, ID, 'main', null);
     expect(await list()).toEqual({ name: 'main', state: 'unbound' });
     (state.service as ExtensionsService).setConversationUnreadBinding(OWNER, ID, 'main', CHAT);
@@ -264,10 +262,6 @@ describe('listing the bound agent\'s schedules', () => {
     expect(await list()).toEqual({ name: 'main', state: 'elsewhere' });
     await expect(control({ operationId: op(), op: 'register', prompt: 'x', cron: '0 8 * * *' })).rejects.toMatchObject({ code: 'elsewhere' });
     state.roster = [{ gugu_user_id: AGENT, status: 'active', cache: { emdash_session_id: SESSION, sessionpage_owner_user_id: OWNER } }];
-    state.blocked = new Map([[SESSION, new Error('PANEL_PREPARATION_TIMEOUT')]]);
-    expect(await list()).toEqual({ name: 'main', state: 'unavailable' });
-    await expect(control({ operationId: op(), op: 'register', prompt: 'x', cron: '0 8 * * *' })).rejects.toMatchObject({ code: 'unavailable' });
-    state.blocked = new Map();
     state.cloud.error = true;
     expect(await list()).toEqual({ name: 'main', state: 'unavailable' });
     expect(rows()).toEqual([]);

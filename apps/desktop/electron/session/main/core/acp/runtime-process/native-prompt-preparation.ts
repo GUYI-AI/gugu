@@ -8,7 +8,7 @@ type Log = { warn(message: string, detail?: Record<string, unknown>): void };
 
 /**
  * The host side of native prompt preparation (#881). SessionCell runs in the ACP runtime process, where
- * the assistant panel's preparation is not installed: answer each provider request from here, and confirm
+ * the host's turn admission (setSessionAdmissionPreparation) is not installed: answer each provider request from here, and confirm
  * or release the prepared notice only when the runtime reports whether that request was sent.
  */
 export async function connectNativePromptPreparation(client: RuntimeClient, log: Log): Promise<() => void> {

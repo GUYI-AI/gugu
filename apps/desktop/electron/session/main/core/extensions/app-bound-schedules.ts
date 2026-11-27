@@ -12,7 +12,6 @@ import { SCHEDULE_OPERATIONS, scheduleControlSchema, type AppBoundSchedules, typ
 import { SESSIONPAGE_SESSION_CACHE_KEY } from '@main/core/sessionpage/sessionpage-session-agent';
 import {
   agentScheduleHome,
-  applySavedScheduleChanges,
   listAppSchedules,
   planAppScheduleChange,
   settledAppScheduleChange,
@@ -293,8 +292,6 @@ export async function appBoundScheduleControl(extensionId: string, input: unknow
       return answer(await commitPanelRequest(bound.panel, plan.request, scheduleId, recheck), plan.request);
     }
     const { home } = bound;
-    await applySavedScheduleChanges(home.sessionId);
-    await recheck();
     if (kept?.pending) {
       const settled = await settledAppScheduleChange(home, change, kept.pending, kept.at);
       await recheck();
