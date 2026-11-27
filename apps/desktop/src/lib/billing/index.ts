@@ -23,7 +23,6 @@ export {
 } from './membership'
 export {
   getQuotaWindows,
-  periodUsdFor,
   quotaWindowLabel,
   quotaWindowViews,
   type QuotaWindowView,

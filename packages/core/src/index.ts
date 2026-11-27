@@ -174,7 +174,7 @@ export {
   type AgentModelSelection,
   type ModelAccessProtocol,
 } from './local/agent/modelAccess'
-// 计费领域层(积分 = 唯一货币、1 积分 = $1 牌价用量,额度窗口 = 一个订阅周期一个池子);
+// 计费领域层(积分 = 唯一货币、1 积分 = ¥1,额度窗口 = 一个订阅周期一个池子);
 // renderer 的 view-model 不在这里。
 export {
   deriveSpendWindow,

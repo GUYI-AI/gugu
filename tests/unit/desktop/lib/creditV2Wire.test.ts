@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { describe, expect, it } from 'vitest'
 import { createCreditV2Reader } from '../../../../apps/desktop/src/lib/billing/v2/readers'
 import { classifyCreditV2Error, createActiveCreditV2Reader, CreditV2StateError } from '../../../../apps/desktop/src/lib/billing/v2/active'
-import { deriveSpendingPower, isLowBalance, periodUsdFor } from '@gugu/core/billing'
+import { deriveSpendingPower, isLowBalance } from '@gugu/core/billing'
 import { creditRatio } from '../../../../apps/desktop/src/lib/billing/creditGeometry'
 import {
   CreditReadContractError, creditMeta, priceState, rpcRows, sameCreditMeta,
@@ -127,7 +127,6 @@ describe('exact downstream credit derivation', () => {
     expect(isLowBalance(creditDecimal('0.99999999'))).toBe(true)
     expect(isLowBalance(creditDecimal('1'))).toBe(false)
     expect(isLowBalance(creditDecimal('0'))).toBe(false)
-    expect(periodUsdFor({ period_credits: creditDecimal('7.5'), credits_per_usd: creditDecimal('3.33333333') })).toBeNull()
   })
 
   it('normalizes only drawing geometry, keeping exact source values separate', () => {
