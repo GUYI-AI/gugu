@@ -51,7 +51,8 @@ export type McpServerRegistration = {
  * - `listed`:每个工具以 `<prefix><tool>` 直接出现在模型的工具表里,直接调用。
  * - `proxied`:工具不逐个上表,模型经 `proxyTool` 这一个代理工具按名调用(名字仍是 `<prefix><tool>`)。
  * - `server-proxied`:工具不逐个上表,模型经 `proxyTool` 这一个通用工具调,而**目标由两个参数分开给出** ——
- *   `serverArg` 填 server 名(咕咕那台就是 `gugu`)、`toolArg` 填**裸**工具名(`message_send`)。
+ *   `serverArg` 填 server 名(咕咕那台就是 `gugu`;这一腿给它起了别的名字时由 `server` 声明)、`toolArg` 填**裸**
+ *   工具名(`message_send`)。
  *   与 `proxied` 的区别是**没有前缀拼成的全名**:模型眼里根本不存在 `<prefix><tool>` 这个字符串,
  *   ❌ 别为了套进 `proxied` 硬造一个前缀 —— 那是在自述块里教模型一个它的 harness 不认的名字。
  *   首个声明者 Antigravity 终端腿(agy CLI 的 `call_mcp_tool {ServerName, ToolName, Arguments}`)。
@@ -85,6 +86,8 @@ const surfaceToolNamesSchema = z.discriminatedUnion('kind', [
     proxyTool: z.string().min(1),
     serverArg: z.string().min(1),
     toolArg: z.string().min(1),
+    /** 这一腿的会话里咕咕那台 server 的名字,与默认名不同时才写;旧名那台还可能挂着。 */
+    server: z.string().min(1).optional(),
     evidence: z.string().min(1),
   }),
   z.object({

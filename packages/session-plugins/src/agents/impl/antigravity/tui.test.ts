@@ -294,13 +294,20 @@ describe.skipIf(!ANTIGRAVITY_SESSION_TUI_ENABLED)('antigravity 终端腿(agy,#63
     });
   });
 
-  it('工具名按腿:终端腿经 call_mcp_tool {ServerName, ToolName} 调、投递名是裸名;聊天面板腿如实未量', () => {
+  it('工具名两条腿同一形态:经 call_mcp_tool {ServerName, ToolName} 调、终端腿投递名是裸名', () => {
     expect(resolveSessionTuiDeliveryToolNames('antigravity')).toEqual({
       message: 'message_send',
     });
     const mcp = agy().capabilities.mcp;
     if (mcp.kind !== 'supported' || mcp.toolNames.kind !== 'per-surface') throw new Error('per-surface expected');
-    expect(mcp.toolNames.surfaces['acp']).toBeUndefined();
+    for (const surface of ['acp', 'tui'] as const) {
+      expect(mcp.toolNames.surfaces[surface]).toMatchObject({
+        kind: 'server-proxied', proxyTool: 'call_mcp_tool', serverArg: 'ServerName', toolArg: 'ToolName',
+      });
+    }
+    // 只有聊天面板腿给咕咕那台改了名。
+    expect(mcp.toolNames.surfaces.acp).toMatchObject({ server: 'gugu-mcp' });
+    expect(mcp.toolNames.surfaces.tui).not.toHaveProperty('server');
   });
 
   it('分叉两条腿都有:终端腿经 sessions.forkSessionInStorage 在 antigravity-cli 存档上分叉,聊天面板腿经 acp 那一格', () => {

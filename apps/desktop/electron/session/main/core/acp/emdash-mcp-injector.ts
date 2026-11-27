@@ -73,6 +73,8 @@ export interface EmdashSessionStartInfo {
   taskChatId?: string;
   /** Provider session recorded on the conversation row; `null` = never started (first spawn / restart). */
   providerSessionId?: string | null;
+  /** The provider session this start forks from, when it opens a fork of another conversation. */
+  forkFromProviderSessionId?: string;
   /**
    * 用户在 `/mcp` 里为这条会话**关掉**的那几台 MCP server(spec `mcp-session-toggle`)。
    *
@@ -107,6 +109,11 @@ export type EmdashSessionCapabilityInjection = {
   platformModel?: string;
   /** Non-secret platform access generation paired with this adapter instance. */
   platformAccessSessionId?: string;
+  /**
+   * Present when this start's Gugu tools only arrive once the engine has connected: resolves when `tools/list` has been
+   * answered, or the budget that starts with this call ran out. The first prompt waits for it.
+   */
+  awaitToolsListed?: () => Promise<void>;
 };
 
 /**

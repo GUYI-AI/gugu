@@ -13,8 +13,18 @@ function hasConversationDatabase(path: string): boolean {
   }
 }
 
+const CONVERSATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Whether this stored conversation lives in the legacy store under `root` (the managed `.gemini`): the standalone
+ * `agy_acp_server` opens those, `agy` every other one. A conversation that is in neither store is not legacy.
+ */
+export function isLegacyAntigravityConversation(root: string, id: string): boolean {
+  return CONVERSATION_ID.test(id) && hasConversationDatabase(join(root, 'antigravity-acp', 'conversations', `${id}.db`));
+}
+
 export function antigravityStore(env: Readonly<Record<string, string>>, id: string): 'antigravity-acp' | 'antigravity-cli' {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+  if (!CONVERSATION_ID.test(id)) {
     throw new Error('Antigravity stored conversation has an invalid id');
   }
   const root = env.GEMINI_HOME?.trim();

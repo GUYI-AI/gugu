@@ -240,6 +240,8 @@ export interface Materialization {
    * 必须对 system prompt unit 返回结构化 degraded，不能把 session-level bytes 伪装成用户内容。
    */
   sessionOpenPromptBlocks?: readonly (keyof SessionPromptBlocks)[]
+  /** See the core field of the same name: hold the first prompt until Gugu's `tools/list` has been answered. */
+  promptAwaitsGuguTools?: true
   report: CapabilityLoadReport
 }
 
@@ -915,6 +917,7 @@ function fromCoreMaterialization(
             : {}),
         }
       : {}),
+    ...(materialization.promptAwaitsGuguTools ? { promptAwaitsGuguTools: true as const } : {}),
     configMerges: materialization.configMerges,
     artifacts: materialization.artifacts,
     tomlOverlays: materialization.tomlOverlays,
@@ -1110,9 +1113,15 @@ function guguToolNamingLine(
     case 'namespaced':
       // Codex advertises the native name or an exec declaration, depending on its model tool mode.
       return `Your harness exposes Gugu tools under \`${names.namespace}\`.\n`
-    case 'server-proxied':
-      // server 名就是咕咕那台 server 注册时用的名字 —— 与写进配置的键同一个常量,❌ 别另写一个字面量。
-      return `Your harness does not list Gugu tools one by one: call them through its \`${names.proxyTool}\` tool with \`${names.serverArg}\` set to \`${GUGU_MCP_SERVER_NAME}\` and \`${names.toolArg}\` set to the bare tool name (e.g. \`message_send\`).\n`
+    case 'server-proxied': {
+      // server 名默认是咕咕那台 server 注册时用的名字(与写进配置的键同一个常量,❌ 别另写一个字面量);
+      // 某一腿改了名由能力声明给出,此时旧名那台还可能挂着(修前开的会话),而同一腿上旧服务的会话里只有旧名
+      // 那台有工具(新名那台是别的会话写下的空条目)⇒ 按「哪台列得出工具」把先后说清。
+      const server = names.server ?? GUGU_MCP_SERVER_NAME
+      const older = server === GUGU_MCP_SERVER_NAME ? ''
+        : ` A \`${GUGU_MCP_SERVER_NAME}\` server may be listed too. While \`${server}\` lists tools, \`${GUGU_MCP_SERVER_NAME}\` is an older, incomplete entry: use \`${server}\`, and if a call on \`${GUGU_MCP_SERVER_NAME}\` fails, repeat it on \`${server}\`. When \`${server}\` is not listed or lists no tools, use \`${GUGU_MCP_SERVER_NAME}\`.`
+      return `Your harness does not list Gugu tools one by one: call them through its \`${names.proxyTool}\` tool with \`${names.serverArg}\` set to \`${server}\` and \`${names.toolArg}\` set to the bare tool name (e.g. \`message_send\`).${older}\n`
+    }
     case 'unmeasured':
       return 'Call the tool exactly as your tool list names it, not by the bare suffix.\n'
   }
@@ -1316,6 +1325,8 @@ export function loadSessionAcpCapabilities(
     lifecycle: SessionMaterializationContext['lifecycle']
     // ⚠️ 与 lifecycle 不是一回事，见 `SessionMaterializationContext` 里那段抬头。
     isResuming?: boolean
+    /** The native conversation this start opens (resumed, or forked from); absent for a new one. */
+    providerSessionId?: string
   },
 ): Materialization {
   if (providerUsesSessionAcpSessionAdapter(providerId)) {
