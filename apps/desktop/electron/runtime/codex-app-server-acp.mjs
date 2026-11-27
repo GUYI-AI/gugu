@@ -32,6 +32,7 @@ import { codexMcpCall } from '../../../../packages/session-core/src/acp/transpor
 import { isCodexKeyRefusal, withCodexHttpStatus } from '../../../../packages/session-core/src/acp/transport/codex-http-status.ts'
 import { createCodexSubagents } from './codex-subagents.mjs'
 import { GOAL_TOKENS_FLAG, parseGoalCommand } from '../../../../packages/session-core/src/acp/commands.ts'
+import { UNRECORDED_PROMPT } from '../../../../packages/session-core/src/acp/native-prompt-key.ts'
 import { CODEX_AUTONOMY_BY_MODE, CODEX_PERMISSION_MODES } from '../../../../packages/session-plugins/src/agents/impl/codex/permission-modes.ts'
 import { redactAll } from '../../../../packages/session-shared/src/logger/redact.ts'
 
@@ -949,11 +950,12 @@ function insertedUserMessage(item) {
  * point, so the prompt is marked from the start of the turn, as the record's leading input is (`task_started.turn_id`),
  * not only when the turn ends (`turnOutcome`, same point).
  */
-async function receipt(id, entry, turnId = '') {
+async function receipt(id, entry, turnId = '', meta = null) {
   const result = await entry.promise
   promptInsertions.delete(entry.clientId)
   if (result.error) throw Object.assign(new Error(result.error), { code: result.code })
-  respond(id, historyCanRevert && turnId ? { ...result, _meta: { guguRevert: { before: turnId } } } : result)
+  const revert = historyCanRevert && turnId ? { guguRevert: { before: turnId } } : null
+  respond(id, revert || meta ? { ...result, _meta: { ...revert, ...meta } } : result)
 }
 function throwIfInsertionCancelled(entry) {
   if (entry.cancelled) throw Object.assign(new Error('Request cancelled before insertion'), { code: -32800 })
@@ -2672,7 +2674,8 @@ async function handleAcpRequest(message) {
     const goalCommand = lead?.type === 'text' ? parseGoalCommand(String(lead.text ?? '')) : null
     if (goalCommand) {
       const goal = await runGoalCommand(goalCommand, insertion)
-      await receipt(id, insertion)
+      // Codex keeps the goal, not the line the person typed: the host journals that line (`UNRECORDED_PROMPT`).
+      await receipt(id, insertion, '', { [UNRECORDED_PROMPT]: true })
       // @@@goal-command-ends - a goal command is not a turn. The host holds this input's work open until the agent
       // reports idle; Codex opens a turn of its own only for a goal left active (set, resume), and a running turn reports
       // its own idle. Anything else (show, clear, pause) ends here as a finished turn does, or the session stays working
