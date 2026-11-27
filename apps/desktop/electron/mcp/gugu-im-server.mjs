@@ -1,11 +1,12 @@
 #!/usr/bin/env node
+import { agentReceiptNote } from '@gugu/core/shared/agentReceiptNote'
 import { serverNow, withServerClock } from '@gugu/core/shared/serverClock'
 import { egress, EgressError, egressErrorText } from '@gugu/core/shared/egress'
 import { conversationLink, groupFileLink, parseGroupFileLink } from '@gugu/core/shared/ui/guguLink'
 import { compareByName } from '@gugu/core/shared/ui/chatModels'
 import { resolveReplyDelivery } from '@gugu/core/shared/replyDelivery'
 import { markdownLiteral } from '@gugu/core/shared/markdownLiteral'
-import { archivedDeliveryReceipt, deliveryRefusalNotes, messageDeliveryBlocks } from './message-delivery-blocks.mjs'
+import { deliveryRefusalNotes, messageDeliveryBlocks } from './message-delivery-blocks.mjs'
 
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
 import { createHash, randomUUID } from 'node:crypto'
@@ -1615,6 +1616,7 @@ async function handleMessage(args, deps) {
     // @@@2083 一次完整发送尝试(读+校验+插入)。抽成闭包以便 token 刷新后原样重放一次。
     let sentKind = null
     let fileReceipt = null
+    let noticeRecipients = null
     const attemptSend = async () => {
       // 发送边界只负责校验并写入消息。收件箱由读者在工具边界统一注入，发送工具不重复读取或消费它。
       const [kind, memberRows, source] = await Promise.all([
@@ -1702,8 +1704,15 @@ async function handleMessage(args, deps) {
       }
       row.content = String(sendText ?? '')
       await assertReadableMessageReferences(deps, row.content)
+      if (requestedAction === 'send') {
+        if (toUserIds.includes('*') || (!addressesNoOneExplicitly && !toUserIds.length && (kind === 'dm' || kind === 'ai'))) {
+          noticeRecipients = memberRows.map(member => member.user_id)
+        } else {
+          noticeRecipients = !addressesNoOneExplicitly && !toUserIds.length && isReply ? [source.sender_user_id] : toUserIds
+        }
+      }
       if (hasFile) {
-        fileReceipt = await sendFileMessage(args, deps, { chatId, messageId: row.id, toUserIds: row.to_user_ids, replyToMessageId,
+        fileReceipt = await sendFileMessage(args, deps, { chatId, messageId: row.id, toUserIds: row.to_user_ids, noticeRecipients, replyToMessageId,
           isWhisper, threadRootId: sessionThread, caption: row.content })
       } else {
         await postCommandMessageRow(deps, row).catch(async (error) => { throw await recipientRefusal(error, chatId, deps) })
@@ -1717,8 +1726,16 @@ async function handleMessage(args, deps) {
         : (isReply ? `replied (id=${row.id})` : `sent (id=${row.id})`)
     // 群和话题里发得太密:回执后面提醒一句,不拦(gugu-dev#181 防刷屏)。contact_friend 的回执是 JSON,不往后接字。
     // A file's receipt is JSON (the task timeline draws its card from it), so nothing is written after it.
-    const receipt = async () => fileReceipt ?? okMsg() + await archivedDeliveryReceipt(deps, row.id)
-      + (!socialGroup && (sentKind === 'group' || sentKind === 'topic') ? await floodNotice(deps, chatId, sentKind) : '')
+    const receipt = async () => {
+      if (fileReceipt) return fileReceipt
+      const [blocks, flood] = await Promise.all([
+        messageDeliveryBlocks(deps, row.id),
+        !socialGroup && (sentKind === 'group' || sentKind === 'topic') ? floodNotice(deps, chatId, sentKind) : '',
+      ])
+      const refusal = deliveryRefusalNotes(blocks).map(note => `; ${note}`).join('')
+      const notice = await chatRecipientNotice(deps, noticeRecipients, blocks)
+      return okMsg() + refusal + (notice ? `. ${notice}` : '') + flood
+    }
     try {
       await attemptSend()
       return await receipt()
@@ -1918,7 +1935,7 @@ async function ownerPinnedChatIds(deps) {
  * 状态是名录的附加信息:哪一路读不到,❌ 让整张名录失败(寻址「按名字找 id」就靠它),也 ❌ 悄悄当没有 ——
  * 读不到的原因原样放进 `unavailable`,由调用方写在返回里。
  */
-async function agentStatusReadings(deps, agentUserIds) {
+async function agentStatusReadings(deps, agentUserIds, project = (reading) => reading) {
   const readings = new Map()
   const problems = []
   if (!agentUserIds.length) return { readings, unavailable: null }
@@ -1927,7 +1944,7 @@ async function agentStatusReadings(deps, agentUserIds) {
       const local = await deps.context.runHostAction({ action: 'agent-status', agentUserIds })
       if (!Array.isArray(local)) throw new Error('host returned a non-list result')
       for (const row of local) {
-        readings.set(row.agentUserId, { status: row.status ?? null, detail: row.detail ?? null, status_from: 'this_machine' })
+        readings.set(row.agentUserId, project({ status: row.status ?? null, detail: row.detail ?? null, status_from: 'this_machine' }))
       }
     } catch (err) {
       problems.push(`this machine: ${err?.message ?? err}`)
@@ -1942,14 +1959,14 @@ async function agentStatusReadings(deps, agentUserIds) {
       for (const id of remote.slice(i, i + 200)) {
         const presence = results[id]?.status === 'presence' ? results[id].presence : null
         if (!presence) continue
-        readings.set(id, {
+        readings.set(id, project({
           status: presence.session_archived_at ? 'archived' : presence.agent_status ?? null,
           detail: presence.session_archived_at ? null : presence.agent_status_detail ?? null,
           status_from: 'cloud',
           status_at: presence.updated_at ?? null,
           // 那台机器在不在线只看设备行(#5912:租约清扫者翻它,在线 / 离线的唯一来源)。
           host_online: presence.device_status === 'online' ? true : presence.device_status === 'offline' ? false : null,
-        })
+        }, presence))
       }
     } catch (err) {
       problems.push(`cloud presence: ${err?.message ?? err}`)
@@ -1957,6 +1974,36 @@ async function agentStatusReadings(deps, agentUserIds) {
   }
   if (problems.length) log.warn({ problems }, 'member status lookup incomplete')
   return { readings, unavailable: problems.length ? problems.join('; ') : null }
+}
+
+// Addressing comes from the send itself. Its shared refusal receipt takes precedence for each recipient.
+async function chatRecipientNotice(deps, recipients, blocks) {
+  if (!recipients?.length) return null
+  const targets = [...new Set(recipients)].filter(id => id && id !== deps.context.agentId)
+  const refused = new Set(blocks.map(row => row.agent_user_id))
+  const ids = targets.filter(id => !refused.has(id))
+  const { readings } = await agentStatusReadings(deps, ids, (reading, presence) => ({
+    note: agentReceiptNote(reading.status, reading.host_online, presence?.device_last_seen_at),
+    offlineDeviceId: reading.host_online === false ? presence?.device_id : null,
+    lastSeen: presence?.device_last_seen_at,
+  }))
+  const affected = ids.filter(id => readings.get(id)?.note)
+  if (!affected.length) return null
+  const first = affected[0]
+  const reading = readings.get(first)
+  let note = reading.note
+  if (reading.offlineDeviceId && deps.context.runHostAction) {
+    try {
+      const devices = await deps.context.runHostAction({ action: 'devices' })
+      const device = devices.find(row => row.device_id === reading.offlineDeviceId)
+      if (device?.label) note = agentReceiptNote(null, false, reading.lastSeen, `Host ${JSON.stringify(device.label)}`)
+    } catch (error) {
+      log.warn({ error: String(error) }, 'offline host label unavailable')
+    }
+  }
+  const recipient = targets.length > 1 ? `user:${first}: ` : ''
+  const others = affected.length > 1 ? ` (+${affected.length - 1} other affected)` : ''
+  return `${recipient}${note}${others}.`
 }
 
 async function handleConv(args, deps) {
@@ -2663,7 +2710,7 @@ async function ownerNotificationFile(args, deps) {
  * published from this machine, or uploaded bytes. Who it goes to, the thread, whisper and the gates (group rules,
  * membership, addressing) are the caller's: message_send decides them for text and file alike.
  */
-async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, replyToMessageId = null, isWhisper = false, threadRootId = null, caption = '' }) {
+async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, noticeRecipients, replyToMessageId = null, isWhisper = false, threadRootId = null, caption = '' }) {
   const folderFile = folderFileArg(args.file)
   // #2383 收件人合不合格由库判(与文字消息同一条规则);被拒时 recipientRefusal 说清是谁。
   const refused = async (error) => { throw await recipientRefusal(error, chatId, deps) }
@@ -2751,7 +2798,8 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
       delivery_status: 'unverified', delivery_note: 'The message was sent, but recipient delivery could not be verified. Do not send it again.',
       source_link: conversationLink(chatId, String(message.id).replace(/^msg:/, '')) })
   }
-  return JSON.stringify({ status: 'sent', message_id: message.id, file_name: fileName, ...card, ...pinned, ...uploadReceipt, ...(blocks.length ? { not_delivered_to: blocks, delivery_note: deliveryRefusalNotes(blocks).join('; ') } : {}),
+  const notice = await chatRecipientNotice(deps, noticeRecipients, blocks)
+  return JSON.stringify({ status: 'sent', message_id: message.id, file_name: fileName, ...card, ...pinned, ...uploadReceipt, ...(notice ? { recipient_note: notice } : {}), ...(blocks.length ? { not_delivered_to: blocks, delivery_note: deliveryRefusalNotes(blocks).join('; ') } : {}),
     source_link: conversationLink(chatId, String(message.id).replace(/^msg:/, '')) })
 }
 

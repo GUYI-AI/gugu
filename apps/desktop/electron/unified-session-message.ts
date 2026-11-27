@@ -20,7 +20,8 @@ import { matchIdPrefix, uuidPrefixRange } from '@gugu/core/shared/idPrefix'
 export type UnifiedRecipientResult = {
   /** Typed recipient address, exactly as the caller may reuse it. */
   to: string
-  status: 'delivered' | 'accepted' | 'failed'
+  status: 'delivered' | 'accepted' | 'queued' | 'deferred' | 'failed'
+  recipient_note?: string
   message_id?: string
   session_id?: string
   error?: { code: string; message: string }
@@ -279,14 +280,14 @@ export async function handleUnifiedSessionMessage(
     return deps.enqueueWork({...intent,title}, text, said.attachments ?? [], targets)
   }
   const recipients: UnifiedRecipientResult[] = []
-  const anyDelivered = () => recipients.some((entry) => entry.status === 'delivered')
+  const anyAccepted = () => recipients.some((entry) => entry.status !== 'failed')
   if (localSessionIds.length) recipients.push(...(await deps.graphMessage!(localSessionIds, text, said)).recipients)
   for (const [deviceId, ids] of remote) {
     try {
       recipients.push(...await deps.remote!.deliver(deviceId, { sessionIds: ids, text, said }))
     } catch (error) {
       // 已经有人收到之后,这个调用不许再抛(否则前面那几条连同 message_id 一起丢掉):那台机器上的收件人逐个记失败。
-      if (!anyDelivered()) throw error
+      if (!anyAccepted()) throw error
       const message = error instanceof Error ? error.message : String(error)
       const code = typeof (error as { code?: unknown })?.code === 'string' ? (error as { code: string }).code : 'SESSION_REMOTE_ERROR'
       recipients.push(...ids.map((id) => ({ to: encodeTypedId('session', id), status: 'failed' as const, error: { code, message } })))

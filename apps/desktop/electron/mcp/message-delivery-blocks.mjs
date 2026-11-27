@@ -25,7 +25,3 @@ export function deliveryRefusalNotes(blocks) {
     return refused.length ? [`${label} (${refused.map((row) => `user:${row.agent_user_id}`).join(', ')}; ${reason}; retained in history, ${after})`] : []
   })
 }
-
-export async function archivedDeliveryReceipt(deps, messageId) {
-  return deliveryRefusalNotes(await messageDeliveryBlocks(deps, messageId)).map((note) => `; ${note}`).join('')
-}
