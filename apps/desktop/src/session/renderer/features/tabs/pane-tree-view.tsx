@@ -56,10 +56,11 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
   const headPark = useRef<HTMLSpanElement>(null);
   // @@@single-on-track — the chat workspace's hidden and full views, and the narrow layout, are the cuts at 100 / 0. The
   // page a move stops showing stays shown, live, until its cell is at nothing (@@@leaving-panes); in full view the other
-  // page coming to the front, and the layout going narrow or wide, are page swaps, in one frame.
-  const before = useRef({ single, narrow });
-  const swap = (!!before.current.single && !!single && before.current.single !== single) || before.current.narrow !== narrow;
-  useLayoutEffect(() => { before.current = { single, narrow }; });
+  // page coming to the front, the layout going narrow or wide, and another tab coming to the front of a pane (a side page has its own width) are page swaps, in one frame.
+  const fronts = layout.groups.map(({ paneId, pane }) => `${paneId} ${pane.activeTabId}`);
+  const before = useRef({ single, narrow, fronts });
+  const swap = (!!before.current.single && !!single && before.current.single !== single) || before.current.narrow !== narrow || (before.current.fronts.length === fronts.length && fronts.some((front, at) => front !== before.current.fronts[at]));
+  useLayoutEffect(() => { before.current = { single, narrow, fronts }; });
   // Wide, the root cut is on a track: a pane whose last tab closes goes off it before it goes (@@@closing-pane).
   useLayoutEffect(() => narrow ? undefined : layout.attachMotion(), [layout, narrow]);
   const closing = layout.closingPaneId;

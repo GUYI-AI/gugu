@@ -1,5 +1,6 @@
 import { DndContext } from '@dnd-kit/core';
 import { act, useEffect } from 'react';
+import { runInAction } from 'mobx';
 import { afterAll, afterEach, expect, it } from 'vitest';
 import { cdp, page } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
@@ -88,6 +89,25 @@ it('a cut given other shares moves its divider over frames, and lays its panes o
   // lands on 30% of the cut (less its one divider pixel)
   const cut = divider.closest('[data-track-cut]')!.getBoundingClientRect();
   expect(Math.abs(edges.at(-1)! - cut.left - 0.3 * (cut.width - 1))).toBeLessThan(1.5);
+});
+
+it('another tab coming to the front of a pane that stays is a page swap: the shares that come with it are there in one frame', async () => {
+  await mount();
+  const root = layout.layout;
+  if (root.type !== 'split') throw new Error('mount makes a split');
+  const divider = harness.container.querySelector<HTMLElement>('[data-slot="resizable-handle"]')!;
+  await act(async () => runInAction(() => {
+    layout.open('page', { id: 'notes' }, { from: null, intent: 'newTab' });
+    layout.setSplitSizes(root.id, [30, 70]);
+  }));
+  const edges = new Set<number>();
+  for (let frame = 0; frame < 20; frame += 1) {
+    await new Promise(requestAnimationFrame);
+    edges.add(Math.round(divider.getBoundingClientRect().left));
+  }
+  expect([...edges], 'the divider is drawn in one place from the first frame').toHaveLength(1);
+  const cut = divider.closest('[data-track-cut]')!.getBoundingClientRect();
+  expect(Math.abs([...edges][0] - cut.left - 0.3 * (cut.width - 1))).toBeLessThan(1.5);
 });
 
 it('the side page comes in on the track: it slides in from the end, and the page beside it is laid out at every width it is drawn at', async () => {
