@@ -50,7 +50,7 @@ const REMOTE_ALLOWED_APP = new Set([
   'app.readUserImageDataUrl',
   // The assistant's books belong to this host and signed-in owner, including when read on a phone.
 ]);
-const REMOTE_DENIED_EXTENSIONS = /^extensions\.(bindSurface|retargetSurface|invokeCommand|reportLayout|setAppState|programNotifiedElsewhere|downloadWorkingCopyFile)$/;
+const REMOTE_DENIED_EXTENSIONS = /^extensions\.(bindSurface|retargetSurface|invokeCommand|reportLayout|setAppState|programNotifiedElsewhere|downloadWorkingCopyFile|saveFile)$/;
 /** 屏上有哪些会话:那台桌面的屏,❌ 盖掉这台机器自己报的(闲置回收读它,见 core/sessions/sessions-on-screen.ts)。 */
 const REMOTE_DENIED_CHANNELS = new Set(['sessions.reportSessionsOnScreen']);
 

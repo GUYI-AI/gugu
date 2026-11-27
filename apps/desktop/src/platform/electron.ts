@@ -10,7 +10,6 @@ import { writeBrowserClipboardText } from './browserClipboard'
 import { desktopIpc } from './desktopIpc'
 import { DEVICE_ACTIONS_CHANNELS } from '../lib/deviceActionsIpc'
 import { unavailableCapability } from './errors'
-import { anchorDownload } from './anchorDownload'
 import { systemSettingsUrl, type HostOs } from '../../shared/system-settings-urls'
 import { detectHostOs } from '@shared/host-os'
 import type { SystemPermission } from './types'
@@ -51,6 +50,19 @@ function unavailable(feature: string): Error {
  * 准备好了」,主进程每个扩展宿主动作都等到超时。加一个域就得记得加一个分支,而忘了
  * 不会有任何声音,这种形状迟早还会再咬一次。
  */
+
+/**
+ * The desktop's one way to save a file: main's save dialog and write, the same as the Files App's `files.download`
+ * (app-files.ts `saveBytesAs`). An `<a download>` here was handed to Electron's own download, which showed no dialog and
+ * wrote nothing, so every Save did nothing at all (gugu-dev#1623). Cancelled = `saved: false`; a failure throws, for the
+ * caller's own error line.
+ */
+async function saveThroughMainDialog(blob: Blob, filename: string): Promise<{ saved: boolean }> {
+  const { rpc } = await import('@renderer/lib/ipc')
+  const result = await rpc.extensions.saveFile({ name: filename, bytes: new Uint8Array(await blob.arrayBuffer()) })
+  if (!result.success) throw new Error(result.error)
+  return { saved: result.target !== null }
+}
 
 export const electronPlatform: AppPlatform = {
   accountClosure: nativeDesktopAccountClosure,
@@ -170,7 +182,7 @@ export const electronPlatform: AppPlatform = {
     const api = electronApi()
     return api?.getAppVersion ? api.getAppVersion() : ''
   },
-  saveFile: anchorDownload,
+  saveFile: saveThroughMainDialog,
   async openRemoteFile(file, filename) {
     const api = electronApi()
     if (!api?.invoke) throw unavailable('External file open')
