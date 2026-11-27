@@ -555,8 +555,11 @@ export async function snapshotBrowserPage(browserId: string): Promise<string | n
   // 从没摆好过的网页(视口 0×0)截不出图,Chromium 会一直等。
   if (!page || !page.runtime.host || !page.rect) return null;
   try {
-    const image = await page.runtime.snapshot();
-    if (page.webContents.isDestroyed() || image.isEmpty()) return null;
+    const { width, height } = page.runtime.view.getBounds();
+    const shaped = (image: { isEmpty(): boolean; getAspectRatio(): number }) => !image.isEmpty() && Math.abs(image.getAspectRatio() - width / height) <= 0.02;
+    let image = await page.runtime.snapshot();
+    if (!shaped(image)) image = await page.runtime.snapshot(); // a view just resized can hand back its last frame, at the old shape: the one after it is this page
+    if (page.webContents.isDestroyed() || !shaped(image)) return null;
     return `data:image/jpeg;base64,${image.toJPEG(85).toString('base64')}`;
   } catch {
     return null;

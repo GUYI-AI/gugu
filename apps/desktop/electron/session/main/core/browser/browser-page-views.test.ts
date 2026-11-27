@@ -48,7 +48,7 @@ vi.mock('electron', async () => {
     setBackgroundThrottling = vi.fn();
     setWindowOpenHandler = vi.fn();
     executeJavaScript = vi.fn(async () => undefined);
-    capturePage = vi.fn(async () => ({ isEmpty: () => false, toJPEG: () => Buffer.from([1, 2]) }));
+    capturePage = vi.fn(async () => ({ isEmpty: () => false, getAspectRatio: () => RECT.width / RECT.height, toJPEG: () => Buffer.from([1, 2]) }));
     beginFrameSubscription = vi.fn((_dirty: boolean, callback: (image: { isEmpty: () => boolean }) => void) => { queueMicrotask(() => callback({ isEmpty: () => false })); });
     endFrameSubscription = vi.fn();
     setVisualZoomLevelLimits() {
@@ -378,6 +378,16 @@ describe('#7274 网页在窗口里的样子跟着页签走', () => {
 
   it('截图(浮层压上来时换上的那张):从没摆好过的网页不截(视口 0×0,Chromium 会一直等)', async () => {
     mount('b1');
+    expect(await snapshotBrowserPage('b1')).toBeNull();
+  });
+
+  it('a frame handed back at another shape than the view now has (it was just resized) is not a picture of this page: the next one is asked for', async () => {
+    const { view } = mount('b1');
+    layoutBrowserPage({ browserId: 'b1', windowName: '', rect: RECT, mode: 'shown' });
+    const stale = { isEmpty: () => false, getAspectRatio: () => (RECT.width / RECT.height) * 1.25, toJPEG: () => Buffer.from([9]) };
+    view.webContents.capturePage.mockResolvedValueOnce(stale);
+    expect(await snapshotBrowserPage('b1')).toBe('data:image/jpeg;base64,AQI=');
+    view.webContents.capturePage.mockResolvedValue(stale);
     expect(await snapshotBrowserPage('b1')).toBeNull();
   });
 

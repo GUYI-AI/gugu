@@ -84,3 +84,20 @@ it('shows a late snapshot even after the overlay wait limit has elapsed', async 
   capture.resolve({ dataUrl: image });
   await until('the late image is displayed', () => surface.style.backgroundImage !== '');
 });
+
+it('a page in a hidden tab is not woken by its box changing, and is placed where its box is once the frame that shows its tab is painted', async () => {
+  const shown = (visible: boolean, width: number) => harness.render(<div style={{ position: 'fixed', left: 0, top: 0, width, height: 500 }}>
+    <style>{'[data-browser-page] { width: 100%; height: 100%; }'}</style>
+    <BrowserPageSurface browserId="hidden-tab" partition="persist:test" initialUrl="https://example.com" visible={visible} onHandle={() => {}} />
+  </div>);
+  await shown(false, 400);
+  await until('the page is mounted in the background', () => api.layoutPage.mock.calls.some(([args]) => args.mode === 'background'));
+  const told = api.layoutPage.mock.calls.length;
+  await shown(false, 600);
+  for (let frame = 0; frame < 3; frame += 1) await new Promise(requestAnimationFrame);
+  expect(api.layoutPage).toHaveBeenCalledTimes(told);
+  await shown(true, 600);
+  // Once the frame that shows its tab is painted (before it the view would cover what has not made room yet): ❌ waiting for the next sample.
+  for (let frame = 0; frame < 3; frame += 1) await new Promise(requestAnimationFrame);
+  expect(api.layoutPage).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'shown', rect: expect.objectContaining({ width: 600, height: 500 }) }));
+});
