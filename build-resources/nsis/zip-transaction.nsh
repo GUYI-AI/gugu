@@ -1,4 +1,15 @@
 !ifndef BUILD_UNINSTALLER
+# @@@check-app-running - electron-builder's default check starts three PowerShell processes before every install
+# (availability, execution policy, then a Win32_Process query): about 13 s on a cold machine (gugu-dev#1598). Its own
+# fallback finds and closes the app with tasklist/taskkill by image name for the current user; take that path always.
+# The template includes the process-info helper itself only when this macro is not defined.
+!include "getProcessInfo.nsh"
+Var pid
+!macro customCheckAppRunning
+  Var /GLOBAL IsPowerShellAvailable
+  StrCpy $IsPowerShellAvailable 1
+  !insertmacro _CHECK_APP_RUNNING
+!macroend
 Var guguStage
 Var guguPowerShell
 Var guguTransactionActive
