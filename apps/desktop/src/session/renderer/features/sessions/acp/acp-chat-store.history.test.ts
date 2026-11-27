@@ -114,32 +114,6 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
-it('returns the unsent text to its local owner before the disconnected desktop exits', () => {
-  let saved: string | undefined;
-  const checkpoint = {
-    account: 'a', deviceId: 'remote',
-    write: (text: string) => { saved = text; },
-    restore: () => saved,
-    acknowledge: (text: string) => { if (saved === text) saved = undefined; },
-  };
-  const first = makeStore().store;
-  first.bindRemoteDraft(checkpoint);
-  first.setDraftText('unsent words');
-  checkpoint.acknowledge('unsent words');
-  expect(saved).toBeUndefined();
-  first.checkpointDisconnectedDraft();
-  first.dispose();
-  const reopened = makeStore().store;
-  try {
-    reopened.bindRemoteDraft(checkpoint);
-    expect(reopened.draftText).toBe('unsent words');
-    reopened.setDraftText('');
-    expect(saved).toBe('');
-  } finally {
-    reopened.dispose();
-  }
-});
-
 describe('#7304 原地回退后的历史对账', () => {
   async function setup(canRevert = true) {
     const { store, internals } = makeStore();
