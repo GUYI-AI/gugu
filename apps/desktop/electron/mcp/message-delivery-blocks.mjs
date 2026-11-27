@@ -1,3 +1,5 @@
+import { agentReceiptNote } from '@gugu/core/shared/agentReceiptNote'
+
 // Why the server kept a message but refused it to one addressed agent: archived task (restorable) or removed identity (not).
 // A reason this client does not know yet is still a refusal of a message that IS in the chat: report it as not delivered,
 // never as a failed send (an agent would send it again) — #2383.
@@ -6,9 +8,29 @@ const REFUSALS = {
   identity_removed: { label: 'not delivered, recipient removed', after: 'the identity cannot be restored' },
 }
 
-/** Read the immutable recipient result, never infer it from current presence. */
-export async function messageDeliveryBlocks(deps, messageId) {
+/** Reuse the send's room facts to choose exactly one post-commit read on both old and new databases. */
+export async function readSendReceipt(deps, chatId, messageId, includeNotice) {
+  if (includeNotice && deps.state.chatFacts?.get(chatId)?.agent_send_receipt === true) {
+    const result = await deps.restRpc('agent_send_receipt', { p_as: deps.context.agentId, p_message_id: messageId })
+    return { blocks: refusalRows(result?.blocks), notice: exceptionNote(result?.exception) }
+  }
   const rows = await deps.restGet(`message_agent_delivery_blocks?message_id=eq.${encodeURIComponent(messageId)}&select=agent_user_id,reason`, 'chat')
+  return { blocks: refusalRows(rows), notice: null }
+}
+
+function exceptionNote(exception) {
+  if (!exception) return null
+  const host = exception.host_label ? `Host ${JSON.stringify(exception.host_label)}` : 'Host'
+  const note = exception.kind === 'offline'
+    ? agentReceiptNote(null, false, exception.last_seen_at, host)
+    : agentReceiptNote(exception.kind)
+  if (!note) return null
+  const recipient = exception.agent_user_id ? `user:${exception.agent_user_id}: ` : ''
+  const others = exception.others > 0 ? ` (+${exception.others} other affected)` : ''
+  return `${recipient}${note}${others}.`
+}
+
+function refusalRows(rows) {
   if (!Array.isArray(rows)) throw new Error('Message delivery refusal result is unavailable')
   return rows.map((row) => {
     if (typeof row.agent_user_id !== 'string' || typeof row.reason !== 'string' || !row.reason) throw new Error('Invalid message delivery refusal result')

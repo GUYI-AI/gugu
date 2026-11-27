@@ -1018,59 +1018,54 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     await client.close()
   })
   test.each([
-    ['offline', 'error', '2026-11-26T23:49:55-08:00', 'Host "Test device" offline (last seen 2026-11-27 07:49 UTC)'],
-    ['offline', 'working', null, 'Host offline'],
-    ['online', 'error', null, 'Agent reported an error'],
-    ['online', 'needs_user', null, null],
-    ['online', 'working', null, null],
-    [null, 'error', null, null],
-  ])('message_send receipt for host %s, agent %s, last seen %s', async (device, status, lastSeen, note) => {
+    [{ kind: 'offline', last_seen_at: '2026-11-26T23:49:55-08:00', host_label: 'Test device' }, 'Host "Test device" offline (last seen 2026-11-27 07:49 UTC).'],
+    [{ kind: 'offline', last_seen_at: '2026-11-27T07:49:00Z' }, 'Host offline (last seen 2026-11-27 07:49 UTC).'],
+    [{ kind: 'error', agent_user_id: 'alice', others: 1 }, 'user:alice: Agent reported an error (+1 other affected).'],
+    [null, null],
+  ])('uses the committed send receipt exactly once for %j', async (exception, note) => {
     const h = harness(['agent-1', 'alice'])
     const rpc = h.deps.restRpc
-    h.deps.restRpc = async (name, body, profile) => name === 'get_agent_presence_batch'
-      ? { results: { alice: { status: 'presence', presence: { device_id: lastSeen ? 'device-id' : null, device_status: device, agent_status: status, device_last_seen_at: lastSeen } } } }
-      : rpc(name, body, profile)
-    const client = await connect({ ...h.deps, callSessionHost: async ({ action }: { action: string }) =>
-      action === 'devices' ? [{ device_id: 'device-id', label: 'Test device' }] : [] })
-    const receipt = await client.callTool({ name: 'message_send', arguments: {
+    const get = h.deps.restGet
+    const reads: string[] = []
+    h.deps.restRpc = async (name, body, profile) => {
+      reads.push(name)
+      if (name === 'agent_send_receipt') {
+        expect(body).toEqual({ p_as: 'agent-1', p_message_id: (h.calls.inserts[0][1] as { id: string }).id })
+        return { blocks: [], exception }
+      }
+      const result = await rpc(name, body, profile)
+      return name === 'chat_facts' && Array.isArray(result) ? [{ ...result[0], agent_send_receipt: true }] : result
+    }
+    h.deps.restGet = async path => { reads.push(path.split('?')[0]); return get(path) }
+    const actions: string[] = []
+    const client = await connect({ ...h.deps, callSessionHost: async ({ action }: { action: string }) => { actions.push(action); return [] } })
+    const result = await client.callTool({ name: 'message_send', arguments: {
       chat_id: '00000000-0000-4000-8000-000000000001', to_user_ids: ['user:alice'], text: 'hello',
     } })
     const sent = h.calls.inserts[0][1] as { id: string; content: string }
-    expect(text(receipt)).toBe(`sent (id=msg:${sent.id})${note ? `. ${note}.` : ''}`)
+    expect(text(result)).toBe(`sent (id=msg:${sent.id})${note ? `. ${note}` : ''}`)
+    expect(reads.filter(name => ['agent_send_receipt', 'message_agent_delivery_blocks', 'get_agent_presence_batch'].includes(name))).toEqual(['agent_send_receipt'])
+    expect(actions).not.toContain('devices')
+    expect(actions).not.toContain('agent-status')
     expect(sent.content).toBe('hello')
-    expect(h.calls.inserts).toHaveLength(1)
     await client.close()
   })
-  test('only reads status for addressed recipients the send did not refuse', async () => {
-    const h = harness(['agent-1', 'alice', 'bob', 'carol'])
-    const get = h.deps.restGet
-    h.deps.restGet = async path => path.startsWith('message_agent_delivery_blocks?')
-      ? [{ agent_user_id: 'alice', reason: 'agent_archived' }] : get(path)
-    const rpc = h.deps.restRpc
-    const presence = vi.fn(async (_body: unknown) => ({ results: { bob: { status: 'presence', presence: { device_status: 'online', agent_status: 'error' } } } }))
-    h.deps.restRpc = async (name, body, profile) => name === 'get_agent_presence_batch' ? presence(body) : rpc(name, body, profile)
-    const client = await connect(h.deps)
-    const receipt = await client.callTool({ name: 'message_send', arguments: {
-      chat_id: '00000000-0000-4000-8000-000000000001', to_user_ids: ['user:alice', 'user:bob'], text: 'hello',
-    } })
-    expect(presence.mock.calls).toEqual([[{ p_agent_user_ids: ['bob'] }]])
-    expect(text(receipt)).toContain('not delivered, recipient archived')
-    expect(text(receipt)).toContain('user:bob: Agent reported an error')
-    await client.close()
-  })
-  test('an unavailable post-send presence lookup preserves the successful send', async () => {
+  test('an older database receives only the original refusal read, even on the first send', async () => {
     const h = harness(['agent-1', 'alice'])
     const rpc = h.deps.restRpc
-    h.deps.restRpc = async (name, body, profile) => {
-      if (name === 'get_agent_presence_batch') throw new Error('unavailable')
-      return rpc(name, body, profile)
+    const get = h.deps.restGet
+    const reads: string[] = []
+    h.deps.restRpc = async (name, body, profile) => { reads.push(name); return rpc(name, body, profile) }
+    h.deps.restGet = async path => {
+      reads.push(path.split('?')[0])
+      return path.startsWith('message_agent_delivery_blocks?') ? [{ agent_user_id: 'alice', reason: 'agent_archived' }] : get(path)
     }
     const client = await connect(h.deps)
-    const receipt = await client.callTool({ name: 'message_send', arguments: {
-      chat_id: '00000000-0000-4000-8000-000000000001', to_user_ids: ['user:alice'], text: 'test',
+    const result = await client.callTool({ name: 'message_send', arguments: {
+      chat_id: '00000000-0000-4000-8000-000000000001', to_user_ids: ['user:alice'], text: 'hi',
     } })
-    expect(text(receipt)).toMatch(/^sent \(id=msg:[\w-]+\)$/)
-    expect(h.calls.inserts).toHaveLength(1)
+    expect(text(result)).toContain('not delivered, recipient archived')
+    expect(reads.filter(name => ['agent_send_receipt', 'message_agent_delivery_blocks', 'get_agent_presence_batch'].includes(name))).toEqual(['message_agent_delivery_blocks'])
     await client.close()
   })
   test('message_send does not post to a group when the readable roster omits the current agent', async () => {
