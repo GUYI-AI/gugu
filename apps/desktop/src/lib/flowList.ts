@@ -221,14 +221,24 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
       settle()
       grow(scroller)
     })
-    observer.observe(content)
-    observer.observe(scroller)
+    const observe = () => { observer.disconnect(); observer.observe(content); observer.observe(scroller) }
+    observe()
+    // @@@shown-again — hidden in place (a retained surface: content-visibility), the list is observed afresh, so the first layout
+    // after it is shown again is delivered whatever its size. Hidden, it can be laid out once at a size it never has on screen:
+    // leaving a group hides its chat and folds the group's inner column in the same frame, so the hidden chat is laid out
+    // wider, its rows shorter, and a list at its end has its scrollTop clamped. No delivery reaches a skipped subtree, and
+    // shown again (the column comes back a commit later) the list is drawn at the very size last delivered: an old observation
+    // never fires, and the end it followed stayed that far below (the last message under the composer after a switch away).
+    // The chat is drawn by the shell into the session page's block (a portal across two React roots), so the page's
+    // SurfaceShown does not reach it; that it is hidden is read where it happens, an IntersectionObserver on the list.
+    const hidden = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver(([entry]) => { if (entry && !entry.isIntersecting) observe() })
+    hidden?.observe(scroller)
     const scrolled = afterPaint(() => {
       settle()
       if (!grow(scroller) && rangeRef.current.start === 0 && scroller.scrollTop <= 120) callbacksRef.current.onStartReached?.()
     })
     scroller.addEventListener('scroll', scrolled.schedule, { passive: true })
-    return () => { observer.disconnect(); scroller.removeEventListener('scroll', scrolled.schedule); scrolled.cancel() }
+    return () => { observer.disconnect(); hidden?.disconnect(); scroller.removeEventListener('scroll', scrolled.schedule); scrolled.cancel() }
   }, [resetKey, scrollerRef, contentRef, report, grow, followsTail])
 
   // 原生全选发生之前补齐同一数据窗口;不接管选区/复制,也不处理输入框或其它面板的快捷键。
