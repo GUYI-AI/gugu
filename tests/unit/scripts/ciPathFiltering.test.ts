@@ -31,7 +31,7 @@ describe('documentation/mobile filtering with immutable Mac calls', () => {
   it('keeps both Mac calls unconditional with exact pins and original changes inputs', () => {
     for (const [id, key, input, sha] of [
       ['session-db', 'tests', 'tests-required', 'b97314c509105b6b16bf2e3d98e738200f6103b5'],
-      ['desktop-build-mac', 'desktop-mac', 'build-required', 'b97314c509105b6b16bf2e3d98e738200f6103b5'],
+      ['desktop-build-mac', 'desktop-mac', 'build-required', 'f97750b20dfad4d2503bfc0e896cdd16a7e344db'],
     ]) {
       expect(ci.jobs[id].if).toBeUndefined()
       expect(ci.jobs[id].uses).toBe(`GUYI-AI/gugu/.github/workflows/${id === 'session-db' ? 'ci-mac-session' : 'ci-mac-build'}.yml@${sha}`)
