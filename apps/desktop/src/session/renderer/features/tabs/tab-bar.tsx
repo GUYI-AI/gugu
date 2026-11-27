@@ -90,9 +90,13 @@ export const TabBar = observer(function TabBar({
     motion.current?.revealActiveTab();
     measure();
     if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(measure);
+    // A resize is measured in a task after the frame, ❌ in the observer: there an earlier observer of the same delivery (a
+    // panel's frame) has just written styles, and reading the strip's scroll width laid the whole page out again for them,
+    // in every frame of a fold. After the frame the layout is the one just drawn.
+    let later = 0;
+    const observer = new ResizeObserver(() => { later ||= window.setTimeout(() => { later = 0; measure(); }); });
     observer.observe(scroller);
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); window.clearTimeout(later); };
   }, [tabCount, toolsOnly]);
 
   // 竖着拨滚轮也横着走(VS Code 的贴条);原生 wheel 监听才能 preventDefault(React 的是 passive)。
