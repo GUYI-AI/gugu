@@ -66,7 +66,8 @@ export function advertisedCommandItems(commands: readonly { name: string; descri
  * harness will take before it has a session of its own (the new-agent composer, a session whose engine has not started).
  */
 export function catalogCommandItems(state: HarnessCatalogState): CommandItem[] {
-  if (state.kind !== 'ready' || !state.commands) return [];
+  // Signing in is about models: a harness that wants a sign-in still takes its commands (Gugu's models need none here).
+  if ((state.kind !== 'ready' && state.kind !== 'auth-required') || !state.commands) return [];
   return advertisedCommandItems(state.commands.map((command) => ({
     name: command.name, description: command.description, ...(command.input?.hint ? { inputHint: command.input.hint } : {}),
   })));

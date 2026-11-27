@@ -935,7 +935,7 @@ function handle(msg) {
   if (msg.method === 'initialized') return;
   if (msg.method === 'session/new') {
     if (!marked) return fail(msg.id, { code: -32000, message: 'Authentication required' });
-    return reply(msg.id, { sessionId: 's', configOptions: [
+    return reply(msg.id, { sessionId: 's', availableCommands: [{ name: 'goal', description: 'Set a goal' }], configOptions: [
       { id: 'effort', category: 'thought_level', type: 'select', currentValue: 'high', options: [
         { value: 'low', name: 'Low' },
         { value: 'high', name: 'High' },
@@ -1014,6 +1014,13 @@ function handle(msg) {
     if (state.kind !== 'auth-required') return
     expect(state.efforts.map((e) => e.id)).toEqual(['low', 'high'])
     expect(state.selectedEffort).toBe('high')
+  })
+  // gugu-dev#1644: commands are the engine's own as its levels are, and a person on Gugu's models never signs in here.
+  it('第二趟读到的命令表也挂回 auth-required', async () => {
+    await useForkingAgent()
+    setProbePlatformEnvResolver(async () => ({ env: { GUGU_PROBE_MARK: 'yes' } }))
+    const state = await probeHarnessModelCatalog('qwen', 'acp')
+    expect(state).toMatchObject({ kind: 'auth-required', commands: [{ name: 'goal', description: 'Set a goal' }] })
   })
   /**
    * 第二趟读到的模型清单是**仪器造出来的**(占位凭据把模型钉成一个不存在的 id),不是读数。

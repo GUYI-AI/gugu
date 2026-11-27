@@ -14,6 +14,11 @@ describe('catalogCommandItems', () => {
       ]);
   });
 
+  it('offers them while the harness wants a sign-in too (a person on Gugu\'s models never signs in there)', () => {
+    expect(catalogCommandItems({ kind: 'auth-required', authMethods: [], efforts: [], selectedEffort: null, commands: [{ name: 'goal', description: 'Set a goal' }] })
+      .map((item) => item.token)).toEqual(['/goal']);
+  });
+
   it('offers nothing for a catalog that is not ready or heard no commands', () => {
     expect(catalogCommandItems({ kind: 'unknown' })).toEqual([]);
     expect(catalogCommandItems({ kind: 'ready', models: [], selected: null, efforts: [], selectedEffort: null })).toEqual([]);

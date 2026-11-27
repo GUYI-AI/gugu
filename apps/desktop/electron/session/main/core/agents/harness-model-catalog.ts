@@ -216,6 +216,8 @@ export type HarnessCatalogState =
       reviewerAvailable?: boolean;
       cliVersion?: string;
       authMethods: HarnessAuthMethod[];
+      /** The engine's commands, as on `ready`: they do not depend on signing in here. */
+      commands?: SessionCommandDefinition[];
       efforts: HarnessModelChoice[];
       selectedEffort: string | null;
       /**
@@ -998,7 +1000,8 @@ export async function probeHarnessModelCatalog(
     const second = await probeOnce(pluginId, leg, probeCredentials, model, onPreparation);
     if (second.kind === 'ready') {
       log.info(`${pluginId}: 未登录,但占位凭据那趟读到 ${second.efforts.length} 档推理强度`);
-      return { ...first, efforts: second.efforts, selectedEffort: second.selectedEffort, permissionModes: second.permissionModes, reviewerAvailable: second.reviewerAvailable, cliVersion: second.cliVersion };
+      // Its commands are the engine's own too, as its levels are (gugu-dev#1644: a person on Gugu's models never signs in here).
+      return { ...first, efforts: second.efforts, selectedEffort: second.selectedEffort, permissionModes: second.permissionModes, reviewerAvailable: second.reviewerAvailable, cliVersion: second.cliVersion, ...(second.commands ? { commands: second.commands } : {}) };
     }
     return second.kind === 'auth-required' ? first : second;
   } finally {
@@ -1209,7 +1212,7 @@ class AcpProbeClient extends AcpProbeRpcClient {
       : [...configModels, ...reportedModels.filter((model) => !configModels.some((known) => known.id === model.id))];
     // Signed out ⇒ auth-required with `initialize`'s login methods. Unknown keeps the list; expired is `withAuthExpiry`'s.
     const signIn = await readSignIn?.();
-    if (signIn?.kind === 'unauthenticated' && signIn.reason !== 'expired') return { kind: 'auth-required', authMethods: initAuthMethods, efforts, selectedEffort };
+    if (signIn?.kind === 'unauthenticated' && signIn.reason !== 'expired') return { kind: 'auth-required', authMethods: initAuthMethods, efforts, selectedEffort, ...this.commandsOf(created) };
     if (models.length === 0) {
       // 这家 harness 说了 ACP，但没有模型选择这回事。不是错误，就是没得选。
       return { kind: 'ready', models: [], selected: null, efforts, selectedEffort, ...this.commandsOf(created) };

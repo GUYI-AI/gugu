@@ -304,7 +304,7 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
   /** Whether `text` opens with a command this harness advertises (its probed catalog: what the composer offered). */
   async function leadsWithHarnessCommand(providerId: string, text: string): Promise<boolean> {
     const { state } = await lookupHarnessModelCatalog(providerId, { leg: 'acp' });
-    const commands = state.kind === 'ready' ? state.commands ?? [] : [];
+    const commands = state.kind === 'ready' || state.kind === 'auth-required' ? state.commands ?? [] : [];
     // An empty list would fall back to "starts with a sigil", and a sentence that opens with a path is not a command.
     return commands.length > 0 && invokesCommand(text, commands);
   }
