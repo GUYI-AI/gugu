@@ -8,7 +8,11 @@
 
 import { sshMachineAddresses, sshMachineIdsOf, watchSshMachineAddresses } from './sshMachineAddresses'
 import { createSelectStore, patch, type Readable } from './selectStore'
-import { replica } from './replica'
+import { onAccountChange, replica } from './replica'
+import { REMOTE_PROTOCOL_VERSION, serverProtocolTooOld } from '@gugu/core/cloud/serverMachineHealth'
+import { isDeviceOnline } from '@gugu/core/shared/enums/deviceModels'
+import type { Device } from '@gugu/core/shared/types/chat'
+import { readCachedDevices } from '../store/devicesCache'
 import { TUNNEL_MACHINES_CHANNELS, type TunnelState, type TunnelWant } from './tunnelMachines'
 import {
   SSH_LINK_CHANNELS,
@@ -205,6 +209,65 @@ const linkProblems = createSelectStore<ReadonlyMap<string, SshLinkFailure | null
 /** For `useSelect`: each SSH machine's link problem right now. */
 export const sshLinkProblems: Readable<ReadonlyMap<string, SshLinkFailure | null>> = linkProblems
 
+/** 老到没法自动更新的那几台:deviceId → 请人在那台机器上跑的安装命令(随「没升成」一起来)。 */
+const reinstallCommands = new Map<string, string>()
+
+// A directory heartbeat describes the server, while a successful link open authenticates the SSH endpoint.
+const verifyingVersions = new Map<string, { lastSeen: string; pending: boolean }>()
+onAccountChange(() => {
+  verifyingVersions.clear()
+  reinstallCommands.clear()
+})
+
+function setLinkProblem(deviceId: string, next: SshLinkFailure | null | undefined): void {
+  verifyingVersions.delete(deviceId)
+  if (next !== 'updateFailed') reinstallCommands.delete(deviceId)
+  patch(linkProblems, deviceId, next)
+}
+
+function hasPendingServerUpdate(caps: Device['capabilities'] | undefined): boolean {
+  const update = caps?.server_update
+  return !!update && update.state !== 'idle' && update.version !== caps?.app_version
+}
+
+/** A successful taskhost.open negotiated both ends of this device's application protocol. */
+export function confirmSshServerVersion(deviceId: string): void {
+  const problem = linkProblems.get().get(deviceId)
+  if (problem !== 'outdated' && problem !== 'updateFailed') return
+  if (hasPendingServerUpdate(readCachedDevices().find(row => row.device_id === deviceId)?.capabilities)) return
+  setLinkProblem(deviceId, null)
+}
+
+export async function verifySshVersionOnHeartbeat(device: Device): Promise<void> {
+  const id = device.device_id
+  const problem = linkProblems.get().get(id)
+  if (problem !== 'outdated' && problem !== 'updateFailed') return
+  const caps = device.capabilities
+  if (!isDeviceOnline(device.status) || serverProtocolTooOld(caps.remote_protocol, { unknownIsTooOld: true })
+    || (caps.min_client_protocol ?? 0) > REMOTE_PROTOCOL_VERSION || hasPendingServerUpdate(caps)) {
+    verifyingVersions.delete(id)
+    return
+  }
+  const lastCheck = verifyingVersions.get(id)
+  if (lastCheck?.pending || lastCheck?.lastSeen === device.last_seen_at) return
+  const electron = bridge()
+  if (!electron) return
+  const check = { lastSeen: device.last_seen_at, pending: true }
+  verifyingVersions.set(id, check)
+  try {
+    const result = await electron.invoke(SSH_LINK_CHANNELS.open, id, 'verify-version') as SshLinkOpenResult
+    if (verifyingVersions.get(id) !== check) return
+    if (result.ok) {
+      setLinkProblem(id, null)
+      for (const listener of [...signedInListeners]) listener(id)
+    } else if (result.reason !== 'outdated' && result.reason !== 'updating') {
+      recordLinkProblem(id, result.reason)
+    }
+  } finally {
+    check.pending = false
+  }
+}
+
 export type SshLinkHandle = {
   /** 接上了才 resolve;接不上 reject SshLinkError(带原因)。 */
   ready: Promise<void>
@@ -227,14 +290,14 @@ export async function disconnectSshDevice(deviceId: string): Promise<void> {
   if (await electron.invoke(SSH_LINK_CHANNELS.setPaused, deviceId, true) !== true) throw new SshLinkError('unmapped', deviceId)
   const handlers = handlersByDevice.get(deviceId)
   handlersByDevice.delete(deviceId)
-  patch(linkProblems, deviceId, 'disconnected')
+  setLinkProblem(deviceId, 'disconnected')
   handlers?.onClosed('disconnected')
 }
 
 export async function resumeSshDevice(deviceId: string): Promise<void> {
   const electron = bridge()
   if (!electron || await electron.invoke(SSH_LINK_CHANNELS.setPaused, deviceId, false) !== true) throw new SshLinkError('unmapped', deviceId)
-  patch(linkProblems, deviceId, undefined)
+  setLinkProblem(deviceId, undefined)
   for (const listener of [...signedInListeners]) listener(deviceId)
 }
 let eventsWired = false
@@ -246,7 +309,7 @@ function recordLinkProblem(deviceId: string, reason: SshLinkFailure): void {
     const latest = linkProblems.get().get(deviceId)
     if (latest === 'waitingIdle' || latest === 'confirmationRequired' || latest === 'updateFailed' || latest === 'updating') return
   }
-  patch(linkProblems, deviceId, reason)
+  setLinkProblem(deviceId, reason)
 }
 
 function wireEvents(electron: ElectronBridge): void {
@@ -289,7 +352,7 @@ export function openSshLink(deviceId: string, handlers: LinkHandlers): SshLinkHa
         if (result && !result.ok && result.controlOnly) return
         throw new SshLinkError(reason, deviceId)
       }
-      if (current()) patch(linkProblems, deviceId, null)
+      if (current()) setLinkProblem(deviceId, null)
     },
     () => {
       if (current()) recordLinkProblem(deviceId, 'unreachable')
@@ -307,7 +370,7 @@ export function openSshLink(deviceId: string, handlers: LinkHandlers): SshLinkHa
       closed = true
       if (handlersByDevice.get(deviceId) !== handlers) return
       handlersByDevice.delete(deviceId)
-      if (linkProblems.get().get(deviceId) === null) patch(linkProblems, deviceId, undefined)
+      if (linkProblems.get().get(deviceId) === null) setLinkProblem(deviceId, undefined)
       void electron.invoke(SSH_LINK_CHANNELS.close, deviceId).catch(() => undefined)
     },
   }
@@ -347,7 +410,7 @@ async function performRecovery(deviceId: string, channel: string): Promise<SshLi
   }
   if (sshDisconnected(deviceId)) return { ok: false, reason: 'disconnected' }
   if (result.ok) {
-    patch(linkProblems, deviceId, null)
+    setLinkProblem(deviceId, null)
     for (const listener of [...signedInListeners]) listener(deviceId)
   } else if (!result.cancelled) {
     recordLinkProblem(deviceId, result.reason)
@@ -361,8 +424,7 @@ const signedInListeners = new Set<(deviceId: string) => void>()
 
 /** 正在替它升级的那几台:deviceId → 进度百分比(不知道总量 = null)。 */
 const upgrades = createSelectStore<ReadonlyMap<string, number | null>>(new Map())
-/** 老到没法自动更新的那几台:deviceId → 请人在那台机器上跑的安装命令(随「没升成」一起来)。 */
-const reinstallCommands = new Map<string, string>()
+
 
 export function sshReinstallCommand(deviceId: string): string | null {
   return reinstallCommands.get(deviceId) ?? null
@@ -392,17 +454,17 @@ export function applyUpgradeEvent(event: SshUpgradeEvent | null): void {
   else reinstallCommands.delete(deviceId)
   if (event.phase === 'updating') {
     patch(upgrades, deviceId, typeof event.percent === 'number' ? event.percent : null)
-    patch(linkProblems, deviceId, 'updating')
+    setLinkProblem(deviceId, 'updating')
   } else if (event.phase === 'waitingIdle' || event.phase === 'confirmationRequired') {
     patch(upgrades, deviceId, undefined)
-    patch(linkProblems, deviceId, event.phase)
+    setLinkProblem(deviceId, event.phase)
   } else if (event.phase === 'desktopTooOld' || event.phase === 'unconfirmed') {
     // 连接本身没毛病;「请更新这台电脑上的咕咕」由那台机器报的协议窗口说(serverMachineNotices)。
     patch(upgrades, deviceId, undefined)
-    patch(linkProblems, deviceId, undefined)
+    setLinkProblem(deviceId, undefined)
   } else {
     patch(upgrades, deviceId, undefined)
-    patch(linkProblems, deviceId, event.phase === 'done' ? undefined : 'updateFailed')
+    setLinkProblem(deviceId, event.phase === 'done' ? undefined : 'updateFailed')
     if (event.phase === 'done') for (const listener of [...signedInListeners]) listener(deviceId)
   }
 }

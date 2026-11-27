@@ -20,6 +20,7 @@ import { withDeviceProjects } from '@gugu/core/cloud/deviceProjects'
 import { withProjectsRead } from './deviceProjectsRead'
 import { listMyDeviceProjects } from '../lib/deviceProjects'
 import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+import { verifySshVersionOnHeartbeat } from '../lib/sshLinkChannel'
 import { withSshLinkOnline } from '../lib/sshLinkOnline'
 import { useSshLinkProblems, useSshMachineIds } from '../hooks/useSshLinkProblems'
 import { desktopIpc } from '../platform/desktopIpc'
@@ -190,6 +191,17 @@ export function DevicesProvider({ children, active = true }: { children: React.R
   // 侧栏、选择器、设置 → 设备同一个说法。别的机器照常读心跳。
   const sshMachineIds = useSshMachineIds()
   const linkProblems = useSshLinkProblems()
+  useEffect(() => {
+    if (!userId || cachedDevicesAccount() !== userId || reading.state !== 'value' || reading.stale || reading.error) return
+    for (const device of reading.value) {
+      const problem = linkProblems.get(device.device_id)
+      if (problem === 'outdated' || problem === 'updateFailed') {
+        void verifySshVersionOnHeartbeat(device).catch(err => {
+          devicesLog.warn({ deviceId: device.device_id, err: String(err) }, 'could not verify reported SSH server protocol')
+        })
+      }
+    }
+  }, [userId, reading, linkProblems])
   // #7199 云电脑那一行补上「休眠中 / 正在唤醒 / 运行中」,再排一次(休眠中的排在在线那一组)。
   const listedHere = useMemo(
     () =>

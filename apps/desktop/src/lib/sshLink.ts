@@ -9,7 +9,7 @@ import type { SshPrompt } from '../session/shared/ssh-prompt'
 import type { DeviceCapabilities } from '@gugu/core/shared/types/chat'
 
 export const SSH_LINK_CHANNELS = {
-  /** 开(或复用)这台机器的设备连接(invoke,设备 id → SshLinkOpenResult)。 */
+  /** Open this device link. With 'verify-version', check its negotiated protocol without starting an update. */
   open: 'ssh-link:open',
   /** 写一条信封(invoke,{ deviceId, message } → boolean;false = 连接没开着)。 */
   send: 'ssh-link:send',

@@ -10,7 +10,7 @@ import { unwrapPayload } from '@gugu/core/cloud/payload'
 import { helloProtocol, MIN_SERVER_PROTOCOL, REMOTE_PROTOCOL_VERSION } from '@gugu/core/cloud/serverMachineHealth'
 import { DeviceRpcChannelError, DeviceRpcTimeoutError } from '@gugu/core/cloud/deviceRpcRequester'
 import { callDeviceRpc, subscribeDeviceRpcEvents } from './deviceRpc'
-import { isSshMachine, requestSshServerUpgrade, usesDeviceLink, waitForTunnel } from './sshLinkChannel'
+import { confirmSshServerVersion, isSshMachine, requestSshServerUpgrade, usesDeviceLink, waitForTunnel } from './sshLinkChannel'
 import { rendererLogger } from './log'
 import type { SessionHostPipe, SessionHostPipeOpener } from '../session/shared/lib/ipc/session-host-client'
 import { base64ToBytes } from '../session/shared/lib/base64'
@@ -256,6 +256,7 @@ export function openRemoteSessionHostPipe(
       throw new SessionHostTooOldError()
     }
 
+    if (deps.isSshMachine(deviceId)) confirmSshServerVersion(deviceId)
     live = true
     log.info({ deviceId, client }, 'session host window opened')
     let outSeq = 0

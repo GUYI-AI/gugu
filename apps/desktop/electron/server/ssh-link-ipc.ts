@@ -7,6 +7,7 @@
  * Windows 自带的 OpenSSH 没有共享连接,这一下记住的是新指纹(known_hosts)与装上的咕咕钥匙,之后 BatchMode 直接连上。
  * 密码提问上照样给「以后连这台机器不用再输密码」(下次免密,见 ssh-key-install.ts)。
  */
+import { serverProtocolTooOld } from '@gugu/core/cloud/serverMachineHealth'
 import { spawn } from '@gugu/core/local/childProcess'
 import type { BrowserWindow } from 'electron'
 import {
@@ -188,8 +189,22 @@ export function registerSshLinkIpc(options: {
         })
       : null)
 
-  options.ipcMain.handle(SSH_LINK_CHANNELS.open, async (_event, deviceId: unknown): Promise<SshLinkOpenResult> => {
+  options.ipcMain.handle(SSH_LINK_CHANNELS.open, async (_event, deviceId: unknown, mode?: unknown): Promise<SshLinkOpenResult> => {
     if (typeof deviceId !== 'string' || !ID.test(deviceId)) return { ok: false, reason: 'unmapped' }
+    if (mode === 'verify-version') {
+      const machine = await machineFor(deviceId)
+      if (!machine) return { ok: false, reason: 'unmapped' }
+      if (machine.deviceLinkPaused) return { ok: false, reason: 'disconnected' }
+      if (upgrader?.upgrading(deviceId)) return { ok: false, reason: 'updating' }
+      // Only an obsolete control-only link needs a fresh handshake. Preserve active readers and healthy links.
+      if (serverProtocolTooOld(links.protocol(deviceId))) {
+        if (holds.has(deviceId)) return { ok: false, reason: 'outdated' }
+        close(deviceId)
+      }
+      const verified = await links.open(deviceId)
+      if (verified.ok && serverProtocolTooOld(links.protocol(deviceId), { unknownIsTooOld: true })) return { ok: false, reason: 'outdated' }
+      return verified
+    }
     // The window uses the link again: a close it asked for while a read held it no longer stands.
     deferred.delete(deviceId)
     // 正在替它升级:这时开出去只会撞上还没换下来的旧版本,❌ 再起一个 ssh。

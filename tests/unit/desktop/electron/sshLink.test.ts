@@ -561,6 +561,30 @@ describe('桌面主进程:每台机器一条设备连接', () => {
   })
 })
 
+it('verifies the negotiated SSH version without starting an installer or replacing a held link', async () => {
+  const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
+  const upgrader = { request: vi.fn(), upgrading: () => false }
+  const links = registerSshLinkIpc({
+    ipcMain: { handle: (name: string, fn: (event: unknown, ...args: unknown[]) => unknown) => handlers.set(name, fn) } as never,
+    getWindow: () => null, currentUserId: async () => ACCOUNT,
+    store: { list: () => [{ deviceId: 'box', ownerUserId: ACCOUNT }], onChange: () => () => undefined } as never,
+    upgrader,
+  })
+  const open = vi.spyOn(links, 'open').mockResolvedValue({ ok: true })
+  const protocol = vi.spyOn(links, 'protocol').mockReturnValue(19)
+  const verify = () => handlers.get(SSH_LINK_CHANNELS.open)!({}, 'box', 'verify-version')
+  const release = links.hold('box')
+  expect(await verify()).toMatchObject({ ok: false, reason: 'outdated' })
+  expect(open).not.toHaveBeenCalled()
+  release()
+  expect(await verify()).toMatchObject({ ok: false, reason: 'outdated' })
+  protocol.mockReturnValue(null)
+  expect(await verify()).toMatchObject({ ok: false, reason: 'outdated' })
+  protocol.mockReturnValue(REMOTE_PROTOCOL_VERSION)
+  expect(await verify()).toEqual({ ok: true })
+  expect(upgrader.request).not.toHaveBeenCalled()
+})
+
 describe('a device link over a remote tunnel', () => {
   it('a tunnel link the machine’s server refuses steps the tunnel aside; only a failed SSH path rebuilds it', async () => {
     const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()

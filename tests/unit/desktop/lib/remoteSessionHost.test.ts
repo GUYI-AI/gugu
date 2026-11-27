@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 // 线本身由注入的 deps 替掉;真的 deviceRpc 模块在测试里不求值(它一加载就挂 Supabase / 渲染层全局)。
 vi.mock('@/lib/deviceRpc', () => ({ callDeviceRpc: vi.fn(), subscribeDeviceRpcEvents: vi.fn() }))
+import { applyUpgradeEvent, sshLinkProblems } from '@/lib/sshLinkChannel'
 import { MIN_SERVER_PROTOCOL, REMOTE_PROTOCOL_VERSION } from '@gugu/core/cloud/serverMachineHealth'
 import { DeviceRpcChannelError, DeviceRpcTimeoutError } from '@gugu/core/cloud/deviceRpcRequester'
 import { HEARTBEAT_REPLY_TIMEOUT_MS, openRemoteSessionHostPipe, SessionHostTooOldError, type DeviceRpcDeps } from '@/lib/remoteSessionHost'
@@ -55,6 +56,15 @@ describe('remote task host pipe over device RPC', () => {
       await expect(openRemoteSessionHostPipe('dev', device.deps)({ onFrame: () => undefined, onClose: () => undefined }))
         .rejects.toMatchObject({ code: 'timeout' })
     }
+  })
+
+  it('clears a stale upgrade failure only after a compatible SSH task host answers', async () => {
+    const id = 'negotiated-version'
+    applyUpgradeEvent({ deviceId: id, phase: 'failed' })
+    const device = fakeDevice(() => ({ result: { protocol: MIN_SERVER_PROTOCOL } }), { ssh: true })
+    const pipe = await openRemoteSessionHostPipe(id, device.deps)({ onFrame: () => undefined, onClose: () => undefined })
+    expect(sshLinkProblems.get().get(id)).toBeNull()
+    pipe.close()
   })
 
   it('waits for the tunnel event before subscribing or starting the taskhost.open RPC budget', async () => {
