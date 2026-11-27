@@ -13,6 +13,11 @@
   z-index: var(--z-toast);
 }
 
+/* NoticeHost's hover reporter around each strip: no box of its own, the strip lays out as before. */
+.gugu-notice-strip {
+  display: contents;
+}
+
 .gugu-notices [data-sonner-toast][data-styled='true'] {
   box-shadow: var(--shadow-toast-card);
   font-size: var(--font-body);

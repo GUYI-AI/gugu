@@ -49,7 +49,8 @@ export function SessionHistorySectionBox({
   }, [capped, hasMore, isLoadingMore, onReachEnd]);
 
   return (
-    <div className="overflow-hidden rounded-sm bg-foreground/[0.02] dark:bg-foreground/[0.03]">
+    // 不限高时不裁边:行外左侧那一格勾选框(第 2 稿 .gut)伸在面板外 44px;圆角由首尾两行自己带。
+    <div className={cn('rounded-sm bg-foreground/[0.02] dark:bg-foreground/[0.03]', capped && 'overflow-hidden')}>
       <div
         ref={boxRef}
         data-testid="session-history-section-box"
