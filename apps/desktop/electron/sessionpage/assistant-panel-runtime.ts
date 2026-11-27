@@ -19,11 +19,13 @@ import { invalidateAssistantIndex, stopAssistantIndexRefresh } from './assistant
 import { collectAssistantPanelFiles, publishAssistantPanelCollection, type PanelObservation } from './assistant-panel-publisher'
 import { createAssistantPanelBodyFailures } from './assistant-panel-body-failures'
 import { isPersonalAssistantAgent } from './assistant-agent-role'
+import { createLogger } from '../lib/logger'
 import { anySignal } from '@gugu/core/shared/anySignal'
 import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting'
 
 type Auth = { accessToken: string; userId: string }
 type Binding = AssistantPanelHome & { sessionId: string }
+const catalogLabel = (key: string) => `${key} (configurable, not connected)`
 
 /** Account-bound host state. Nothing here starts a device, opens a remote
  * workspace, or changes a native session's history. */
@@ -40,6 +42,8 @@ export function createAssistantPanelRuntime(deps: {
   const revokedBindings = new Set<string>()
   const roleVersions = new Map<string, number>()
   const bodyFailures = new Map<string, ReturnType<typeof createAssistantPanelBodyFailures>>()
+  const attemptedCatalogRenames = new Set<string>()
+  let acceptsCatalogLabel = true
   const unavailable = new Set<string>()
   const removed = new Set<string>()
   const removedSessions = new Map<string,string>()
@@ -207,7 +211,7 @@ export function createAssistantPanelRuntime(deps: {
       }).finally(() => { pulling = null })
       return pulling
     }
-    async function observations(domain: AssistantPanelDomain, previous: AssistantPanelItem[]): Promise<PanelObservation[]> {
+    async function observations(domain: AssistantPanelDomain, previous: AssistantPanelItem[], instanceId: string, deviceId: string): Promise<PanelObservation[]> {
       if (['memory','files','skills','personality','voice-notes'].includes(domain)) {
         const rows = await collectAssistantPanelFiles(binding,
           domain as 'memory' | 'files' | 'skills' | 'personality' | 'voice-notes',application.identify,{ requireRoot: previous.length > 0 })
@@ -217,28 +221,43 @@ export function createAssistantPanelRuntime(deps: {
         return rows
       }
       if (domain === 'integrations') return [
-        ...await Promise.all(deps.local.integrationCatalog().map(async row => {
-          const key = `catalog:${row.id}`, desiredLabel = `${key} (configurable, not connected)`
-          let catalogBodyLabel: string | undefined = desiredLabel
+        ...deps.local.integrationCatalog().map((row): PanelObservation => {
+          const key = `catalog:${row.id}`, label = catalogLabel(key)
           const existing = previous.find(item => item.resource_key === key && !item.deleted_at)
-          // A catalog describes a possible setup, not a saved connection. Upgrade the existing file in place:
-          // unchanged body hashes are reused by the publisher, and uploading another file would leave the old name behind.
-          if (existing?.body_item_id && existing.data.catalogBodyLabel !== desiredLabel) {
-            const current = await auth()
-            const client = createGuguSupabaseClient({ schema: 'chat',headers: { Authorization: `Bearer ${current.accessToken}` } })
-            try {
-              const { error } = await client.rpc('workspace_move_as',{ p_item_id: existing.body_item_id,p_as_user_id: binding.ownerId,
-                p_folder: null,p_name: panelBodyFileName(desiredLabel),
-              }).abortSignal(anySignal([AbortSignal.timeout(2000),lifetime.signal]))
-              if (error) catalogBodyLabel = undefined
-            } catch { catalogBodyLabel = undefined }
-            await auth()
-            // Keep publishing saved connections; no receipt means this catalog is retried at the next observation.
+          const labeled = existing?.data.catalogBodyLabel === label
+          const data = { providerId: row.id,configured: false,displayName: row.en.name,catalog: row.en.catalog,
+            ...(labeled ? { catalogBodyLabel: label } : {}) }
+          return { key,data,bytes: new TextEncoder().encode(JSON.stringify({ version: 1,en: row.en,'zh-CN': row.zh })),
+            async publishedBody(body,revision,uploaded) {
+              if (labeled || !acceptsCatalogLabel) return
+              const attempt = JSON.stringify([binding.ownerId,binding.assistantId,key])
+              if (!uploaded && attemptedCatalogRenames.has(attempt)) return
+              attemptedCatalogRenames.add(attempt)
+              if (!uploaded) {
+                const current = await auth()
+                const client = createGuguSupabaseClient({ schema: 'chat',headers: { Authorization: `Bearer ${current.accessToken}` } })
+                try {
+                  const { error } = await client.rpc('workspace_move_as',{ p_item_id: body.itemId,p_as_user_id: binding.ownerId,
+                    p_folder: null,p_name: panelBodyFileName(label),
+                  }).abortSignal(anySignal([AbortSignal.timeout(2000),lifetime.signal]))
+                  if (error) return
+                } catch { return }
+              }
+              try {
+                await cloud.commit(binding.assistantId,{ operationId: randomUUID(),domain:'integrations',key,expectedRevision: revision,
+                  operation:'save',data:{ ...data,catalogBodyLabel: label },body,deviceId,runtimeInstanceId:instanceId })
+              } catch (error) {
+                if (error instanceof AssistantPanelError && error.code === '22023' && error.message === 'Panel data has unsupported fields') {
+                  acceptsCatalogLabel = false
+                  return
+                }
+                if (error instanceof AssistantPanelError && ['PT409','55000'].includes(error.code)) return
+                if (isAssistantPanelBindingRevoked(error) || disposed) throw error
+                createLogger('assistant-panel').warn({ code: error instanceof AssistantPanelError ? error.code : 'unknown' },'Catalog label could not be recorded')
+              }
+            },
           }
-          return { key,data: { providerId: row.id,configured: false,displayName: row.en.name,catalog: row.en.catalog,...(catalogBodyLabel ? { catalogBodyLabel } : {}) },
-            bytes: new TextEncoder().encode(JSON.stringify({ version: 1,en: row.en,'zh-CN': row.zh })),
-          }
-        })),
+        }),
         ...(await deps.local.integrations(binding.ownerId,() => scheduleCollection('integrations'))).map(({ publicMetadata,...row }) => {
           const checkedAt = typeof row.checkedAt === 'number' ? row.checkedAt : Date.parse(String(row.checkedAt ?? ''))
           const { checkResult,checkedAt: _checkedAt,...metadata } = row
@@ -335,9 +354,9 @@ export function createAssistantPanelRuntime(deps: {
           await publishAssistantPanelCollection({ assistantId: binding.assistantId,instanceId,deviceId,domain,cloud,
             baseline: baseline ?? await cloud.snapshot(binding.assistantId),
             bodyFailures: failures,
-            collect: previous => observations(domain,previous),
-            upload: async row => uploadAssistantPanelBody({ ...await access(),label: domain === 'integrations' && row.key.startsWith('catalog:') && typeof row.data.catalogBodyLabel === 'string'
-              ? row.data.catalogBodyLabel : row.key.split('/').pop() ?? domain,bytes: row.bytes! }),
+            collect: previous => observations(domain,previous,instanceId,deviceId),
+            upload: async row => uploadAssistantPanelBody({ ...await access(),label: domain === 'integrations' && row.key.startsWith('catalog:')
+              ? catalogLabel(row.key) : row.key.split('/').pop() ?? domain,bytes: row.bytes! }),
             discard: async itemId => {
               const current = await auth()
               const client = createGuguSupabaseClient({ schema: 'chat',headers: { Authorization: `Bearer ${current.accessToken}` } })
