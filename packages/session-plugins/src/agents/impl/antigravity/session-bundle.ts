@@ -21,6 +21,7 @@ import {
   sessionMcpProtocolServers,
 } from '../../helpers/session-mcp';
 import { sessionContextPrompt } from '../../helpers/session-bundle';
+import { isLegacyAntigravityConversation } from './acp-routing';
 
 /**
  * 本文件每一格的读数底座:2026-09-23 MBP 对 Google 官方 ACP 服务 `agy_acp_server` 1.1.1
@@ -251,7 +252,7 @@ export const ANTIGRAVITY_INVOCATION_CONTEXT_ENV = 'GUGU_AGY_INVOCATION_CONTEXT';
  *  `ANTIGRAVITY_SESSION_TUI_ENABLED`)在 pty 里跑 `agy` CLI。两条腿共用咕咕托管的**同一份** `.gemini`。
  *  下面先是聊天面板腿的读数,终端腿各格的读数写在各自那一格上。
  *
- *  · **mcp / acp-session**:`session/new` 的 mcpServers ——
+ *  · **mcp**(`session/new` 的 mcpServers;今天只剩旧服务与资源库 stdio 走它,见 `units.mcp`)——
  *    http:`{type:'http', url, headers:[{name:'Authorization', value:'Bearer …'}]}` → 它依次调
  *    `server/discover` → `initialize` → `notifications/initialized` → `tools/list`,每次都带那个
  *    Authorization 头,注入的工具出现在下一次模型请求的 functionDeclarations 里(toolDeclared=true)。
@@ -363,7 +364,7 @@ export const antigravitySessionBundleDescriptor = {
   surfaces: ANTIGRAVITY_SESSION_TUI_ENABLED ? ['acp', 'tui'] : ['acp'],
   sessionpage: {
     /**
-     * 与 gemini 的 `acp` 同声明:身份走通用 provisioning(咕咕的 MCP 经 acp-session 到得了),
+     * 与 gemini 的 `acp` 同声明:身份走通用 provisioning(咕咕的 MCP 到得了,通道见 `units.mcp`),
      * 普通消息经 router 化成 `route=chat` 信封进 `session/prompt`(#4612,对 provider 通用)。
      *
      * `injection: next-tool-call` 不靠它自己的 steering(1.2.1 `initialize` 不报,忙时并发第二条
@@ -398,13 +399,21 @@ export const antigravitySessionBundleDescriptor = {
   },
   units: {
     /**
-     * MCP —— **两条腿载体不同**,所以按腿声明:
-     *  · 聊天面板腿:`session/new` 的 mcpServers(读数见本 descriptor 抬头)。
-     *  · 终端腿:咕咕托管那份 `.gemini/config/mcp_config.json` 的 `mcpServers.<名字>`(key 级合并,
-     *    用户从自己那份带过来的条目一个不动)。条目是**与会话无关**的 stdio 中继,地址与令牌只在 spawn 环境里,
-     *    见 `tuiMcpDelivery`。实测(agy 1.2.9,影子 HOME):中继被拉起、假 MCP 收到 initialize / tools/list;
-     *    模型请求的系统提示里出现 `# gugu\nLazy:\n<tool>`、工具表多出通用的 `call_mcp_tool`
-     *    (工具名形态见 index.ts 的 `mcp.toolNames`)。
+     * MCP —— 按腿声明。载体是咕咕托管那份 `.gemini/config/mcp_config.json` 的 `mcpServers.<名字>`(key 级合并,
+     * 用户从自己那份带过来的条目一个不动):条目是**与会话无关**的 stdio 中继,地址与令牌只在 spawn 环境里
+     * (`relayMcpDelivery`)。模型经通用的 `call_mcp_tool` 调(工具名形态见 index.ts 的 `mcp.toolNames`)。
+     *  · 聊天面板腿(`agy acp`)的咕咕工具 **❌ 不走** `session/new` 的 mcpServers:agy 把那条通道来的工具当 eager,
+     *    与 skills / subagents 共用一份上下文预算,skill 一多就按定义从长到短**静默丢**(发消息那几个最长),模型
+     *    调到时回 `tool … is not enabled for server gugu`。agy acp 1.5.16 / 1.5.18 + 本地假端点实测(2026-11-27,
+     *    咕咕 20 个工具,每个 skill 描述 300 字):0 个 skill → 20、60 → 19、100 → 17、130 起 → 9;缩短工具描述、
+     *    `_meta["antigravity/alwaysLoad"]`、settings 里的预算键都无效。配置文件里的 server 按需加载,700 个
+     *    skill 时仍全在。首句要等 `tools/list`(`promptAwaitsGuguTools`):不等时首轮请求里整段 `<mcp_servers>`
+     *    缺席(6/6),等了 8/8 全在。
+     *  · 聊天面板腿两种情况照旧走 `session/new`:**旧服务的会话**(`agy_acp_server`,按会话存档认)—— 它把那条
+     *    通道的工具列为按需加载(1.4.5 实测 200 个 skill 时 20/20),而配置文件里的中继它首句之前不列工具(等
+     *    40 秒无);**资源库里勾的 stdio server** —— 要每会话的环境值,写不进共用文件(它们仍受那份预算约束)。
+     *  · 终端腿(`agy`):只收 http。实测(agy 1.2.9,影子 HOME):中继被拉起、假 MCP 收到 initialize / tools/list;
+     *    模型请求的系统提示里出现 `# gugu\nLazy:\n<tool>`、工具表多出通用的 `call_mcp_tool`。
      *    ⚠️ 已知欠账:以 `-i` 起的**第一回合**看不到咕咕的工具 —— agy 在任何 stdio server 应答之前就拼好了那一轮的
      *    `mcp_servers` 提示段(日志「skipping component… empty component: prompt section mcp_servers」);
      *    第二回合起都在。http 条目实测第一回合就在,但 http 条目只能把令牌写进共用文件,那条路 owner 已否。
@@ -414,7 +423,7 @@ export const antigravitySessionBundleDescriptor = {
     mcp: {
       kind: 'per-surface',
       surfaces: {
-        'acp': { kind: 'native', channel: 'acp-session' },
+        'acp': { kind: 'native', channel: 'config-file' },
         // 共用的 mcp_config.json 里写不了每条会话的 env ⇒ 只收 http(资源库里勾的 stdio 那几台由宿主留在外面)。
         'tui': { kind: 'native', channel: 'config-file', transports: ['http'] },
       },
@@ -533,8 +542,7 @@ function shadowHomePath(bundle: SessionCapabilityBundle, basename: string): stri
 
 /**
  * 咕咕 MCP 的 stdio ⇄ HTTP 中继(`apps/desktop/electron/runtime/gugu-mcp-stdio-relay.mjs`)的入口 ——
- * 宿主在起终端腿之前登记成进程环境事实(local-session,与 codex 桥的
- * `GUGU_CODEX_APP_SERVER_ACP_ENTRY` 同一个做法)。
+ * 宿主在物化之前登记成进程环境事实(终端腿:local-session;聊天面板腿:ACP 的能力注入那一步)。
  */
 export const GUGU_MCP_STDIO_RELAY_ENTRY_ENV = 'GUGU_MCP_STDIO_RELAY_ENTRY';
 
@@ -551,40 +559,64 @@ export function sessionMcpBearerEnv(name: string): string {
   return `GUGU_SESSION_MCP_BEARER_${sessionMcpEnvSuffix(name)}`;
 }
 
-type TuiMcpDelivery = { overlay: JsonOverlay; env: Record<string, string> };
+type RelayMcpDelivery = { overlay: JsonOverlay; env: Record<string, string> };
+
+/** The chat leg's name for Gugu's own server on `agy acp`, and the one its leftover `session/new` entry keeps. */
+export const ANTIGRAVITY_ACP_GUGU_SERVER = 'gugu-mcp';
+export const ANTIGRAVITY_GUGU_SERVERS: readonly string[] = [ANTIGRAVITY_ACP_GUGU_SERVER, 'gugu'];
 
 /**
- * 终端腿的 MCP —— 托管 `config/mcp_config.json` 里只写**与会话无关**的条目,会话的地址与令牌只进 spawn 环境。
+ * 聊天面板腿(`agy acp`)配置文件里的名字 = `<名>-mcp`。❌ 沿用原名:`agy` 把开会话时 `session/new` 收到的
+ * server(名字与地址)存进会话存档,`session/load` 时照样装回来、仍按 eager 算,配置文件里**同名**条目只换掉
+ * 连接、换不掉 eager —— 修前开的会话续跑后工具照样被丢。换个名字的条目按需加载,存档里那台不再列给模型,
+ * 模型仍按旧名调时它要么调通、要么立刻回错(1.5.3 / 1.5.18 + 本地假端点实测 2026-11-27)。
+ * 与另一台 session/new 上的(资源库 stdio)撞名时再追一节。
+ */
+function acpRelayName(name: string, taken: ReadonlySet<string>): string {
+  let delivered = `${name}-mcp`;
+  while (taken.has(delivered)) delivered += '-mcp';
+  return delivered;
+}
+
+/**
+ * 咕咕 MCP 经 stdio 中继投递(终端腿与聊天面板腿的 `agy acp`)—— 托管 `config/mcp_config.json` 里只写
+ * **与会话无关**的条目,会话的地址与令牌只进 spawn 环境。
  *
  * ## 为什么不把地址与令牌写进那份文件
  *
- * owner 原则:一个 harness 一个配置根,❌ 每会话一份。那份文件于是被**所有**终端会话与聊天面板腿共用:
- *  · 两条终端会话并发时,后起的一条把自己的令牌写进去,先起的那条之后若重连,拿的就是别人的身份;
- *  · 聊天面板腿的 `agy_acp_server` 起会话时也加载这份全局文件(stderr「Attempting to load global MCP
- *    configs from <GEMINI_HOME>/config/mcp_config.json」),会拿终端会话的令牌连上咕咕。
+ * owner 原则:一个 harness 一个配置根,❌ 每会话一份。那份文件于是被**所有** Antigravity 会话共用:
+ *  · 两条会话并发时,后起的一条把自己的令牌写进去,先起的那条之后若重连,拿的就是别人的身份;
+ *  · 旧服务 `agy_acp_server` 起会话时也加载这份全局文件(stderr「Attempting to load global MCP
+ *    configs from <GEMINI_HOME>/config/mcp_config.json」),会拿别人的令牌连上咕咕。
  * ⇒ 文件里每台咕咕 server 是一条 stdio 条目,`command` = 随咕咕发的中继(应用级事实,与会话无关);
  *   `GUGU_SESSION_MCP_URL_<后缀>` / `GUGU_SESSION_MCP_BEARER_<后缀>`(codex 那条腿同一套命名)只在这次
  *   spawn 的环境里,`agy` 起 stdio server 时子进程继承它的环境,中继从那里读。
- *   聊天面板腿起同一条中继时环境里没有这两个变量 ⇒ 中继静默退化成一台没有工具的 server(见中继抬头)。
+ *   环境里没有这两个变量的会话(别的会话写进来、自己没挂的那台)起同一条中继时,它静默退化成一台没有工具的
+ *   server(见中继抬头)。
  *
  * ⚠️ 中继用宿主自己那份 node(Electron 配 `ELECTRON_RUN_AS_NODE=1`,与 codex / claude 适配器同一个起法),
  *    用户机器上不要求装 node。
  * ⚠️ **key 级合并**(`conflict: 'gugu-owns'`):文件首次是从用户 `~/.gemini` 整份带过来的,只改咕咕那几个名字。
- * ⚠️ stdio server 不接(descriptor 的 `transports: ['http']`;资源库里勾的 stdio 那几台由宿主按它留在外面):会话级 stdio server 只来自「复述用户自己的 server」,而这一家 `sessionUserServers:
- *    'inherit'`(两个程序都自己读这份文件)⇒ 正常路径上一台都不会有;真出现了就是声明漂了,响亮失败,
- *    ❌ 把它的环境值写进共用文件。
+ * ⚠️ stdio server 不接:它要每会话的环境值,写进共用文件就串了 ⇒ 响亮失败。终端腿由宿主按 `transports: ['http']`
+ *    把资源库里的 stdio 那几台留在外面,聊天面板腿由调用方留在 `session/new` 上。
+ * `deliveredName`:条目、中继参数与环境变量用同一个名字;同一份文件里别的名字的条目(终端腿写下的 `gugu`)
+ * 在这条会话里拿不到环境值,退化成没有工具的 server。
  */
-function tuiMcpDelivery(bundle: SessionCapabilityBundle): TuiMcpDelivery | null {
-  if (bundle.mcpServers.length === 0) return null;
+function relayMcpDelivery(
+  bundle: SessionCapabilityBundle,
+  mcpServers: SessionCapabilityBundle['mcpServers'],
+  deliveredName: (name: string) => string = (name) => name
+): RelayMcpDelivery | null {
+  if (mcpServers.length === 0) return null;
   const relay = process.env[GUGU_MCP_STDIO_RELAY_ENTRY_ENV]?.trim();
   if (!relay) {
     throw new Error(
-      `Antigravity terminal MCP needs the Gugu MCP stdio relay; ${GUGU_MCP_STDIO_RELAY_ENTRY_ENV} is not registered`
+      `Antigravity MCP needs the Gugu MCP stdio relay; ${GUGU_MCP_STDIO_RELAY_ENTRY_ENV} is not registered`
     );
   }
   const servers: Record<string, unknown> = {};
   const env: Record<string, string> = {};
-  for (const server of bundle.mcpServers) {
+  for (const server of mcpServers) {
     if (server.transport === 'stdio') {
       throw new Error(
         `Antigravity terminal MCP '${server.name}' is stdio: session stdio servers would need per-session env in the `
@@ -592,14 +624,15 @@ function tuiMcpDelivery(bundle: SessionCapabilityBundle): TuiMcpDelivery | null 
       );
     }
     const credential = sessionMcpAuthorization(server, bundle.env, 'Antigravity');
-    servers[server.name] = {
+    const name = deliveredName(server.name);
+    servers[name] = {
       command: process.execPath,
-      args: [relay, server.name],
+      args: [relay, name],
       env: { ELECTRON_RUN_AS_NODE: '1' },
       disabled: false,
     };
-    env[sessionMcpUrlEnv(server.name)] = server.url;
-    if (credential) env[sessionMcpBearerEnv(server.name)] = credential.replace(/^Bearer\s+/i, '');
+    env[sessionMcpUrlEnv(name)] = server.url;
+    if (credential) env[sessionMcpBearerEnv(name)] = credential.replace(/^Bearer\s+/i, '');
   }
   const path = managedRootPath(bundle, ...ANTIGRAVITY_MCP_CONFIG_REL);
   return {
@@ -678,19 +711,30 @@ export function materializeAntigravitySessionBundle(
   const env = Object.fromEntries(
     Object.entries(bundle.env).filter((entry): entry is [string, string] => entry[1] !== undefined)
   );
-  // http 的凭据已经进了 Authorization(协议腿的头 / 终端腿的配置文件),❌ 不再留在子进程环境里。
+  // http 的凭据另有去处(中继读的那两个变量 / 旧服务的 `session/new` 请求头),原来那格 ❌ 不再留在子进程环境里。
   for (const server of bundle.mcpServers) {
     if (server.transport !== 'stdio' && server.authorizationEnv) delete env[server.authorizationEnv];
   }
   const loaded = { status: 'loaded' as const };
   if (ctx.surface === 'tui') return materializeSessionTui(ctx, bundle, env);
 
-  const mcpServers = sessionMcpProtocolServers(bundle, 'Antigravity');
+  // 聊天面板腿的两条通道(理由见 descriptor 的 `units.mcp`):旧服务的会话全部随 `session/new`;
+  // 其余会话 http 走配置文件中继,stdio 仍随 `session/new`。
+  const legacy = ctx.providerSessionId !== undefined
+    && isLegacyAntigravityConversation(managedRootPath(bundle), ctx.providerSessionId);
+  const relayed: SessionCapabilityBundle['mcpServers'] = legacy
+    ? [] : bundle.mcpServers.filter((server) => server.transport !== 'stdio');
+  const sessionOnly = bundle.mcpServers.filter((server) => !relayed.includes(server));
+  const taken = new Set(sessionOnly.map((server) => server.name));
+  const mcp = relayMcpDelivery(bundle, relayed, (name) => acpRelayName(name, taken));
+  const mcpServers = sessionMcpProtocolServers({ ...bundle, mcpServers: sessionOnly }, 'Antigravity');
   const prompt = sessionContextPrompt(bundle.promptBlocks);
   return {
     argsAppend: [],
-    env,
+    env: { ...env, ...(mcp?.env ?? {}) },
     acp: { mcpServers },
+    ...(mcp ? { jsonOverlays: [mcp.overlay] } : {}),
+    ...(relayed.some((server) => server.owner === 'gugu') ? { promptAwaitsGuguTools: true as const } : {}),
     ...(prompt ? { prompt } : {}),
     configMerges: [],
     artifacts: [],
@@ -714,7 +758,7 @@ export function materializeAntigravitySessionBundle(
 
 /**
  * 终端腿的物化 —— 只落盘,不动 argv:
- *  · 咕咕 MCP 以与会话无关的中继条目合并进托管 `mcp_config.json`,会话地址与令牌进 `env`(`tuiMcpDelivery`);
+ *  · 咕咕 MCP 以与会话无关的中继条目合并进托管 `mcp_config.json`,会话地址与令牌进 `env`(`relayMcpDelivery`);
  *  · 首启向导标成已完成(`tuiOnboardingOverlay`);
  *  · 影子 home 里写好给 agent shell 还原真 HOME 的两份文件(`homeRestoreArtifacts`);
  *  · 会话提示块写成 PreInvocation 钩子的输出档,env 指过去(`tuiInvocationContext`)。
@@ -727,7 +771,7 @@ function materializeSessionTui(
   bundle: SessionCapabilityBundle,
   env: Record<string, string>
 ): SessionMaterialization {
-  const mcp = tuiMcpDelivery(bundle);
+  const mcp = relayMcpDelivery(bundle, bundle.mcpServers);
   const context = tuiInvocationContext(bundle);
   return {
     argsAppend: [],

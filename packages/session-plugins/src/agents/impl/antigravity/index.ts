@@ -29,12 +29,15 @@ import { antigravitySubscriptionBehavior } from './subscription';
 import { buildAntigravityHookConfig } from './hooks';
 import { icon } from './icon';
 import { antigravitySessionProgram, buildAntigravityAcpSpawn } from './acp-routing';
+import { preApproveGuguTool } from './pre-approve';
+import { withProxiedMcpIdentity } from './proxied-tool';
 import { bindAgyTierObservation } from './acp-tier';
 import {
   ANTIGRAVITY_GATEWAY_AUTH,
   withGatewayAuthentication,
 } from './api-key-connection';
 import {
+  ANTIGRAVITY_ACP_GUGU_SERVER,
   ANTIGRAVITY_CLI_VERSION,
   ANTIGRAVITY_LAUNCH_SCRIPT,
   ANTIGRAVITY_SESSION_TUI_ENABLED,
@@ -307,12 +310,24 @@ export const plugin = definePlugin(
        *    eager / lazy 用户配不了:官方 docs/mcp 的 server 字段表(command serverUrl args env cwd headers
        *    authProviderType oauth disabled disabledTools)里没有这一项;二进制里有个内部 proto 字段
        *    `McpToolConfig.enable_lazy_load`,没进文档 ⇒ ❌ 不依赖。
-       *  · 聊天面板腿:工具进了 functionDeclarations(toolDeclared=true,见 session-bundle 抬头),但模型眼里
-       *    的**名字**没量 ⇒ 缺席 = unmeasured,如实欠账。
+       *  · 聊天面板腿:咕咕那几台经同一份配置文件送(见 session-bundle 的 `units.mcp`),两个 ACP 程序里模型
+       *    都经 `call_mcp_tool` 调 ⇒ 与终端腿同一形态,只是 `agy acp` 上咕咕那台叫 `gugu-mcp`(理由见
+       *    session-bundle 的 `acpRelayName`),旧服务的会话仍叫 `gugu` ⇒ 自述把两个名字和先后都说清。
        */
       toolNames: {
         kind: 'per-surface',
         surfaces: {
+          'acp': {
+            kind: 'server-proxied',
+            proxyTool: 'call_mcp_tool',
+            serverArg: 'ServerName',
+            toolArg: 'ToolName',
+            server: ANTIGRAVITY_ACP_GUGU_SERVER,
+            evidence:
+              'agy acp 1.5.3 / 1.5.18(配置文件投递)与 agy_acp_server 1.4.5(session/new,名 `gugu`)Linux 2026-11-27 '
+              + '+ 假 Gemini 端点:系统提示 `# gugu-mcp\nLazy:\n<tool>`、tools 里是通用的 `call_mcp_tool`,按 '
+              + '{ServerName:"gugu-mcp", ToolName, Arguments} 调,假 MCP 收到 tools/call',
+          },
           'tui': {
             kind: 'server-proxied',
             proxyTool: 'call_mcp_tool',
@@ -397,7 +412,10 @@ export const plugin = definePlugin(
  * native store and executable. Loopback stays out of the proxy for both paths and catalog probes: the child
  * environment's exit merges it (session-core `withLoopbackNoProxy`).
  */
-const antigravityAcp = createNativeAcpBehavior(buildAntigravityAcpSpawn, { interruptAtToolBoundary: true });
+const antigravityAcp = createNativeAcpBehavior(buildAntigravityAcpSpawn, {
+  interruptAtToolBoundary: true,
+  preApprove: preApproveGuguTool,
+});
 
 export const provider = registerPluginBehavior(plugin, {
   // 声明了 `auth` 就必须配 `behavior.auth`(framework 直接抛)。
@@ -423,7 +441,8 @@ export const provider = registerPluginBehavior(plugin, {
     // The standalone server reports no tier; agy's open responses carry the plan of the account that opened them.
     observeSessionMetadata: async (ctx) => ctx.sessionProgram === 'antigravity' ? async () => {} : bindAgyTierObservation(ctx),
     // 连接会话(带着网关上线开关起的进程)在开第一条会话前选网关;别的会话原样过(见 ./api-key-connection.ts)。
-    connect: (io, toClient) => withGatewayAuthentication(antigravityAcp.connect(io, toClient)),
+    // 按需加载的 MCP 调用经通用的 `call_mcp_tool` 报上来 ⇒ 认回「哪台的哪个工具」,界面才画得出咕咕的卡片。
+    connect: (io, toClient) => withGatewayAuthentication(antigravityAcp.connect(io, withProxiedMcpIdentity(toClient))),
     // 模型目录探针照同一份声明认证,否则连接会话的目录读成「需要登录」,输入框列不出连接的模型。
     authenticateWhenAdvertised: ANTIGRAVITY_GATEWAY_AUTH,
     // 用户 skill 它读进了系统提示却不经 ACP 报 ⇒ 咕咕按它认的四处目录补进「/」面板(见 ./skills.ts)。

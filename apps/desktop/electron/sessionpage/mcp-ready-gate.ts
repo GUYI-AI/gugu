@@ -36,10 +36,40 @@ export function guguMcpToolsListedGate(
     const unsubscribe = host.onToolsListed(grantKey, settle)
     const budget = setTimeout(() => {
       createLogger('sessionpage').warn(
-        { sessionId, budgetMs },
-        'gugu MCP tools/list did not arrive within the startup budget; opening the startup gate anyway',
+        { sessionId, budgetMs, grantKey },
+        'MCP tools/list did not arrive within the startup budget; opening the startup gate anyway',
       )
       settle()
     }, budgetMs)
   })
+}
+
+/** 咕咕自己那台之外的托管 server(集成、App)等这么久:它们起不来时,首句不该陪着等满一分钟。 */
+export const HOSTED_MCP_READY_GATE_BUDGET_MS = 15_000
+
+export interface HostedToolsListedSource extends ToolsListedSource {
+  grantKeyFor(url: string): string | undefined
+}
+
+/**
+ * 聊天面板腿的首句门(引擎先连上 MCP 才有工具的那几家,Antigravity `agy acp`):等这条会话里**由咕咕托管**的每一台
+ * 都送出过 `tools/list` —— 咕咕那台、集成、App(浏览器等,实测比首句晚到近 1 秒)。别处的地址(资源库里的远端
+ * server)看不见它的应答,不等。
+ */
+export async function hostedMcpToolsListedGate(
+  hosts: ReadonlyArray<HostedToolsListedSource | null | undefined>,
+  servers: ReadonlyArray<{ url?: string; owner?: string }>,
+  sessionId: string,
+): Promise<void> {
+  await Promise.all(servers.flatMap(({ url, owner }) => {
+    if (url === undefined) return []
+    for (const host of hosts) {
+      const key = host?.grantKeyFor(url)
+      if (host && key !== undefined) {
+        return [guguMcpToolsListedGate(host, key, sessionId,
+          owner === 'gugu' ? MCP_READY_GATE_BUDGET_MS : HOSTED_MCP_READY_GATE_BUDGET_MS)]
+      }
+    }
+    return []
+  }))
 }

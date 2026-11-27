@@ -43,10 +43,20 @@ describe('platform block carries no per-harness tool naming (#6192)', () => {
     expect(guguSessionSurfaceBlock('acp', 'claude', true)).toContain('Your harness lists each Gugu tool as')
     const fallback = 'Call the tool exactly as your tool list names it, not by the bare suffix.'
     expect(GUGU_PLATFORM_BLOCK).not.toContain(fallback)
-    for (const provider of ['amp', 'antigravity']) {
-      expect(guguSessionSurfaceBlock('acp', provider, true).split(fallback)).toHaveLength(2)
-      expect(guguSessionSurfaceBlock('acp', provider, false)).not.toContain(fallback)
+    expect(guguSessionSurfaceBlock('acp', 'amp', true).split(fallback)).toHaveLength(2)
+    expect(guguSessionSurfaceBlock('acp', 'amp', false)).not.toContain(fallback)
+    // Antigravity reaches every Gugu tool through one proxy tool, on both legs (#4038).
+    for (const surface of ['acp', 'tui'] as const) {
+      const block = guguSessionSurfaceBlock(surface, 'antigravity', true)
+      const server = surface === 'acp' ? 'gugu-mcp' : 'gugu'
+      expect(block).toContain(`\`call_mcp_tool\` tool with \`ServerName\` set to \`${server}\` and \`ToolName\` set to the bare tool name`)
+      expect(block).not.toContain(fallback)
+      expect(guguSessionSurfaceBlock(surface, 'antigravity', false)).not.toContain('call_mcp_tool')
     }
+    // The chat leg may carry the leftover `gugu` of a conversation opened before the rename: say which one to use.
+    expect(guguSessionSurfaceBlock('acp', 'antigravity', true)).toContain('if a call on `gugu` fails, repeat it on `gugu-mcp`')
+    expect(guguSessionSurfaceBlock('acp', 'antigravity', true)).toContain('Use `gugu` only when no `gugu-mcp` server is listed')
+    expect(guguSessionSurfaceBlock('tui', 'antigravity', true)).not.toContain('gugu-mcp')
   })
 })
 

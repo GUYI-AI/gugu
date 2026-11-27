@@ -420,6 +420,24 @@ describe('session-life ACP leg', () => {
     expect(exits).toEqual([]);
   });
 
+  it.each(['tools listed', 'stop'] as const)('#4038: the channel is admitted only after Gugu\'s tools are listed; %s ends the wait', async (ending) => {
+    const adapter = await boundAdapter();
+    const process = { ...(await processLease()), client: { startSession: h.startSession } } as unknown as ProcessLease;
+    h.startSession.mockResolvedValueOnce({ success: true, data: { providerSessionId: 'native' } });
+    const listed = Promise.withResolvers<void>();
+    const controller = new AbortController();
+    const have = { process, cli: { command: { input: { providerId: 'antigravity', projectId: 'p', cwd: '/repo' } } },
+      platform: { injected: false }, capabilities: { injection: { toolsListed: listed.promise }, facts: {} } } as never;
+    let admitted = false;
+    const channel = adapter.run('channel', have, { gen, signal: controller.signal }).then(value => { admitted = true; return value; });
+    await vi.waitFor(() => expect(h.startSession).toHaveBeenCalled());
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(admitted).toBe(false);
+    if (ending === 'stop') controller.abort(new Error('owner stopped'));
+    else listed.resolve();
+    await expect(channel).resolves.toMatchObject({ gen });
+  });
+
   it('#552: an exit seen while a missing dispatch is out is subsumed by the lost channel', async () => {
     const adapter = await boundAdapter();
     const process = await processLease();

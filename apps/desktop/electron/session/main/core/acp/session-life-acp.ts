@@ -288,6 +288,12 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
     const nativeSession = previous === null ? null
       : command.input.forkKeepsAgent ? 'route-switched'
         : result.data.providerSessionId === previous ? 'preserved' : 'replaced';
+    // Gugu's tools arrive only once this engine has connected and listed them (Antigravity): nothing is sent into the
+    // channel before that. A stop ends the wait at once.
+    if (injection.toolsListed && !signal.aborted) {
+      await Promise.race([injection.toolsListed,
+        new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }))]);
+    }
     const waiting = (fork ? forkStore : lifeStore).pending(sessionId);
     backlogThrough = Math.max(-1, ...waiting.queued, ...waiting.dispatching);
     return lease({ gen, timing: 'next-tool-call', nativeSession }) as AdmittedChannel;
