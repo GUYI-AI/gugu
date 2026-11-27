@@ -14,7 +14,7 @@ export function innerFoldOpacity(open: number): number {
 }
 
 /** Keyframes for a value of the column's drawn share through a move from `from` to `to` px of `content`: its ends, and the half-way point if the move crosses it (where the fades start or stop). */
-export function innerFoldFrames(from: number, to: number, content: number, at: (open: number) => string, property: string): Keyframe[] {
+export function innerFoldFrames(from: number, to: number, content: number, property: string, at: (open: number) => number): Keyframe[] {
   const half = (content / 2 - from) / (to - from);
-  return [0, ...(half > 0 && half < 1 ? [half] : []), 1].map((offset) => ({ offset, [property]: at((from + (to - from) * offset) / content) }));
+  return [0, ...(half > 0 && half < 1 ? [half] : []), 1].map((offset) => ({ offset, [property]: String(at((from + (to - from) * offset) / content)) }));
 }

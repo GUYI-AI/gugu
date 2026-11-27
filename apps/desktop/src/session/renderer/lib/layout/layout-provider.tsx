@@ -410,9 +410,8 @@ export function useInnerColumnMoving(): boolean {
   const { track } = useWorkspaceLayoutContext();
   const [moving, setMoving] = useState(false);
   useLayoutEffect(() => {
-    const offRide = track.ride('inner', (from, to) => (setMoving(Math.abs(from - to) > PANEL_LANDED_PX), []));
-    const offLanded = track.onLanded(() => setMoving(false));
-    return () => { offRide(); offLanded(); };
+    const off = [track.ride('inner', (from, to) => (setMoving(Math.abs(from - to) > PANEL_LANDED_PX), [])), track.onLanded(() => setMoving(false))];
+    return () => off.forEach((stop) => stop());
   }, [track]);
   return moving;
 }

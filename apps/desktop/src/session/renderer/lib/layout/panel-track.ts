@@ -1,17 +1,14 @@
 import { playSpring } from './panel-clock';
 
 /**
- * @@@panel-track — the one place a panel's size moves on screen. A track is a row (or column) of slots before a `fill`
- * that takes the rest; callers say where slots go (`to` moves there, `jump` is there at once) and never animate.
+ * @@@panel-track — the one place a panel's size moves on screen. A track is a row (or column) of slots before a `fill` that takes the rest; callers say where slots go (`to` moves
+ * there, `jump` is there at once) and never animate.
  *
- *  · The layout is the state. A slot's size is its box's size: `jump` writes it, `to` writes it and has the platform move
- *    the box there (an animation of the size itself, ❌ a transform over a layout that already landed), so every frame is
- *    laid out at the size it is drawn at and what is beside a moving panel re-lays out with it. Nothing here keeps where a
- *    box is drawn: who needs it measures the box. A move's only own state is how far the spring has come, stepped in
- *    frames (@@@frame-clock) and handed to the platform's animations as their time.
- *  · A slot or the fill going to or from nothing keeps its content at its open size, on the edge that moves (a slot's far
- *    edge, the fill's near edge), as a sheet pulled out, fading behind a soft edge (owner 11-21). At nothing the content
- *    stays laid out at that size — the one thing the layout would not otherwise remember — out of the window and inert.
+ *  · The layout is the state. A slot's size is its box's size: `jump` writes it, `to` writes it and has the platform move the box there (an animation of the size itself, ❌ a transform
+ *    over a layout that already landed), so every frame is laid out at the size it is drawn at and what is beside a moving panel re-lays out with it. Nothing here keeps where a box is
+ *    drawn: who needs it measures the box. A move's only own state is how far the spring has come, stepped in frames (@@@frame-clock) and handed to the platform's animations as their time.
+ *  · A slot or the fill going to or from nothing keeps its content at its open size, on the edge that moves (a slot's far edge, the fill's near edge), as a sheet pulled out, fading
+ *    behind a soft edge (owner 11-21). At nothing the content stays laid out at that size — the one thing the layout would not otherwise remember — out of the window and inert.
  *  · Between two open sizes content is its drawn size in every frame; one that does not reflow keeps the wider until it lands.
  */
 
@@ -24,8 +21,7 @@ const softEdge = (toward: string) => `linear-gradient(to ${toward}, transparent 
 /** The edge that moves: a slot's far end, the fill's near end. */
 const SOFT_EDGE = { x: { slot: softEdge('left'), fill: softEdge('right') }, y: { slot: softEdge('top'), fill: softEdge('bottom') } };
 
-/** Where a box at nothing is drawn: out of any window, at its own size (inert does not take back the app-region rects its
- *  content hands the window). ❌ visibility (it restyles the whole subtree), ❌ scale(0) (what measures the box reads nothing). */
+/** Where a box at nothing is drawn: out of any window, at its own size (inert does not take back the app-region rects its content hands the window). ❌ visibility (it restyles the whole subtree), ❌ scale(0) (what measures the box reads nothing). */
 const OUT_OF_WINDOW = 'translate(-100000px, -100000px)';
 
 /** A move as the platform's animation, linear over a nominal time: the spring's progress is set as its time. */
@@ -55,8 +51,7 @@ export interface PanelSlotNodes {
 }
 
 /** What moves with a slot through a move, as animations on the move's clock: made when the move starts, gone when it lands. */
-export type SlotRider = (from: number, to: number, content: number) => Animation[];
-
+type SlotRider = (from: number, to: number, content: number) => Animation[];
 interface Slot {
   id: string;
   /** To or from nothing it is slid out with its edge and faded (default), or held where it is laid out and clipped by its drawn edge: the track does not fade that one — what fades with it rides it (`ride`). */
@@ -120,8 +115,7 @@ export class PanelTrack {
   /** `rider`'s animations go with every move of this slot from here on. */
   ride(id: string, rider: SlotRider): () => void {
     const riders = this.slot(id).riders;
-    riders.push(rider);
-    return () => void riders.splice(riders.indexOf(rider), 1);
+    return riders.push(rider), () => void riders.splice(riders.indexOf(rider), 1);
   }
 
   /** Called when a move ends: it landed, or a jump took it over. */

@@ -72,39 +72,29 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     fillNode.current = element;
     track.attachFill(element && { place: element, window: element, content: element });
   }, [track]);
-  // @@@inner-fold-motion (owner 11-26) — what goes with the inner column's move, as animations riding it on these elements
-  // only: the restore lane's button and the tab strip that leaves it room get `--shell-restore-lane-shown` on themselves
-  // (0 → 1 over the second half of a fold, 1 → 0 over the first half of an unfold); inside the column (inner-fold-paint.ts)
-  // the line's `right` and the fading blocks' `opacity`. The card's `data-inner-column` (@@@inner-on-card) is held while any
-  // of the column is drawn: the card gives up its left corners at the start of an unfold and takes them back when a fold has
-  // landed, ❌ at the click (a seam for the whole move). ❌ An inherited variable on the shell or the page: every frame would
-  // restyle every element under it (11-26: the fold ran far slower than the list's and the tools' for that alone). The
-  // followers are a live collection.
+  // @@@inner-fold-motion (owner 11-26) — what goes with the inner column's move, as animations riding it on these elements only: the restore lane's button and the tab strip that
+  // leaves it room get `--shell-restore-lane-shown` (0 → 1 over the second half of a fold, 1 → 0 over the first half of an unfold); inside the column (inner-fold-paint.ts) the line's
+  // `right` and the fading blocks' `opacity`. The card's `data-inner-column` (@@@inner-on-card) is held while any of the column is drawn: its left corners go at the start of an unfold and
+  // come back when a fold has landed, ❌ at the click (a seam for the whole move). ❌ An inherited variable on the shell or the page: every frame would restyle every element under it.
   useLayoutEffect(() => {
     const fill = fillNode.current;
-    const followers = fill?.getElementsByClassName(RESTORE_LANE_FOLLOWER);
     const column = workspaceRootRef.current?.querySelector(':scope > [data-panel-slot="inner"]');
-    const lines = column?.getElementsByClassName(INNER_FOLD_LINE);
-    const fades = column?.getElementsByClassName(INNER_FOLD_FADES);
-    const rest = () => {
-      const open = track.drawn('inner') > PANEL_LANDED_PX;
-      for (const follower of followers ?? []) (follower as HTMLElement).style.setProperty('--shell-restore-lane-shown', open ? '0' : '1');
+    const all = (root: Element | null | undefined, name: string) => [...(root?.getElementsByClassName(name) ?? [])] as HTMLElement[];
+    const rest = (open = track.drawn('inner') > PANEL_LANDED_PX) => {
+      for (const follower of all(fill, RESTORE_LANE_FOLLOWER)) follower.style.setProperty('--shell-restore-lane-shown', open ? '0' : '1');
       fill?.toggleAttribute('data-inner-column', innerSidebarShown || open);
     };
     rest();
-    const offLanded = track.onLanded(rest);
-    const offRide = track.ride('inner', (from, to, content) => {
+    const off = [track.onLanded(() => rest()), track.ride('inner', (from, to, content) => {
       if (Math.abs(from - to) < PANEL_LANDED_PX || content <= 0) return [];
       fill?.toggleAttribute('data-inner-column', true);
-      const shown = innerFoldFrames(from, to, content, (open) => String(innerFoldOpacity(1 - open)), '--shell-restore-lane-shown');
-      const fade = innerFoldFrames(from, to, content, (open) => String(innerFoldOpacity(open)), 'opacity');
       return [
-        ...[...(followers ?? [])].map((follower) => follower.animate(shown, MOVE)),
-        ...[...(lines ?? [])].map((line) => line.animate({ right: [`${content - from}px`, `${content - to}px`] }, MOVE)),
-        ...[...(fades ?? [])].map((block) => block.animate(fade, MOVE)),
+        ...all(fill, RESTORE_LANE_FOLLOWER).map((follower) => follower.animate(innerFoldFrames(from, to, content, '--shell-restore-lane-shown', (open) => innerFoldOpacity(1 - open)), MOVE)),
+        ...all(column, INNER_FOLD_LINE).map((line) => line.animate({ right: [`${content - from}px`, `${content - to}px`] }, MOVE)),
+        ...all(column, INNER_FOLD_FADES).map((block) => block.animate(innerFoldFrames(from, to, content, 'opacity', innerFoldOpacity), MOVE)),
       ];
-    });
-    return () => { offLanded(); offRide(); };
+    })];
+    return () => off.forEach((stop) => stop());
   }, [track, workspaceRootRef, innerSidebarShown]);
 
   const maxSidebarWidth = () => {

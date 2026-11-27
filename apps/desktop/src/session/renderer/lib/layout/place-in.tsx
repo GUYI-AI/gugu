@@ -1,9 +1,8 @@
 import { useLayoutEffect, useRef, type ComponentProps, type CSSProperties, type RefObject } from 'react';
 
 /**
- * @@@placed-surface — a surface that must not remount when the layout around it is reshaped (a pane's page, a session's
- * page, a strip) is rendered once, through a portal, into a host of its own; the host is put in the box that shows it and is
- * clipped, faded and moved with it (❌ laid over the box from outside: nothing of the box but its rectangle reaches it).
+ * @@@placed-surface — a surface that must not remount when the layout around it is reshaped (a pane's page, a session's page, a strip) is rendered once, through a portal, into a host of
+ * its own; the host is put in the box that shows it and is clipped, faded and moved with it (❌ laid over the box from outside: nothing of the box but its rectangle reaches it).
  */
 export function surfaceHost(className: string): HTMLDivElement {
   return Object.assign(document.createElement('div'), { className });
