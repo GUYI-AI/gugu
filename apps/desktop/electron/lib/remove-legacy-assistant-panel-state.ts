@@ -7,7 +7,7 @@ type MigrationLog = {
 }
 
 /**
- * gd#1635: startup migration for the removed host-side assistant panel runtime. It deletes only what that
+ * Startup migration for the removed host-side assistant panel runtime. It deletes only what that
  * runtime wrote under GUGU_HOME: its rejected-body ledger directory and its per-account resource-change
  * journals (`resources-<sha256>.json`). The overflow index beside them (`index-<sha256>.md`) is still in use.
  * Retire this migration once rollback to releases that still contain the runtime is retired.

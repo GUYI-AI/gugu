@@ -2,9 +2,6 @@ import { retryAssistantPanelRead } from '@gugu/core/cloud/assistantPanelRead';
 import { useMutation } from '@tanstack/react-query';
 import { queryClient, replica, useReplica, type Reading } from '@/lib/replica';
 import { keepLibraryHost, libraryHostOf, peekLibraryHost, useLibraryHost, type LibraryHost } from '@renderer/features/library/library-host';
-import { rpcOn } from '@renderer/lib/ipc';
-import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client';
-import { cachedDevicesAccount } from '@/store/devicesCache';
 import { CONNECTIONS } from '@/components/connections/connection-replicas';
 import { refreshTag } from '@/lib/replica';
 import type { GitHubAccountSummary } from '@shared/github';
@@ -46,11 +43,7 @@ export function useImportGitHubCliAccounts() {
   const host = useLibraryHost();
   return useMutation({
     mutationFn: async () => {
-      const ownerId = cachedDevicesAccount();
-      const result = await host.github.importCliAccounts();
-      if (result.success && result.importedAccountIds.length && !host.connectionMetadataExpected) await reportAssistantAppChange({ rpc: rpcOn(host.remote?.deviceId ?? null) }, undefined,
-        { resource: 'integrations', operation: 'saved', section: 'accounts', id: 'github', deviceId: host.remote?.deviceId }, ownerId);
-      return result;
+      return host.github.importCliAccounts();
     },
     onSuccess: refreshGitHubAccountState,
   }, queryClient);
@@ -60,11 +53,7 @@ export function useGitHubDeviceFlowAuth() {
   const host = useLibraryHost();
   return useMutation({
     mutationFn: async () => {
-      const ownerId = cachedDevicesAccount();
-      const result = await host.github.auth();
-      if (result.success && !host.connectionMetadataExpected) await reportAssistantAppChange({ rpc: rpcOn(host.remote?.deviceId ?? null) }, undefined,
-        { resource: 'integrations', operation: 'saved', section: 'accounts', id: 'github', deviceId: host.remote?.deviceId }, ownerId);
-      return result;
+      return host.github.auth();
     },
     onSettled: refreshGitHubAccountState,
   }, queryClient);
@@ -74,12 +63,7 @@ export function useSetDefaultGitHubAccount() {
   const host = useLibraryHost();
   return useMutation({
     mutationFn: async (accountId: string) => {
-      const ownerId = cachedDevicesAccount();
-      const result = await host.github.setDefaultAccount(accountId);
-      if (result.success && !host.connectionMetadataExpected) await reportAssistantAppChange({ rpc: rpcOn(host.remote?.deviceId ?? null) }, undefined,
-        { resource: 'integrations', operation: 'edited', section: 'accounts', id: `github:${accountId}`, deviceId: host.remote?.deviceId,
-          after: { isDefault: true } }, ownerId);
-      return result;
+      return host.github.setDefaultAccount(accountId);
     },
     onSuccess: refreshGitHubAccountState,
   }, queryClient);
@@ -89,11 +73,7 @@ export function useRemoveGitHubAccount() {
   const host = useLibraryHost();
   return useMutation({
     mutationFn: async (accountId: string) => {
-      const ownerId = cachedDevicesAccount();
-      const result = await host.github.removeAccount(accountId);
-      if (result.success && !host.connectionMetadataExpected) await reportAssistantAppChange({ rpc: rpcOn(host.remote?.deviceId ?? null) }, undefined,
-        { resource: 'integrations', operation: 'removed', section: 'accounts', id: `github:${accountId}`, deviceId: host.remote?.deviceId }, ownerId);
-      return result;
+      return host.github.removeAccount(accountId);
     },
     onSuccess: refreshGitHubAccountState,
   }, queryClient);

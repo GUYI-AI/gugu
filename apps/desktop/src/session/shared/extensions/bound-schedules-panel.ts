@@ -3,16 +3,14 @@ import { createAssistantPanelClient, type AssistantPanelClient, type AssistantPa
 import { createAssistantPanelFiles } from '@gugu/core/cloud/assistantPanelFiles';
 import { ASSISTANT_APP_ID, pickAssistant } from '@gugu/core/shared/assistantProvision';
 import { encodeTypedId } from '@gugu/core/shared/typedId.mjs';
-import type { AppBoundSchedule, AppScheduleControl } from './bound-schedules';
+import type { AppBoundSchedule } from './bound-schedules';
 
 /**
- * #1928 (shared since API 49: the desktop's main and the phone's binding host read and change it the same way)
+ * #1928 (shared since API 49: the desktop's main and the phone's binding host read it the same way)
  * The bound agent's schedules when it is the person's assistant living on another computer or in the cloud — the
  * source and the path the built-in 已安排 panel takes there (`assistant-panel-routines.ts`). Read: the panel's `schedules`
- * collection the assistant's home publishes, through the built-in panel's own reader (`createAssistantPanelFiles`,
- * `collection`). Change: the built-in switch's and delete's commit (`enable` / `disable` / `remove` at the revision read,
- * the home device named), which the home applies on its next admission and acknowledges; until then the panel says
- * `pending`. Nothing here applies a change.
+ * collection as it was last published, through the built-in panel's own reader (`createAssistantPanelFiles`,
+ * `collection`). Read only: a change is refused (bound-resources-core.ts `panelChangeRefused`).
  */
 
 const coded = (code: string, message: string) => Object.assign(new Error(message), { code });
@@ -89,62 +87,6 @@ function scheduleOf(item: AssistantPanelItem, now: number): AppBoundSchedule {
 export async function listPanelSchedules(home: PanelHome, recheck: () => Promise<void>): Promise<AppBoundSchedule[]> {
   const now = Date.now();
   return (await scheduleItems(home, recheck)).map((item) => scheduleOf(item, now));
-}
-
-/** A commit as the panel keeps it: sent again unchanged, the panel answers where that change is now — never a second one. */
-export type PanelRequest = {
-  assistantId: string; operationId: string; key: string; expectedRevision: string; operation: 'enable' | 'disable' | 'remove'; deviceId: string;
-};
-
-export type PanelOutcome =
-  | { status: 'pending' | 'applied' | 'failed' | 'superseded'; scheduleId: string; revision: string | null }
-  | { status: 'conflict'; scheduleId: string; revision: string }
-  | { status: 'missing'; scheduleId: string };
-
-const OPERATION = { pause: 'disable', resume: 'enable', remove: 'remove' } as const;
-
-/**
- * What the built-in switch and delete decide before they commit (`setEnabled`, `remove`): the item at the revision the App
- * read, or why not. Adding a schedule or changing its time is not a panel change there (the person asks the assistant):
- * refused as `elsewhere`.
- */
-export async function planPanelChange(
-  home: PanelHome, change: AppScheduleControl, recheck: () => Promise<void>,
-): Promise<{ outcome: PanelOutcome } | { request: PanelRequest }> {
-  if (change.op === 'register' || change.op === 'update') {
-    throw coded('elsewhere', 'This assistant lives on another computer: there a schedule is added or retimed by asking it, as in the person\'s own list');
-  }
-  const key = change.scheduleId.slice('schedule:'.length).toLowerCase();
-  const item = (await scheduleItems(home, recheck)).find((row) => row.resource_key === key);
-  if (!item) return { outcome: { status: 'missing', scheduleId: change.scheduleId } };
-  if (item.revision !== change.revision) return { outcome: { status: 'conflict', scheduleId: change.scheduleId, revision: item.revision } };
-  // The panel's own id for it: recorded with the App's before it is sent, and resent unchanged ever after.
-  return { request: { assistantId: home.assistantId, operationId: globalThis.crypto.randomUUID(), key, expectedRevision: change.revision, operation: OPERATION[change.op], deviceId: home.deviceId } };
-}
-
-/**
- * Commit (or commit again) one request. The panel answers a resent operation id with that change's status — `pending`
- * until the home applies it, then `applied`, `failed` when the home could not, `superseded` when a later change to the
- * schedule replaced it first. A stale revision is the panel's own refusal (PT409): a conflict with the current one.
- */
-export async function commitPanelRequest(home: PanelHome, request: PanelRequest, scheduleId: string, recheck: () => Promise<void>): Promise<PanelOutcome> {
-  let receipt;
-  try {
-    receipt = await home.cloud.commit(request.assistantId, {
-      operationId: request.operationId, domain: 'schedules', key: request.key, expectedRevision: request.expectedRevision,
-      operation: request.operation, data: {}, deviceId: request.deviceId,
-    });
-  } catch (error) {
-    await recheck();
-    if (codeOf(error) === 'PT409') {
-      const item = (await scheduleItems(home, recheck)).find((row) => row.resource_key === request.key);
-      return item ? { status: 'conflict', scheduleId, revision: item.revision } : { status: 'missing', scheduleId };
-    }
-    if (codeOf(error) === 'account-changed') throw coded('denied', 'Account changed');
-    throw coded('unavailable', 'The change did not reach the assistant\'s panel, or its answer was lost: ask again with the same operationId');
-  }
-  await recheck();
-  return { status: receipt.status, scheduleId, revision: request.operation === 'remove' ? null : receipt.revision };
 }
 
 /** A fingerprint of the schedules and their outstanding changes, so a panel change that is not theirs is not heard. */

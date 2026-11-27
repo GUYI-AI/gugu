@@ -32,7 +32,6 @@ import './phone-connector.css'
 import { ReadFailed } from './PhoneMachineView'
 import { PhoneMarketConnectorCatalog, type PhoneConnectorCatalogMode } from '@/mobile/market/PhoneMarketConnectorCatalog'
 import type { AssistantConnectedApp } from '@/components/assistant/assistant-app-connections'
-import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client'
 import { createLegacyConnectionGuard } from '@/components/connections/legacy-connection-routing'
 
 export type PhoneConnectorScope = Pick<PhonePageProps, 'assistant' | 'home' | 'homeDeviceId' | 'machine' | 'go'>
@@ -118,8 +117,6 @@ export function PhoneConnectorDetail({ assistant, homeDeviceId, machine, integra
     for (const row of rows.filter(row => row.data.providerId === view.item.id && typeof row.data.accountId === 'string'
       && (!confirm.accountId || row.data.accountId === confirm.accountId))) await panel.change(row,'remove')
     await guard()
-    await reportAssistantAppChange(machine.machine, assistant.id, { resource: 'integrations', operation: 'removed', section: 'accounts',
-      id: confirm.accountId ? `${view.item.id}:${confirm.accountId}` : view.item.id, deviceId: homeDeviceId ?? undefined })
   }
   const credentialLike = !!view && !!formMethodOf(view.item)
   if (id === 'wechat') return <div className="ta-page ta-phone-profile" data-testid="assistant-connector-detail"><PageHead title={settings('channels.wechat')} /><WechatAppConnection connectOnly={connectOnly} /></div>

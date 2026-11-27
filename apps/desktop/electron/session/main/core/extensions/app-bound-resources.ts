@@ -1,20 +1,18 @@
-import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
 import { AssistantPanelError, createAssistantPanelClient, type AssistantPanelDomain } from '@gugu/core/cloud/assistantPanel';
-import { readAssistantPanelBody, uploadAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies';
+import { readAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies';
 import { withAssistantPanelReadDeadline } from '@gugu/core/cloud/assistantPanelRead';
-import { splitInstructions } from '@gugu/core/shared/assistantInstructions';
 import { DEFAULT_TEXT_MAX_BYTES } from '@shared/extensions/app-runtime-protocol';
 import {
-  READABLE_RESOURCE_DOMAINS, WRITABLE_RESOURCE_DOMAINS, appResourceOf, resourceChangeSchema, resourceDomainOf, resourceKeyOf,
+  READABLE_RESOURCE_DOMAINS, appResourceOf, resourceDomainOf, resourceKeyOf,
   type AppResourceEvent, type AppResourceList, type AppResourceRead, type AppResourceWrite, type ReadableResourceDomain, type ResourceBindingAction,
 } from '@shared/extensions/agent-resources';
 import type { Unavailable } from '@shared/extensions/resources-management';
 import type { ConversationBindingAction } from '@shared/extensions/unread-binding';
-import { domainState, reasonOf, refusedOrUnavailable, savedData, unavailable, writeOutcome } from '@shared/extensions/bound-resources-core';
+import { domainState, panelChangeRefused, reasonOf, refusedOrUnavailable, unavailable } from '@shared/extensions/bound-resources-core';
 // The rules both hosts answer by (bound-resources-core.ts); the names this module gave them stay importable from here.
-export { domainState, reasonOf, refusedOrUnavailable, savedData, unavailable };
+export { domainState, reasonOf, refusedOrUnavailable, unavailable };
 import { account, current, member } from './app-unread-bindings';
 import { assistantServingChat } from './app-assistant-serving';
 import { extensionsService } from './extensions-root';
@@ -192,7 +190,6 @@ export async function appResourceRead(extensionId: string, input: unknown): Prom
   return answer === 'unbound' ? { ...named, state: answer } : 'name' in answer ? answer : { ...named, ...answer };
 }
 
-const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
 /** Removes a body this call uploaded that no change took. The store refuses removing one a change refers to. */
 export async function discard(bound: Bound, itemId: string): Promise<void> {
@@ -201,105 +198,14 @@ export async function discard(bound: Bound, itemId: string): Promise<void> {
 }
 
 /**
- * One change through the store under the binding's write grant: committed with the caller's `operationId` and expected
- * revision — the same call again answers the same receipt, with its status now — or said why not.
+ * `gugu.bindings.save(name, …)` / `gugu.bindings.remove(name, …)` (42, `chat:resources:write`): refused
+ * (bound-resources-core.ts `panelChangeRefused`).
  */
-type Writable = 'memory' | 'files' | 'personality' | 'skills';
-type Prepared = { data: Record<string, unknown>; body?: { itemId: string; sha256: string }; uploaded?: string } | 'conflict';
-type Change = { domain: Writable; key: string; expectedRevision: string; content: string };
-
-async function change(
-  extensionId: string, input: unknown, operation: 'save' | 'remove', prepare: (bound: Bound, change: Change) => Promise<Prepared>,
-): Promise<AppResourceWrite> {
-  const schema = operation === 'save'
-    ? resourceChangeSchema.extend({ name: z.string(), content: z.string() })
-    : resourceChangeSchema.omit({ content: true }).extend({ name: z.string() });
-  const args = argsOf(schema, input) as z.infer<typeof resourceChangeSchema> & { name: string };
-  const domain = readableDomainOf(args.domain) as Writable;
-  // Whatever a grant says, what only the recorder and transcription write (voice notes) is never an App's to change.
-  if (!(WRITABLE_RESOURCE_DOMAINS as readonly string[]).includes(domain)) throw invalid(`The ${domain} resources are read only`);
-  const key = resourceKeyOf(domain, args.key, true);
-  const named = { name: args.name, domain, key };
-  const content = args.content ?? '';
-  if (new TextEncoder().encode(content).byteLength > DEFAULT_TEXT_MAX_BYTES) throw invalid('content is at most 20 MiB');
-  const bound = await boundAgent(extensionId, args.name, ['resources', 'resources:write'], domain).catch((error: unknown) => {
-    if (codeOf(error) === 'failed') return unavailable(reasonOf(error));
-    throw error;
-  });
-  if (!bound) return { ...named, state: 'unbound' };
-  if ('state' in bound) return { ...named, ...bound };
-  let uploaded: string | undefined;
-  try {
-    const prepared = await prepare(bound, { domain, key, expectedRevision: args.expectedRevision, content });
-    if (prepared !== 'conflict') uploaded = prepared.uploaded;
-    await bound.recheck();
-    if (prepared === 'conflict') return { ...named, state: 'conflict' };
-    const receipt = await storeOf(bound.ownerId).commit(bound.agentId, {
-      operationId: args.operationId, domain, key, expectedRevision: args.expectedRevision, operation, data: prepared.data,
-      ...(prepared.body ? { body: prepared.body } : {}), deviceId: null,
-    });
-    uploaded = undefined;
-    await bound.recheck();
-    const { operationId, revision, status, terminal } = receipt;
-    return { ...named, state: 'committed', receipt: { operationId, revision, status, ...(terminal === undefined ? {} : { terminal }) } };
-  } catch (error) {
-    let outcome: ReturnType<typeof writeOutcome>;
-    try {
-      outcome = writeOutcome(error);
-    } catch (refusal) {
-      if (uploaded) await discard(bound, uploaded);
-      throw refusal;
-    }
-    // Whether an unanswered commit landed is unknown: its body stays, for the same call again to find.
-    if (uploaded && outcome.state !== 'unavailable') await discard(bound, uploaded);
-    await bound.recheck();
-    return { ...named, ...outcome };
-  }
+export async function appResourceSave(_extensionId: string, _input: unknown): Promise<AppResourceWrite> {
+  return panelChangeRefused();
 }
-
-/**
- * `gugu.bindings.save(name, { domain, key, operationId, expectedRevision, content })` (42, `chat:resources:write`): the
- * resource's new text, stored as the assistant's own pages store it. The same content as now keeps its stored body (and
- * so the same call again is the same request); new content is uploaded to the conversation's private folder first.
- */
-export async function appResourceSave(extensionId: string, input: unknown): Promise<AppResourceWrite> {
-  return change(extensionId, input, 'save', async (bound, { domain, key, expectedRevision, content: text }) => {
-    if (domain === 'personality') return { data: { text: splitInstructions(text).user } };
-    const bytes = new TextEncoder().encode(text);
-    const existing = await withAssistantPanelReadDeadline(() => storeOf(bound.ownerId).resource(bound.agentId, domain, key));
-    await bound.recheck();
-    if (existing && !existing.deleted_at && existing.data.kind === 'directory') throw invalid('A folder has no content to save');
-    const digest = sha256(bytes);
-    // Unchanged content: the stored body and its metadata as they are, so a call made again matches its first request.
-    if (existing && !existing.deleted_at && existing.body_item_id && existing.body_sha256 === digest) {
-      return { data: existing.data, body: { itemId: existing.body_item_id, sha256: digest } };
-    }
-    // Nothing is uploaded for a change the store would refuse as stale.
-    if ((existing?.revision ?? '0') !== expectedRevision) return 'conflict';
-    const data = savedData(domain, key, existing, text, new Date().toISOString());
-    const label = domain === 'skills' ? 'SKILL.md' : key.split('/').pop()!;
-    const body = await uploadAssistantPanelBody({
-      token: bound.token, ownerId: bound.ownerId, chatId: bound.chatId, label, bytes,
-      accountId: async () => (await account().catch(() => null))?.ownerId ?? null,
-    });
-    return { data, body, uploaded: body.itemId };
-  });
-}
-
-/**
- * `gugu.bindings.remove(name, { domain, key, operationId, expectedRevision })` (42, `chat:resources:write`): the
- * resource deleted; the store keeps its tombstone, and its bodies go with it. One resource at a time: not a folder, and
- * never the personality, which is only ever saved.
- */
-export async function appResourceRemove(extensionId: string, input: unknown): Promise<AppResourceWrite> {
-  return change(extensionId, input, 'remove', async (bound, { domain, key }) => {
-    if (domain === 'personality') throw invalid('The personality is saved, never removed');
-    if (domain === 'files') {
-      const existing = await withAssistantPanelReadDeadline(() => storeOf(bound.ownerId).resource(bound.agentId, domain, key));
-      if (existing && !existing.deleted_at && existing.data.kind === 'directory') throw invalid('Remove a folder\'s files one by one');
-    }
-    return { data: {} };
-  });
+export async function appResourceRemove(_extensionId: string, _input: unknown): Promise<AppResourceWrite> {
+  return panelChangeRefused();
 }
 
 /**

@@ -22,17 +22,14 @@ import {
 import { currentAccountAccessToken } from './account-token';
 import { extensionsRoot, extensionsService } from './extensions-root';
 import {
-  commitPanelRequest,
   listPanelSchedules,
   panelAs,
   panelSchedulesPrint,
   personalAssistantOf,
-  planPanelChange,
   type PanelHome,
-  type PanelOutcome,
-  type PanelRequest,
 } from './app-bound-schedules-panel';
 import { onAssistantPanelChanged } from './assistant-panel-changes';
+import { panelChangeRefused } from '@shared/extensions/bound-resources-core';
 
 /**
  * #1928 (API 43) The schedules of the agent an App's binding is with: `gugu.bindings.schedules` / `onSchedulesChanged`
@@ -179,14 +176,13 @@ export async function appBoundSchedules(extensionId: string, input: unknown): Pr
 
 /*
  * The record of each operation id (`.app-schedule-receipts.json` beside the installed Apps, by account and installed App):
- * `pending` from just before its effect, `receipt` once answered, and — for a change sent to the assistant's panel — the
- * exact request sent (`panel`), sent again unchanged to learn where it is. Bounded per App; an id older than the last
- * KEPT_PER_APP is forgotten.
+ * `pending` from just before its effect, `receipt` once answered, and — for a change once sent to the assistant's panel,
+ * which takes none now — the request sent then (`panel`). Bounded per App; an id older than the last KEPT_PER_APP is forgotten.
  */
 const RECEIPTS_FILE = '.app-schedule-receipts.json';
 const KEPT_PER_APP = 500;
 const RECEIPT_STATUSES = ['applied', 'conflict', 'missing', 'pending', 'failed', 'superseded'] as const;
-/** Where an answer can no longer move: anything else is asked of the panel again. */
+/** Where an answer can no longer move. */
 const SETTLED = new Set<string>(['applied', 'conflict', 'missing', 'superseded']);
 const keptSchema = z.object({
   digest: z.string(),
@@ -243,9 +239,9 @@ function digestOf(change: AppScheduleControl): string {
 
 /**
  * `gugu.bindings.controlSchedule(name, { operationId, op, … })`: one change to the bound agent's schedules, by the host's
- * own schedule store or — for the assistant living elsewhere — its panel, answered with its receipt. The same operation id
- * again is answered from the record — never a second change; another change under it is `invalid`. A panel change not yet
- * settled is asked of the panel again: `pending` until the assistant's home applies it.
+ * own schedule store, answered with its receipt; for the assistant living elsewhere it is refused (its panel takes no
+ * changes: bound-resources-core.ts `panelChangeRefused`). The same operation id again is answered from the record — never
+ * a second change; another change under it is `invalid`.
  */
 export async function appBoundScheduleControl(extensionId: string, input: unknown): Promise<AppScheduleReceipt> {
   const parsed = scheduleControlSchema.safeParse(input);
@@ -258,22 +254,11 @@ export async function appBoundScheduleControl(extensionId: string, input: unknow
   if (bound.state === 'elsewhere') throw coded('elsewhere', ELSEWHERE);
   const { scope, recheck } = bound;
   const digest = digestOf(change);
-  const scheduleId = 'scheduleId' in change ? change.scheduleId : '';
-  const answer = async (outcome: ScheduleOutcome | PanelOutcome, panel?: PanelRequest, at = new Date().toISOString()): Promise<AppScheduleReceipt> => {
-    const receipt = { operationId: change.operationId, op: change.op, at, ...outcome };
-    keep(scope, change.operationId, { digest, at: Date.now(), receipt, ...(panel ? { panel } : {}) });
+  const answer = async (outcome: ScheduleOutcome): Promise<AppScheduleReceipt> => {
+    const receipt = { operationId: change.operationId, op: change.op, at: new Date().toISOString(), ...outcome };
+    keep(scope, change.operationId, { digest, at: Date.now(), receipt });
     await recheck();
     return { name: change.name, ...receipt } as AppScheduleReceipt;
-  };
-  /** A change already sent to the assistant's panel: the request again, unchanged — the panel answers where it is. */
-  const fromPanel = async (kept: Kept & { panel: PanelRequest }): Promise<AppScheduleReceipt> => {
-    if (kept.panel.assistantId !== bound.agentId) throw denied(NOT_OWN_AGENT);
-    const panel: PanelHome = bound.state === 'remote' ? bound.panel
-      : { ownerId: bound.ownerId, assistantId: kept.panel.assistantId, deviceId: kept.panel.deviceId, cloud: panelAs(bound.token, bound.ownerId) };
-    const outcome = await commitPanelRequest(panel, kept.panel, scheduleId, recheck);
-    // Its record at the panel is gone (kept 30 days once settled): the last answer stands.
-    if (kept.receipt && (outcome.status === 'conflict' || outcome.status === 'missing')) return { name: change.name, ...kept.receipt } as AppScheduleReceipt;
-    return answer(outcome, kept.panel, kept.receipt?.at);
   };
   return serial(scope, async () => {
     const kept = keptFor(scope, change.operationId);
@@ -282,15 +267,8 @@ export async function appBoundScheduleControl(extensionId: string, input: unknow
       await recheck();
       return { name: change.name, ...kept.receipt } as AppScheduleReceipt;
     }
-    if (kept?.panel) return fromPanel(kept as Kept & { panel: PanelRequest });
-    if (bound.state === 'remote') {
-      if (kept?.pending) throw coded('elsewhere', 'This change was begun while the assistant lived on this computer: ask again once it does, or read the schedules and decide anew');
-      const plan = await planPanelChange(bound.panel, change, recheck);
-      await recheck();
-      if ('outcome' in plan) return answer(plan.outcome);
-      keep(scope, change.operationId, { digest, at: Date.now(), panel: plan.request });
-      return answer(await commitPanelRequest(bound.panel, plan.request, scheduleId, recheck), plan.request);
-    }
+    // A change for the assistant's panel (it lives elsewhere, or one sent there before) is refused: nothing applies it.
+    if (kept?.panel || bound.state === 'remote') return panelChangeRefused();
     const { home } = bound;
     if (kept?.pending) {
       const settled = await settledAppScheduleChange(home, change, kept.pending, kept.at);

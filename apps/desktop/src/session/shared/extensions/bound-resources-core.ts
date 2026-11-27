@@ -1,16 +1,14 @@
 import { assistantPanelCollection, type AssistantPanelDomain, type AssistantPanelItem, type AssistantPanelSnapshot } from '@gugu/core/cloud/assistantPanel';
-import { parseMemoryNote } from '@gugu/core/shared/assistantMemory';
 import type { ReadableResourceDomain } from './agent-resources';
 import type { ReadFailureReason, Unavailable } from './resources-management';
 
 /**
  * #1927 (API 42, reasons 50) The rules an App's window onto the assistant's resources answers by, one copy for both hosts
  * (the desktop's main, electron `app-bound-resources.ts`; the phone's page, `phoneAppBindings.ts`): when a domain can be
- * read, what a save stores, and how the store's refusals read to the App. Who may ask is each host's; these never decide that.
+ * read, how the store's refusals read to the App, and that changes are refused. Who may ask is each host's; these never decide that.
  */
 
 const denied = (message: string) => Object.assign(new Error(message), { code: 'denied' });
-const invalid = (message: string) => Object.assign(new Error(message), { code: 'invalid' });
 const codeOf = (error: unknown) => (error as { code?: unknown } | null)?.code;
 const statusOf = (error: unknown) => (error as { status?: unknown } | null)?.status;
 
@@ -57,30 +55,10 @@ export function domainState(snapshot: AssistantPanelSnapshot, domain: ReadableRe
 }
 
 /**
- * What a save stores of `domain`, as the assistant's own pages store it for a text written there (assistantPanelFiles
- * `write`, `writeText`'s `text/plain`): the same fields, so the assistant's pages and the agent read an App's change as
- * their own. A resource keeps its path; a new one's path is its key.
+ * Changes an App asks of the assistant's panel store (saving, removing or managing resources; a schedule change
+ * for an assistant that lives elsewhere). Nothing applies those changes on the assistant's computer any more, so both
+ * hosts refuse them instead of storing a change that would never take effect. Reads are unchanged.
  */
-export function savedData(domain: 'memory' | 'files' | 'skills', key: string, existing: AssistantPanelItem | null, text: string, modifiedAt: string): Record<string, unknown> {
-  const live = existing && !existing.deleted_at ? existing : null;
-  if (domain === 'memory') {
-    const relative = typeof live?.data.relativePath === 'string' ? live.data.relativePath : key;
-    const note = parseMemoryNote(relative.split('/').pop()!, text);
-    return { relativePath: relative, title: note.title, modifiedAt, kind: relative === 'owner-profile.md' ? 'user' : note.kind };
-  }
-  if (domain === 'files') {
-    const path = typeof live?.data.path === 'string' ? live.data.path : key;
-    return { name: path.split('/').pop()!, path, kind: 'file', contentType: 'text/plain', sizeBytes: new TextEncoder().encode(text).byteLength, modifiedAt };
-  }
-  return { name: key, modifiedAt };
-}
-
-/** A change the store refused, said as the App hears it; a refusal of the request itself is thrown. */
-export function writeOutcome(error: unknown): { state: 'conflict' | 'deleted' } | Unavailable {
-  const code = codeOf(error);
-  if (code === 'PT409' || code === '40001') return { state: 'conflict' };
-  if (code === '55000') return { state: 'deleted' };
-  if (code === '23505') throw invalid('This operationId was already used for a different change');
-  if (code === '22023' || code === '54000') throw invalid('The resource store does not take this change as it is');
-  return refusedOrUnavailable(error);
+export function panelChangeRefused(): never {
+  throw denied('The personal assistant no longer takes changes to its resources or schedules from Apps');
 }

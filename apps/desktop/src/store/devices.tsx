@@ -14,7 +14,7 @@ import { publishDirectoryDevices } from '@/session/shared/remote-sessions/sessio
 import type { Device } from '@gugu/core/shared/types/chat'
 import { readDeviceRevision } from '../lib/accountRevisionCoordinator'
 import type { AccountRevisionOperation } from '../lib/accountRevisionRuntime'
-import { cachedDevicesAccount, devicesModel, readCachedDevices } from './devicesCache'
+import { devicesModel, readCachedDevices } from './devicesCache'
 import { useReplica } from '../lib/replica'
 import { withDeviceProjects } from '@gugu/core/cloud/deviceProjects'
 import { withProjectsRead } from './deviceProjectsRead'
@@ -25,9 +25,6 @@ import { useSshLinkProblems, useSshMachineIds } from '../hooks/useSshLinkProblem
 import { desktopIpc } from '../platform/desktopIpc'
 import { platform } from '../platform'
 import { SERVER_SSH_MACHINES_CHANNELS } from '../lib/serverSshMachines'
-import { reportAssistantAppChange } from '../components/assistant/assistant-app-client'
-import { useMyAssistant } from '../lib/myAssistant'
-import { machineRpc } from '../components/session-watch/sessionpage-rpc'
 import {
   cloudComputer,
   cloudComputerPollMs,
@@ -46,11 +43,6 @@ export function DevicesProvider({ children, active = true }: { children: React.R
   const { user: authenticatedUser, loading: authLoading } = useAuth()
   const { subscribeAccountRevision } = useChatStore('subscribeAccountRevision')
   const userId = active ? authenticatedUser?.id ?? null : null
-  const assistant = useMyAssistant()
-  const assistantKnown = assistant.state === 'value' ? assistant.value : null
-  // Tell the assistant App unless it is known there is none (not read yet / unreadable: the notice waits in its outbox).
-  const reportsToAssistant = assistant.state !== 'value' || assistant.value.agentId !== null
-  const appMachine = useMemo(() => assistantKnown?.provisionDeviceId ? { rpc: machineRpc(assistantKnown.provisionDeviceId) } : null, [assistantKnown?.provisionDeviceId])
   // 第一帧就用上次那份铺开(读模型的快照),❌ 不是空列表 + 转圈;重读一返回就换成此刻的事实。
   // 界面还不活跃(active=false)时只画、不读。
   const reading = useReplica(devicesModel, [], { read: userId !== null })
@@ -169,22 +161,14 @@ export function DevicesProvider({ children, active = true }: { children: React.R
   }, [userId, applyDeviceRevisions, subscribeAccountRevision])
 
   const rename = useCallback(async (deviceId: string, label: string) => {
-    const ownerId = userId ?? cachedDevicesAccount()
     await chatService.renameDevice(deviceId, label)
-    if (reportsToAssistant) await reportAssistantAppChange(appMachine, assistantKnown?.agentId ?? undefined, {
-      resource: 'devices', operation: 'edited', id: deviceId, deviceId, after: { name: label },
-    }, ownerId)
     await refresh()
-  }, [refresh, reportsToAssistant, assistantKnown?.agentId, appMachine, userId])
+  }, [refresh])
 
   const remove = useCallback(async (deviceId: string, options: { cascade?: boolean } = {}) => {
-    const ownerId = userId ?? cachedDevicesAccount()
     await chatService.removeDevice(deviceId, options)
-    if (reportsToAssistant) await reportAssistantAppChange(appMachine, assistantKnown?.agentId ?? undefined, {
-      resource: 'devices', operation: 'removed', id: deviceId, deviceId,
-    }, ownerId)
     await refresh()
-  }, [refresh, reportsToAssistant, assistantKnown?.agentId, appMachine, userId])
+  }, [refresh])
 
   // #6264 这台电脑用远程 SSH 添加的机器(清单随装上 / 移除一台跟着变):在不在线只看 SSH 设备连接(❌ 看咕咕云心跳),
   // 侧栏、选择器、设置 → 设备同一个说法。别的机器照常读心跳。
