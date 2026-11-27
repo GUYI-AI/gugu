@@ -25,9 +25,8 @@ import { ProfileCardAction } from './contacts/ProfileCardAction'
 import { ShareAgentModal } from './contacts/ShareAgentModal'
 import { peopleContacts } from './contacts/contactSelectors'
 import { useContactsStore } from '../store/contactsContext'
-import { useAgentSession } from '@/lib/projectGroupChatsBridge'
 import { useMobileShell } from '@/hooks/useMobileShell'
-import { useAgentSessionRow } from '@/components/session-watch/useAgentSessionRow'
+import { useAgentSessionEntry } from '@/components/session-watch/useAgentSessionRow'
 import type { AgentSession } from '@/session/renderer/features/projects/stores/project-group-chats-bridge'
 import { isImeComposing } from '@/lib/ime'
 
@@ -226,14 +225,8 @@ export function MemberProfileCard({
   const { presence } = useAgentDisplayStatus(isAgent ? member.id : null)
   const statusLabel = useAgentContactStatusLabel(status, presence.presentation)
   const { user } = useAuth()
-  // Desktop: the session bridge the task bundle publishes. The phone has no such bundle: it finds the agent's session in
-  // its session directory, as its agent chat header and Partners rows do (#673, #658).
   const phone = useMobileShell()
-  const bridged = useAgentSession(isAgent && !phone ? member.id : null)
-  const row = useAgentSessionRow(isAgent && phone ? member.id : null)
-  const session: AgentSession | undefined = phone
-    ? (row ? { projectId: row.session.projectId, sessionId: row.session.conversationId } : undefined)
-    : bridged
+  const session = useAgentSessionEntry(isAgent ? member.id : null)
   // 别人的 agent 不能私聊(#509):不画能点的「发消息」(#6832)。通讯录那边同一条规则见 ContactsPanel 的 isOwnedAgent。
   // An agent's「发消息」opens its session and nothing else (#622): no session found → no button, ❌ a DM fallback. The DM
   // itself stays reachable where the product offers it; only this entry is closed.

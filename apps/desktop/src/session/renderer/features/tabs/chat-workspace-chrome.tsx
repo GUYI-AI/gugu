@@ -3,7 +3,8 @@ import { observer } from 'mobx-react-lite';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { SurfaceBox } from '@renderer/lib/layout/place-in';
-import { Maximize2, Minimize2, PanelRight } from '@/lib/icons';
+import { PanelToggleIcon } from '@/components/PanelToggleIcon';
+import { Maximize2, Minimize2 } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
 import { openPanelItem } from '../chats/chat-tabs/chat-layouts';
 import { folderItem } from '../chats/chat-tabs/chat-panel-item';
@@ -15,7 +16,7 @@ import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { PaneProvider } from './pane-context';
 import type { PaneLayoutStore } from './pane-layout-store';
-import { TabBar, TabStripShell } from './tab-bar';
+import { TAB_STRIP_NARROW_PX, TabBar, TabStripShell } from './tab-bar';
 import { CHAT_TOOL_COMPACT_HEADER_MAX_WIDTH_PX } from './chat-tool-geometry';
 import { ChatWorkspaceTabContext } from './chat-workspace-context';
 
@@ -86,8 +87,9 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
     return () => ownerDocument.removeEventListener('keydown', keyDown, true);
   }, [dragging, embedded, focused, layout, mode]);
   const chatColumn = useRef<HTMLDivElement>(null);
-  // Through a move the conversation strip keeps one look (narrow or not): that of the narrower end, ❌ the width drawn.
-  const [chatRest, setChatRest] = useState<number>();
+  // Through a move the conversation strip keeps one look (narrow or not): that of the narrower end, ❌ the width drawn. Only
+  // narrow or not is kept: a width would be a new value, and a render, on every frame of a drag.
+  const [chatRestNarrow, setChatRestNarrow] = useState<boolean>();
   const tools = panes?.tools;
   // The tools on their way off (hidden): their tabs leave with their page (@@@leaving-panes), ❌ before it.
   const leaving = mode === 'hidden' && !!tools && !layout.narrow && layout.isPaneShown(tools.paneId);
@@ -102,8 +104,8 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   // cell, laid out, clipped and faded with the page beneath it; in full view and narrow they are in the row above the pages.
   useLayoutEffect(() => {
     const cell = chatColumn.current?.closest<HTMLElement>('[data-panel-slot], [data-panel-fill]');
-    if (!cell || !divided) return setChatRest(undefined);
-    const read = () => setChatRest(cell.dataset.panelRest ? Math.min(parseFloat(cell.dataset.panelRest), cell.offsetWidth) : undefined);
+    if (!cell || !divided) return setChatRestNarrow(undefined);
+    const read = () => setChatRestNarrow(cell.dataset.panelRest ? Math.min(parseFloat(cell.dataset.panelRest), cell.offsetWidth) < TAB_STRIP_NARROW_PX : undefined);
     read();
     const told = new MutationObserver(read);
     told.observe(cell, { attributeFilter: ['data-panel-rest'] });
@@ -156,9 +158,8 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       )}
       {tools && (tabsVisible || mode === 'hidden') && (
         <Button size="icon-sm" variant="ghost" title={toggleLabel} aria-label={toggleLabel} aria-pressed={tabsVisible}
-          className="aria-pressed:bg-row-selected aria-pressed:text-foreground"
           onClick={() => layout.setChatToolLayout(tabsVisible ? 'hidden' : 'split')}>
-          <PanelRight className="size-3.5" />
+          <PanelToggleIcon side="right" open={tabsVisible} className="size-3.5" />
         </Button>
       )}
       {full && (
@@ -176,7 +177,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       <div className="min-w-0 flex-1">
       <PaneProvider group={chat} passive isFocusedPane={layout.activePaneId === chat.paneId}>
         <ChatWorkspaceTabContext.Provider value={{ role: 'capsule', layout }}>
-          <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={floating ? undefined : actions} restWidth={divided ? chatRest : undefined}>
+          <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={floating ? undefined : actions} restNarrow={divided ? chatRestNarrow : undefined}>
             {tab && Title ? <Title tab={tab} host={chat.pane} ctx={chat.pane.ctx} /> : null}
           </TabStripShell>
         </ChatWorkspaceTabContext.Provider>

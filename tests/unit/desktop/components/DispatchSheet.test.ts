@@ -83,6 +83,15 @@ const type = async (field: HTMLInputElement | HTMLTextAreaElement, value: string
 })
 
 describe('DispatchSheet', () => {
+  it('opens above a page modal: an App asking from its own page (--z-settings) sees the sheet, not the page over it', async () => {
+    let picked: Promise<unknown> = Promise.resolve()
+    await act(async () => { picked = ask({}) })
+    const layers = [...document.body.querySelectorAll<HTMLElement>('.gg-sheet-viewport, .gg-sheet-backdrop')].map((el) => el.style.zIndex)
+    expect(layers.length).toBeGreaterThan(0)
+    expect(new Set(layers)).toEqual(new Set(['var(--z-settings-modal)']))
+    await click(document.body.querySelector('[data-testid="dispatch-sheet-close"]') ?? document.querySelector('[aria-label="关闭"]'))
+    await picked
+  })
   it('shows and searches a fresh agent by the real name used for dispatch', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime('2026-11-02T08:00:00.000Z')

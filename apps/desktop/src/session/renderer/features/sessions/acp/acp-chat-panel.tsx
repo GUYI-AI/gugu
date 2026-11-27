@@ -1100,7 +1100,7 @@ const ComposerForStore = observer(function ComposerForStore({
   useEffect(() => {
     if (liveUnrecordedEffort) rememberLiveEffort(store.sessionId, liveUnrecordedEffort);
   }, [liveUnrecordedEffort, store.sessionId]);
-  const querySlashItems = useComposerSlashItems({ store, promptLibrary, promptOverrides, translate, providerId });
+  const querySlashItems = useComposerSlashItems({ store, promptLibrary, promptOverrides, translate, providerId, harnessCatalog: harnessCatalog.state });
 
   const selectedModelOption = composerSelectedOptionId({ platformModel: runningPlatformModel, model: store.model, customModel: runningCustomModel });
   // 换了模型、新模型还没报读数:记录里那份已用量,分母换成此刻模型的窗口(recordedContextUsage)。

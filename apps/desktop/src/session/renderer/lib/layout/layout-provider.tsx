@@ -201,7 +201,7 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   };
   const targets = () => ({ list: listTarget(), inner: innerTarget() });
 
-  const [track] = useState(() => new PanelTrack([{ id: 'list', at: listTarget() }, { id: 'inner', at: { size: 0 } }]));
+  const [track] = useState(() => new PanelTrack([{ id: 'list', at: listTarget() }, { id: 'inner', at: { size: 0 }, exit: 'clip' }]));
   const leftAnimatedWidth = useMotionValue(track.drawn('list'));
   const leftProgress = useMotionValue(listProgress(track.drawn('list'), leftWidth.get()));
   const innerEdge = useMotionValue(track.drawn('list') + track.drawn('inner'));
@@ -403,6 +403,18 @@ export function useInnerSidebarCrowded(): boolean {
   const [crowded, setCrowded] = useState(() => innerCrowded.get());
   useMotionValueEvent(innerCrowded, 'change', setCrowded);
   return crowded;
+}
+
+/** Whether the inner column is on its way open or folded (a move under way on the track). Re-renders only when it flips. */
+export function useInnerColumnMoving(): boolean {
+  const { track } = useWorkspaceLayoutContext();
+  const [moving, setMoving] = useState(false);
+  useLayoutEffect(() => {
+    const offRide = track.ride('inner', (from, to) => (setMoving(Math.abs(from - to) > PANEL_LANDED_PX), []));
+    const offLanded = track.onLanded(() => setMoving(false));
+    return () => { offRide(); offLanded(); };
+  }, [track]);
+  return moving;
 }
 
 /** #2548 whether the rows are laid out as the rail right now (leftRailLayout). Re-renders only when it flips. */

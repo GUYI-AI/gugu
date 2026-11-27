@@ -1,1 +1,5 @@
 @import '../../../../styles/desktop-shell.css';
+
+/* Registered so the restore lane's share rides the inner column's move as an animation (workspace-layout.tsx
+   @@@inner-fold-motion): an unregistered custom property animates in one step. Inherited: the strip's own parts read it. */
+@property --shell-restore-lane-shown { syntax: '<number>'; inherits: true; initial-value: 1; }

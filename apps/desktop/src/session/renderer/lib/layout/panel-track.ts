@@ -29,7 +29,7 @@ const SOFT_EDGE = { x: { slot: softEdge('left'), fill: softEdge('right') }, y: {
 const OUT_OF_WINDOW = 'translate(-100000px, -100000px)';
 
 /** A move as the platform's animation, linear over a nominal time: the spring's progress is set as its time. */
-const MOVE = { duration: 1000, fill: 'both' } as const;
+export const MOVE = { duration: 1000, fill: 'both' } as const;
 
 export function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -54,8 +54,14 @@ export interface PanelSlotNodes {
   content: HTMLElement;
 }
 
+/** What moves with a slot through a move, as animations on the move's clock: made when the move starts, gone when it lands. */
+export type SlotRider = (from: number, to: number, content: number) => Animation[];
+
 interface Slot {
   id: string;
+  /** To or from nothing it is slid out with its edge and faded (default), or held where it is laid out and clipped by its drawn edge: the track does not fade that one — what fades with it rides it (`ride`). */
+  exit: 'slide' | 'clip';
+  riders: SlotRider[];
   nodes: PanelSlotNodes | null;
   /** What the caller last said: written when the nodes come, and what the next `to` is compared with. */
   target: SlotTarget;
@@ -72,11 +78,11 @@ export class PanelTrack {
 
   /** `axis`: a row (x, widths) or a column (y, heights). `extent`: the track's length as its owner measures it: the fill has this less the slots, so placing writes and never reads the layout back. */
   constructor(
-    slots: readonly { id: string; at: SlotTarget }[],
+    slots: readonly { id: string; at: SlotTarget; exit?: Slot['exit'] }[],
     private readonly axis: 'x' | 'y' = 'x',
     private extent = 0
   ) {
-    this.slots = slots.map(({ id, at }) => ({ id, nodes: null, target: at }));
+    this.slots = slots.map(({ id, at, exit = 'slide' }) => ({ id, exit, riders: [], nodes: null, target: at }));
   }
 
   measure(extent: number): void {
@@ -109,6 +115,13 @@ export class PanelTrack {
   content(id: string): number {
     const slot = this.slot(id);
     return slot.nodes ? this.sizeOf(slot.nodes.content) : (slot.target.content ?? slot.target.size);
+  }
+
+  /** `rider`'s animations go with every move of this slot from here on. */
+  ride(id: string, rider: SlotRider): () => void {
+    const riders = this.slot(id).riders;
+    riders.push(rider);
+    return () => void riders.splice(riders.indexOf(rider), 1);
   }
 
   /** Called when a move ends: it landed, or a jump took it over. */
@@ -162,7 +175,8 @@ export class PanelTrack {
       const end = slot.target.size;
       distance = Math.max(distance, Math.abs(start - end));
       if (!nodes) continue;
-      this.sheet(nodes, start, slot.target, 'slot', move);
+      this.sheet(nodes, start, slot.target, slot.exit === 'clip' ? 'held' : 'slot', move);
+      for (const rider of slot.riders) move.push(...rider(start, end, heldPx(nodes.content, size) || Math.max(start, end)));
       nodes.place.style[size] = `${end}px`;
       if (Math.abs(start - end) >= PANEL_LANDED_PX) move.push(nodes.place.animate({ [size]: [`${start}px`, `${end}px`] }, MOVE));
     }
@@ -193,7 +207,7 @@ export class PanelTrack {
    * A box for the length of a move from `start` to `target`. To or from nothing it is a sheet: its content at its open
    * size on the edge that moves, the window fading with the share of it that is drawn.
    */
-  private sheet(nodes: PanelSlotNodes, start: number, target: SlotTarget, role: 'slot' | 'fill', move: Animation[]): void {
+  private sheet(nodes: PanelSlotNodes, start: number, target: SlotTarget, role: 'slot' | 'held' | 'fill', move: Animation[]): void {
     const [size, near, far] = this.sides;
     const end = target.size;
     const faded = Math.min(start, end) < PANEL_LANDED_PX || !!nodes.window.style.maskImage; // or turned round part-way: still a sheet
@@ -205,10 +219,10 @@ export class PanelTrack {
     nodes.place.dataset.panelRest = `${rest} ${rest - (held ?? start)}`;
     nodes.content.style[near] = faded && role === 'slot' ? 'auto' : '';
     nodes.content.style[far] = faded && role === 'slot' ? '0' : '';
-    nodes.window.style.maskImage = faded ? SOFT_EDGE[this.axis][role] : '';
+    nodes.window.style.maskImage = faded && role !== 'held' ? SOFT_EDGE[this.axis][role] : '';
     nodes.window.style.transform = '';
     nodes.window.inert = false;
-    if (faded && held) move.push(nodes.window.animate({ opacity: [clamp01(start / held), clamp01(end / held)] }, MOVE));
+    if (faded && held && role !== 'held') move.push(nodes.window.animate({ opacity: [clamp01(start / held), clamp01(end / held)] }, MOVE));
   }
 
   /** A box at rest at `target`. */

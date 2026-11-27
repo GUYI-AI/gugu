@@ -24,6 +24,8 @@ import type { EmdashSessionIdentity } from './emdash-mcp-injector';
 import type { ClaudeReviewRunContext } from '../agents/claude-reviewer';
 import { prepareEmdashPlatformSession, releaseEmdashPlatformSession, releaseEmdashPlatformSessionForClosure } from './emdash-platform-injector';
 import { injectEmdashPromptDetached } from './inject-prompt';
+import { invokesCommand } from '@gugu/session-core/acp/commands';
+import { lookupHarnessModelCatalog } from '../agents/harness-model-catalog';
 import {
   acpWorkerLease, callSessionStart, persistProviderSessionMissing, persistReturnedProviderSessionId,
   persistSessionMcpServers, provisionStartIdentity, readSessionInjectionFacts, stopAcpSessionAndSettle, withEmdashMcpInjection,
@@ -299,6 +301,14 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
     return lease({ gen, timing: 'next-tool-call', nativeSession }) as AdmittedChannel;
   }
 
+  /** Whether `text` opens with a command this harness advertises (its probed catalog: what the composer offered). */
+  async function leadsWithHarnessCommand(providerId: string, text: string): Promise<boolean> {
+    const { state } = await lookupHarnessModelCatalog(providerId, { leg: 'acp' });
+    const commands = state.kind === 'ready' || state.kind === 'auth-required' ? state.commands ?? [] : [];
+    // An empty list would fall back to "starts with a sigil", and a sentence that opens with a path is not a command.
+    return commands.length > 0 && invokesCommand(text, commands);
+  }
+
   async function admit(have: StageOut, pending: PendingRow, signal: AbortSignal): ReturnType<LegAdapter['dispatch']> {
     const delivery = pending.message.delivery;
     const stopped = { result: 'rejected-before-admission', cause: { name: 'AdmissionCancelled', message: 'The session stopped before dispatch' } } as const;
@@ -339,6 +349,15 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
       case 'chat-page-first-turn': {
         const render = read<Capabilities>(have.capabilities).injection.firstTurn;
         if (!render) throw new Error(`Session ${sessionId}: the first turn's gugu message did not land in this attempt`);
+        // gugu-dev#1644: a task card's first sentence that is one of the harness's commands (`/goal …`) runs as that
+        // command. Inside the card's delivery envelope it would only be words to the agent, so the command goes first on
+        // its own, and the envelope (the card, and where to answer) follows it as the next input. The card itself and
+        // the delivery contract are unchanged.
+        if (render.kind === 'envelope' && await leadsWithHarnessCommand(known().providerId, pending.message.text)) {
+          const command = await injectEmdashPromptDetached(sessionId, pending.message.text, {
+            clientMessageId: `${pending.message.id}:command`, origin: 'manual', sentAt: pending.sentAt });
+          if (command.outcome === 'declined' || command.outcome === 'missing') { sent = command; break; }
+        }
         const turn = renderFirstTurn(pending.message.text, render);
         sent = await injectEmdashPromptDetached(sessionId, turn.text, { clientMessageId: pending.message.id, origin: turn.origin, sentAt: pending.sentAt, ...attachments });
         break;

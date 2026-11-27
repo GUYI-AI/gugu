@@ -56,7 +56,16 @@ export function ClaimedPage({ slotId, chatId, resourceChat, kind, itemId, takeOp
       }
     }
     sync()
-    const resized = new ResizeObserver(sync)
+    // Only whether the slot has an area can change the claim on a resize, read off the delivered size: `sync` reads the
+    // slot's box and style, and a slot resizes in every frame of a panel's motion, after an earlier observer of the same
+    // delivery has written styles — each read laid the whole page out again. Hiding without a size change is `restyled`'s.
+    let area: boolean | null = null
+    const resized = new ResizeObserver(([entry]) => {
+      const next = !!entry && entry.contentRect.width > 0 && entry.contentRect.height > 0
+      if (next === area) return
+      area = next
+      sync()
+    })
     resized.observe(element)
     const restyled = new MutationObserver(sync)
     for (let node: HTMLElement | null = element; node; node = node.parentElement) {

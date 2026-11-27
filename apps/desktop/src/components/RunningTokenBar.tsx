@@ -20,6 +20,8 @@ import { RowHoverCard } from './ui/RowHoverCard'
 import { RowHoverCardController, useRowHoverCardOpen, useRowHoverCardTrigger } from './ui/rowHoverCardController'
 import { Chip } from './ui/Chip'
 import { MessagePreviewCard } from './MessagePreviewCard'
+import type { MemberProfileChatTarget } from './MemberProfileCard'
+import { useAgentSessionEntry } from './session-watch/useAgentSessionRow'
 import { settleRunningTokenFit } from './runningTokenFit'
 
 export interface RunningToken {
@@ -39,6 +41,8 @@ export interface RunningToken {
 export interface RunningTokenBarProps {
   tokens: RunningToken[]
   onTokenClick?: (id: string) => void
+  /** The card's top line opens the agent's session, through the same entry as its profile card's 发消息 (own agents only). */
+  onTokenOpen?: (target: MemberProfileChatTarget) => void
   /** 兼容既有 e2e/testid：DM 传 'agent-running-status'，群聊传 'group-agent-running-status'。 */
   testId?: string
   /** 悬停 token 弹出的 MessagePreview 读哪个 chat（#6357）；null = 不弹。 */
@@ -99,11 +103,13 @@ function RunningTokenItem({
   onTokenClick,
   card,
   previewChatId,
+  onTokenOpen,
 }: {
   token: RunningToken
   overflow?: boolean
   folded?: boolean
   onTokenClick?: (id: string) => void
+  onTokenOpen?: (target: MemberProfileChatTarget) => void
   card: RowHoverCardController
   previewChatId: string | null
 }) {
@@ -117,6 +123,11 @@ function RunningTokenItem({
   const { dismiss, ...hover } = useRowHoverCardTrigger(card, key, !mobile && previewChatId !== null)
   const open = useRowHoverCardOpen(card, key) && previewChatId !== null
   const longPress = useLongPress(() => card.open(key))
+  const session = useAgentSessionEntry(onTokenOpen && token.mine ? token.id : null)
+  const openSession = onTokenOpen && session ? () => {
+    dismiss()
+    onTokenOpen({ id: token.id, displayName, avatar: token.avatarUrl, email: null, bio: null, type: 'agent', session })
+  } : undefined
   // 单击仍然是 @;卡只由悬停、键盘焦点或手机长按打开。
   const pressHandlers = mobile
     ? { ...longPress, onContextMenu: (event: MouseEvent) => event.preventDefault() }
@@ -147,7 +158,7 @@ function RunningTokenItem({
       </ButtonPrimitive>
       {open && previewChatId ? (
         <RowHoverCard card={card} rowKey={key} anchor={() => pill.current} side="top" align={overflow ? 'center' : 'start'} label={displayName}>
-          <MessagePreviewCard chatId={previewChatId} token={token} displayName={resolveAgentRunningDisplayName(token.name)} open />
+          <MessagePreviewCard chatId={previewChatId} token={token} displayName={resolveAgentRunningDisplayName(token.name)} open onOpenSession={openSession} />
         </RowHoverCard>
       ) : null}
     </>
@@ -159,12 +170,14 @@ function MoreOverflow({
   anchor,
   tokens,
   onTokenClick,
+  onTokenOpen,
   card,
   previewChatId,
 }: {
   anchor: RefObject<HTMLDivElement | null>
   tokens: RunningToken[]
   onTokenClick?: (id: string) => void
+  onTokenOpen?: (target: MemberProfileChatTarget) => void
   card: RowHoverCardController
   previewChatId: string | null
 }) {
@@ -226,7 +239,7 @@ function MoreOverflow({
               <div key={group.label} className="rtb-og" role="group" aria-label={labeled ? group.label : undefined}>
                 {labeled && <div className="rtb-oh">{group.label}</div>}
                 {group.tokens.map((token) => (
-                  <RunningTokenItem key={token.id} token={token} overflow onTokenClick={onTokenClick} card={card} previewChatId={previewChatId} />
+                  <RunningTokenItem key={token.id} token={token} overflow onTokenClick={onTokenClick} onTokenOpen={onTokenOpen} card={card} previewChatId={previewChatId} />
                 ))}
               </div>
             ))}
@@ -237,7 +250,7 @@ function MoreOverflow({
   )
 }
 
-export function RunningTokenBar({ tokens, onTokenClick, testId, previewChatId }: RunningTokenBarProps) {
+export function RunningTokenBar({ tokens, onTokenClick, onTokenOpen, testId, previewChatId }: RunningTokenBarProps) {
   const [card] = useState(() => new RowHoverCardController('running-agent'))
   const boxRef = useRef<HTMLDivElement | null>(null)
   const [fitted, setFitted] = useState(Number.POSITIVE_INFINITY)
@@ -272,9 +285,9 @@ export function RunningTokenBar({ tokens, onTokenClick, testId, previewChatId }:
       <style>{STYLE}</style>
       <div className="rtb-bar">
         {tokens.map((t, i) => (
-          <RunningTokenItem key={t.id} token={t} folded={i >= visible} onTokenClick={onTokenClick} card={card} previewChatId={previewChatId} />
+          <RunningTokenItem key={t.id} token={t} folded={i >= visible} onTokenClick={onTokenClick} onTokenOpen={onTokenOpen} card={card} previewChatId={previewChatId} />
         ))}
-        {overflow.length > 0 && <MoreOverflow anchor={boxRef} tokens={overflow} onTokenClick={onTokenClick} card={card} previewChatId={previewChatId} />}
+        {overflow.length > 0 && <MoreOverflow anchor={boxRef} tokens={overflow} onTokenClick={onTokenClick} onTokenOpen={onTokenOpen} card={card} previewChatId={previewChatId} />}
       </div>
     </div>
   )

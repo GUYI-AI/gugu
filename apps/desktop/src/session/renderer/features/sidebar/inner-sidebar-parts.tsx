@@ -1,12 +1,14 @@
 import './inner-sidebar-head.css';
 import { Button } from '@/components/ui/Button';
-import { PanelLeft, SquarePen } from '@/lib/icons';
-import type { CSSProperties, ReactNode } from 'react';
+import { PanelToggleIcon } from '@/components/PanelToggleIcon';
+import { SquarePen } from '@/lib/icons';
+import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import { Chip } from '@/components/ui/Chip';
 import { TITLEBAR_ACTION_SLOT_GAP_PX, TITLEBAR_ACTION_SLOT_WIDTH_PX } from '@/lib/window-chrome';
 import { Button as TabStripButton } from '@renderer/lib/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { INNER_FOLD_FADES, INNER_FOLD_LINE } from '@renderer/lib/layout/inner-fold-paint';
 import { cn } from '@renderer/utils/utils';
 import { setInnerSidebarFolded } from './inner-sidebar-fold';
 import {
@@ -16,6 +18,27 @@ import {
 } from './sidebar-primitives';
 
 // #2548 内层侧栏里几样零件:群 / 项目那一列(inner-sidebar.tsx)与示例项目那一列(sample-inner-sidebar.tsx)画同一个样子。
+
+/**
+ * @@@inner-modules (owner 11-26, direction A, GUYI-AI/gugu-dev#1515): the column's modules ("My topics", "My agents"; a future
+ * pinned / members / schedule module is one more entry) in one ordered list, drawn as one floating panel inside the group's
+ * card (inner-sidebar-head.css [data-inner-module-stack]). The head row is not a module: it stays on the card as the group's
+ * title. `open` = the one module opened in place (the topics' "All"): it takes the panel and the others step aside.
+ */
+export type InnerModule = { id: string; node: ReactNode };
+export function InnerModuleStack({ modules, open = null }: { modules: readonly InnerModule[]; open?: string | null }) {
+  const shown = open ? modules.filter((module) => module.id === open) : modules;
+  return (
+    // The stack holds the column's line (inner-sidebar-head.css @@@inner-modules); its modules scroll and fade inside it. Through
+    // a fold the layout moves the line and fades the modules (inner-fold-paint.ts).
+    <div className="relative flex min-h-0 flex-col" data-inner-module-stack="">
+      <div className={cn('min-h-0 flex-1 overflow-x-hidden overflow-y-auto', INNER_FOLD_FADES)} data-region="inner-sidebar-scroll">
+        {shown.map((module) => <Fragment key={module.id}>{module.node}</Fragment>)}
+      </div>
+      <span aria-hidden className={INNER_FOLD_LINE} data-inner-line="" />
+    </div>
+  );
+}
 
 /** 分区里什么都没有时那一行字。 */
 export const innerSectionEmptyClass = 'ms-2 px-2 py-1 text-[length:var(--font-caption)] leading-[18px] text-foreground-muted';
@@ -57,7 +80,7 @@ export function InnerHeadRowLayout({
 }) {
   const reserve = 8 + HEAD_BUTTON_PX * trailingButtons + HEAD_BUTTON_GAP_PX * Math.max(0, trailingButtons - 1);
   return (
-    <SidebarMenu className={cn("flex h-10 shrink-0 items-center [-webkit-app-region:drag]", createAction && "gg-inner-head-double")}>
+    <SidebarMenu className={cn("flex h-10 shrink-0 items-center [-webkit-app-region:drag]", createAction && "gg-inner-head-double", INNER_FOLD_FADES)}>
       <div
         className="group/head relative w-full"
         style={{ '--head-reserve': `${reserve}px` } as CSSProperties}
@@ -95,7 +118,7 @@ export function InnerSidebarFoldButton() {
       <TooltipTrigger
         render={
           <TabStripButton size="icon-sm" variant="ghost" className="window-no-drag-region" aria-label={label} data-inner-head-fold="" onClick={() => setInnerSidebarFolded(true)}>
-            <PanelLeft />
+            <PanelToggleIcon open />
           </TabStripButton>
         }
       />

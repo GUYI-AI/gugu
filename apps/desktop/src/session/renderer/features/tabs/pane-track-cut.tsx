@@ -107,15 +107,19 @@ export function TrackCut({
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    const measure = () => {
-      const next = axis === 'x' ? root.clientWidth : root.clientHeight;
+    const measure = (next: number) => {
       if (next === extent.current) return;
       extent.current = next;
       track.measure(next);
       track.jump(targets());
     };
-    measure();
-    const observer = new ResizeObserver(measure);
+    measure(axis === 'x' ? root.clientWidth : root.clientHeight);
+    // The size the observer delivers (the cut has no padding or scrollbar: its content box is its client box, rounded as
+    // clientWidth is), ❌ the box read again: in a panel's frame an earlier observer of the same delivery has written styles,
+    // and the read laid the whole page out again for them.
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) measure(Math.round(axis === 'x' ? entry.contentRect.width : entry.contentRect.height));
+    });
     observer.observe(root);
     return () => observer.disconnect();
   }, [track]);

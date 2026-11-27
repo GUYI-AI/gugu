@@ -34,7 +34,7 @@ import { layOver, PEEKED_PAGE_STYLE, sessionPeek } from './session-peek';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { RETAINED_SURFACE_HIDDEN_STYLE, SurfaceShown } from '@/lib/retainedSurface';
+import { RETAINED_SURFACE_HIDDEN_STYLE, SurfaceShown, useRetainedHiddenStyle } from '@/lib/retainedSurface';
 import { sessionView } from '@renderer/features/sessions/view';
 import { runInAction } from 'mobx';
 import { pageModalOpen } from './page-modal';
@@ -133,11 +133,14 @@ const ScreenArea = observer(function ScreenArea({
       ),
     []
   );
+  // Hidden, the screen keeps its size: this area grows when a group's inner column folds, in the frame the screen is hidden.
+  const areaRef = useRef<HTMLDivElement>(null);
+  const hiddenStyle = useRetainedHiddenStyle(areaRef, onSessionView);
   return (
-    <div ref={(park) => { screenPark.current = park; }} className="relative flex min-h-0 min-w-0 flex-1 flex-col" {...handlers}>
+    <div ref={(area) => { areaRef.current = screenPark.current = area; }} className="relative flex min-h-0 min-w-0 flex-1 flex-col" {...handlers}>
       {/* @@@retained-screen — the screen stays mounted under Library & the other places: going back flips it visible,
           its chat blocks keep their live message windows (no remount, no refetch, no restyle of the whole list). */}
-      <div style={onSessionView ? SHOWN_IN_PLACE : RETAINED_SURFACE_HIDDEN_STYLE}>
+      <div style={onSessionView ? SHOWN_IN_PLACE : hiddenStyle}>
         {/* The frame itself hidden (another of gugu's tabs) hides the screen with it. */}
         <SurfaceShown shown={onSessionView && embedVisible}>
           <ScreenFrame />
