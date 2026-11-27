@@ -118,7 +118,7 @@ interface Surface {
  * fixed 全屏格是裁剪边界:格外原分栏的 overflow 不再裁它,格内与根层的裁剪仍然有效。
  * 两边都按视口量,再换算到本层坐标,祖先有 transform 也不歪。
  */
-function boxOf(element: HTMLElement, layer: HTMLElement): { full: Box; clip: Box } {
+function boxOf(element: HTMLElement, layer: HTMLElement): { full: Box; clip: Box; origin: Box } {
   const l = elementBox(layer);
   const { full, clip } = clippedElementBox(element, l);
   const toLayer = (b: Box): Box => ({
@@ -127,7 +127,7 @@ function boxOf(element: HTMLElement, layer: HTMLElement): { full: Box; clip: Box
     width: Math.round(b.width),
     height: Math.round(b.height),
   });
-  return { full: toLayer(full), clip: toLayer(clip) };
+  return { full: toLayer(full), clip: toLayer(clip), origin: l };
 }
 
 
@@ -264,12 +264,12 @@ export const ExtensionPage = observer(function ExtensionPage({
   }, [extensionId, kind, managed]);
 
   /** 尺寸与可见性报给桥(它会去重);没绑定时无处可报,静默。 */
-  const report = useCallback((visible: boolean, width: number, height: number, following = false) => {
+  const report = useCallback((visible: boolean, width: number, height: number, following = false, placed?: { page: Box; clip: Box }) => {
     const webContentsId = guestBinding.boundWebContentsId;
     if (webContentsId === null || guestReadyRef.current !== webviewRef.current) return;
     const element = webviewRef.current, clipElement = boxRef.current;
     if (!element || !clipElement) return;
-    const metrics = nativeAppSurfaceMetrics(element, clipElement, visible, width, height, following ? occludedRef.current : undefined);
+    const metrics = nativeAppSurfaceMetrics(element, clipElement, visible, width, height, following ? occludedRef.current : undefined, placed);
     occludedRef.current = metrics.occluded ?? false;
     const key = JSON.stringify(metrics);
     if (key === lastReportRef.current) return;
@@ -480,19 +480,22 @@ export const ExtensionPage = observer(function ExtensionPage({
           // sampled again — a hit test right after the motion's writes lays out the whole page in that frame.
           const place = (following = false) => {
             if (following) followedAt = performance.now();
-            const { full, clip } = boxOf(claim.element, layer);
+            // Everything this placing reads is read before it writes (@@@place-reads-first): a read after the box's writes laid the
+            // whole page out again, in every frame of a panel's motion.
+            const { full, clip, origin } = boxOf(claim.element, layer);
             const shown =
               clip.width > 0 &&
               clip.height > 0 &&
               claim.element.isConnected &&
               isElementVisible(claim.element, { opacity: true });
+            // Rounded where the place it is put in is rounded (the assistant panel's card): clipped as that place clips.
+            const corners = pageCorners(getComputedStyle(claim.element), full, clip);
             if (!shown) releaseHiddenFocus(box, claim);
             box.style.left = `${clip.left}px`;
             box.style.top = `${clip.top}px`;
             box.style.width = `${clip.width}px`;
             box.style.height = `${clip.height}px`;
-            // Rounded where the place it is put in is rounded (the assistant panel's card): clipped as that place clips.
-            Object.assign(box.style, pageCorners(getComputedStyle(claim.element), full, clip));
+            Object.assign(box.style, corners);
             box.style.visibility = shown ? 'visible' : 'hidden';
             // A page shown as a modal (@@@page-modal) is above the whole shell: the page in it is drawn over that modal's layer.
             const ancestors = ancestorsOf(claim.element);
@@ -510,7 +513,9 @@ export const ExtensionPage = observer(function ExtensionPage({
               inner.style.width = `${full.width}px`;
               inner.style.height = `${full.height}px`;
             }
-            report(shown && document.visibilityState === 'visible', full.width, full.height, following);
+            // The page fills `inner` and the clip is `box`: where they now are is where they were just placed.
+            const at = (b: Box): Box => ({ left: origin.left + b.left, top: origin.top + b.top, width: b.width, height: b.height });
+            report(shown && document.visibilityState === 'visible', full.width, full.height, following, { page: at(full), clip: at(clip) });
           };
           place();
           const stopFollowing = followBox(claim.element, place);
