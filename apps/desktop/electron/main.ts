@@ -107,8 +107,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { homedir, hostname, platform } from 'os'
 import { dirname, join, resolve, sep } from 'path'
 import { autoUpdater } from 'electron-updater'
-import windowStateStore from 'electron-window-state'
 import { mainWindowSize } from './main-window-size'
+import { openMainWindowState } from './main-window-state'
 import {
   invokeRendererAuth,
   invokeRendererExtensions,
@@ -1662,7 +1662,7 @@ const mainRendererResponsiveness = createMainRendererResponsivenessLog({
 
 function createWindow(loadContents = true): void {
   const { width: defaultWidth, height: defaultHeight } = mainWindowSize(screen.getPrimaryDisplay().workAreaSize)
-  const winState = windowStateStore({ defaultWidth, defaultHeight })
+  const winState = openMainWindowState({ defaultWidth, defaultHeight })
   const display = winState.x == null || winState.y == null
     ? screen.getPrimaryDisplay()
     : screen.getDisplayMatching(winState)
