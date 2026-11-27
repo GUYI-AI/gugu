@@ -13,6 +13,7 @@ const f = vi.hoisted(() => ({
   dialogDir: '',
   dialogFile: '',
   cancelSave: false,
+  saveAskedAt: undefined as string | undefined,
   openIn: vi.fn(async () => undefined),
   windowsNames: false,
   recorded: vi.fn(async () => null as { projectId: string; path: string } | null),
@@ -27,8 +28,9 @@ vi.mock('node:path', async (original) => {
   return named;
 });
 vi.mock('electron', () => ({
+  app: { getPath: (name: string) => `/downloads-of-${name}` },
   BrowserWindow: { fromWebContents: () => null },
-  dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [f.dialogDir] }), showSaveDialog: async () => (f.cancelSave ? { canceled: true, filePath: undefined } : { canceled: false, filePath: f.dialogFile }) },
+  dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [f.dialogDir] }), showSaveDialog: async (options: { defaultPath?: string }) => { f.saveAskedAt = options.defaultPath; return f.cancelSave ? { canceled: true, filePath: undefined } : { canceled: false, filePath: f.dialogFile }; } },
   shell: { showItemInFolder: (p: string) => f.shown.push(p) },
 }));
 vi.mock('@main/lib/events', () => {
@@ -574,6 +576,8 @@ describe('saveBytesAs: bytes the window holds, saved where the person says', () 
     const bytes = new TextEncoder().encode('# dl-1127\nAttachment download repro.\n');
     await expect(saveBytesAs(null, 'dl-1127.md', bytes)).resolves.toBe(f.dialogFile);
     expect(new Uint8Array(fs.readFileSync(f.dialogFile))).toEqual(bytes);
+    // A bare name opened in the app's data folder on Windows, and a plain Save hid the file there.
+    expect(f.saveAskedAt).toBe(path.join('/downloads-of-downloads', 'dl-1127.md'));
   });
 
   it('writes nothing and says null when the person cancels', async () => {

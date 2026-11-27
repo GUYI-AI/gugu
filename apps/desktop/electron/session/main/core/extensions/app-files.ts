@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import { canonicalPath, placeUnder, type CanonicalPath } from '@gugu/session-core/files';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { BrowserWindow, dialog, shell, type WebContents } from 'electron';
+import { app, BrowserWindow, dialog, shell, type WebContents } from 'electron';
 import { userIdFromSupabaseAccessToken } from '@gugu/core';
 import { attachmentFileRef } from '@gugu/core/shared/ui/attachmentModels';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
@@ -1237,9 +1237,13 @@ export async function downloadAppFile(page: DesktopFilePage, args: { ref?: unkno
   return true;
 }
 
-/** One file where the person says, in the host's save dialog (inside their gesture); `null` = they cancelled. */
+/**
+ * One file where the person says, in the host's save dialog (inside their gesture); `null` = they cancelled. It opens in
+ * Downloads, as a browser's does: a bare name opens wherever the process stands, which on a fresh Windows profile is the
+ * app's own data folder, so a plain Save hid the file there.
+ */
 async function saveAsked(window: BrowserWindow | null, source: SaveSource, write: (filePath: string) => Promise<void>): Promise<string | null> {
-  const options = { defaultPath: source.name };
+  const options = { defaultPath: path.join(app.getPath('downloads'), source.name) };
   const target = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
   if (target.canceled || !target.filePath) { if (source.kind === 'file') await source.file.dispose(); return null; }
   await write(target.filePath);
