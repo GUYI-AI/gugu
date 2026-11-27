@@ -218,24 +218,9 @@ export function createAssistantPanelRuntime(deps: {
       }
       if (domain === 'integrations') return [
         ...await Promise.all(deps.local.integrationCatalog().map(async row => {
-          const key = `catalog:${row.id}`, desiredLabel = `${key} (configurable, not connected)`
-          let catalogBodyLabel: string | undefined = desiredLabel
-          const existing = previous.find(item => item.resource_key === key && !item.deleted_at)
-          // A catalog describes a possible setup, not a saved connection. Upgrade the existing file in place:
-          // unchanged body hashes are reused by the publisher, and uploading another file would leave the old name behind.
-          if (existing?.body_item_id && existing.data.catalogBodyLabel !== desiredLabel) {
-            const current = await auth()
-            const client = createGuguSupabaseClient({ schema: 'chat',headers: { Authorization: `Bearer ${current.accessToken}` } })
-            try {
-              const { error } = await client.rpc('workspace_move_as',{ p_item_id: existing.body_item_id,p_as_user_id: binding.ownerId,
-                p_folder: null,p_name: panelBodyFileName(desiredLabel),
-              }).abortSignal(anySignal([AbortSignal.timeout(2000),lifetime.signal]))
-              if (error) catalogBodyLabel = undefined
-            } catch { catalogBodyLabel = undefined }
-            await auth()
-            // Keep publishing saved connections; no receipt means this catalog is retried at the next observation.
-          }
-          return { key,data: { providerId: row.id,configured: false,displayName: row.en.name,catalog: row.en.catalog,...(catalogBodyLabel ? { catalogBodyLabel } : {}) },
+          // A catalog describes a possible setup, not a saved connection; its body file is named so (see `renameCatalogBody`).
+          const key = `catalog:${row.id}`, catalogBodyLabel = `${key} (configurable, not connected)`
+          return { key,data: { providerId: row.id,configured: false,displayName: row.en.name,catalog: row.en.catalog,catalogBodyLabel },
             bytes: new TextEncoder().encode(JSON.stringify({ version: 1,en: row.en,'zh-CN': row.zh })),
           }
         })),
@@ -254,6 +239,19 @@ export function createAssistantPanelRuntime(deps: {
         tz: row.triggerConfig?.tz ?? null,enabled: row.enabled,
       } }))
       return []
+    }
+    // An existing catalog body keeps its item when its bytes are unchanged, so the label saved with it is applied by
+    // renaming that file. Only a saved label may cause the rename: a rejected save must not repeat a write each round.
+    async function renameCatalogBody(row: PanelObservation, previous: AssistantPanelItem | null, body: { itemId: string } | undefined) {
+      const label = row.data.catalogBodyLabel
+      if (!row.key.startsWith('catalog:') || typeof label !== 'string' || !previous?.body_item_id
+        || body?.itemId !== previous.body_item_id || previous.data.catalogBodyLabel === label) return
+      try {
+        const current = await auth()
+        const client = createGuguSupabaseClient({ schema: 'chat',headers: { Authorization: `Bearer ${current.accessToken}` } })
+        await client.rpc('workspace_move_as',{ p_item_id: previous.body_item_id,p_as_user_id: binding.ownerId,p_folder: null,p_name: panelBodyFileName(label) })
+          .abortSignal(anySignal([AbortSignal.timeout(2000),lifetime.signal]))
+      } catch { /* The saved label stands; a failed rename leaves only the file's display name behind. */ }
     }
     function observeFiles() {
       if (disposed) return
@@ -336,6 +334,7 @@ export function createAssistantPanelRuntime(deps: {
             baseline: baseline ?? await cloud.snapshot(binding.assistantId),
             bodyFailures: failures,
             collect: previous => observations(domain,previous),
+            committed: domain === 'integrations' ? renameCatalogBody : undefined,
             upload: async row => uploadAssistantPanelBody({ ...await access(),label: domain === 'integrations' && row.key.startsWith('catalog:') && typeof row.data.catalogBodyLabel === 'string'
               ? row.data.catalogBodyLabel : row.key.split('/').pop() ?? domain,bytes: row.bytes! }),
             discard: async itemId => {

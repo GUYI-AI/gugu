@@ -401,3 +401,14 @@ it('#1456 preserves a replacement note and its index after a 4.7-second delete/a
   expect(noteCalls[1]?.expectedRevision).toBe(savedRevision)
   expect(noteCalls.at(-1)?.expectedRevision).toBe(deletedRevision)
 })
+
+it('runs the committed hook only for a save the server accepted',async () => {
+  const f=transport()
+  const committed=vi.fn(async () => {})
+  f.input.cloud.commit.mockRejectedValueOnce(new AssistantPanelError('22023','Panel data has unsupported fields'))
+  await expect(publishAssistantPanelCollection({ ...f.input,committed })).rejects.toThrow()
+  expect(committed).not.toHaveBeenCalled()
+  await publishAssistantPanelCollection({ ...f.input,committed })
+  expect(committed).toHaveBeenCalledTimes(1)
+  expect(committed.mock.calls[0]).toEqual([expect.objectContaining({ key: 'note' }),null,expect.objectContaining({ itemId: 'body' })])
+})

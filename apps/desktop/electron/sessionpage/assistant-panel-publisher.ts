@@ -26,6 +26,8 @@ export async function publishAssistantPanelCollection(input: {
   upload(observation: PanelObservation): Promise<{ itemId: string; sha256: string }>
   discard(itemId: string): Promise<void>
   revoke(item: AssistantPanelItem, observation: PanelObservation): Promise<void>
+  /** Runs only after this observation was saved; work tied to the saved data waits for that receipt. */
+  committed?(observation: PanelObservation, previous: AssistantPanelItem | null, body: { itemId: string; sha256: string } | undefined): Promise<void>
 }): Promise<void> {
   const scoped = deviceDomains.includes(input.domain)
   const markerKey = scoped ? `__collection__:${input.deviceId}` : '__collection__'
@@ -98,6 +100,7 @@ export async function publishAssistantPanelCollection(input: {
         changed = true
         await commit(row.key,current?.revision ?? '0','save',row.data,body)
         await input.bodyFailures.clear(input.domain,row.key)
+        await input.committed?.(row,current,body)
       } catch (error) {
         if (uploaded && body) await input.discard(body.itemId).catch(() => undefined)
         // A deletion which won the version race must also remove the local copy.
