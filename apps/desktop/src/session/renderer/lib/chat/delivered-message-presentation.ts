@@ -15,11 +15,13 @@ export function originalMessagePresentation(message: MessageItem): DeliveryMessa
   if (message.content_type !== 'attachment' || message.retracted_at) return null;
   const attachment = parseAttachmentContent(message.content, message);
   if (!attachment) return null;
-  // A picture opens by its id over the conversation it is drawn in (`openTranscriptImage`). A folder file's own link opens it
-  // in the chat that holds it, so a file that is not a picture keeps a link: it opens where it lives.
-  if (attachment.kind === 'image') return { text: attachment.caption ?? '', attachments: [{ id: sentAttachmentLink(message.id), name: attachment.fileName, kind: 'image' }] };
-  const href = attachment.source.kind === 'item' ? `gugu-file://${attachment.source.itemId}?v=${attachment.source.version}` : sentAttachmentLink(message.id, message.chat_id);
-  return { text: attachment.caption ?? '', attachments: [{ id: sentAttachmentLink(message.id), name: attachment.fileName, kind: 'file', href }] };
+  // A picture opens in the viewer over the conversation it is drawn in (`openTranscriptImage`), by its folder version when it
+  // has one; a file that is not a picture opens where its link says. The id names the message: its thumbnail is read again
+  // when the message's file changes.
+  const folder = attachment.source.kind === 'item' ? `gugu-file://${attachment.source.itemId}?v=${attachment.source.version}` : undefined;
+  const href = attachment.kind === 'image' ? folder : folder ?? sentAttachmentLink(message.id, message.chat_id);
+  return { text: attachment.caption ?? '', attachments: [{ id: sentAttachmentLink(message.id), name: attachment.fileName,
+    kind: attachment.kind === 'image' ? 'image' : 'file', ...(href ? { href } : {}) }] };
 }
 
 /** The task page and both DM hosts resolve the same source ID with the current person's permissions. */

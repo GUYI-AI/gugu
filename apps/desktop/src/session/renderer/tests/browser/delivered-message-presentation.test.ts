@@ -46,7 +46,7 @@ it.each(['image', 'file'] as const)('updates a mounted transcript from the autho
   host.querySelector<HTMLButtonElement>('[data-attachment-chip]')!.click();
   // A picture opens in the viewer over this conversation, by its message; a file that is not a picture opens where it lives.
   if (kind === 'image') {
-    expect(viewAttachment).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ attachment: expect.objectContaining({ id: `gugu-message-file://${id}` }),
+    expect(viewAttachment).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ attachment: expect.objectContaining({ id: `gugu-message-file://${id}`, href: 'gugu-file://proof?v=2' }),
       thumb: host.querySelector('[data-attachment-chip] img') }));
     expect(open).not.toHaveBeenCalled();
   } else expect(open).toHaveBeenCalledWith('gugu-file://proof?v=2');
