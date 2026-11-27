@@ -10,6 +10,7 @@ import {
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import { isSubagentDismissed } from '@renderer/features/sessions/view/subagent-dismissals'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
+import { useSessionMessages, type SessionTranslate } from '@renderer/localization/use-session-messages'
 import { fetchBackgroundTasks } from './sessionpage-rpc'
 import { replica, useReplica } from '@/lib/replica'
 import { assistantTimelineClient } from '@/components/assistant/assistantTimelineClient'
@@ -33,6 +34,8 @@ export function backgroundTaskRosters(
   sessionId: string,
   turns: readonly TranscriptTurn[],
   runningCommandTaskIds: readonly string[] | null,
+  /** The words for unnamed rows, in the language they are drawn in. */
+  translate: SessionTranslate,
   /** Running subagents' own calls from the timeline (#2500); they are not inside the turns. */
   subagentSteps: readonly SubagentRegistryEntry[] = [],
 ): { commands: BackgroundCommandEntry[]; subagents: SubagentRosterEntry[] } {
@@ -41,9 +44,9 @@ export function backgroundTaskRosters(
   const committed = active ? turns.slice(0, -1) : turns
   const shown = <T extends { id: string }>(rows: T[]) => rows.filter((row) => !isSubagentDismissed(sessionId, row.id))
   return {
-    commands: shown(collectBackgroundCommandRoster(committed, active, translateSessionMessage('transcript.backgroundCommand'), runningCommandTaskIds,
+    commands: shown(collectBackgroundCommandRoster(committed, active, translate('transcript.backgroundCommand'), runningCommandTaskIds,
       subagentSteps.flatMap((entry) => entry.steps ?? []))),
-    subagents: shown(collectSubagentRoster(committed, active, translateSessionMessage('transcript.subagent'), Date.now(), subagentSteps)),
+    subagents: shown(collectSubagentRoster(committed, active, translate('transcript.subagent'), Date.now(), subagentSteps)),
   }
 }
 
@@ -71,8 +74,9 @@ export function usePhoneBackgroundTasks(
   subagentSteps: readonly SubagentRegistryEntry[],
   local = false,
 ): PhoneBackgroundTasks {
+  const { translate } = useSessionMessages()
   // 先不筛地算一遍:有没有东西可能在跑,决定要不要去问那台机器。
-  const candidates = useMemo(() => (enabled ? backgroundTaskRosters(sessionId, turns, null, subagentSteps) : { commands: [], subagents: [] }), [enabled, sessionId, turns, dismissals, subagentSteps]) // eslint-disable-line react-hooks/exhaustive-deps -- dismissals re-reads the mobx dismissal set
+  const candidates = useMemo(() => (enabled ? backgroundTaskRosters(sessionId, turns, null, translate, subagentSteps) : { commands: [], subagents: [] }), [enabled, sessionId, turns, dismissals, subagentSteps, translate]) // eslint-disable-line react-hooks/exhaustive-deps -- dismissals re-reads the mobx dismissal set
   const asking = candidates.commands.length + candidates.subagents.length > 0
   const reading = useReplica(sessionBackgroundTasks, asking ? [deviceId, sessionId, local] : null)
   return useMemo(() => {

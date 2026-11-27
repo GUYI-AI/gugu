@@ -16,6 +16,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { getBranchTooltipText, getPublishTooltipText } from './git-status-tooltips';
 
 export const GitStatusSection = observer(function GitStatusSection() {
+  const { translate } = useSessionMessages();
   const workspace = useWorkspace();
   const git = workspace.gitWorktree;
   const headDisplay = git.headDisplay ?? null;
@@ -30,7 +31,7 @@ export const GitStatusSection = observer(function GitStatusSection() {
               <span className="truncate text-xs">{headDisplay}</span>
             </TooltipTrigger>
             <TooltipContent side="bottom">
-              {getBranchTooltipText(headDisplay, headKind)}
+              {getBranchTooltipText(headDisplay, headKind, translate)}
             </TooltipContent>
           </Tooltip>
           {/* 拉取 / 推送 / 发布这一排靠仓库层面的读数(上游、remote 列表);别的机器上的会话没有这一层,
@@ -166,7 +167,7 @@ const RepositoryActions = observer(function RepositoryActions({
                       headDisplay,
                       headKind,
                       shouldOfferAddRemote,
-                    })}
+                    }, translate)}
                   </TooltipContent>
                 </Tooltip>
               )

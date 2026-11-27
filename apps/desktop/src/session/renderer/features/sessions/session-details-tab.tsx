@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { lazy, Suspense } from 'react';
 import { Info } from '@/lib/icons';
-import { translateSessionMessage } from '@renderer/localization/locale-store';
+import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { TabResource } from '../tabs/core/tab-provider';
 import { createTabProvider } from '../tabs/core/tab-provider-registry';
 import { registeredTabView } from '../tabs/core/tab-views';
@@ -27,7 +27,13 @@ export const sessionDetailsTabProvider = createTabProvider<'session-details', Se
   isPersistent: () => false,
   initialize: (entry) => new SessionDetailsResource(entry.state),
   dispose: (_entry, resource) => resource.dispose(),
-  TabBarItem: observer(({ tab, host, ctx }) => <GenericTabItem tab={tab} host={host} ctx={ctx} label={translateSessionMessage('details.title')} preSlot={detailsMark(tab.resource.state.sessionId)} />),
-  TabBarItemDragPreview: observer(({ tab }) => <GenericTabDragPreview label={translateSessionMessage('details.title')} preSlot={detailsMark(tab.resource.state.sessionId)} />),
+  TabBarItem: observer(function SessionDetailsTabItem({ tab, host, ctx }) {
+    const { translate } = useSessionMessages();
+    return <GenericTabItem tab={tab} host={host} ctx={ctx} label={translate('details.title')} preSlot={detailsMark(tab.resource.state.sessionId)} />;
+  }),
+  TabBarItemDragPreview: observer(function SessionDetailsTabDragPreview({ tab }) {
+    const { translate } = useSessionMessages();
+    return <GenericTabDragPreview label={translate('details.title')} preSlot={detailsMark(tab.resource.state.sessionId)} />;
+  }),
   TabContent: registeredTabView('session-details'),
 });

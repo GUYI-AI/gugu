@@ -87,9 +87,15 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/exten
   // Says which computer it was asked about (`machine`), so the card's preview can be read for it.
   describePermissions: (_manifest: unknown, _t: unknown, machine?: string) => permissionLines?.join('\n') ?? (machine ? `No permissions, on ${machine}` : 'No permissions'),
 }))
-vi.mock('../../../../apps/desktop/src/session/renderer/localization/locale-store', () => ({
-  translateSessionMessage: (key: string, params?: Record<string, string>) => (params ? `${key}:${Object.values(params).join('|')}` : key),
-}))
+// The language case marks each word with the language it was asked in: a redraw after a switch shows the new one.
+const language = vi.hoisted(() => ({ marked: false }))
+vi.mock('../../../../apps/desktop/src/session/renderer/localization/locale-store', async () => {
+  const { getLocaleSnapshot } = await import('../../../../apps/desktop/src/i18n/runtime')
+  return {
+    translateSessionMessage: (key: string, params?: Record<string, string>) =>
+      `${language.marked ? `${getLocaleSnapshot().resolvedLocale}:` : ''}${params ? `${key}:${Object.values(params).join('|')}` : key}`,
+  }
+})
 
 const { ExtensionBundleCard } = await import('../../../../apps/desktop/src/components/extensionBundle/ExtensionBundleCard')
 const { createReactHarness } = await import('../../../support/testHarness')
@@ -126,6 +132,7 @@ async function card(pkg: { source: unknown; messageId: string } = OLD_CARD) {
 }
 
 describe('an App card installs on the machine the person picks', () => {
+
   // 复核 10-15: the card's preview is what the consent will say where it installs — the machine picked, named.
   it('the permission preview follows the machine picked: this device, then the other one by name', async () => {
     host('dev-b', 'mac1 B')
@@ -380,5 +387,28 @@ describe('a refusal after the yes (E-05 at the second step)', () => {
     const said = q('[data-testid="extension-bundle-card-there"]')
     expect(said?.dataset.installed).toBe('false')
     expect(said?.textContent).toContain('extensions.chatCannotReplace')
+  })
+})
+
+describe('an App card follows the app\'s language', () => {
+  // The picker sits in an observer: the language is its input, so a switch (no reload) renames 「this computer」.
+  it('the picker\'s own machine follows a language switch', async () => {
+    const { getLocaleSnapshot, setLocalePreference } = await import('../../../../apps/desktop/src/i18n')
+    const prior = getLocaleSnapshot().preference
+    act(() => setLocalePreference('en-US'))
+    language.marked = true
+    try {
+      host('dev-b', 'mac1 B')
+      await card()
+      const local = () => document.querySelector('[data-testid="menu"] [data-device-id="local"]')?.textContent
+      const before = local()
+      expect(before).toContain('en-US:task.deviceLocal')
+      act(() => setLocalePreference('zh-CN'))
+      await act(async () => { await vi.waitFor(() => expect(local()).not.toBe(before)) })
+      expect(local()).toContain('zh-CN:task.deviceLocal')
+    } finally {
+      language.marked = false
+      act(() => setLocalePreference(prior))
+    }
   })
 })

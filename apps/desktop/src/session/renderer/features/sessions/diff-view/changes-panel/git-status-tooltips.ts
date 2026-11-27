@@ -1,8 +1,9 @@
-import { translateSessionMessage as t } from '@renderer/localization/locale-store';
+import type { SessionTranslate } from '@renderer/localization/use-session-messages';
 
 export function getBranchTooltipText(
   headDisplay: string | null,
-  headKind: 'branch' | 'detached' | 'unborn'
+  headKind: 'branch' | 'detached' | 'unborn',
+  t: SessionTranslate,
 ): string {
   if (headKind === 'detached') return t('git.detachedAt', { ref: headDisplay ?? '?' });
   if (headKind === 'unborn') return t('git.initialCommitFirst');
@@ -19,7 +20,7 @@ export function getPublishTooltipText({
   headDisplay: string | null;
   headKind: 'branch' | 'detached' | 'unborn';
   shouldOfferAddRemote: boolean;
-}): string {
+}, t: SessionTranslate): string {
   if (isPublishing) return t('git.publishing');
   if (headKind === 'detached') return t('git.publishDetached');
   if (headKind === 'unborn' || !headDisplay) return t('git.initialCommitFirst');

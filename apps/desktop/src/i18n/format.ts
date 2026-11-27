@@ -15,8 +15,8 @@ import { formatCalendarDay as formatCalendarDayValue, formatClock as formatClock
 export { differenceInCalendarDays, formatCalendarDate, toLocalDateTimeInput } from '@gugu/session-shared/format'
 
 /** 会话列表、公告、消息分隔的日历时间(见 session-shared `formatCalendarDay`);没有时间(还没有消息)是空串。 */
-export function formatCalendarDay(value: DateValue | null | undefined, options: { withTime?: boolean; now?: Date } = {}): string {
-  return value == null || value === '' ? '' : formatCalendarDayValue(value, getLocaleSnapshot().resolvedLocale, options)
+export function formatCalendarDay(value: DateValue | null | undefined, options: { withTime?: boolean; now?: Date } = {}, localeOverride?: string): string {
+  return value == null || value === '' ? '' : formatCalendarDayValue(value, locale(localeOverride), options)
 }
 
 function locale(override?: string): string {
