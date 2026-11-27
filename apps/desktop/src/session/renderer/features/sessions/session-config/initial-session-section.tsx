@@ -58,6 +58,7 @@ import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { resolveLegLoginGate } from './vendor-login-prompt';
 import { usePromptLibrary } from '@renderer/features/library/prompts/use-prompt-library';
 import { promptSlashItems } from '@renderer/features/library/prompts/prompt-slash-items';
+import { catalogCommandItems, filterSlashCommands } from '@renderer/features/sessions/acp/slash-command-matching';
 import { AgentIcon } from '@renderer/lib/components/agent-icon';
 import {
   agentGroupLabel,
@@ -1482,7 +1483,7 @@ export function InitialSessionField({
   const syncingEditorTextRef = useRef(false);
   const localMentionItemsRef = useRef<MentionItem[]>([]);
   const { value: promptLibrary, overrides } = usePromptLibrary();
-  const { options: harnessModelOptions, refresh: refreshHarnessModels, preparation } = useHarnessModelOptions(state.provider, sessionpageLegOfView(state.sessionView));
+  const { options: harnessModelOptions, refresh: refreshHarnessModels, preparation, state: harnessCatalogState } = useHarnessModelOptions(state.provider, sessionpageLegOfView(state.sessionView));
   const modelPreparationNotice = useCodexPreparationNotice(preparation);
   const agentsReading = useAgents();
   const agents = agentsReading.state === 'value' ? agentsReading.value : null;
@@ -1649,11 +1650,16 @@ export function InitialSessionField({
     };
   }, [localSessionMentionProvider]);
 
+  // gugu-dev#1644: the selected harness's own commands (its probed catalog, the same list a running session of it reports),
+  // ahead of the prompts as in a session. The new agent takes them from its first message on.
   const querySlashItems = useCallback(
     async (query: string): Promise<CommandItem[]> => {
-      return promptSlashItems(promptLibrary, overrides, translate('chat.prompts'), query.trim().toLowerCase());
+      const normalized = query.trim().toLowerCase();
+      const commands = filterSlashCommands(catalogCommandItems(harnessCatalogState), normalized)
+        .map((command) => ({ ...command, section: translate('chat.commands') }));
+      return [...commands, ...promptSlashItems(promptLibrary, overrides, translate('chat.prompts'), normalized)];
     },
-    [promptLibrary, overrides, translate]
+    [harnessCatalogState, promptLibrary, overrides, translate]
   );
 
   // @@@permission-independent-of-chat-ui — 权限选择与 Chat UI 开关是两件事,不该互相牵制。

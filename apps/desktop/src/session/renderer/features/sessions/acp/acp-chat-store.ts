@@ -33,7 +33,7 @@ import type {
   ComposerQueuedPrompt,
 } from '@gugu/session-ui/react/components';
 import type { TurnAnnotation } from '@gugu/session-core/acp/client';
-import { commandToken } from '@gugu/session-core/acp/commands';
+import { advertisedCommandItems } from './slash-command-matching';
 import { permissionWaitKind } from '@gugu/session-core/acp/models/permissions';
 import type { AgentState, HistoryPage, LiveSettingResult, PermissionWaitKind } from '@gugu/session-core/acp';
 import { errorDetail, isDeepEqual } from '@gugu/session-shared';
@@ -540,18 +540,7 @@ export class AcpChatStore {
   }
 
   get commands(): CommandItem[] {
-    return (this.session?.config.current().availableCommands ?? []).map((command) => ({
-      id: command.name,
-      name: command.name,
-      // 发出去的原文由 ACP 领域规则算:裸名配 `/`,自带 sigil 的(codex 的 `$skill`)原样。
-      // 编辑器只负责把这个字符串插进去,❌ 它不许自己拼前缀。
-      token: commandToken(command.name),
-      description: command.description,
-      behavior: 'insert' as const,
-      // reducer 早就把 `input.hint` 采下来了(acp/reducer/reducer.ts),这里从前把它丢掉,
-      // 于是 `/review-branch` 摆在面板上却不说要跟一个分支名。缺席就是「不吃参数」。
-      ...(command.inputHint ? { inputHint: command.inputHint } : {}),
-    }));
+    return advertisedCommandItems(this.session?.config.current().availableCommands ?? []);
   }
 
   get permissionQueue(): PermissionQueueItem[] {
