@@ -100,7 +100,8 @@ async function sessionGraph(options: {
  * 只顺着没归档的会话找(已经归档的那一支不再往下)。
  */
 export async function familyOf(
-  rootId: string
+  rootId: string,
+  options: { includeArchived?: boolean } = {}
 ): Promise<{ members: FamilyMember[]; unreached: UnreachedMachine[] }> {
   const [root] = await db
     .select({ createdAt: sql<string>`strftime('%Y-%m-%dT%H:%M:%SZ', ${sessions.createdAt})` })
@@ -108,7 +109,8 @@ export async function familyOf(
     .where(eq(sessions.id, rootId))
     .limit(1);
   // 现问:几秒前问过的那份可能漏了那台机器上刚派出来的子会话,收的时候不能漏下它。
-  const { nodes: all, unreached } = await sessionGraph({ includeArchived: false, since: root?.createdAt ?? null, fresh: true });
+  // 永久删除从已归档里删,子树本来就是归档的 ⇒ 要连已归档的一起找(归档只顺着没归档的那一支走)。
+  const { nodes: all, unreached } = await sessionGraph({ includeArchived: options.includeArchived ?? false, since: root?.createdAt ?? null, fresh: true });
 
   const found: FamilyMember[] = [];
   const seen = new Set([rootId]);
