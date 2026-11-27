@@ -464,10 +464,13 @@ describe('the person\'s assistant living on another computer or in the cloud', (
 
   it('still listed on this computer after a move away: elsewhere, never the schedules left here; listed and at home here: the store', async () => {
     const left = await own('Left behind');
+    const { revision } = await current(left);
     assistantElsewhere();
     state.roster = [{ gugu_user_id: AGENT, status: 'active', cache: { emdash_session_id: SESSION, sessionpage_owner_user_id: OWNER } }];
     expect(await list()).toEqual({ name: 'main', state: 'elsewhere' });
-    await expect(control({ operationId: op(), op: 'pause', scheduleId: left, revision: (await current(left)).revision })).rejects.toMatchObject({ code: 'elsewhere' });
+    for (const action of ['pause', 'resume', 'remove']) {
+      await expect(control({ operationId: op(), op: action, scheduleId: left, revision })).rejects.toMatchObject({ code: 'elsewhere' });
+    }
     expect(rows()).toEqual([{ id: left.slice('schedule:'.length), enabled: 1, deleted_at: null }]);
     // Its home is this computer: the schedule store here.
     state.thisDevice = HOME_DEVICE;
