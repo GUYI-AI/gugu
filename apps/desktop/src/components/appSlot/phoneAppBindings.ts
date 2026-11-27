@@ -393,7 +393,7 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
 
   // ── 43: the assistant's schedules (#1928) — on a phone it always lives elsewhere, where they are read and changed ─────
   async function schedules(extensionId: string, input: unknown): Promise<AppBoundSchedules> {
-    const { name } = argsOf(z.strictObject({ name: z.string() }), input, 'gugu.bindings.schedules takes the binding's name alone')
+    const { name } = argsOf(z.strictObject({ name: z.string() }), input, 'gugu.bindings.schedules takes the binding\'s name alone')
     const at = await boundOrUnavailable(extensionId, name, ['schedules'])
     if (at === 'unavailable') return { name, state: 'unavailable' }
     if (!at) return { name, state: 'unbound' }
@@ -401,12 +401,12 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
   }
   const SCHEDULES_ELSEWHERE = 'The assistant lives on another computer, which keeps its schedules'
   async function controlSchedule(extensionId: string, input: unknown): Promise<AppScheduleReceipt> {
-    const { name } = argsOf(z.object({ name: z.string() }), input, 'controlSchedule takes the binding's name and one change')
+    const { name } = argsOf(z.object({ name: z.string() }), input, 'controlSchedule takes the binding\'s name and one change')
     if (!(await bound(extensionId, name, ['schedules', 'schedules:control']))) throw coded('not-found', `No conversation is bound for "${name}" on this phone`)
     throw coded('elsewhere', SCHEDULES_ELSEWHERE)
   }
   async function watchSchedules(page: PhoneBindingPage & { pageId: number }, input: unknown, _hear: (binding: string) => void): Promise<{ name: string; state: 'stopped' }> {
-    const { name, on } = argsOf(z.strictObject({ name: z.string(), on: z.boolean() }), input, 'gugu.bindings.watchSchedules takes the binding's name and on')
+    const { name, on } = argsOf(z.strictObject({ name: z.string(), on: z.boolean() }), input, 'gugu.bindings.watchSchedules takes the binding\'s name and on')
     if (!on) return { name, state: 'stopped' }
     if (!(await bound(page.extensionId, name, ['schedules']))) throw coded('not-found', `No conversation is bound for "${name}" on this phone`)
     throw coded('elsewhere', SCHEDULES_ELSEWHERE)
