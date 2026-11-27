@@ -59,7 +59,6 @@ import { closeCheckPages } from '@main/core/extensions/extension-check';
 import { installExtensionFromAttachment, type AttachmentInstall } from '@main/core/extensions/extension-attachment-install';
 import { installExtensionFromMarket, type MarketInstall } from '@main/core/extensions/extension-market-install';
 import { autoUpdateApps } from '@main/core/extensions/auto-update-apps';
-import { appService } from '@main/core/app/service';
 import { cloudExtensionMarket } from '@main/core/extensions/market-catalog-root';
 import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
@@ -787,11 +786,11 @@ export const extensionsController = createRPCController({
     try {
       const { bytes, sha256, fileName } = await packInstalledExtension(extensionsService(), args.extensionId);
       // TEST-ONLY, env-gated (GUGU_SESSION_TEST_HOOKS=1): the native save dialog cannot be driven, so a test names the file.
+      const named = process.env.GUGU_SESSION_TEST_HOOKS === '1' ? process.env.GUGU_EXTENSION_EXPORT_PATH : undefined;
+      if (args.save && named) fs.writeFileSync(named, bytes);
+      // Saved as every other file the window holds: the same dialog (opening in Downloads) and write.
       const saved = !args.save ? null
-        : process.env.GUGU_SESSION_TEST_HOOKS === '1' && process.env.GUGU_EXTENSION_EXPORT_PATH
-          ? process.env.GUGU_EXTENSION_EXPORT_PATH
-          : (await appService.showDownloadSaveDialog(fileName)) ?? null;
-      if (saved) fs.writeFileSync(saved, bytes);
+        : named ?? await (await import('@main/core/extensions/app-files')).saveBytesAs(getMainWindow()?.webContents ?? null, fileName, new Uint8Array(bytes));
       return { success: true, data: { bytes: new Uint8Array(bytes), sha256, fileName, mimeType: EXTENSION_ARCHIVE_MIME, saved } };
     } catch (error) {
       log.error('Failed to pack an installed extension:', error);
