@@ -4,6 +4,7 @@
   width: 100%; min-height: 56px; height: auto; padding: 9px 16px; border: 0;
   text-align: start; color: var(--fg);
 }
+.gg-device-summary[data-slot][aria-expanded='true']:hover { background-color: transparent; }
 .gg-device-summary > svg { color: var(--muted-fg); }
 .gg-device-identity { display: grid; min-width: 0; }
 .gg-device-identity strong, .gg-device-identity small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -33,6 +34,7 @@
 .gg-recovery-details > summary { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; list-style: none; }
 .gg-recovery-details > summary::-webkit-details-marker { display: none; }
 .gg-device-facts { display: grid; grid-template-columns: minmax(0, 7rem) minmax(0, 1fr); gap: 4px 12px; margin: 0; font-size: var(--font-caption); }
+.gg-device-expanded .gg-device-facts { align-items: center; }
 .gg-device-facts dt { color: var(--muted-fg); }
 .gg-device-recovery > :is(p,.gg-recovery-actions) ~ .gg-device-facts { margin-block-start: 12px; }
 .gg-recovery-details .gg-device-facts { grid-template-columns: auto minmax(0, 1fr); margin-block-start: 8px; }
