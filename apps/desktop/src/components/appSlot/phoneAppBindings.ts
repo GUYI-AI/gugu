@@ -1,9 +1,9 @@
 import { z } from 'zod'
-import type { AssistantPanelClient, AssistantPanelDomain, AssistantPanelItem, AssistantPanelReceipt, AssistantPanelSnapshot } from '@gugu/core/cloud/assistantPanel'
+import type { AssistantPanelClient, AssistantPanelItem, AssistantPanelReceipt } from '@gugu/core/cloud/assistantPanel'
 import { ASSISTANT_PANEL_PATHS, createAssistantPanelFiles } from '@gugu/core/cloud/assistantPanelFiles'
 import { VOICE_NOTE_META_FILE, VOICE_NOTES_DIR, parseVoiceNoteMeta } from '@gugu/core/shared/voiceNotes'
 import {
-  READABLE_RESOURCE_DOMAINS, appResourceOf, resourceDomainOf, resourceKeyOf,
+  READABLE_RESOURCE_DOMAINS, WRITABLE_RESOURCE_DOMAINS, resourceChangeSchema, resourceDomainOf, resourceKeyOf,
   type AppResourceEvent, type AppResourceList, type AppResourceRead, type AppResourceWrite, type ReadableResourceDomain, type ResourceBindingAction,
 } from '../../session/shared/extensions/agent-resources'
 import { DEFAULT_TEXT_MAX_BYTES, type AppFileEntry } from '../../session/shared/extensions/app-runtime-protocol'
@@ -11,9 +11,9 @@ import type { PathText } from '../../session/shared/extensions/app-files-core'
 import { dispatchCallOf } from '../../session/shared/extensions/app-dispatch-core'
 import { ASSISTANT_SCREENS, assistantFigureSchema, renameCheck, withoutAssistant, type AppAssistantRead, type AppAssistantStatus, type AssistantRenameResult } from '../../session/shared/extensions/assistant-binding'
 import { assistantLayerEntry, type AssistantAppInstall } from '../../session/shared/extensions/assistant-entry'
-import { domainState, panelChangeRefused, reasonOf, refusedOrUnavailable, unavailable } from '../../session/shared/extensions/bound-resources-core'
+import { reasonOf, refusedOrUnavailable, unavailable } from '../../session/shared/extensions/bound-resources-core'
 import {
-  RESOURCES_MANAGEMENT_API_VERSION, folderArgsSchema, renameArgsSchema, VOICE_NOTES_MANAGE_ACTION, voiceNoteArgsSchema,
+  RESOURCES_MANAGEMENT_API_VERSION, folderArgsSchema, renameArgsSchema, uploadArgsSchema, VOICE_NOTES_MANAGE_ACTION, voiceNoteArgsSchema,
   type AppRemoveAllAnswer, type AppUploadAnswer, type Unavailable,
 } from '../../session/shared/extensions/resources-management'
 import type { ExtensionHostEvent } from '../../session/shared/extensions/bridge-protocol'
@@ -25,7 +25,6 @@ import {
   type AppBindingSurface, type AppBoundList, type AppBoundRead, type AppSurfaceIntent, type AppUnreadBinding, type ConversationBindingAction,
 } from '../../session/shared/extensions/unread-binding'
 import type { AppBoundSchedules, AppScheduleReceipt } from '../../session/shared/extensions/bound-schedules'
-import { listPanelSchedules, panelSchedulesPrint, type PanelHome } from '../../session/shared/extensions/bound-schedules-panel'
 import type { AppBindingWork, AppWorkItem, PushedWorkLedger } from '../../session/shared/extensions/work-binding'
 import type { PhoneLayerActions, PhoneLayerShown, PhoneLayerStatus } from './phoneAssistantLayer'
 
@@ -68,8 +67,6 @@ export interface PhoneBindingPorts {
   panel: {
     /** The assistant panel's client as the person (its schedules are read and changed through it, #1928). */
     client: AssistantPanelClient
-    snapshot(ownerId: string, agentId: string): Promise<AssistantPanelSnapshot>
-    resource(ownerId: string, agentId: string, domain: AssistantPanelDomain, key: string): Promise<AssistantPanelItem | null>
     readBody(item: AssistantPanelItem, access: { token: string; ownerId: string; chatId: string; maxBytes: number }): Promise<Uint8Array>
     uploadBody(access: { token: string; ownerId: string; chatId: string; label: string; bytes: Uint8Array }): Promise<{ itemId: string; sha256: string }>
     discard(token: string, ownerId: string, itemId: string): Promise<void>
@@ -321,63 +318,42 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
       return outcome
     }
   }
+  /**
+   * On a phone the assistant always lives elsewhere: its resources are read and changed on its computer, and this phone has
+   * no up-to-date copy of them — `unavailable` (`elsewhere`), once the binding and the domain hold.
+   */
+  const ELSEWHERE = unavailable('elsewhere')
   async function resources(extensionId: string, input: unknown): Promise<AppResourceList> {
     const args = argsOf(z.strictObject({ name: z.string(), domain: z.unknown() }), input, RESOURCE_ARGS)
     const domain = readableDomainOf(args.domain)
     const named = { name: args.name, domain }
-    const answer = await withResources(extensionId, args.name, domain, async (at): Promise<AppResourceList> => {
-      const snapshot = await ports.panel.snapshot(at.ownerId, at.agentId)
-      const readable = domainState(snapshot, domain)
-      if (readable.state !== 'ready') return { ...named, ...readable }
-      return { ...named, state: 'ready', revision: snapshot.revision, resources: readable.items.map((item) => appResourceOf(domain, item)) }
-    })
-    return answer === 'unbound' ? { ...named, state: answer } : 'name' in answer ? answer : { ...named, ...answer }
+    const answer = await withResources(extensionId, args.name, domain, async () => ELSEWHERE)
+    return answer === 'unbound' ? { ...named, state: answer } : { ...named, ...answer }
   }
   async function resource(extensionId: string, input: unknown): Promise<AppResourceRead> {
     const args = argsOf(z.strictObject({ name: z.string(), domain: z.unknown(), key: z.unknown() }), input, RESOURCE_ARGS)
     const domain = readableDomainOf(args.domain)
-    const key = resourceKeyOf(domain, args.key)
-    const named = { name: args.name, domain, key }
-    const answer = await withResources(extensionId, args.name, domain, async (at): Promise<AppResourceRead> => {
-      const [snapshot, item] = await Promise.all([
-        domain === 'voice-notes' ? null : ports.panel.snapshot(at.ownerId, at.agentId),
-        ports.panel.resource(at.ownerId, at.agentId, domain as AssistantPanelDomain, key),
-      ])
-      at.recheck()
-      const readable = snapshot ? domainState(snapshot, domain) : null
-      if (readable && readable.state !== 'ready') return { ...named, ...readable }
-      if (!item) return { ...named, state: 'missing', revision: '0' }
-      if (item.deleted_at) return { ...named, state: 'missing', revision: item.revision, deleted: true }
-      if (item.stale_at) return { ...named, ...unavailable('stale') }
-      const found = appResourceOf(domain, item)
-      const ready = (bytes: Uint8Array) => {
-        if (bytes.byteLength > DEFAULT_TEXT_MAX_BYTES) return { ...named, state: 'ready' as const, resource: found, content: '', truncated: true, totalSize: bytes.byteLength }
-        try {
-          return { ...named, state: 'ready' as const, resource: found, content: new TextDecoder('utf-8', { fatal: true }).decode(bytes), truncated: false, totalSize: bytes.byteLength }
-        } catch {
-          return { ...named, state: 'ready' as const, resource: found, content: '', binary: true as const, truncated: false, totalSize: bytes.byteLength }
-        }
-      }
-      if (domain === 'personality') return ready(new TextEncoder().encode(typeof item.data.text === 'string' ? item.data.text : ''))
-      if (!item.body_item_id) return item.data.kind === 'directory' ? ready(new Uint8Array()) : { ...named, state: 'unprepared' }
-      try {
-        const bytes = await ports.panel.readBody(item, { token: at.token, ownerId: at.ownerId, chatId: at.chatId, maxBytes: DEFAULT_TEXT_MAX_BYTES })
-        at.recheck()
-        return ready(bytes)
-      } catch (error) {
-        const code = codeOf(error)
-        if (code === 'too-large') return { ...named, state: 'ready', resource: found, content: '', truncated: true, totalSize: Number((error as { size?: unknown }).size) || 0 }
-        if (code === 'deleted') return { ...named, state: 'missing', revision: item.revision, deleted: true }
-        if (code === 'body-unavailable') return { ...named, state: 'unprepared' }
-        throw error
-      }
-    })
-    return answer === 'unbound' ? { ...named, state: answer } : 'name' in answer ? answer : { ...named, ...answer }
+    const named = { name: args.name, domain, key: resourceKeyOf(domain, args.key) }
+    const answer = await withResources(extensionId, args.name, domain, async () => ELSEWHERE)
+    return answer === 'unbound' ? { ...named, state: answer } : { ...named, ...answer }
   }
-
-  // `save` / `remove` (`resources:write`): refused (bound-resources-core.ts `panelChangeRefused`).
-  const save = async (_extensionId: string, _input: unknown): Promise<AppResourceWrite> => panelChangeRefused()
-  const remove = async (_extensionId: string, _input: unknown): Promise<AppResourceWrite> => panelChangeRefused()
+  async function change(extensionId: string, input: unknown, operation: 'save' | 'remove'): Promise<AppResourceWrite> {
+    const schema = operation === 'save'
+      ? resourceChangeSchema.extend({ name: z.string(), content: z.string() })
+      : resourceChangeSchema.omit({ content: true }).extend({ name: z.string() })
+    const args = argsOf(schema, input, RESOURCE_ARGS) as z.infer<typeof resourceChangeSchema> & { name: string }
+    const domain = readableDomainOf(args.domain)
+    if (!(WRITABLE_RESOURCE_DOMAINS as readonly string[]).includes(domain)) throw coded('invalid', `The ${domain} resources are read only`)
+    const named = { name: args.name, domain, key: resourceKeyOf(domain, args.key, true) }
+    const at = await bound(extensionId, args.name, ['resources', 'resources:write'], domain).catch((error: unknown) => {
+      if (codeOf(error) === 'failed') return unavailable(reasonOf(error))
+      throw error
+    })
+    if (!at) return { ...named, state: 'unbound' }
+    return { ...named, ...('state' in at ? at : ELSEWHERE) }
+  }
+  const save = (extensionId: string, input: unknown) => change(extensionId, input, 'save')
+  const remove = (extensionId: string, input: unknown) => change(extensionId, input, 'remove')
 
   /** Each page's resource watches: ended when the page goes, or the authority it was granted under no longer holds. */
   const watches = new Map<string, { stop(): void }>()
@@ -415,62 +391,25 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     for (const [key, held] of [...watches]) if (key.startsWith(`${pageId}/`)) held.stop()
   }
 
-  // ── 43: the assistant's schedules (#1928), through its panel — on a phone it always lives elsewhere ───────────────
-  const homeOf = (at: Bound): PanelHome => ({ ownerId: at.ownerId, assistantId: at.agentId, deviceId: at.deviceId, cloud: ports.panel.client })
-  const asyncRecheck = (at: Bound) => async () => at.recheck()
+  // ── 43: the assistant's schedules (#1928) — on a phone it always lives elsewhere, where they are read and changed ─────
   async function schedules(extensionId: string, input: unknown): Promise<AppBoundSchedules> {
-    const { name } = argsOf(z.strictObject({ name: z.string() }), input, 'gugu.bindings.schedules takes the binding\'s name alone')
+    const { name } = argsOf(z.strictObject({ name: z.string() }), input, 'gugu.bindings.schedules takes the binding's name alone')
     const at = await boundOrUnavailable(extensionId, name, ['schedules'])
     if (at === 'unavailable') return { name, state: 'unavailable' }
     if (!at) return { name, state: 'unbound' }
-    try {
-      const list = await listPanelSchedules(homeOf(at), asyncRecheck(at))
-      at.recheck()
-      return { name, state: 'ready', schedules: list }
-    } catch (error) {
-      if (codeOf(error) === 'denied') throw error
-      at.recheck()
-      return { name, state: 'unavailable' }
-    }
+    return { name, state: 'elsewhere' }
   }
-  /** `controlSchedule` (`schedules:control`): on a phone the assistant always lives elsewhere, so every change would go to its
-   * panel, which takes none now (bound-resources-core.ts `panelChangeRefused`). */
-  async function controlSchedule(_extensionId: string, _input: unknown): Promise<AppScheduleReceipt> {
-    return panelChangeRefused()
+  const SCHEDULES_ELSEWHERE = 'The assistant lives on another computer, which keeps its schedules'
+  async function controlSchedule(extensionId: string, input: unknown): Promise<AppScheduleReceipt> {
+    const { name } = argsOf(z.object({ name: z.string() }), input, 'controlSchedule takes the binding's name and one change')
+    if (!(await bound(extensionId, name, ['schedules', 'schedules:control']))) throw coded('not-found', `No conversation is bound for "${name}" on this phone`)
+    throw coded('elsewhere', SCHEDULES_ELSEWHERE)
   }
-  /** `onSchedulesChanged(name, fn)`'s host half: the panel's change word, heard only when the schedules differ. */
-  const scheduleWatches = new Map<string, () => void>()
-  async function watchSchedules(page: PhoneBindingPage & { pageId: number }, input: unknown, hear: (binding: string) => void) {
-    const { name, on } = argsOf(z.strictObject({ name: z.string(), on: z.boolean() }), input, 'gugu.bindings.watchSchedules takes the binding\'s name and on')
-    const key = `${page.pageId}/${name}`
-    scheduleWatches.get(key)?.()
-    scheduleWatches.delete(key)
-    if (!on) return { name, state: 'stopped' as const }
-    const at = await bound(page.extensionId, name, ['schedules'])
-    if (!at) throw coded('not-found', `No conversation is bound for "${name}" on this phone`)
-    const home = homeOf(at)
-    let last = await panelSchedulesPrint(home).catch(() => null)
-    at.recheck()
-    let stopped = false
-    const off = ports.panel.subscribe(at.ownerId, () => {
-      void (async () => {
-        if (stopped) return
-        at.recheck()
-        const now = await panelSchedulesPrint(home).catch(() => null)
-        at.recheck()
-        if (now === last || stopped) return
-        last = now
-        hear(name)
-      })().catch(() => { stop() })
-    })
-    const stop = () => {
-      if (stopped) return
-      stopped = true
-      off()
-      scheduleWatches.delete(key)
-    }
-    scheduleWatches.set(key, stop)
-    return { name, state: 'watching' as const }
+  async function watchSchedules(page: PhoneBindingPage & { pageId: number }, input: unknown, _hear: (binding: string) => void): Promise<{ name: string; state: 'stopped' }> {
+    const { name, on } = argsOf(z.strictObject({ name: z.string(), on: z.boolean() }), input, 'gugu.bindings.watchSchedules takes the binding's name and on')
+    if (!on) return { name, state: 'stopped' }
+    if (!(await bound(page.extensionId, name, ['schedules']))) throw coded('not-found', `No conversation is bound for "${name}" on this phone`)
+    throw coded('elsewhere', SCHEDULES_ELSEWHERE)
   }
 
   // ── 46: the assistant's work list (任务) and a task's own conversation ──────────────────────────────────────────
@@ -635,7 +574,7 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     return { files, receipts }
   }
   /** One managing call under the binding's authority (an App of API 50 only): `unbound`, `unavailable` with its class, a refusal thrown. */
-  async function under<T extends object>(extensionId: string, name: string, needs: readonly ConversationBindingAction[], domain: 'voice-notes',
+  async function under<T extends object>(extensionId: string, name: string, needs: readonly ConversationBindingAction[], domain: 'files' | 'voice-notes',
     use: (at: Bound, panel: Panel) => Promise<T>): Promise<T | { name: string; state: 'unbound' } | ({ name: string } & Unavailable)> {
     if (installed(extensionId).manifest.apiVersion < RESOURCES_MANAGEMENT_API_VERSION) throw coded('denied', `This call needs apiVersion ${RESOURCES_MANAGEMENT_API_VERSION}`)
     const at = await bound(extensionId, name, needs, domain).catch((error: unknown) => {
@@ -655,9 +594,11 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
       return { name, ...outcome }
     }
   }
-  /** `gugu.bindings.upload` (50, `resources:write`): refused (bound-resources-core.ts `panelChangeRefused`). */
-  async function upload(_extensionId: string, _input: unknown): Promise<AppUploadAnswer> {
-    return panelChangeRefused()
+  /** `gugu.bindings.upload` (50, `resources:write`): `elsewhere` — on a phone the assistant always lives on another computer. */
+  async function upload(extensionId: string, input: unknown): Promise<AppUploadAnswer> {
+    const args = argsOf(uploadArgsSchema, input, MANAGE_ARGS)
+    if (args.folder) resourceKeyOf('files', args.folder)
+    return under(extensionId, args.name, ['resources', 'resources:write'], 'files', async () => ({ name: args.name, ...ELSEWHERE }))
   }
   /** `gugu.bindings.removeVoiceNote(name, key)` (50, `voice-notes:manage`, in a click): the note and all of it, once the person said yes. */
   async function removeVoiceNote(extensionId: string, input: unknown): Promise<AppRemoveAllAnswer> {

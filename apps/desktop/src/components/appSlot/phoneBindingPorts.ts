@@ -1,5 +1,4 @@
 import { readAssistantPanelBody, uploadAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies'
-import { withAssistantPanelReadDeadline } from '@gugu/core/cloud/assistantPanelRead'
 import { ASSISTANT_APP_ID, pickAssistant } from '@gugu/core/shared/assistantProvision'
 import { userIdFromSupabaseAccessToken } from '@gugu/core/cloud/runtimeAuthProvider'
 import type { AssistantPanelClient } from '@gugu/core/cloud/assistantPanel'
@@ -103,8 +102,6 @@ export function phoneBindingPorts(files: ReturnType<typeof createAppFiles>): Pho
     },
     panel: {
       client: lazyPanelClient,
-      snapshot: (_ownerId, agentId) => withAssistantPanelReadDeadline(() => lazyPanelClient.snapshot(agentId)),
-      resource: (_ownerId, agentId, domain, key) => withAssistantPanelReadDeadline(() => lazyPanelClient.resource(agentId, domain, key)),
       readBody: (item, access) => readAssistantPanelBody(item, { ...access, accountId: () => phoneAccountId() }),
       uploadBody: (access) => uploadAssistantPanelBody({ ...access, accountId: () => phoneAccountId() }),
       async discard(_token, ownerId, itemId) {

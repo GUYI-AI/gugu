@@ -2,14 +2,13 @@ import { createHash, randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
-import { listAgents, userIdFromSupabaseAccessToken } from '@gugu/core';
-import { agentsForOwner } from '@gugu/core/local/state/agentOwner';
+import { userIdFromSupabaseAccessToken } from '@gugu/core';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
+import { ASSISTANT_APP_ID, pickAssistant } from '@gugu/core/shared/assistantProvision';
 import { triggerConfigSchema } from '@shared/core/automations/config';
 import { appKey } from '@shared/extensions/app-identity';
 import { BINDING_NAME } from '@shared/extensions/unread-binding';
 import { SCHEDULE_OPERATIONS, scheduleControlSchema, type AppBoundSchedules, type AppScheduleControl, type AppScheduleReceipt } from '@shared/extensions/bound-schedules';
-import { SESSIONPAGE_SESSION_CACHE_KEY } from '@main/core/sessionpage/sessionpage-session-agent';
 import {
   agentScheduleHome,
   listAppSchedules,
@@ -21,15 +20,7 @@ import {
 } from '@main/core/automations/app-agent-schedules';
 import { currentAccountAccessToken } from './account-token';
 import { extensionsRoot, extensionsService } from './extensions-root';
-import {
-  listPanelSchedules,
-  panelAs,
-  panelSchedulesPrint,
-  personalAssistantOf,
-  type PanelHome,
-} from './app-bound-schedules-panel';
-import { onAssistantPanelChanged } from './assistant-panel-changes';
-import { panelChangeRefused } from '@shared/extensions/bound-resources-core';
+import { agentSessionHere, isThisComputer } from './assistant-home-store';
 
 /**
  * #1928 (API 43) The schedules of the agent an App's binding is with: `gugu.bindings.schedules` / `onSchedulesChanged`
@@ -41,9 +32,8 @@ import { panelChangeRefused } from '@shared/extensions/bound-resources-core';
  * wait, and once more when a change has been made: an account switch, a withdrawal, a disable, an uninstall or another
  * selection in between and the answer is `denied`.
  *
- * Where the agent lives decides the path, as for the built-in 已安排 panel: on this computer, its schedule store directly;
- * the person's assistant living on another computer or in the cloud, its panel (app-bound-schedules-panel.ts), whose
- * changes its home applies — a receipt says `pending` until it has; any other agent elsewhere, `elsewhere`.
+ * Where the agent lives decides the path: on this computer, its schedule store directly; living on another computer or in
+ * the cloud — the person's assistant too — `elsewhere` (its schedules are read and changed where it lives).
  *
  * Lifecycle is the host's, not the page's: closing or evicting a page stops only what it was told; disabling or
  * uninstalling the App takes its authority and leaves every schedule as it is (whether that should also pause them is a
@@ -66,6 +56,19 @@ async function account() {
 }
 async function current(ownerId: string) {
   if ((await account()).ownerId !== ownerId) throw denied('Account changed');
+}
+
+/** The person's assistant and its home device (`my_app_agent`); null: none. A read that could not be made is `failed`. */
+async function personalAssistantOf(token: string): Promise<{ agentId: string; deviceId: string } | null> {
+  const { data, error } = await createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } })
+    .rpc('my_app_agent', { p_app_id: ASSISTANT_APP_ID })
+    .abortSignal(AbortSignal.timeout(10_000));
+  if (error) throw coded('failed', 'Could not read the personal assistant');
+  try {
+    return pickAssistant(data);
+  } catch {
+    throw coded('failed', 'Could not verify the personal assistant');
+  }
 }
 
 /**
@@ -92,21 +95,11 @@ async function ownAgentOf(token: string, ownerId: string, chatId: string): Promi
 }
 
 /** That agent's session on this computer, from the roster rows this account may own. */
-async function agentSessionHere(ownerId: string, agentId: string): Promise<string | null> {
-  const found = new Set(agentsForOwner(await listAgents(process.env, { includeGuests: true }), ownerId)
-    .filter((agent) => agent.gugu_user_id === agentId)
-    .map((agent) => agent.cache?.[SESSIONPAGE_SESSION_CACHE_KEY])
-    .filter((id): id is string => typeof id === 'string' && id.length > 0));
-  if (found.size > 1) throw coded('failed', 'This agent is bound to more than one session here');
-  return [...found][0] ?? null;
-}
-
 type Reached = { scope: string; ownerId: string; token: string; agentId: string; recheck(): Promise<void> };
 type Bound =
   | { state: 'unbound' }
   | { state: 'elsewhere' }
-  | (Reached & { state: 'ready'; home: AgentScheduleHome })
-  | (Reached & { state: 'remote'; panel: PanelHome });
+  | (Reached & { state: 'ready'; home: AgentScheduleHome });
 
 async function boundAgent(extensionId: string, name: string, action: 'schedules' | 'schedules:control'): Promise<Bound> {
   const { token, ownerId } = await account();
@@ -127,26 +120,13 @@ async function boundAgent(extensionId: string, name: string, action: 'schedules'
   await recheck();
   const home = sessionId ? await agentScheduleHome(sessionId) : null;
   await recheck();
-  const assistant = await personalAssistantOf(token, ownerId);
+  const assistant = await personalAssistantOf(token);
   await recheck();
   const isAssistant = assistant?.agentId === agentId;
   // Listed here is not living here: a move away that did not finish cleaning up leaves the person's assistant on this
   // computer's roster. Its schedule store here is used only while its home is this computer.
   if (home && (!isAssistant || await isThisComputer(assistant.deviceId))) return { ...reached(agentId), state: 'ready', home };
-  // Not here: only the person's assistant has a panel another computer reads and changes, as the built-in list does.
-  if (!isAssistant) return { state: 'elsewhere' };
-  await recheck();
-  return { ...reached(agentId), state: 'remote', panel: { ownerId, assistantId: agentId, deviceId: assistant.deviceId, cloud: panelAs(token, ownerId) } };
-}
-
-/** Whether the assistant's home device is this computer; not knowable yet (not signed in to the other machines) = failed. */
-async function isThisComputer(deviceId: string): Promise<boolean> {
-  const { otherMachines } = await import('@main/core/sessions/session-family');
-  try {
-    return await otherMachines().isThisDevice(deviceId);
-  } catch {
-    throw coded('failed', 'Could not tell whether its home is this computer');
-  }
+  return { state: 'elsewhere' };
 }
 
 function nameOf(input: unknown): string {
@@ -162,9 +142,9 @@ export async function appBoundSchedules(extensionId: string, input: unknown): Pr
     if (codeOf(error) === 'failed') return { state: 'unavailable' as const };
     throw error;
   });
-  if (bound.state !== 'ready' && bound.state !== 'remote') return { name, state: bound.state };
+  if (bound.state !== 'ready') return { name, state: bound.state };
   try {
-    const schedules = bound.state === 'ready' ? await listAppSchedules(bound.home) : await listPanelSchedules(bound.panel, bound.recheck);
+    const schedules = await listAppSchedules(bound.home);
     await bound.recheck();
     return { name, state: 'ready', schedules };
   } catch (error) {
@@ -176,8 +156,8 @@ export async function appBoundSchedules(extensionId: string, input: unknown): Pr
 
 /*
  * The record of each operation id (`.app-schedule-receipts.json` beside the installed Apps, by account and installed App):
- * `pending` from just before its effect, `receipt` once answered, and — for a change once sent to the assistant's panel,
- * which takes none now — the request sent then (`panel`). Bounded per App; an id older than the last KEPT_PER_APP is forgotten.
+ * `pending` from just before its effect, `receipt` once answered; `panel` is a change an older version sent to the
+ * assistant's panel, kept only to be read. Bounded per App; an id older than the last KEPT_PER_APP is forgotten.
  */
 const RECEIPTS_FILE = '.app-schedule-receipts.json';
 const KEPT_PER_APP = 500;
@@ -239,9 +219,8 @@ function digestOf(change: AppScheduleControl): string {
 
 /**
  * `gugu.bindings.controlSchedule(name, { operationId, op, … })`: one change to the bound agent's schedules, by the host's
- * own schedule store, answered with its receipt; for the assistant living elsewhere it is refused (its panel takes no
- * changes: bound-resources-core.ts `panelChangeRefused`). The same operation id again is answered from the record — never
- * a second change; another change under it is `invalid`.
+ * own schedule store, answered with its receipt; an agent living elsewhere is `elsewhere`. The same operation id again is
+ * answered from the record — never a second change; another change under it is `invalid`.
  */
 export async function appBoundScheduleControl(extensionId: string, input: unknown): Promise<AppScheduleReceipt> {
   const parsed = scheduleControlSchema.safeParse(input);
@@ -267,8 +246,7 @@ export async function appBoundScheduleControl(extensionId: string, input: unknow
       await recheck();
       return { name: change.name, ...kept.receipt } as AppScheduleReceipt;
     }
-    // A change for the assistant's panel (it lives elsewhere, or one sent there before) is refused: nothing applies it.
-    if (kept?.panel || bound.state === 'remote') return panelChangeRefused();
+    if (kept?.panel) throw coded('elsewhere', ELSEWHERE);
     const { home } = bound;
     if (kept?.pending) {
       const settled = await settledAppScheduleChange(home, change, kept.pending, kept.at);
@@ -288,9 +266,8 @@ export const SCHEDULES_HEARD_AFTER_MS = 50;
 
 /**
  * `gugu.bindings.onSchedulesChanged(name, fn)`'s host half: `hear` whenever the bound agent's schedules change, while the
- * App's authority stands — here, from the schedule store's own events; for the assistant living elsewhere, from the
- * panel's change word, heard only when its schedules or their outstanding changes differ from before. Checked before each
- * word; once the authority is gone the watch stops itself (`ended`) and says nothing.
+ * App's authority stands, from the schedule store's own events. Checked before each word; once the authority is gone the
+ * watch stops itself (`ended`) and says nothing.
  */
 export async function watchBoundSchedules(extensionId: string, input: unknown, hear: () => void, ended: () => void): Promise<() => void> {
   const name = nameOf(input);
@@ -307,19 +284,6 @@ export async function watchBoundSchedules(extensionId: string, input: unknown, h
     off();
     ended();
   };
-  let differs = async () => true;
-  if (bound.state === 'remote') {
-    // An unreadable panel is one word (the page reads again and is told `unavailable`), not one per change word.
-    const print = () => panelSchedulesPrint(bound.panel).catch(() => null);
-    let last = await print();
-    await bound.recheck();
-    differs = async () => {
-      const now = await print();
-      if (now === last) return false;
-      last = now;
-      return true;
-    };
-  }
   const changed = () => {
     if (stopped || queued) return;
     queued = true;
@@ -329,12 +293,10 @@ export async function watchBoundSchedules(extensionId: string, input: unknown, h
       checks = checks.then(async () => {
         if (stopped) return;
         await bound.recheck();
-        const heard = await differs();
-        await bound.recheck();
-        if (heard && !stopped) hear();
+        if (!stopped) hear();
       }).catch(stop);
     }, SCHEDULES_HEARD_AFTER_MS);
   };
-  off = bound.state === 'ready' ? watchAgentSchedules(bound.home.sessionId, changed) : onAssistantPanelChanged(bound.ownerId, bound.agentId, changed);
+  off = watchAgentSchedules(bound.home.sessionId, changed);
   return stop;
 }

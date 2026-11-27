@@ -32,7 +32,7 @@ const store = vi.hoisted(() => ({
   commits: [] as Record<string, unknown>[], bodies: new Map<string, Uint8Array>(), uploads: [] as string[], discarded: [] as string[],
   commitFails: null as null | { code: string; status: number },
 }));
-const host = vi.hoisted(() => ({ confirmRemoval: vi.fn(), transcribe: vi.fn(), exportNote: vi.fn() }));
+const host = vi.hoisted(() => ({ pickFiles: vi.fn(), confirmRemoval: vi.fn(), transcribe: vi.fn(), exportNote: vi.fn() }));
 const denied = (message: string) => Object.assign(new Error(message), { code: 'denied' });
 const { servingOf } = await vi.hoisted(async () => await import('./test-support/binding-rpc'));
 vi.mock('./app-assistant-serving', () => ({
@@ -144,6 +144,8 @@ function note(id: string, status: string, title: string | null = 'Standup') {
   put('voice-notes', `${id}/transcript.md`, '[00:00] Me: ship it', { noteId: id, kind: 'transcript.md' });
 }
 const live = (domain: string) => [...store.items.values()].filter((item) => item.domain === domain && !item.deleted_at).map((item) => item.resource_key).sort();
+const picked = (name: string, text: string, contentType = 'application/pdf', size = text.length) =>
+  ({ name, size, contentType, read: async () => new TextEncoder().encode(text) });
 
 const manage = await import('./app-bound-resources-manage');
 const PAGE = 7;
@@ -154,8 +156,8 @@ const removeFolder = (key: unknown) => manage.appResourceRemoveFolder('assistant
 const transcribe = (key: unknown) => manage.appVoiceNoteTranscribe('assistant', PAGE, { name: 'main', key });
 const removeNote = (key: unknown) => manage.appVoiceNoteRemove('assistant', PAGE, { name: 'main', key });
 const exportNote = (key: unknown) => manage.appVoiceNoteExport('assistant', PAGE, { name: 'main', key });
-const FILES = [() => upload(), () => createFolder('docs'), () => rename('a.txt', 'b.txt'), () => removeFolder('docs')];
-const ALL = [() => transcribe(NOTE), () => removeNote(NOTE), () => exportNote(NOTE)];
+const ALL = [() => upload(), () => createFolder('docs'), () => rename('a.txt', 'b.txt'), () => removeFolder('docs'),
+  () => transcribe(NOTE), () => removeNote(NOTE), () => exportNote(NOTE)];
 
 function reset(home: string) {
   Object.assign(state, { owner: OWNER, selectedBy: OWNER, handle: 'h1', installed: true, enabled: true, member: true, memberError: false,
@@ -182,6 +184,53 @@ describe.each([['this computer', 'this-device'], ['another computer', 'other-dev
     expect(store.commits.length).toBeGreaterThan(0);
     for (const commit of store.commits) expect(commit).toMatchObject({ p_assistant: AGENT, p_device_id: home });
   };
+
+  it('upload: the host\'s picker, the page\'s rules, each file written as the page writes it; the rest named back', async () => {
+    host.pickFiles.mockResolvedValue([picked('brief.pdf', 'pdf bytes'), picked('clip.mp4', 'v', 'video/mp4'),
+      picked('big.pdf', 'b', 'application/pdf', 51 * 1024 * 1024), picked('a.zip', 'z', 'application/zip')]);
+    const answer = await upload({ folder: 'docs' });
+    expect(host.pickFiles).toHaveBeenCalledExactlyOnceWith(PAGE);
+    expect(answer).toEqual({ name: 'main', state: 'done',
+      uploaded: [{ key: 'docs/brief.pdf', name: 'brief.pdf', receipt: { operationId: expect.any(String), revision: '11', status: 'pending' } }],
+      refused: [{ name: 'clip.mp4', why: 'unsupported' }, { name: 'big.pdf', why: 'too-large' }, { name: 'a.zip', why: 'unsupported' }] });
+    expect(store.items.get('files\0docs/brief.pdf')).toMatchObject({ data: { name: 'brief.pdf', path: 'docs/brief.pdf', kind: 'file', contentType: 'application/pdf', sizeBytes: 9 } });
+    expect(store.uploads).toHaveLength(1);
+    everyCommitGoesHome();
+  });
+
+  it('new folder, then the same again is exists', async () => {
+    expect(await createFolder('docs')).toEqual({ name: 'main', key: 'docs', state: 'committed', receipt: { operationId: expect.any(String), revision: '11', status: 'pending' } });
+    expect(store.items.get('files\0docs')).toMatchObject({ data: { name: 'docs', path: 'docs', kind: 'directory' } });
+    expect(await createFolder('docs')).toEqual({ name: 'main', key: 'docs', state: 'exists' });
+    expect(store.commits).toHaveLength(1);
+    everyCommitGoesHome();
+  });
+
+  it('rename: a file, a folder with all in it; a taken name is exists, nothing there is missing', async () => {
+    file('a.txt'); file('b.txt'); folder('docs'); file('docs/one.md');
+    expect(await rename('a.txt', 'c.txt')).toMatchObject({ state: 'committed', renamedTo: 'c.txt', receipts: [{ status: 'pending' }] });
+    expect(store.items.get('files\0a.txt')).toMatchObject({ data: { path: 'c.txt', name: 'c.txt' } });
+    expect(await rename('docs', 'papers')).toMatchObject({ state: 'committed', renamedTo: 'papers', receipts: [{}, {}] });
+    expect(store.items.get('files\0docs/one.md')).toMatchObject({ data: { path: 'papers/one.md' } });
+    const before = store.commits.length;
+    expect(await rename('b.txt', 'c.txt')).toEqual({ name: 'main', key: 'b.txt', state: 'exists' });
+    expect(await rename('nothing.txt', 'd.txt')).toEqual({ name: 'main', key: 'nothing.txt', state: 'missing' });
+    expect(store.commits).toHaveLength(before);
+    everyCommitGoesHome();
+  });
+
+  it('folder delete: the page\'s question first; yes removes it and all in it, no removes nothing', async () => {
+    folder('docs'); file('docs/one.md'); file('docs/deep/two.md'); file('keep.md');
+    host.confirmRemoval.mockResolvedValueOnce(false);
+    expect(await removeFolder('docs')).toEqual({ name: 'main', key: 'docs', state: 'cancelled' });
+    expect(store.commits).toHaveLength(0);
+    expect(await removeFolder('docs')).toMatchObject({ state: 'committed', receipts: [{}, {}, {}] });
+    expect(host.confirmRemoval).toHaveBeenLastCalledWith(PAGE, { kind: 'folder', name: 'docs' });
+    expect(live('files')).toEqual(['keep.md']);
+    expect(await removeFolder('docs')).toEqual({ name: 'main', key: 'docs', state: 'missing' });
+    await expect(removeFolder('keep.md')).rejects.toMatchObject({ code: 'invalid' });
+    everyCommitGoesHome();
+  });
 
   it('开始转写: a note waiting is handed to this window\'s pipeline; anything else is said, not started', async () => {
     note(NOTE, 'uploaded');
@@ -227,10 +276,12 @@ describe.each([['this computer', 'this-device'], ['another computer', 'other-dev
 
 describe('what an App is told', () => {
   it('keys, names, states and receipts only — no owner, agent, chat, device, handle, body file, store path or link', async () => {
-    note(NOTE, 'uploaded');
-    const answers = [await transcribe(NOTE), await exportNote(NOTE), await removeNote(NOTE)];
+    note(NOTE, 'uploaded'); folder('docs'); file('docs/one.md'); file('a.txt');
+    host.pickFiles.mockResolvedValue([picked('brief.pdf', 'pdf'), picked('clip.mp4', 'v', 'video/mp4')]);
+    const answers = [await upload(), await createFolder('more'), await rename('a.txt', 'b.txt'), await removeFolder('docs'),
+      await transcribe(NOTE), await exportNote(NOTE), await removeNote(NOTE)];
     store.down = true;
-    answers.push(await removeNote(NOTE));
+    answers.push(await createFolder('again'), await removeNote(NOTE));
     for (const said of answers.map((answer) => JSON.stringify(answer))) {
       for (const secret of [OWNER, AGENT, CHAT, 'home-device', 'h1', '77000000', '88000000', '给助理的资料', '记忆', 'gugu-file:', 'http', '/Users']) {
         expect(said).not.toContain(secret);
@@ -241,14 +292,6 @@ describe('what an App is told', () => {
 });
 
 describe('refusals', () => {
-  it('a change to 给助理的资料 (upload, new folder, rename, folder delete) is refused: nothing asked of the person or the store', async () => {
-    folder('docs'); file('a.txt');
-    for (const call of FILES) await expect(call()).rejects.toMatchObject({ code: 'denied' });
-    expect(Object.values(host).every((fn) => fn.mock.calls.length === 0)).toBe(true);
-    expect(store.commits).toHaveLength(0);
-    expect(store.uploads).toHaveLength(0);
-  });
-
   it('nobody chose the conversation: unbound, and nothing is asked of the person or the store', async () => {
     state.selectedBy = '';
     for (const call of ALL) expect(await call()).toMatchObject({ name: 'main', state: 'unbound' });
@@ -261,16 +304,20 @@ describe('refusals', () => {
     for (const call of ALL) await expect(call()).rejects.toMatchObject({ code: 'denied', message: expect.stringContaining('50') });
   });
 
-  it('voice notes need voice-notes:manage and voice-notes read', async () => {
+  it('files need resources:write listing files; voice notes need voice-notes:manage and voice-notes read', async () => {
     note(NOTE, 'uploaded');
     state.grants['resources:write'] = false;
-    for (const call of ALL) expect(await call()).not.toHaveProperty('code');
+    for (const call of ALL.slice(0, 4)) await expect(call()).rejects.toMatchObject({ code: 'denied' });
+    for (const call of ALL.slice(4)) expect(await call()).not.toHaveProperty('code');
     state.grants['resources:write'] = true;
+    state.domains['resources:write'] = ['memory'];
+    for (const call of ALL.slice(0, 4)) await expect(call()).rejects.toMatchObject({ code: 'denied' });
+    state.domains['resources:write'] = ['memory', 'files'];
     state.grants['voice-notes:manage'] = false;
-    for (const call of ALL) await expect(call()).rejects.toMatchObject({ code: 'denied' });
+    for (const call of ALL.slice(4)) await expect(call()).rejects.toMatchObject({ code: 'denied' });
     state.grants['voice-notes:manage'] = true;
     state.domains.resources = ['memory', 'files'];
-    for (const call of ALL) await expect(call()).rejects.toMatchObject({ code: 'denied' });
+    for (const call of ALL.slice(4)) await expect(call()).rejects.toMatchObject({ code: 'denied' });
     state.grants.resources = false;
     state.domains.resources = ['memory', 'files', 'voice-notes'];
     for (const call of ALL) await expect(call()).rejects.toMatchObject({ code: 'denied' });
@@ -291,8 +338,17 @@ describe('refusals', () => {
   });
 
   it('the account or the selection changing while the person picks or answers: refused, nothing written or removed', async () => {
-    note(NOTE, 'ready');
+    folder('docs'); file('docs/one.md'); note(NOTE, 'ready');
+    const bytes = vi.fn(async () => new TextEncoder().encode('pdf'));
+    host.pickFiles.mockImplementation(async () => { state.owner = OTHER; return [{ ...picked('brief.pdf', 'pdf'), read: bytes }]; });
+    await expect(upload()).rejects.toMatchObject({ code: 'denied' });
+    // Not a byte of what was picked is read for the account that is gone.
+    expect(bytes).not.toHaveBeenCalled();
+    expect(store.uploads).toHaveLength(0);
+    reset('home-device'); folder('docs'); file('docs/one.md'); note(NOTE, 'ready');
     host.confirmRemoval.mockImplementation(async () => { state.handle = 'h2'; return true; });
+    await expect(removeFolder('docs')).rejects.toMatchObject({ code: 'denied' });
+    state.handle = 'h1';
     await expect(removeNote(NOTE)).rejects.toMatchObject({ code: 'denied' });
     expect(store.commits).toHaveLength(0);
     state.handle = 'h1';
@@ -301,7 +357,10 @@ describe('refusals', () => {
   });
 
   it.each([
-    ['note with /', () => transcribe(`${NOTE}/note.json`)], ['note agent', () => manage.appVoiceNoteExport('assistant', PAGE, { name: 'main', key: NOTE, agentId: AGENT })],
+    ['upload folder', () => upload({ folder: '../x' })], ['upload owner', () => upload({ ownerId: OWNER })],
+    ['folder ..', () => createFolder('a/../b')], ['folder absolute', () => createFolder('/docs')], ['folder id', () => createFolder(7)],
+    ['rename to a path', () => rename('a.txt', 'x/y.txt')], ['rename to ..', () => rename('a.txt', '..')], ['rename chat', () => manage.appResourceRename('assistant', { name: 'main', key: 'a.txt', to: 'b', chatId: CHAT })],
+    ['remove ~', () => removeFolder('~/docs')], ['note with /', () => transcribe(`${NOTE}/note.json`)], ['note agent', () => manage.appVoiceNoteExport('assistant', PAGE, { name: 'main', key: NOTE, agentId: AGENT })],
   ])('refuses %s before anything is asked', async (_what, call) => {
     await expect(call()).rejects.toMatchObject({ code: 'invalid' });
     expect(Object.values(host).every((fn) => fn.mock.calls.length === 0)).toBe(true);
@@ -309,17 +368,23 @@ describe('refusals', () => {
   });
 
   it('a store that refuses the account is a refusal; one that cannot answer is unavailable with its class', async () => {
-    note(NOTE, 'uploaded');
+    folder('docs'); note(NOTE, 'uploaded');
     store.refuse = true;
+    await expect(createFolder('more')).rejects.toMatchObject({ code: 'denied' });
     await expect(transcribe(NOTE)).rejects.toMatchObject({ code: 'denied' });
     store.refuse = false;
+    store.failedApplication.add('files');
+    expect(await removeFolder('docs')).toEqual({ name: 'main', key: 'docs', state: 'unavailable', reason: 'not-applied' });
+    store.failedApplication.clear();
+    store.items.set('files\0docs', { ...store.items.get('files\0docs')!, stale_at: '2026-11-11T00:00:00Z' });
+    expect(await rename('docs', 'x')).toEqual({ name: 'main', key: 'docs', state: 'unavailable', reason: 'stale' });
     state.provisionsError = true;
-    expect(await exportNote(NOTE)).toEqual({ name: 'main', key: NOTE, state: 'unavailable', reason: 'owner-unknown' });
+    expect(await createFolder('more')).toEqual({ name: 'main', key: 'more', state: 'unavailable', reason: 'owner-unknown' });
     state.provisionsError = false;
     state.memberError = true;
     expect(await exportNote(NOTE)).toEqual({ name: 'main', key: NOTE, state: 'unavailable', reason: 'access-unverified' });
     state.memberError = false;
     store.commitFails = { code: '54000', status: 400 };
-    expect(await removeNote(NOTE)).toEqual({ name: 'main', key: NOTE, state: 'unavailable', reason: 'too-large' });
+    expect(await createFolder('more')).toEqual({ name: 'main', key: 'more', state: 'unavailable', reason: 'too-large' });
   });
 });
