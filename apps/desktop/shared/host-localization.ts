@@ -171,6 +171,14 @@ const HOST_CATALOG = {
       reload: '重新载入',
       quit: '退出咕咕',
     },
+    accountLeave: {
+      title: '退出这个账号？',
+      one: '{count} 个正在运行的任务会被中断。',
+      other: '{count} 个正在运行的任务会被中断。',
+      leave: '退出',
+      cancel: '取消',
+      switching: '正在切换账号…',
+    },
     updateRestart: {
       title: '重启更新？',
       one: '{count} 个正在运行的任务会被中断。',
@@ -334,6 +342,14 @@ const HOST_CATALOG = {
       reload: 'Reload',
       quit: 'Quit Gugu',
     },
+    accountLeave: {
+      title: 'Sign out of this account?',
+      one: '{count} running task will be interrupted.',
+      other: '{count} running tasks will be interrupted.',
+      leave: 'Sign out',
+      cancel: 'Cancel',
+      switching: 'Switching account…',
+    },
     updateRestart: {
       title: 'Restart to update?',
       one: '{count} running task will be interrupted.',
@@ -373,6 +389,12 @@ export function hostText(template: string, values: Readonly<Record<string, strin
     if (value === undefined) throw new Error(`host text is missing {${name}}`)
     return value
   })
+}
+
+/** gugu-dev#1616 Leaving an account stops its running tasks: the same busy count as a restart to update. */
+export function accountLeaveCopy(catalog: HostCatalog, count: number) {
+  const copy = catalog.accountLeave
+  return { ...copy, detail: (count === 1 ? copy.one : copy.other).replace('{count}', String(count)) }
 }
 
 export function updateRestartCopy(catalog: HostCatalog, count: number | null) {

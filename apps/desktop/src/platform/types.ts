@@ -229,6 +229,16 @@ export interface AppPlatform {
   /** 用户点了咕咕发的系统通知;拉起 App 的那一次在首次订阅时补发。只有安卓壳有此口,桌面走 notificationClicked。 */
   subscribeNotificationClicks?: (listener: (click: { chatId: string | null }) => void) => () => void
   writeHumanAuthSession: (session: HumanAuthSession) => Promise<void>
+  /**
+   * gugu-dev#1616 Desktop only: one account's local data per process. `enter` runs before a newly signed-in account is
+   * shown ('switching' = this process is relaunching into that account's own directories and shows nothing of it);
+   * `takeHandoff` is the session carried over by that switch, once; `confirmLeave` asks before running tasks are stopped.
+   */
+  accountProfiles?: {
+    enter: (session: { user_id: string; access_token: string; refresh_token: string }) => Promise<'here' | 'switching'>
+    takeHandoff: () => Promise<{ access_token: string; refresh_token: string } | null>
+    confirmLeave: () => Promise<boolean>
+  }
   /** 登出了,还是会话永久丢了(主进程据此决定 getAuth 是答「没登录」还是抛「会话丢了」)。 */
   clearHumanAuthSession: (reason: 'signed-out' | 'lost') => Promise<void>
   /**

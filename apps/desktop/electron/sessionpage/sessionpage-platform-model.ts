@@ -1752,7 +1752,7 @@ async function resolvePlatformModelForSession(input: PlatformModelForSessionInpu
   }
 
   // #4277 按当下账号找这条会话的 agent:活动行归别家 ⇒ 视为还没有身份,交给 ensureAgentUserId
-  // (provisioning 会停放别家的行、给当前账号登记),❌ 拿别家的 agent 去签额度(RLS 必拒)。
+  // (gugu-dev#1616 provisioning 拒绝别家的会话),❌ 拿别家的 agent 去签额度(RLS 必拒)。
   const currentOwnerUserId = (await input.authProvider.getAuth())?.userId ?? null
   const agentUserId = await guguAgentUserIdForSession(
     input.identitySessionId ?? input.sessionId,

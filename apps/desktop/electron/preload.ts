@@ -121,6 +121,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   writeHumanAuthSession: (session: unknown): Promise<void> => ipcRenderer.invoke('human-auth-session:write', session),
   clearHumanAuthSession: (reason: 'signed-out' | 'lost'): Promise<void> => ipcRenderer.invoke('human-auth-session:clear', reason),
+  // gugu-dev#1616 One account's local data per process (see main.ts account-profile:*).
+  enterAccountProfile: (session: unknown): Promise<'here' | 'switching'> => ipcRenderer.invoke('account-profile:enter', session),
+  takeAccountHandoff: (): Promise<{ access_token: string; refresh_token: string } | null> => ipcRenderer.invoke('account-profile:take-handoff'),
+  confirmAccountLeave: (): Promise<boolean> => ipcRenderer.invoke('account-profile:confirm-leave'),
   // #5906 —— 渲染层把一条设备命令放回 pending 之后说一声(见 main.ts 的同名通道)。
   notifyDeviceCommandsChanged: (): void => ipcRenderer.send('device-runtime:commands-changed'),
   // 渲染层建 / 改 / 删了定时任务之后说一声(见 main.ts 的同名通道)。

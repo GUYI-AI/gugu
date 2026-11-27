@@ -38,6 +38,12 @@ moduleInternals._load = function patchedLoad(this: unknown, request: string, ...
 }
 
 async function main(): Promise<void> {
+  // gugu-dev#1616 The desktop's data is one account's: the home that goes with the userData the pointer names.
+  if (!process.env.GUGU_TASK_HOST_USER_DATA?.trim() && !process.env.GUGU_HOME?.trim()) {
+    const { readSharedGuguHomePointer } = await import('./session/headless/shared-user-data')
+    const home = readSharedGuguHomePointer()
+    if (home) process.env.GUGU_HOME = home
+  }
   // Before anything reaches the network (the shim is in place, so the egress module may import electron).
   const { installHostEgress } = await import('./egress/install')
   installHostEgress()

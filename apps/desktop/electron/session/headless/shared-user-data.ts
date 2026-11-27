@@ -22,11 +22,13 @@ export function sharedUserDataPointerPath(): string {
  * 写失败**不抛** —— 它不在桌面壳的关键路径上,写不成最多是无头宿主回落到自己的目录(老行为)。
  * ⚠️ 但也❌ 不静默:调用方拿到 false 要记一行,否则「为什么还是两份数据」查不出来。
  */
-export function writeSharedUserDataPointer(userDataPath: string): boolean {
+export function writeSharedUserDataPointer(userDataPath: string, guguHome?: string): boolean {
   try {
     const target = sharedUserDataPointerPath()
     fs.mkdirSync(path.dirname(target), { recursive: true })
-    fs.writeFileSync(target, `${path.resolve(userDataPath)}\n`, { encoding: 'utf8', mode: 0o600 })
+    // gugu-dev#1616 The second line is that account's GUGU_HOME: userData and home are one account's pair.
+    const lines = [path.resolve(userDataPath), ...(guguHome ? [path.resolve(guguHome)] : [])]
+    fs.writeFileSync(target, `${lines.join('\n')}\n`, { encoding: 'utf8', mode: 0o600 })
     return true
   } catch {
     return false
@@ -40,8 +42,17 @@ export function writeSharedUserDataPointer(userDataPath: string): boolean {
  * 拿「空」当「无效」会把这条路在最常见的首次使用上关掉。存在即采信。
  */
 export function readSharedUserDataPointer(): string | null {
+  return readPointerLine(0)
+}
+
+/** gugu-dev#1616 The GUGU_HOME of the account whose userData the pointer names; null from a shell before #1616. */
+export function readSharedGuguHomePointer(): string | null {
+  return readPointerLine(1)
+}
+
+function readPointerLine(index: number): string | null {
   try {
-    const raw = fs.readFileSync(sharedUserDataPointerPath(), 'utf8').trim()
+    const raw = fs.readFileSync(sharedUserDataPointerPath(), 'utf8').split('\n')[index]?.trim()
     if (!raw) return null
     return path.resolve(raw)
   } catch {

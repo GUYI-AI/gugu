@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import { app } from 'electron';
 import { ExtensionsService } from './extensions-service';
 import { extensionDataDir } from './extension-data';
+import { machineUserDataDir } from '../app/machine-user-data';
 
 /**
  * Where installed task extensions live on this machine, and the app-wide
@@ -15,8 +16,9 @@ import { extensionDataDir } from './extension-data';
 
 export const EXTENSIONS_DIR_NAME = 'task-extensions';
 
+/** gugu-dev#1616 Installed on this computer: every account on it has the same Apps (their data is each account's). */
 export function extensionsRoot(): string {
-  return path.join(app.getPath('userData'), EXTENSIONS_DIR_NAME);
+  return path.join(machineUserDataDir(), EXTENSIONS_DIR_NAME);
 }
 
 /**

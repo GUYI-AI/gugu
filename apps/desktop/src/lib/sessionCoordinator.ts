@@ -26,6 +26,13 @@ export interface SessionCoordinatorDeps {
   publishSession: (event: string, session: Session | null) => void
   writeMirror: (session: Session) => Promise<void>
   clearMirror: (reason: 'signed-out' | 'lost') => Promise<void>
+  /**
+   * gugu-dev#1616 Desktop: this process serves one account's local data. Asked before another account is shown;
+   * 'switching' = the host is relaunching into that account's own directories, so nothing of it is shown here.
+   */
+  enterAccount?: (session: Session) => Promise<'here' | 'switching'>
+  /** gugu-dev#1616 The session a switch carried into this account's first window, once. */
+  takeAccountHandoff?: () => Promise<{ access_token: string; refresh_token: string } | null>
   /** Reads the persisted session into getPersistedSessionState (native storage is async). Local only, no network. */
   loadPersistedSession: () => Promise<unknown>
   getPersistedSessionState: () => { bootCandidate: Session | null; warning: Error | null }
@@ -365,6 +372,17 @@ export class SessionCoordinator {
     try {
       await this.deps.loadPersistedSession()
       if (!this.generationIsCurrent(generation)) return
+      if (!this.deps.getPersistedSessionState().bootCandidate && this.deps.takeAccountHandoff) {
+        const handed = await this.deps.takeAccountHandoff()
+        if (!this.generationIsCurrent(generation)) return
+        if (handed) {
+          const { data, error } = await withAuthBudget('setSession', this.deps.restoreSession(handed))
+          if (!this.generationIsCurrent(generation)) return
+          if (error || !data.session) await this.restoreFailed(error ?? new Error('Handed-over session was not restored'), generation)
+          else await this.acceptSession('SIGNED_IN', data.session, true, { generation }, release)
+          return
+        }
+      }
       const candidate = this.deps.getPersistedSessionState().bootCandidate
       if (candidate && this.snapshot.session?.user.id !== candidate.user.id) {
         resetAuthSessionBoundary()
@@ -430,9 +448,14 @@ export class SessionCoordinator {
   private async acceptSession(event: string, session: Session, validate: boolean, expected?: Work, onPublished?: () => void): Promise<void> {
     if (!this.active || (expected && !this.workIsCurrent(expected, false))) { onPublished?.(); return }
     const release = this.beginAuthHandoff()
+    const shownOwner = this.snapshot.user?.id ?? null
     const generation = this.nextGeneration()
     const work = sessionWork(generation, session)
     try {
+      if (this.deps.enterAccount && shownOwner !== session.user.id) {
+        const entry = await this.deps.enterAccount(session)
+        if (!this.generationIsCurrent(generation) || entry === 'switching') return
+      }
       try { await this.deps.commitPersistedSession(session, this.generationAbort.signal) }
       catch (error) { if (this.generationIsCurrent(generation)) this.degrade(errorOf(error, 'Session persistence failed')); throw error }
       if (!this.generationIsCurrent(generation)) return
@@ -683,6 +706,9 @@ export const sessionCoordinator = new SessionCoordinator({
   publishSession: publishRendererSession,
   writeMirror: writeHostMirror,
   clearMirror: clearHostMirror,
+  enterAccount: platform.accountProfiles ? (session) => platform.accountProfiles!.enter({
+    user_id: session.user.id, access_token: session.access_token, refresh_token: session.refresh_token }) : undefined,
+  takeAccountHandoff: platform.accountProfiles ? () => platform.accountProfiles!.takeHandoff() : undefined,
   loadPersistedSession: () => Promise.resolve(mainAuthSessionStorage.storage.getItem(MAIN_AUTH_STORAGE_KEY)),
   getPersistedSessionState: () => mainAuthSessionStorage.getState(),
   commitPersistedSession: (session, signal) => mainAuthSessionStorage.commit(session, signal),

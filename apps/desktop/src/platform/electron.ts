@@ -220,6 +220,23 @@ export const electronPlatform: AppPlatform = {
   async shareToApps() {
     throw unavailable('Share to other apps')
   },
+  accountProfiles: {
+    async enter(session) {
+      const api = electronApi()
+      if (!api?.enterAccountProfile) throw unavailable('Account profiles')
+      return api.enterAccountProfile(session)
+    },
+    async takeHandoff() {
+      const api = electronApi()
+      if (!api?.takeAccountHandoff) throw unavailable('Account profiles')
+      return api.takeAccountHandoff()
+    },
+    async confirmLeave() {
+      const api = electronApi()
+      if (!api?.confirmAccountLeave) throw unavailable('Account profiles')
+      return api.confirmAccountLeave()
+    },
+  },
   async writeHumanAuthSession(session: HumanAuthSession) {
     const api = electronApi()
     if (!api?.writeHumanAuthSession) throw unavailable('Local human auth session')

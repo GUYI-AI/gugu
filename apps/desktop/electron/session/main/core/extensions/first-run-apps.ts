@@ -1,9 +1,9 @@
-import { app } from 'electron';
 import { firstRunRunner, type FirstRunDeps, type FirstRunState } from '@shared/extensions/first-run';
 import { firstRunArrivingChannel } from '@shared/extensions/marketEvents';
 import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
 import { extensionsService } from './extensions-root';
+import { machineUserDataDir } from '../app/machine-user-data';
 import { noteFirstRunProfile, readFirstRunRecord, writeFirstRunRecord } from './first-run-record';
 import { ASSISTANT_RULES_PROVIDER_ID } from '../../../../assistant-rules-trust';
 import { ASSISTANT_PROMOTED } from '@shared/extensions/assistant-entry';
@@ -18,7 +18,8 @@ import { ASSISTANT_PROMOTED } from '@shared/extensions/assistant-entry';
 let state: FirstRunState = { apps: [], pending: false };
 
 function deviceDeps(): FirstRunDeps {
-  const userData = app.getPath('userData');
+  // gugu-dev#1616 Which default Apps this computer has: as machine-wide as the Apps themselves (extensionsRoot).
+  const userData = machineUserDataDir();
   return {
     record: async () => readFirstRunRecord(userData),
     save: async (record) => writeFirstRunRecord(userData, record),

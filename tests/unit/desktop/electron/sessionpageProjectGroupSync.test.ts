@@ -852,6 +852,14 @@ describe('#6396 序号只增不减', () => {
     await provisionFresh('conv-mine')
     expect(roster.at(-1)?.name).toBe('Claude 1')
   })
+  it('gugu-dev#1616 别的账号绑在这条会话上的 agent:拒绝,❌ 停放它、给当前账号在同一条会话上发新身份', async () => {
+    const theirs = { id: 'rec-theirs', name: 'Claude 7', agent_type: 'claude-code', gugu_user_id: 'a-theirs',
+      cache: { sessionpage_owner_user_id: 'someone-else', emdash_session_id: 'conv-theirs' } }
+    const before = structuredClone(theirs)
+    roster.push(theirs)
+    await expect(provisionFresh('conv-theirs')).rejects.toThrow('This task belongs to another Gugu account on this computer')
+    expect(roster).toEqual([before])
+  })
   it('本进程发过的号即使名册里那一行删了也不再发', async () => {
     await provisionFresh('conv-a')
     await provisionFresh('conv-b')
