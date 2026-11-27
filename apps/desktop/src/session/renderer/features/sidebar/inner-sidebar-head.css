@@ -23,8 +23,9 @@
 }
 /* The head is the group's title on the group's card (desktop-shell.css @@@inner-on-card): no selected chip under it; the
    hover below stays. */
-/* Paint the hover independently of the two-line button, over the block only (not the collapse button). */
-.gg-inner-head-double [data-inner-head]:is(:hover, :focus-within, :has([aria-expanded='true']))::before {
+/* Paint the hover independently of the two-line button, over the block only (not the collapse button). The collapse button
+   sits inside [data-inner-head] but is not part of the block: pointing at it or focusing it lights the button alone. */
+.gg-inner-head-double [data-inner-head]:is(:hover, :focus-within, :has([aria-expanded='true'])):not(:has([data-inner-head-fold]:is(:hover, :focus)))::before {
   content: '';
   position: absolute;
   inset: 0 32px 0 0;
