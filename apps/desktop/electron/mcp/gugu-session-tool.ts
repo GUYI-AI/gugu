@@ -14,6 +14,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { workReportSchema } from '../../src/session/shared/assistant-work'
 import { SESSION_MESSAGE_REPLY_TO, SESSION_MESSAGE_THEN } from '@gugu/core/local/agent/deliveryEnvelope'
+import { uuidPrefixRange } from '@gugu/core/shared/idPrefix'
 import {
   registerSessionpageTools,
   type SessionDispatcher,
@@ -171,7 +172,7 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
   },
   {
     name: 'session_spawn',
-    description: 'Start a persistent Gugu agent; returns session_id, model, chat session_link. Omit transport to inherit your chat or terminal UI.',
+    description: 'Start a persistent Gugu agent; returns session_id and model. Omit transport to inherit your chat or terminal UI.',
     schema: z.object({
       prompt: z.string().min(1),
       source_link: sourceLinkSchema.optional(),
@@ -187,7 +188,6 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
       chat_id: z.string().min(1).describe('A group your owner is in, for the child to join.').optional(),
     }).strict(),
     action: 'spawn',
-    linksSession: true,
   },
   {
     name: 'session_ask_user',
@@ -255,9 +255,10 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
       source_link: sourceLinkSchema.optional(),
       // owner 10-17:发信方自己说发完以后去向,收件方在信封上读到(then="…")。是协议,不是程序推出的状态。
       then: z.enum(SESSION_MESSAGE_THEN).describe('Your next step as sender: continue/wait/stop; this never stops recipients.').optional(),
-      // 与 message_send 同名;取值是收到的那条信封的 msg。只核写法(与编排层同一个 regex),不查存在(发信方的话)。
+      // 与 message_send 同名;取值是收到的那条信封的 msg,全写或前 8+ 位(前缀由 unified-session-message 在收到过的投递里解析)。只核写法,不查存在。
       // refine 不进 JSON schema:不多花工具描述预算。
-      reply_to_message_id: z.string().refine((value) => SESSION_MESSAGE_REPLY_TO.test(value), 'reply_to_message_id must be a msg:<uuid> as a delivery\'s msg gives it').optional(),
+      reply_to_message_id: z.string().refine((value) => SESSION_MESSAGE_REPLY_TO.test(value) || (value.startsWith('msg:') && uuidPrefixRange(value.slice('msg:'.length)) !== null),
+        'reply_to_message_id must be a delivery\'s msg: id, whole or its first 8+ characters').optional(),
     }, {
       // #4562 破坏要响:旧的单数 session_id 入参被明确拒绝并说清新形状,❌ 不悄悄猜成 to:[x]。
       error: (issue) => issue.code === 'unrecognized_keys'

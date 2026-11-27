@@ -773,6 +773,30 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect((h.calls.inserts[0][1] as Record<string, unknown>).to_user_ids).toEqual([CHILD_USER_ID])
     await client.close()
   })
+  // Owner 2026-11-27: an address written as its first 8+ characters is matched as every short id is (idPrefix.ts).
+  test.each(['user:33333333', 'aid:33333333-33'])('message_send resolves %s among the chat\'s members', async (address) => {
+    const h = peersHarness()
+    const client = await connect({ ...h.deps, callSessionHost: async () => [childPeer] })
+    const result = await client.callTool({
+      name: 'message_send',
+      arguments: { chat_id: '00000000-0000-4000-8000-000000000001', text: '行动开始', to_user_ids: [address] },
+    })
+    expect(text(result)).toMatch(/^sent/)
+    expect((h.calls.inserts[0][1] as Record<string, unknown>).to_user_ids).toEqual([CHILD_USER_ID])
+    await client.close()
+  })
+  test('message_send says which chat a short address matched no member of, and sends nothing', async () => {
+    const h = peersHarness()
+    const client = await connect({ ...h.deps, callSessionHost: async () => [childPeer] })
+    const result = await client.callTool({
+      name: 'message_send',
+      arguments: { chat_id: '00000000-0000-4000-8000-000000000001', text: '行动开始', to_user_ids: ['user:44444444'] },
+    })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toMatch(/no member of chat 00000000-0000-4000-8000-000000000001 matches aid:44444444/)
+    expect(h.calls.inserts).toHaveLength(0)
+    await client.close()
+  })
   test('message_send fails loud when a session: recipient is not addressable on this machine', async () => {
     const h = peersHarness()
     const client = await connect({ ...h.deps, callSessionHost: async () => [] })
@@ -790,6 +814,12 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     test('session: resolves to the bare identity UUID', async () => {
       await expect(resolveRecipientAddresses(['session:child-conversation'], hostWith([childPeer])))
         .resolves.toEqual([CHILD_USER_ID])
+    })
+    test('session: written as a prefix resolves among the addressable sessions; several are refused with the candidates', async () => {
+      await expect(resolveRecipientAddresses(['session:child-co'], hostWith([childPeer]))).resolves.toEqual([CHILD_USER_ID])
+      const twin = { ...childPeer, sessionId: 'child-copy' }
+      await expect(resolveRecipientAddresses(['session:child-co'], hostWith([childPeer, twin])))
+        .rejects.toThrow(/session:child-co matches 2 sessions: session:child-conversation, session:child-copy/)
     })
     test('a non-UUID identity from the host fails loud instead of reaching the column', async () => {
       const typedFromHost = [{ ...childPeer, identity: { users: { ...childPeer.identity.users, id: `user:${CHILD_USER_ID}` } } }]

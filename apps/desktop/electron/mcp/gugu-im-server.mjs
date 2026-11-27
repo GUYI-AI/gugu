@@ -196,7 +196,7 @@ export async function resolveRecipientAddresses(list, deps, field = 'to_user_ids
   const needsSessions = list.some((v) => typeof v === 'string' && v.startsWith('session:'))
   const needsNumbers = list.some((v) => typeof v === 'string' && v.startsWith('gugu:'))
   if (!needsSessions && !needsNumbers) return list
-  const byConversation = new Map()
+  const addressable = []
   if (needsSessions) {
     if (!deps.context.runHostAction) {
       throw new Error(`${field}: session:<id> addressing needs the local session host bridge, which this caller has none of; pass user:<uuid> or gugu:<number> (from message_members) instead`)
@@ -205,9 +205,7 @@ export async function resolveRecipientAddresses(list, deps, field = 'to_user_ids
     for (const row of Array.isArray(peers) ? peers : []) {
       const conversationId = row?.sessionId
       const userId = row?.identity?.users?.id
-      if (typeof conversationId === 'string' && typeof userId === 'string' && userId) {
-        byConversation.set(conversationId, userId)
-      }
+      if (typeof conversationId === 'string' && typeof userId === 'string' && userId) addressable.push({ conversationId, userId })
     }
   }
   // #5048 咕咕号短址:一号一次名录往返,同号去重;号不存在在这里就响,❌ 不静默丢掉一个收件人。
@@ -221,14 +219,13 @@ export async function resolveRecipientAddresses(list, deps, field = 'to_user_ids
   return list.map((value, index) => {
     if (typeof value !== 'string') return value
     if (value.startsWith('session:')) {
-      const conversationId = decodeTypedId('session', value, `${field}[${index}]`)
-      const userId = byConversation.get(conversationId)
-      if (!userId) {
-        throw new Error(
-          `${field}: ${value} is not an addressable session on this machine — it has no gugu identity yet (a just-spawned child gets one as it starts up) or it was deleted. ` +
-          `session_peers lists what is addressable; message_members lists this chat's members as user:<uuid> with their gugu_number.`
-        )
-      }
+      // Written whole or as its first 8+ characters: the same matcher as every short id (idPrefix.ts).
+      const conversationId = matchIdPrefix({
+        kind: 'session', id: decodeTypedId('session', value, `${field}[${index}]`), rows: addressable, keyOf: (row) => row.conversationId, noun: 'sessions',
+        notFound: (written) => `${field}: ${written} is not an addressable session on this machine — it has no gugu identity yet (a just-spawned child gets one as it starts up) or it was deleted. ` +
+          `session_peers lists what is addressable; message_members lists this chat's members.`,
+      })
+      const userId = addressable.find((row) => row.conversationId === conversationId).userId
       if (!UUID_RE.test(userId)) throw new Error(`${field}: host resolved ${value} to a non-UUID identity ${JSON.stringify(userId)}`)
       return userId
     }
@@ -279,17 +276,29 @@ async function fullMessageId(deps, id, chatId = null, chatLabel = chatId) {
   })
 }
 
-/** Every message-id argument of an IM tool, before its handler (client_message_id is the agent's own key, never looked up). */
+/**
+ * Every id argument of an IM tool written short, before its handler: message ids (client_message_id is the agent's own
+ * key, never looked up), and recipients written `aid:` + a prefix — matched among the chat's members, the ones a message
+ * there can address (the same matcher, idPrefix.ts).
+ */
 async function resolveMessagePrefixes(args, deps) {
   const prefixed = (value) => typeof value === 'string' && uuidPrefixRange(value) !== null
   const fields = [...MESSAGE_ID_FIELDS].filter((field) => field !== 'client_message_id' && prefixed(args[field]))
   const lists = [...MESSAGE_ID_LIST_FIELDS].filter((field) => Array.isArray(args[field]) && args[field].some(prefixed))
-  if (!fields.length && !lists.length) return args
+  const recipients = Array.isArray(args.to_user_ids) && args.to_user_ids.some(prefixed)
+  if (!fields.length && !lists.length && !recipients) return args
   const address = typeof args.chat_id === 'string' ? args.chat_id.trim() : ''
   const chatId = address && !/^(aid|user|gugu):/.test(address) ? await requireChat(args, deps) : null
   const out = { ...args }
   for (const field of fields) out[field] = await fullMessageId(deps, out[field], chatId, address)
   for (const field of lists) out[field] = await Promise.all(out[field].map((value) => fullMessageId(deps, value, chatId, address)))
+  if (recipients && chatId) {
+    const members = (await memberRowsOfMyChat(chatId, deps)).map((row) => String(row.user_id))
+    out.to_user_ids = out.to_user_ids.map((id) => prefixed(id) ? matchIdPrefix({
+      kind: 'aid', id, rows: members, keyOf: (member) => member, noun: 'members',
+      notFound: (written) => `to_user_ids: no member of chat ${address} matches ${written}; message_members lists them (someone outside the chat takes the whole id)`,
+    }) : id)
+  }
   return out
 }
 
@@ -749,10 +758,10 @@ function normalizeRecipientInput(v) {
 function normToList(v) {
   const normalized = normalizeRecipientInput(v)
   if (normalized == null) return null
-  if (!Array.isArray(normalized)) throw new Error('to_user_ids must be an array of canonical identity.users.id UUIDs')
+  if (!Array.isArray(normalized)) throw new Error('to_user_ids must be an array of addresses (aid:<Agent ID>, gugu:<number>, session:<id>)')
   if (!normalized.length) return null
   if (!normalized.every((uid) => typeof uid === 'string' && uid.trim())) {
-    throw new Error('to_user_ids must be an array of canonical identity.users.id UUIDs')
+    throw new Error('to_user_ids must be an array of addresses (aid:<Agent ID>, gugu:<number>, session:<id>)')
   }
   return normalized
 }
@@ -1079,7 +1088,7 @@ async function assertReadableMessageReferences(deps, content) {
 }
 
 function addressMentionSpans(text) {
-  const addresses = [...String(text ?? '').matchAll(/@((?:user|gugu|session):[A-Za-z0-9_-]+)/g)].map(match => match[1])
+  const addresses = [...String(text ?? '').matchAll(/@((?:aid|user|gugu|session):[A-Za-z0-9_-]+)/g)].map(match => match[1])
   // Address lexing is separate; mention boundaries still use the shared grammar.
   return findMentionSpans(text, addresses)
 }
@@ -1092,6 +1101,7 @@ export function reconcileMentionExpression(members, content, toUserIds, exemptId
   const exempt = new Set(exemptIds)
   const named = members.filter((m) => m.display_name)
   const byAddress = new Map(named.flatMap(m => [
+    [`aid:${m.id}`, m],
     [`user:${m.id}`, m],
     ...(m.gugu_number ? [[`gugu:${m.gugu_number}`, m]] : []),
   ]))
@@ -1629,7 +1639,7 @@ async function handleMessage(args, deps) {
       const { isWhisper } = delivery
       let { toUserIds } = delivery
       if (isWhisper && sessionThread) {
-        throw new Error(`message_send: a whisper can only go to the main timeline, and this session is bound to thread=${sessionThread}; to say it here, set whisper:false and send normally`)
+        throw new Error(`message_send: a whisper can only go to the main timeline, and this session is bound to thread=${encodeTypedId('msg', sessionThread)}; to say it here, set whisper:false and send normally`)
       }
       row.to_user_ids = toUserIds.length ? toUserIds : null
       if (isWhisper) row.is_whisper = true
@@ -1684,8 +1694,8 @@ async function handleMessage(args, deps) {
         const rec = reconcileMentionExpression(users, args.text, toUserIds, source ? [source.sender_user_id] : [], sessionPeers)
         if (rec.mismatches.length) {
           throw new Error(
-            `The text @-mentions ${rec.mismatches.join(', ')}, but to_user_ids does not include them — what the text says and what the message does must match. ` +
-            `To address them, add their user ids to to_user_ids and send again; if you are not addressing them, drop the @ (a plain name is not a mention).`
+            `The text @-mentions ${rec.mismatches.map((name) => { const member = users.find((user) => user.display_name === name); return member ? `${name} (aid:${member.id})` : name }).join(', ')}, but to_user_ids does not include them — what the text says and what the message does must match. ` +
+            `To address them, add their addresses to to_user_ids and send again; if you are not addressing them, drop the @ (a plain name is not a mention).`
           )
         }
         if (addressesNobody) {
@@ -1693,7 +1703,7 @@ async function handleMessage(args, deps) {
           if (bareNameHits.length) {
             throw new Error(
               `This message addresses no one (to_user_ids is empty and there is no reply_to_message_id), but the text calls on ${bareNameHits.map((hit) => hit.name).join(', ')}. ` +
-              `An agent's unaddressed message wakes nobody; to call on them, add their user ids to to_user_ids (${bareNameHits.flatMap((hit) => hit.ids).join(', ')}) and send again; ` +
+              `An agent's unaddressed message wakes nobody; to call on them, add their addresses to to_user_ids (${bareNameHits.flatMap((hit) => hit.ids).map((id) => `aid:${id}`).join(', ')}) and send again; ` +
               `if you only mention them, reword it without naming them.`
             )
           }
