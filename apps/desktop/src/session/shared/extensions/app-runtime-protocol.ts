@@ -429,32 +429,21 @@ export function folderOf(value: unknown): string | undefined {
 
 /**
  * What `files.list({ chat, … })` reads besides its place: `folder` (above), `kind: 'folder'` only folders, `name` only names
- * containing it, and `limit` — one page of at most that many (up to 1000), newest change first, from `offset`. A page that
- * comes back full may have more after it. Without `limit`, every row.
+ * containing it, and `limit` (1–1000) — one page, newest change first, from `offset`; a full page may have more after it.
+ * Without `limit`, every row. A working copy's list takes `folder` alone.
  */
 export type ChatListOptions = { folder?: string; kind?: 'folder'; name?: string; offset?: number; limit?: number };
-export const CHAT_LIST_PAGE_MAX = 1000;
-
-/** The options of a chat list, checked; a working copy's list takes `folder` alone. */
 export function chatListOptionsOf(value: unknown, chat: boolean): ChatListOptions {
-  const given = (value ?? {}) as Record<string, unknown>;
-  const folder = folderOf(given.folder);
-  const { kind, name, offset, limit } = given;
-  const paged = [kind, name, offset, limit].some((option) => option !== undefined);
-  if (paged && !chat) throw invalidPlace('kind, name, offset and limit list a chat; a working copy lists one folder at a time');
+  const { folder, kind, name, offset, limit } = (value ?? {}) as Record<string, unknown>;
+  const count = (n: unknown, least: number, most: number) => n === undefined || (Number.isInteger(n) && (n as number) >= least && (n as number) <= most);
+  if (!chat && [kind, name, offset, limit].some((option) => option !== undefined)) throw invalidPlace('kind, name, offset and limit list a chat; a working copy lists one folder at a time');
   if (kind !== undefined && kind !== 'folder') throw invalidPlace("kind lists only folders: kind: 'folder'");
   if (name !== undefined && (typeof name !== 'string' || !name.trim())) throw invalidPlace('name is a piece of a name to look for');
-  const whole = (n: unknown, most: number) => typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= most;
-  if (offset !== undefined && !whole(offset, Number.MAX_SAFE_INTEGER)) throw invalidPlace('offset is a whole number, 0 or more');
-  if (limit !== undefined && !(whole(limit, CHAT_LIST_PAGE_MAX) && (limit as number) > 0)) throw invalidPlace(`limit is a whole number from 1 to ${CHAT_LIST_PAGE_MAX}`);
-  if (offset !== undefined && limit === undefined) throw invalidPlace('offset goes with limit: one page from there');
-  return {
-    ...(folder === undefined ? {} : { folder }),
-    ...(kind === 'folder' ? { kind } : {}),
-    ...(typeof name === 'string' ? { name: name.trim() } : {}),
-    ...(typeof offset === 'number' ? { offset } : {}),
-    ...(typeof limit === 'number' ? { limit } : {}),
-  };
+  if (!count(limit, 1, 1000) || !count(offset, 0, Number.MAX_SAFE_INTEGER) || (offset !== undefined && limit === undefined)) {
+    throw invalidPlace('limit is a whole number from 1 to 1000; offset, 0 or more, goes with it');
+  }
+  return Object.fromEntries(Object.entries({ folder: folderOf(folder), kind, name: (name as string | undefined)?.trim(), offset, limit })
+    .filter(([, option]) => option !== undefined)) as ChatListOptions;
 }
 
 /**

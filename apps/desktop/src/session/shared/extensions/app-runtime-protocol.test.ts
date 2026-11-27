@@ -218,6 +218,6 @@ describe('chatListOptionsOf: what files.list({ chat, … }) reads besides its pl
     expect(refused({ limit: 1001 }).code).toBe('invalid');
     expect(refused({ limit: 1.5 }).code).toBe('invalid');
     expect(refused({ offset: -1, limit: 1 }).code).toBe('invalid');
-    expect(refused({ offset: 10 }).message).toContain('offset goes with limit');
+    expect(refused({ offset: 10 }).message).toContain('offset, 0 or more, goes with it');
   });
 });
