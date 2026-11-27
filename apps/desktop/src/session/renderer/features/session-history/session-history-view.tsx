@@ -83,10 +83,11 @@ import {
   type HistoryTimeFilter,
   type SelectedSession,
 } from './history-selection';
-import { useHistoryBulk } from './use-history-bulk';
+import { useHistoryBulk, useHistoryJobKind } from './use-history-bulk';
 import type { SessionHistorySourceFilter, SessionHistoryStatusFilter, SessionHistoryViewParams } from './session-history-import-part';
 import { useSessionHistoryDirectories, useSessionHistorySelectableTotal } from './use-session-history';
 import { LegacyDmArchiveButton } from '@/components/legacy-dm-history/LegacyDmHistoryEntry';
+import { useStableHandler } from '@/hooks/useStableHandler';
 import { Illustration } from '@/components/ui/Illustration';
 import { PaneEmptyState } from '@/components/ui/PaneEmptyState';
 
@@ -810,8 +811,25 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
     },
     refresh: refreshAll,
   };
-  // 同一时间只跑一个批量删除(第 2 稿「删除中再操作」):在删的时候行上不长垃圾桶。
-  const deleteAllowed = bulk.job?.kind !== 'delete';
+  // 同一时间只跑一个批量删除(第 2 稿「删除中再操作」):在删的时候行上不长垃圾桶。只订种类:进度每批变,面板不跟着重画。
+  const deleteAllowed = useHistoryJobKind(bulk.jobs) !== 'delete';
+  // 行上的动作:每行给同一个函数(行带着自己回来),行组件 memo 才挡得住整页重画。
+  const onRowSelect = useStableHandler((row: HistoryEntry, sectionKey: string, event: React.MouseEvent<HTMLElement>) =>
+    selectRow(row, sectionKey, event)
+  );
+  const onRowAction = useStableHandler((row: HistoryEntry) => runAction(row));
+  const describeRowPreviewError = useStableHandler((error: unknown, row: HistoryEntry) => describe(error, 'preview', row.machine));
+  const onRowToggle = useStableHandler((row: HistoryEntry, sectionKey: string, event: React.MouseEvent<HTMLElement>) => {
+    const one = bulk.busyKeys.has(row.key) ? null : toSelected(row, sectionKey);
+    if (!one) return;
+    setActiveKey(row.key);
+    setExpandedKey(null);
+    bulk.toggle(one, visibleSelectable, event.shiftKey);
+  });
+  const onRowDelete = useStableHandler((row: HistoryEntry, sectionKey: string) => {
+    const one = toSelected(row, sectionKey);
+    if (one) bulk.deleteOne(one);
+  });
 
   return (
     <PageLayout>
@@ -1104,41 +1122,30 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
                       <>
                         <SessionHistorySectionBox capped={false} hasMore={false} isLoadingMore={false} onReachEnd={noop}>
                           {sectionRows.map((row) => {
-                            const rowPicked = bulk.selection.rows.has(row.key);
                             const rowBusy = bulk.busyKeys.has(row.key);
+                            const isExpanded = expandedKey === row.key;
+                            // 预览问哪台在这里读(那台的连法变了,展开着的这一行跟着变);没展开的行不要。
                             return (
                               <SessionHistoryRow
                                 key={row.key}
                                 row={row}
+                                sectionKey={section.key}
                                 isSelected={row.key === active?.key}
                                 isHighlighted={row.key === highlightedKey}
-                                isExpanded={expandedKey === row.key}
-                                onSelect={(event) => selectRow(row, section.key, event)}
-                                onAction={() => runAction(row)}
-                                previewSource={importSourceOf(row.machine)}
-                                describePreviewError={(e) => describe(e, 'preview', row.machine)}
+                                isExpanded={isExpanded}
+                                onSelect={onRowSelect}
+                                onAction={onRowAction}
+                                previewSource={isExpanded ? importSourceOf(row.machine) : null}
+                                describePreviewError={describeRowPreviewError}
                                 machineLabel={spansMachines ? labelOf(row.machine) : null}
                                 offline={row.offline}
                                 actionDisabled={row.offline && !row.opens}
                                 selectable={selectableEntry(row)}
-                                picked={rowPicked}
+                                picked={bulk.selection.rows.has(row.key)}
                                 busy={rowBusy}
                                 selecting={selecting}
-                                onToggle={(event) => {
-                                  const one = rowBusy ? null : toSelected(row, section.key);
-                                  if (!one) return;
-                                  setActiveKey(row.key);
-                                  setExpandedKey(null);
-                                  bulk.toggle(one, visibleSelectable, event.shiftKey);
-                                }}
-                                onDelete={
-                                  deleteAllowed && !rowBusy
-                                    ? () => {
-                                        const one = toSelected(row, section.key);
-                                        if (one) bulk.deleteOne(one);
-                                      }
-                                    : undefined
-                                }
+                                onToggle={onRowToggle}
+                                onDelete={deleteAllowed && !rowBusy ? onRowDelete : undefined}
                               />
                             );
                           })}
@@ -1214,7 +1221,7 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
             selection={bulk.selection}
             total={filteredTotal}
             timeLabel={timeLabel}
-            job={bulk.job}
+            jobs={bulk.jobs}
             onClear={bulk.clear}
             onSelectAll={selectAllFiltered}
             onKeepOnly={bulk.keepOnly}

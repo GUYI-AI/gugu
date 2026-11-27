@@ -8,7 +8,7 @@ import { cn } from '@renderer/utils/utils';
 import { HISTORY_BATCH_SIZE } from './history-batch-job';
 import { HistoryCheckbox } from './history-checkbox';
 import { bulkModeOf, countSelection, selectionLabel, type BulkActionId, type HistorySelection } from './history-selection';
-import type { HistoryJob } from './use-history-bulk';
+import { useHistoryJob, type HistoryJob, type HistoryJobs } from './use-history-bulk';
 
 const ACTION_LABEL: Record<BulkActionId, SessionMessageLookupKey> = {
   archive: 'sessionHistory.bulkArchive',
@@ -33,7 +33,7 @@ export function SessionHistoryBulkBar({
   selection,
   total,
   timeLabel,
-  job,
+  jobs,
   onClear,
   onSelectAll,
   onKeepOnly,
@@ -44,7 +44,8 @@ export function SessionHistoryBulkBar({
   /** 当前筛选下能勾的一共几条;还没数出来是 null(先不给「全部」那个链接)。 */
   total: number | null;
   timeLabel: string | null;
-  job: HistoryJob | null;
+  /** 在跑的批量:进度只在这里订(每批变一次,❌ 经面板传进来 —— 那样每批整页重画)。 */
+  jobs: HistoryJobs;
   onClear: () => void;
   onSelectAll: () => void;
   onKeepOnly: (status: 'active' | 'archived') => void;
@@ -52,6 +53,7 @@ export function SessionHistoryBulkBar({
   onStop: (id: number) => void;
 }) {
   const { translate } = useSessionMessages();
+  const job = useHistoryJob(jobs);
   const counts = countSelection(selection);
   const mode = bulkModeOf(counts);
   const visible = job !== null || mode.kind !== 'none';
