@@ -74,6 +74,16 @@ export function appendJournalTurn(sessionId: string, turn: TranscriptTurn, recor
   });
 }
 
+/** `appendJournalTurn`, unless the journal already holds a line for this turn (same id): then nothing is written. */
+function appendJournalTurnOnce(sessionId: string, turn: TranscriptTurn): Promise<void> {
+  const line: JournalLine = { id: journalLineId(turn), at: turn.startedAt ?? Date.now(), turn };
+  return queued(sessionId, async () => {
+    if ((await readLines(sessionId)).has(line.id)) return;
+    await mkdir(root(), { recursive: true });
+    await appendFile(fileOf(sessionId), `${JSON.stringify(line)}\n`, 'utf8');
+  });
+}
+
 async function readLines(sessionId: string): Promise<Map<string, JournalLine>> {
   let text: string;
   try { text = await readFile(fileOf(sessionId), 'utf8'); } catch (error) {
@@ -165,7 +175,8 @@ function journalUnrecordedInput(sessionId: string, turn: TranscriptTurn): void {
   const items = turn.items.filter((item) => item.kind === 'message' && item.role === 'user' && item._meta?.[UNRECORDED_PROMPT] === true);
   if (items.length === 0) return;
   const input: TranscriptTurn = { ...turn, id: `${turn.id}~input`, items, outcome: { kind: 'done' }, endedAt: turn.startedAt };
-  void appendJournalTurn(sessionId, input).catch((error: unknown) => {
+  // A turn can be committed again (a reconnect commits the same turn once more): its input is written once.
+  void appendJournalTurnOnce(sessionId, input).catch((error: unknown) => {
     log.warn('sessionJournal: an unrecorded input was not written', { sessionId, error: String(error) });
   });
 }

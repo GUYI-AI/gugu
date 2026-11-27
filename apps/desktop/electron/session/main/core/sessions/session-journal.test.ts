@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -43,4 +43,15 @@ it('leaves a recorded agent\'s ordinary input to its record', async () => {
   journalCommittedTurn({ sessionId: 'S', providerId: 'codex', source: 'live', turn: committed(undefined) });
   await new Promise((resolve) => setTimeout(resolve, 50));
   expect(await journalTurns('S')).toEqual([]);
+});
+
+// A reconnect commits the same turn again; its input must still be one line of the journal, not two.
+it('writes the input once when the same turn is committed twice', async () => {
+  const turn = committed({ [UNRECORDED_PROMPT]: true });
+  journalCommittedTurn({ sessionId: 'S', providerId: 'codex', source: 'live', turn });
+  journalCommittedTurn({ sessionId: 'S', providerId: 'codex', source: 'live', turn });
+  await vi.waitFor(async () => expect(await journalTurns('S')).toHaveLength(1));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const lines = (await readFile(join(mocks.userData, 'session-journal', 'S.jsonl'), 'utf8')).trim().split('\n');
+  expect(lines.map((line) => (JSON.parse(line) as { id: string }).id)).toEqual(['S:turn:7~input@1000']);
 });
