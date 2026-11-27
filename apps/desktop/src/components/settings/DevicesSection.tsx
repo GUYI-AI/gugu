@@ -3,7 +3,7 @@ import { billingLinksAvailable } from '../../lib/appLinks'
 import { refreshFailure, useReplica, type Reading, retryOf } from '../../lib/replica'
 import { Unknown } from '../ui/Unknown'
 import { messageForUser } from '@/lib/userFacingError';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { isDeviceOnline } from '@gugu/core/shared/enums/deviceModels'
 import type { Device } from '@gugu/core/shared/types/chat'
@@ -502,6 +502,14 @@ function DeviceRow({
       ? t(model.kind === 'server' ? 'devices.serverVersion' : 'devices.appVersion', { version: model.version })
       : t('devices.versionUnknown')
   const summaryRef = useRef<HTMLButtonElement>(null)
+  const focusedDetail = useRef<Element | null>(null)
+  useLayoutEffect(() => {
+    // Recovery can replace a focused action when the device reports its next state.
+    if (focusedDetail.current && !focusedDetail.current.isConnected) {
+      focusedDetail.current = null
+      if (expanded && document.activeElement === document.body) summaryRef.current?.focus()
+    }
+  })
   useEffect(() => {
     if (!editing && renamingRef.current) {
       renamingRef.current = false
@@ -652,7 +660,11 @@ function DeviceRow({
           <ChevronRight className="gg-device-chevron" size={14} aria-hidden />
         </Button>
       )}
-      {expanded && !editing && <div id={detailsId} className="gg-device-expanded">
+      {expanded && !editing && <div id={detailsId} className="gg-device-expanded"
+        onFocusCapture={event => { focusedDetail.current = event.target }}
+        onBlurCapture={event => {
+          if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) focusedDetail.current = null
+        }}>
         {bootFailures.map((failure) => (
           <div key={`${failure.operation}:${failure.taskId}`} role="alert" className="mt-1 text-[length:var(--font-caption)] text-[var(--danger-fg)]" data-testid="settings-device-boot-failure">
             {t('devices.bootTaskFailed', { task: failure.taskId, operation: failure.operation, message: failure.message })}

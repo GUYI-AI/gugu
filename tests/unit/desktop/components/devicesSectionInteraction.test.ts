@@ -125,8 +125,8 @@ describe('DevicesSection interaction', () => {
     expect(deviceRecoveryTarget.get()).toBeNull()
   })
 
-  it('reports a repeated SSH host key refusal in the device row and clears it after a successful retry', async () => {
-    const deviceId = 'rotated-host'
+  it.each(['action', 'search'])('clears a repeated SSH host key refusal and preserves focus after retry from %s', async focus => {
+    const deviceId = 'rotated-host-' + focus
     const refused: SshLinkOpenResult = { ok: false, reason: 'hostKeyChanged', hostKey: { host: 'box', fingerprint: 'SHA256:newKey', location: '/test/known_hosts:17' } }
     const verifiedIdentity = vi.fn(async (_id: string, _fingerprint?: string) => true)
     const pending = Promise.withResolvers<SshLinkOpenResult>()
@@ -158,8 +158,21 @@ describe('DevicesSection interaction', () => {
       expect(container.querySelector('.gg-device-facts')?.textContent).toContain('/test/known_hosts:17')
       expect(action().disabled).toBe(true)
       await act(async () => { container.querySelector<HTMLInputElement>('input[type=checkbox]')!.click() })
-      await act(async () => { action().click() })
+      const search = container.querySelector<HTMLInputElement>('[data-testid="settings-devices-search"]')!
+      await act(async () => {
+        const primary = action()
+        primary.focus()
+        primary.click()
+        if (focus === 'search') search.focus()
+      })
       expect(summary.textContent).toContain('已连接')
+      expect(document.activeElement).toBe(focus === 'search' ? search : summary)
+      if (focus === 'action') {
+        expect(summary.getAttribute('aria-expanded')).toBe('true')
+        await act(async () => { summary.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+        expect(summary.getAttribute('aria-expanded')).toBe('false')
+        expect(document.activeElement).toBe(summary)
+      }
       expect(verifiedIdentity.mock.calls).toEqual([[deviceId, refused.hostKey?.fingerprint]])
       expect(signIn.mock.calls).toEqual([[deviceId], [deviceId], [deviceId]])
     } finally {
