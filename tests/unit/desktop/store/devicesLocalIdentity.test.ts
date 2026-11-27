@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { notifyManager } from '@tanstack/react-query'
 import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 import type { Device } from '@gugu/core/shared/types/chat'
+import { MIN_SERVER_PROTOCOL } from '@gugu/core/cloud/serverMachineHealth'
+import { applyUpgradeEvent, sshLinkProblems } from '../../../../apps/desktop/src/lib/sshLinkChannel'
+import { SSH_LINK_CHANNELS } from '../../../../apps/desktop/src/lib/sshLink'
 import { DevicesProvider } from '../../../../apps/desktop/src/store/devices'
 import { useDevicesStore } from '../../../../apps/desktop/src/store/devicesContext'
 import { writeCachedDevices } from '../../../../apps/desktop/src/store/devicesCache'
@@ -63,7 +66,7 @@ function Probe() {
  * this computer's, dropped from the sidebar once it was recognized. Until it is identified, the list keeps the one it
  * had (its own row marked), and it is read again the moment the local host identifies it.
  */
-describe('DevicesProvider before this computer is identified', () => {
+describe('DevicesProvider', () => {
   let harness: ReturnType<typeof createReactHarness>
   let consoleError: ReturnType<typeof vi.spyOn>
 
@@ -98,5 +101,57 @@ describe('DevicesProvider before this computer is identified', () => {
     await act(async () => { mocks.identified.forEach((listener) => listener()); await Promise.resolve() })
     await vi.waitFor(() => expect(mocks.listDevices).toHaveBeenCalledTimes(2))
     expect(seen.find((row) => row.device_id === 'this-mac')).toMatchObject({ is_current_device: true, label: 'renamed-mac' })
+  })
+
+  it('checks only unresolved versions while mounted and stops checking each recovered device', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const positive = 'upgraded'
+    const negative = 'still-old'
+    const healthy = device('healthy')
+    const reported = (id: string, protocol: number, time: string) => {
+      const row = device(id, { last_seen_at: time })
+      row.capabilities.remote_protocol = protocol
+      return row
+    }
+    let time = '2026-11-27T07:00:00Z'
+    let endpointReady = false
+    const invoke = vi.fn(async (channel: string, id: string) => {
+      if (channel === SSH_LINK_CHANNELS.open) return id === positive && endpointReady ? { ok: true } : { ok: false, reason: 'outdated' }
+      return []
+    })
+    vi.stubGlobal('electronAPI', { invoke, eventOn: () => () => {} })
+    mocks.listDevices.mockReset().mockImplementation(async ({ deviceIds }: { deviceIds?: string[] }) => {
+      const rows = [healthy, reported(positive, MIN_SERVER_PROTOCOL, time), reported(negative, MIN_SERVER_PROTOCOL - 1, time)]
+      return deviceIds ? rows.filter(row => deviceIds.includes(row.device_id)) : rows
+    })
+    const targetedReads = () => mocks.listDevices.mock.calls.flatMap(([options]) => options.deviceIds ? [options.deviceIds] : [])
+    try {
+      await harness.render(createNode(DevicesProvider, {}, createNode(Probe)))
+      expect(targetedReads()).toEqual([])
+      await act(async () => {
+        applyUpgradeEvent({ deviceId: positive, phase: 'failed' })
+        applyUpgradeEvent({ deviceId: negative, phase: 'failed' })
+      })
+      expect(targetedReads()).toContainEqual([negative, positive])
+      expect(sshLinkProblems.get().get(positive)).toBe('updateFailed')
+      expect(invoke).toHaveBeenCalledWith(SSH_LINK_CHANNELS.open, positive, 'verify-version')
+      endpointReady = true
+      time = '2026-11-27T07:00:30Z'
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+      expect(sshLinkProblems.get().get(positive)).toBeNull()
+      expect(sshLinkProblems.get().get(negative)).toBe('updateFailed')
+      expect(seen.find(row => row.device_id === positive)?.last_seen_at).toBe(time)
+      expect(invoke).not.toHaveBeenCalledWith(SSH_LINK_CHANNELS.open, negative, 'verify-version')
+      mocks.listDevices.mockClear()
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+      expect(targetedReads()).toEqual([[negative]])
+      await act(async () => { applyUpgradeEvent({ deviceId: negative, phase: 'done' }) })
+      mocks.listDevices.mockClear()
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+      expect(targetedReads()).toEqual([])
+    } finally {
+      vi.unstubAllGlobals()
+      vi.useRealTimers()
+    }
   })
 })
