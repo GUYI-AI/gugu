@@ -4,6 +4,7 @@
 // (`closeNotice`). Real NoticeHost + real sonner, so the strip, its timers and its exit are the product's.
 // The last case is the undo window of a permanent delete (session history): the notice and the window are one clock —
 // hover held past the 8 s window pauses both, and the first delete call goes out only once the notice with 撤销 is gone.
+// A press on the strip ends wherever it is released: dragged off and let go elsewhere, the countdown still resumes.
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -20,7 +21,7 @@ const toastWith = (text: string) =>
   [...document.querySelectorAll<HTMLElement>('[data-sonner-toast]')].find((toast) => toast.textContent?.includes(text)) ?? null
 const enter = (el: Element) => act(() => { el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })) })
 const leave = (el: Element) => act(() => { el.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })) })
-const press = (el: Element, type: 'pointerdown' | 'pointerup') => act(() => { el.dispatchEvent(new Event(type, { bubbles: true })) })
+const press = (el: Element, type: 'pointerdown' | 'pointerup' | 'pointercancel') => act(() => { el.dispatchEvent(new Event(type, { bubbles: true })) })
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(async () => {
@@ -57,6 +58,28 @@ describe('notice host: hover on a toast strip and a close that waits for the exi
     expect(hover).toHaveBeenLastCalledWith(false)
     expect(hover).toHaveBeenCalledTimes(2)
     act(() => dismissNotice('hover-a'))
+  })
+
+  it('a press dragged off the strip ends where it is released or cancelled, though the strip never hears it', async () => {
+    const hover = vi.fn()
+    act(() => { notify({ key: 'hover-d', title: 'drag me', duration: 60_000, onHoverChange: hover }) })
+    await vi.waitFor(() => expect(toastWith('drag me')).not.toBeNull())
+    const toast = toastWith('drag me')!
+    enter(toast)
+    press(toast, 'pointerdown')
+    leave(toast)
+    expect(hover).toHaveBeenLastCalledWith(true) // dragged off, still pressed
+    press(document.body, 'pointerup') // let go off the strip
+    expect(hover).toHaveBeenLastCalledWith(false)
+    press(document.body, 'pointerup') // that press is over: nothing more
+    expect(hover).toHaveBeenCalledTimes(2)
+    enter(toast)
+    press(toast, 'pointerdown')
+    leave(toast)
+    press(document.body, 'pointercancel') // the system took the pointer (e.g. a gesture): the press is over too
+    expect(hover).toHaveBeenLastCalledWith(false)
+    expect(hover).toHaveBeenCalledTimes(4)
+    act(() => dismissNotice('hover-d'))
   })
 
   it('a notice shown while the strip is hovered hears it at once; a dismissed one hears nothing more', async () => {
@@ -138,6 +161,45 @@ describe('permanent delete undo window and its notice: one clock (session histor
 
     await vi.waitFor(() => expect(deleteOn).toHaveBeenCalledTimes(1), { timeout: 3000 })
     expect(atFirstCall).toEqual({ undoOnScreen: false })
+    await act(async () => { await run.finished })
+    expect(run.snapshot()).toMatchObject({ phase: 'done', deletedCount: 3 })
+  })
+
+  it('pressed on the notice, dragged off and released elsewhere: the window resumes and the notice leaves on time', async () => {
+    const KEY = 'session-history-permanent-delete-drag-test'
+    const clock = manualClock()
+    let atFirstCall: { undoOnScreen: boolean } | null = null
+    const deleteOn = vi.fn(async (_machine: string | null, targets: Array<{ projectId: string; sessionId: string }>) => {
+      atFirstCall ??= { undoOnScreen: toastWith('撤销') !== null }
+      return { deleted: targets, failed: [], unreached: [] }
+    })
+    const targets = ['a', 'b', 'c'].map((id) => ({ key: `gugu:${id}`, machine: null, projectId: 'p1', sessionId: id }))
+    const binding = undoNoticeClock(KEY, () => run)
+    const run: PermanentDeleteRun = new PermanentDeleteRun({ targets, withChildren: false, deleteOn, clock, beforeDelete: binding.beforeDelete })
+    run.start()
+    act(() => {
+      notify({ key: KEY, title: '3 条会话 8 秒后开始删除', duration: 10 * 60 * 1000, ...binding.notice, action: { label: '撤销', onClick: () => run.undo() } })
+    })
+    await vi.waitFor(() => expect(toastWith('撤销')).not.toBeNull())
+
+    const toast = toastWith('撤销')!
+    enter(toast)
+    press(toast, 'pointerdown')
+    leave(toast) // dragged off while still pressed
+    clock.advance(9000)
+    expect(run.snapshot()).toMatchObject({ phase: 'undo', undoPaused: true })
+    expect(deleteOn).not.toHaveBeenCalled()
+
+    press(document.body, 'pointerup') // released off the notice: the strip never hears it
+    expect(run.snapshot().undoPaused).toBe(false)
+    clock.advance(7999)
+    expect(run.snapshot().phase).toBe('undo')
+    act(() => clock.advance(1)) // a full window after the release
+    expect(run.undo()).toBe(false)
+
+    await vi.waitFor(() => expect(deleteOn).toHaveBeenCalledTimes(1), { timeout: 3000 })
+    expect(atFirstCall).toEqual({ undoOnScreen: false })
+    expect(toastWith('撤销')).toBeNull()
     await act(async () => { await run.finished })
     expect(run.snapshot()).toMatchObject({ phase: 'done', deletedCount: 3 })
   })
