@@ -112,6 +112,8 @@ function sessionWork(generation: number, session: Session): Work {
 }
 
 export class SessionCoordinator {
+  /** gugu-dev#1616 The account the host confirmed this process serves (deps.enterAccount). */
+  private enteredAccount: string | null = null
   private snapshot: SessionCoordinatorSnapshot = { status: 'boot-restoring', session: null, user: null, error: null }
   private readonly listeners = new Set<() => void>()
   private readonly retries = new Map<RetryPurpose, { attempt: number; timer: ReturnType<typeof setTimeout> | null }>()
@@ -448,13 +450,14 @@ export class SessionCoordinator {
   private async acceptSession(event: string, session: Session, validate: boolean, expected?: Work, onPublished?: () => void): Promise<void> {
     if (!this.active || (expected && !this.workIsCurrent(expected, false))) { onPublished?.(); return }
     const release = this.beginAuthHandoff()
-    const shownOwner = this.snapshot.user?.id ?? null
     const generation = this.nextGeneration()
     const work = sessionWork(generation, session)
     try {
-      if (this.deps.enterAccount && shownOwner !== session.user.id) {
+      // Asked once per account the host has not confirmed yet, including the one a boot candidate already shows.
+      if (this.deps.enterAccount && this.enteredAccount !== session.user.id) {
         const entry = await this.deps.enterAccount(session)
         if (!this.generationIsCurrent(generation) || entry === 'switching') return
+        this.enteredAccount = session.user.id
       }
       try { await this.deps.commitPersistedSession(session, this.generationAbort.signal) }
       catch (error) { if (this.generationIsCurrent(generation)) this.degrade(errorOf(error, 'Session persistence failed')); throw error }

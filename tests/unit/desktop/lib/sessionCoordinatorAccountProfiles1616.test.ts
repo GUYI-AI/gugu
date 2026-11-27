@@ -72,12 +72,14 @@ describe('gugu-dev#1616 a sign-in enters that account\'s own local data', () => 
     expect(takeAccountHandoff).toHaveBeenCalledOnce()
   })
 
-  it('takes no handoff over a session this profile already has', async () => {
+  it('takes no handoff over a session this profile already has, and still asks the host about that account', async () => {
     const takeAccountHandoff = vi.fn(async () => null)
-    const h = harness({ takeAccountHandoff, getPersistedSessionState: vi.fn(() => ({ bootCandidate: session('user-a'), warning: null })),
+    const enterAccount = vi.fn(async () => 'here' as const)
+    const h = harness({ takeAccountHandoff, enterAccount, getPersistedSessionState: vi.fn(() => ({ bootCandidate: session('user-a'), warning: null })),
       getSession: vi.fn(async () => ({ data: { session: session('user-a') }, error: null })) })
     stops.push(h.coordinator.start())
-    await vi.waitFor(() => expect(h.coordinator.getSnapshot().session?.user.id).toBe('user-a'))
+    await vi.waitFor(() => expect(h.coordinator.getSnapshot()).toMatchObject({ status: 'authenticated', session: { user: { id: 'user-a' } } }))
     expect(takeAccountHandoff).not.toHaveBeenCalled()
+    expect(enterAccount).toHaveBeenCalledWith(session('user-a'))
   })
 })
