@@ -1027,7 +1027,8 @@ export async function pickFilesToUpload(owner: WebContents | null): Promise<AppF
  * copy's, as the call names it. Gated like opening it read-only — checked before the dialog shows. Cancelled is `false`,
  * not an error.
  */
-type SaveSource = Awaited<ReturnType<typeof files.downloadSource>> | { name: string; ref: WorkspaceFileRef; page: DesktopFilePage; kind: 'pieces' };
+type SaveSource = Awaited<ReturnType<typeof files.downloadSource>> | { name: string; ref: WorkspaceFileRef; page: DesktopFilePage; kind: 'pieces' }
+  | { name: string; kind: 'bytes'; bytes: Uint8Array };
 
 async function downloadSourceOf(page: DesktopFilePage, given: unknown): Promise<SaveSource> {
   const ref = fileRefOf(given);
@@ -1140,6 +1141,7 @@ export function stopAppFileDownload(page: DesktopFilePage, args: { transferId?: 
 /** `wx`: written only where nothing is yet, not even a link to elsewhere; that one call is what finds the name free (`EEXIST`). */
 async function saveTo(source: SaveSource, filePath: string, flag: 'w' | 'wx', saving?: Saving): Promise<void> {
   if (source.kind === 'text') return fs.writeFile(filePath, source.text, { encoding: 'utf8', flag });
+  if (source.kind === 'bytes') return fs.writeFile(filePath, source.bytes, { flag });
   if (source.kind === 'pieces') return savePieces(source.page, source.ref, filePath, flag, saving);
   // A chat's file is written beside and renamed into place: the name is claimed first, and given back if that fails.
   if (flag === 'wx') await (await fs.open(filePath, 'wx')).close();
@@ -1228,11 +1230,27 @@ export async function downloadAppFile(page: DesktopFilePage, args: { ref?: unkno
     return saved;
   }
   const source = await downloadSourceOf(page, args.ref);
+  let done = 0;
+  const target = await saveAsked(window, source, (filePath) => following(() => saveTo(source, filePath, 'w', { signal: stop.signal, saved: (bytes, size) => told(done += bytes, size) })));
+  if (!target) return false;
+  savedAt?.(target);
+  return true;
+}
+
+/** One file where the person says, in the host's save dialog (inside their gesture); `null` = they cancelled. */
+async function saveAsked(window: BrowserWindow | null, source: SaveSource, write: (filePath: string) => Promise<void>): Promise<string | null> {
   const options = { defaultPath: source.name };
   const target = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
-  if (target.canceled || !target.filePath) { if (source.kind === 'file') await source.file.dispose(); return false; }
-  let done = 0;
-  await following(() => saveTo(source, target.filePath as string, 'w', { signal: stop.signal, saved: (bytes, size) => told(done += bytes, size) }));
-  savedAt?.(target.filePath);
-  return true;
+  if (target.canceled || !target.filePath) { if (source.kind === 'file') await source.file.dispose(); return null; }
+  await write(target.filePath);
+  return target.filePath;
+}
+
+/**
+ * Bytes the host window already holds (a chat attachment, a file preview, a session's output) saved to this computer: the
+ * same save dialog and write as an App's `files.download`, the desktop's one way to save. `null` = the person cancelled.
+ */
+export async function saveBytesAs(owner: WebContents | null, name: string, bytes: Uint8Array): Promise<string | null> {
+  const source = { name, kind: 'bytes' as const, bytes };
+  return saveAsked(owner ? BrowserWindow.fromWebContents(owner) : null, source, (filePath) => saveTo(source, filePath, 'w'));
 }

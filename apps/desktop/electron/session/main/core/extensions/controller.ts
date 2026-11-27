@@ -489,6 +489,22 @@ export const extensionsController = createRPCController({
     }
   },
   /**
+   * Bytes this window holds (a chat attachment, a preview, a session's output) saved where the person says: the save
+   * dialog and write of an App's `files.download` (app-files.ts `saveBytesAs`), the desktop's one way to save a file.
+   * `target` null = cancelled. Electron's own download of an `<a download>` showed no dialog and wrote nothing (gugu-dev#1623).
+   */
+  saveFile: async (args: { name?: unknown; bytes?: unknown }) => {
+    const { saveBytesAs } = await import('@main/core/extensions/app-files');
+    if (typeof args?.name !== 'string' || !args.name || !(args.bytes instanceof Uint8Array)) {
+      return { success: false as const, error: 'saveFile needs a file name and its bytes' };
+    }
+    try {
+      return { success: true as const, target: await saveBytesAs(getMainWindow()?.webContents ?? null, args.name, args.bytes) };
+    } catch (error) {
+      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+  /**
    * 摩擦单 F36: the window saw rows of these chats' members change (who, left or not), or these people renamed (`renamed`:
    * no chat named, so every chat a page sits in hears it); the pages are told when that moved who is there.
    */

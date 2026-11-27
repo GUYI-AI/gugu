@@ -12,6 +12,7 @@ const f = vi.hoisted(() => ({
   shown: [] as string[],
   dialogDir: '',
   dialogFile: '',
+  cancelSave: false,
   openIn: vi.fn(async () => undefined),
   windowsNames: false,
   recorded: vi.fn(async () => null as { projectId: string; path: string } | null),
@@ -27,7 +28,7 @@ vi.mock('node:path', async (original) => {
 });
 vi.mock('electron', () => ({
   BrowserWindow: { fromWebContents: () => null },
-  dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [f.dialogDir] }), showSaveDialog: async () => ({ canceled: false, filePath: f.dialogFile }) },
+  dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [f.dialogDir] }), showSaveDialog: async () => (f.cancelSave ? { canceled: true, filePath: undefined } : { canceled: false, filePath: f.dialogFile }) },
   shell: { showItemInFolder: (p: string) => f.shown.push(p) },
 }));
 vi.mock('@main/lib/events', () => {
@@ -57,7 +58,7 @@ vi.mock('@main/core/workspaces/workspace-runtime', () => ({
   },
 }));
 
-const { removeAppFile, forwardTargets, downloadAppFile, entryPath, revealAppFile, listAppFiles, writeAppFileChunk, readAppFileText, openAppFileIn, openWithTarget, watchAppFile, watchAppFolder, FORWARD_MAX_BYTES } = await import('./app-files');
+const { removeAppFile, forwardTargets, downloadAppFile, saveBytesAs, entryPath, revealAppFile, listAppFiles, writeAppFileChunk, readAppFileText, openAppFileIn, openWithTarget, watchAppFile, watchAppFolder, FORWARD_MAX_BYTES } = await import('./app-files');
 const { events } = await import('@main/lib/events');
 const { appFileWatchElsewhereChannel, workingCopyMovedChannel } = await import('@shared/events/appEvents');
 const { releaseWorkingCopies } = await import('./working-copy-files');
@@ -85,6 +86,7 @@ beforeEach(async () => {
   home = await fsp.realpath(await fsp.mkdtemp(path.join(os.tmpdir(), 'gates-home-')));
   f.dialogDir = await fsp.realpath(await fsp.mkdtemp(path.join(os.tmpdir(), 'gates-save-')));
   f.dialogFile = path.join(f.dialogDir, 'saved.bin');
+  f.cancelSave = false;
   vi.stubEnv('GUGU_HOME', home);
 });
 afterEach(async () => {
@@ -562,5 +564,21 @@ describe('watching through a link', () => {
     f.capabilities.add('files:read');
     fs.symlinkSync(outside, path.join(f.root, 'outlink'));
     await expect(watchAppFolder(page(), { workspace }, 'outlink', () => undefined)).rejects.toThrow(/outside this working copy/);
+  });
+});
+
+// gugu-dev#1623: the desktop's saveFile (a chat attachment's Download, a preview's, a session output's) is this same save
+// dialog and write; an `<a download>` handed to Electron showed no dialog and wrote nothing.
+describe('saveBytesAs: bytes the window holds, saved where the person says', () => {
+  it('writes the bytes at the path the save dialog returns', async () => {
+    const bytes = new TextEncoder().encode('# dl-1127\nAttachment download repro.\n');
+    await expect(saveBytesAs(null, 'dl-1127.md', bytes)).resolves.toBe(f.dialogFile);
+    expect(new Uint8Array(fs.readFileSync(f.dialogFile))).toEqual(bytes);
+  });
+
+  it('writes nothing and says null when the person cancels', async () => {
+    f.cancelSave = true;
+    await expect(saveBytesAs(null, 'dl-1127.md', new Uint8Array([1, 2, 3]))).resolves.toBeNull();
+    expect(fs.existsSync(f.dialogFile)).toBe(false);
   });
 });
