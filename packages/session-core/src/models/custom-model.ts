@@ -212,6 +212,13 @@ export type PiCustomModelProvider = {
   models: readonly CustomModelEntry[];
 };
 
+/**
+ * How long checking which protocols an address takes may run in all, every request included (gugu-dev#1617). The requests run
+ * side by side and each may use all of it: a relay's first request to a model it has to wake measured over 10 s, the next
+ * ones 3–8 s. What has not answered by then reads as timed out.
+ */
+export const CUSTOM_MODEL_PROBE_DEADLINE_MS = 25_000;
+
 /** A session owns this choice; changing another session or a default cannot replace it. */
 export const sessionModelSelectionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('native'), modelId: z.string().optional() }),
