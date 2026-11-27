@@ -146,7 +146,7 @@ vi.mock('@/components/ui/Popover', () => {
   };
 });
 
-const { SidebarOneListFoot, SidebarOneListHead, SidebarOneListTop } = await import('./sidebar-one-list-chrome');
+const { SidebarOneListFoot, SidebarOneListHead, SidebarOneListTop, followTopRow } = await import('./sidebar-one-list-chrome');
 /** The sidebar's chrome as LeftSidebar stacks it: the head (its band and the fold row), the foot (the list between is not needed). */
 function Chrome({ innerShownFor }: { innerShownFor?: string }) {
   return (
@@ -185,6 +185,23 @@ const click = (element: HTMLElement) => act(async () => { element.click(); await
 const change = (apply: () => void) => act(async () => { apply(); state.emit(); });
 
 describe('the top: 创建智能体 and the 「+」 menu', () => {
+  it('a fold reads the row\'s width once, ❌ in every frame (each read laid the page out again mid-frame)', () => {
+    const row = document.createElement('div');
+    const plus = row.appendChild(document.createElement('button'));
+    let reads = 0;
+    Object.defineProperty(row, 'clientWidth', { get: () => { reads += 1; return 260; } });
+    Object.defineProperty(plus, 'offsetWidth', { get: () => 32 });
+    // 260 − 12 − 32 − 18 = 198 to travel, all of it in the half of the fold where the names are gone.
+    for (const progress of [1, 0.6, 0.4, 0.3, 0.2, 0.1, 0]) followTopRow(row, progress, false);
+    expect(plus.style.transform).toBe('translateX(-198px)');
+    expect(reads).toBe(1);
+    followTopRow(row, 0, true);
+    expect(plus.style.transform).toBe('');
+    // The next fold reads again (the list may have been resized in between).
+    for (const progress of [1, 0.2]) followTopRow(row, progress, false);
+    expect(reads).toBe(2);
+  });
+
   it('创建智能体 runs what 新建任务 runs (the caller hands it handleNewSession)', async () => {
     const create = vi.fn();
     await render(<SidebarOneListTop collapsed={false} onCreateAgent={create} />);

@@ -55,17 +55,25 @@ const CREATE_MENU_LABEL = { 'create-group': 'sidebar.newGroupChat', 'new-project
  * of the fold). In between the 「+」 (32) slides from the row's right end onto the avatars' axis (18 + 16 = 34 of the 68 rail)
  * by a transform, in the half of the fold where 创建智能体 has faded (followNames), so the two never cross.
  */
-function followTopRow(row: HTMLElement, progress: number, railLayout: boolean) {
+export function followTopRow(row: HTMLElement, progress: number, railLayout: boolean) {
   row.style.paddingInline = railLayout ? '18px' : '12px';
   row.style.gap = railLayout ? '0px' : '4px';
   row.style.paddingBottom = `${railLayout ? TOP_ROW_GAP_RAIL_PX : TOP_ROW_GAP_OPEN_PX}px`;
   const plus = row.lastElementChild as HTMLElement | null;
   if (!plus) return;
-  // From its expanded place (12 from the right end) to the rail's (18 from the left); a read of a clean layout. It moves in
-  // the half of the fold where the text is gone (the mirror of sidebarRailTextOpacity), ❌ across 创建智能体 still fading.
-  const travel = railLayout ? 0 : sidebarRailTextOpacity(1 - progress) * (row.clientWidth - 12 - plus.offsetWidth - 18);
+  // From its expanded place (12 from the right end) to the rail's (18 from the left). It moves in the half of the fold where
+  // the text is gone (the mirror of sidebarRailTextOpacity), ❌ across 创建智能体 still fading.
+  const share = railLayout ? 0 : sidebarRailTextOpacity(1 - progress);
+  if (share <= 0) topRowSpan.delete(row);
+  else if (!topRowSpan.has(row)) topRowSpan.set(row, row.clientWidth - 12 - plus.offsetWidth - 18);
+  const travel = share * (topRowSpan.get(row) ?? 0);
   plus.style.transform = travel > 0 ? `translateX(${-travel}px)` : '';
 }
+/**
+ * How far the 「+」 travels, read once per fold: the list keeps its width through the fold (@@@list-clip), and a read in every
+ * frame, after the track has written the slots' widths, laid the whole page out again in the middle of each frame.
+ */
+const topRowSpan = new WeakMap<HTMLElement, number>();
 
 /** What the rail hides along with the names: it takes their opacity (sidebarRailTextOpacity), on its own element. */
 function followNames(element: HTMLElement, progress: number) {
