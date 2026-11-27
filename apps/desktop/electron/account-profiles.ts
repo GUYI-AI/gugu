@@ -86,6 +86,16 @@ export function accountLayout(input: {
   }
 }
 
+/**
+ * An account's home goes inside its own userData whenever the machine home is inside the machine userData (an isolated
+ * --user-data-dir instance, or a GUGU_HOME pointed there): a sibling of that home would sit inside the first account's
+ * userData.
+ */
+export function homeFollowsUserData(machineUserData: string, machineHome: string): boolean {
+  const relative = path.relative(path.resolve(machineUserData), path.resolve(machineHome))
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
+}
+
 /** Each account's tmux server is its own: the root account keeps the label it always had, so its terminals survive. */
 export function accountTmuxLabel(base: string, layout: AccountLayout): string {
   return layout.root || !layout.userId ? base : `${base}-${layout.userId.slice(0, 8)}`

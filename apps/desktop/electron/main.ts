@@ -628,7 +628,7 @@ import { writeSharedUserDataPointer } from './session/headless/shared-user-data'
 import { promisify } from 'node:util'
 import { execFile } from '@gugu/core/local/childProcess'
 import {
-  accountLayout, accountTmuxLabel, adoptLegacyOwner, decideAccountEntry, isAccountId, readAccountRegistry,
+  accountLayout, accountTmuxLabel, adoptLegacyOwner, decideAccountEntry, homeFollowsUserData, isAccountId, readAccountRegistry,
   takeAccountHandoff, writeAccountHandoff, writeAccountRegistry, type AccountLayout,
 } from './account-profiles'
 import { removeLegacyBrowserLogins } from './lib/remove-legacy-browser-logins'
@@ -656,7 +656,7 @@ declare const __GUGU_BUILD_DISTRIBUTION__: string
 // (per tier); an isolated instance (--user-data-dir) keeps it inside its own userData.
 function machineGuguHome(): { home: string; followsUserData: boolean } {
   const explicit = process.env.GUGU_HOME?.trim()
-  if (explicit) return { home: explicit, followsUserData: false }
+  if (explicit) return { home: explicit, followsUserData: homeFollowsUserData(app.getPath('userData'), explicit) }
   if (userDataDir) return { home: join(app.getPath('userData'), 'gugu-home'), followsUserData: true }
   const home =
     __GUGU_TIER__ === 'production'
@@ -686,6 +686,10 @@ function legacyMirrorUserId(home: string): string | null {
  * reads them. Signing in as another account relaunches (account-profile:enter). The headless server has its own layout.
  */
 const machineUserData = app.getPath('userData')
+// What this process was started with: a relaunch starts from it again, never from this account's values (relaunchApp).
+const inheritedAccountEnv = {
+  GUGU_HOME: process.env.GUGU_HOME, GUGU_TMUX_SOCKET_LABEL: process.env.GUGU_TMUX_SOCKET_LABEL, GUGU_MACHINE_USER_DATA: process.env.GUGU_MACHINE_USER_DATA,
+}
 const machineHome = machineGuguHome()
 const accountBoot: { userId: string | null; layout: AccountLayout } | null = SERVER_MODE ? null : (() => {
   const read = readAccountRegistry(machineUserData)
@@ -2209,7 +2213,8 @@ function messagePreviewHostDeps({ openTopicPublisher }: {
 }
 
 // 免费额度跟设备走(官方会员口径):owner 确立时认领一次,结果记在本机;失败静默,下次启动再试。
-const deviceClaimStorePath = () => join(app.getPath('userData'), 'device-free-credits.json')
+// gugu-dev#1616 "This device has claimed" is about the machine, not the signed-in account.
+const deviceClaimStorePath = () => join(machineUserData, 'device-free-credits.json')
 async function claimFreeCreditsForOwner(provider: RuntimeAuthProvider, ownerUserId: string): Promise<void> {
   if (!officialServicesEnabled()) return
   const auth = await provider.getAuth().catch(() => null)
@@ -4311,6 +4316,12 @@ function relaunchApp(): void {
     )
   }
   relaunchLogger.info({}, 'relaunching')
+  // gugu-dev#1616 The next process chooses its own account's directories from the environment this one was started
+  // with: app.relaunch() hands over the current environment, which by now names this account's home and tmux server.
+  for (const [key, value] of Object.entries(inheritedAccountEnv)) {
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
   app.relaunch()
   // ❌ 不用 app.exit():它强制退出、**跳过 before-quit**,于是既错过了优雅停机,又把退出
   //    交给 Node 的正常销毁流程 —— 有活 PTY 时会永久卡死在 pty.node 的线程 join 上

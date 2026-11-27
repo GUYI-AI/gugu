@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  ACCOUNT_HANDOFF_FILE, accountLayout, accountTmuxLabel, adoptLegacyOwner, decideAccountEntry, readAccountRegistry,
+  ACCOUNT_HANDOFF_FILE, accountLayout, accountTmuxLabel, adoptLegacyOwner, decideAccountEntry, homeFollowsUserData, readAccountRegistry,
   takeAccountHandoff, writeAccountHandoff, writeAccountRegistry, type AccountRegistry,
 } from '../../../../apps/desktop/electron/account-profiles'
 
@@ -36,6 +36,17 @@ describe('gugu-dev#1616 one account per process: directories', () => {
     }
     expect(layoutOf(registry, B)).toEqual({ userId: B, userData: `/data/Gugu-accounts/${B}`, home: `/home/u/.gugu-accounts/${B}`, root: false })
     expect(layoutOf(registry, B, true).home).toBe(`/data/Gugu-accounts/${B}/gugu-home`)
+  })
+
+  it('puts an account home inside its own userData when the machine home is inside the machine userData', () => {
+    expect(homeFollowsUserData('/p/profile', '/p/profile/gugu-home')).toBe(true)
+    expect(homeFollowsUserData('/p/profile', '/p/profile')).toBe(true)
+    expect(homeFollowsUserData('/data/Gugu', '/home/u/.gugu')).toBe(false)
+    expect(homeFollowsUserData('/p/profile', '/p/profile-home')).toBe(false)
+    const registry: AccountRegistry = { version: 1, rootOwner: A, current: B }
+    const b = accountLayout({ machineUserData: '/p/profile', machineHome: '/p/profile/gugu-home',
+      homeFollowsUserData: homeFollowsUserData('/p/profile', '/p/profile/gugu-home'), registry, userId: B })
+    expect(within(b.home, '/p/profile')).toBe(false)
   })
 
   it('refuses an account id that could leave its directory', () => {
