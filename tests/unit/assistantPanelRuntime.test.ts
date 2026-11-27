@@ -1,4 +1,5 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeAll, expect, it, vi } from 'vitest'
@@ -8,7 +9,6 @@ import { NEUTRAL_ASSISTANT_RULES } from './desktop/assistantRules/neutralRules'
 import { prepareLocalAssistantHome } from '../../apps/desktop/electron/assistant-home-prepare'
 import { assistantHomePaths } from '@gugu/core/shared/assistantPolicy'
 import type { AssistantPanelItem } from '@gugu/core/cloud/assistantPanel'
-import type { PanelObservation } from '../../apps/desktop/electron/sessionpage/assistant-panel-publisher'
 import { createAssistantPanelRuntime } from '../../apps/desktop/electron/sessionpage/assistant-panel-runtime'
 
 // Drive the explicit schedule/integration callbacks without fixture filesystem events starting an unrelated full publication.
@@ -16,7 +16,7 @@ vi.mock('node:fs', async importOriginal => ({ ...await importOriginal<typeof imp
   watch: () => ({ on() { return this }, close() { calls.closedWatchers++ } }),
 }))
 
-const calls = vi.hoisted(() => ({ closedWatchers: 0,requests: [] as { name: string; assistant: unknown }[],sessionAgents: {} as Record<string,string>,boundAssistant: null as string|null,roleHold: null as Promise<boolean>|null,roleChecks: [] as string[],rejectAssistant: null as string|null,rejection: { code: '42501',message: 'Personal assistant is not available to this account' },networkFailure: false,signals: [] as AbortSignal[],domains:[] as string[],assistants:[] as string[],rpcNames:[] as string[],prepareFailure:null as Error|null,holdRpc:null as string|null,commitPublication:false,live:true,readable:false,stalled:true,collectIntegrations: false, previousIntegrations: [] as AssistantPanelItem[], integrationRows: [] as PanelObservation[], uploadIntegrations: false, moves: [] as Record<string, unknown>[], moveError: null as Error | null,blockedDomain:null as string|null,hold: null as Promise<void> | null }))
+const calls = vi.hoisted(() => ({ closedWatchers: 0,requests: [] as { name: string; assistant: unknown }[],sessionAgents: {} as Record<string,string>,boundAssistant: null as string|null,roleHold: null as Promise<boolean>|null,roleChecks: [] as string[],rejectAssistant: null as string|null,rejection: { code: '42501',message: 'Personal assistant is not available to this account' },networkFailure: false,signals: [] as AbortSignal[],domains:[] as string[],assistants:[] as string[],rpcNames:[] as string[],prepareFailure:null as Error|null,holdRpc:null as string|null,commitPublication:false,live:true,readable:false,stalled:true,collectIntegrations: false, moves: [] as Record<string, unknown>[], moveError: null as Error | null,blockedDomain:null as string|null,hold: null as Promise<void> | null }))
 vi.mock('../../apps/desktop/electron/sessionpage/assistant-agent-role',() => ({
   isPersonalAssistantAgent: async (auth: { userId: string },id: string) => {
     calls.roleChecks.push(`${auth.userId}:${id}`)
@@ -33,15 +33,23 @@ vi.mock('../../apps/desktop/electron/sessionpage/assistant-panel-admission',asyn
     applyAssistantPanelPending:(input:Parameters<typeof original.applyAssistantPanelPending>[0])=>calls.readable ? original.applyAssistantPanelPending(input) : Promise.resolve({revision:'0',settledFailure:false,superseded:false}),
   }
 })
-const uploads = vi.hoisted(() => vi.fn(async (_input: unknown) => ({ itemId: 'new-body', sha256: 'digest' })))
+const catalogRpc = vi.hoisted(() => vi.fn<(name: string,args: Record<string,unknown>) => { data: unknown; error: unknown } | undefined>())
+const uploads = vi.hoisted(() => vi.fn(async (input: {label:string;bytes:Uint8Array}) => ({
+  itemId: input.label,sha256:createHash('sha256').update(input.bytes).digest('hex'),
+})))
 vi.mock('@gugu/core/cloud/assistantPanelBodies', () => ({ uploadAssistantPanelBody: uploads, readAssistantPanelBody: vi.fn(), panelBodyFileName: (label: string) => `${label}.bin` }))
-vi.mock('../../apps/desktop/electron/sessionpage/assistant-panel-publisher',()=>({collectAssistantPanelFiles:async()=>[],publishAssistantPanelCollection:async({domain,assistantId,cloud,collect,upload}:{domain:string;assistantId:string;cloud:{commit:(id:string,change:unknown)=>Promise<unknown>};collect: (previous: AssistantPanelItem[]) => Promise<PanelObservation[]>;upload:(row:PanelObservation)=>Promise<unknown>})=>{
-  calls.domains.push(domain)
-  calls.assistants.push(assistantId)
-  if (calls.commitPublication) await cloud.commit(assistantId,{operationId:'operation',domain,key:'fixture',expectedRevision:'0',operation:'save',data:{}})
-  if (domain === calls.blockedDomain) await calls.hold
-  if (domain === 'integrations' && calls.collectIntegrations) { calls.integrationRows = await collect(calls.previousIntegrations); if (calls.uploadIntegrations) for (const row of calls.integrationRows) await upload(row); await calls.hold }
-}}))
+vi.mock('../../apps/desktop/electron/sessionpage/assistant-panel-publisher',async importOriginal => {
+  const original = await importOriginal<typeof import('../../apps/desktop/electron/sessionpage/assistant-panel-publisher')>()
+  return { collectAssistantPanelFiles:async()=>[],publishAssistantPanelCollection:async(input: Parameters<typeof original.publishAssistantPanelCollection>[0])=>{
+    const {domain,assistantId,cloud,collect} = input
+    calls.domains.push(domain)
+    calls.assistants.push(assistantId)
+    if (calls.commitPublication) await cloud.commit(assistantId,{operationId:'operation',domain,key:'fixture',expectedRevision:'0',operation:'save',data:{}})
+    if (domain === calls.blockedDomain) await calls.hold
+    if (domain === 'integrations' && catalogRpc.getMockImplementation()) return original.publishAssistantPanelCollection(input)
+    if (domain === 'integrations' && calls.collectIntegrations) { await collect([]); await calls.hold }
+  }}
+})
 vi.mock('@gugu/core/cloud/supabase',() => ({ createGuguSupabaseClient: () => ({
   from: () => { const query = { select: () => query,eq: () => query,abortSignal: () => query,maybeSingle: async () => ({error:null,data:calls.live ? {id:'assistant'} : null}) }; return query },
   rpc(name: string,args: Record<string,unknown> = {}) {
@@ -50,6 +58,8 @@ vi.mock('@gugu/core/cloud/supabase',() => ({ createGuguSupabaseClient: () => ({
       if (calls.networkFailure) throw new TypeError('fetch failed')
       return { data: null,error: calls.rejection }
     } }
+    const catalogResult = catalogRpc(name,args)
+    if (catalogResult) return { abortSignal: async () => catalogResult }
     if (name === 'workspace_move_as') { calls.moves.push(args); return { abortSignal: async () => { if (calls.moveError?.name === 'TimeoutError') throw calls.moveError; return { data: {}, error: calls.moveError } } } }
     if (name === 'open_dm') return { abortSignal: async () => ({ data: 'private-dm', error: null }) }
     if (name === calls.holdRpc) return {abortSignal(signal:AbortSignal) {
@@ -72,7 +82,7 @@ vi.mock('@gugu/core/cloud/supabase',() => ({ createGuguSupabaseClient: () => ({
 // Each turn's profile review is rendered from the assistant App's rules (#1931): fixed rules here, at the version the
 // index lines below name.
 beforeAll(() => installAssistantRulesResolver(fixedAssistantRules({ ...NEUTRAL_ASSISTANT_RULES, defaults: { ...NEUTRAL_ASSISTANT_RULES.defaults, profileRulesVersion: 6 } })))
-afterEach(() => { calls.closedWatchers=0;calls.requests.length=0;calls.sessionAgents={};calls.boundAssistant=null;calls.roleHold=null;calls.roleChecks.length=0;calls.rejectAssistant=null;calls.rejection={code:'42501',message:'Personal assistant is not available to this account'};calls.networkFailure=false;vi.useRealTimers(); calls.signals.length = 0; calls.domains.length=0; calls.assistants.length=0; calls.rpcNames.length=0; calls.prepareFailure=null; calls.holdRpc=null; calls.commitPublication=false; calls.live=true; calls.readable=false; calls.stalled=true; calls.collectIntegrations=false; calls.previousIntegrations=[]; calls.integrationRows=[]; calls.uploadIntegrations=false; calls.moves=[]; calls.moveError=null; uploads.mockClear(); calls.blockedDomain=null; calls.hold=null })
+afterEach(() => { calls.closedWatchers=0;calls.requests.length=0;calls.sessionAgents={};calls.boundAssistant=null;calls.roleHold=null;calls.roleChecks.length=0;calls.rejectAssistant=null;calls.rejection={code:'42501',message:'Personal assistant is not available to this account'};calls.networkFailure=false;vi.useRealTimers(); calls.signals.length = 0; calls.domains.length=0; calls.assistants.length=0; calls.rpcNames.length=0; calls.prepareFailure=null; calls.holdRpc=null; calls.commitPublication=false; calls.live=true; calls.readable=false; calls.stalled=true; calls.collectIntegrations=false; catalogRpc.mockReset(); calls.moves=[]; calls.moveError=null; uploads.mockClear(); calls.blockedDomain=null; calls.hold=null })
 
 it('stops only the removed assistant timers and listeners and never recreates its cached binding',async()=>{
   vi.useFakeTimers();calls.stalled=false;calls.readable=true
@@ -521,61 +531,61 @@ it('#1457 does not restore a fresh proof when the host modules restart',async()=
 })
 
 
-function catalogItem(data: Record<string, unknown> = {}): AssistantPanelItem {
-  return { assistant_user_id:'assistant',owner_user_id:'owner',domain:'integrations',device_id:null,revision:'1',
-    resource_key:'catalog:gitlab',body_item_id:'existing-catalog',body_sha256:'digest',data,
+const catalog = {id:'gitlab',en:{id:'gitlab',name:'GitLab',catalog:{categoryId:'coding'}},zh:{id:'gitlab',name:'GitLab'}}
+const catalogKey = 'catalog:gitlab', label = catalogKey + ' (configurable, not connected)'
+const savedKey = JSON.stringify(['gitlab','account'])
+
+it.each(['current','legacy','denied','timeout'] as const)('converges catalog bodies and saved connections on repeated publication: %s',async mode => {
+  calls.stalled = false
+  const cwd = await mkdtemp(join(tmpdir(),'panel-catalog-'))
+  const failed = vi.fn()
+  const digest = createHash('sha256').update(JSON.stringify({version:1,en:catalog.en,'zh-CN':catalog.zh})).digest('hex')
+  const existing: AssistantPanelItem = { assistant_user_id:'assistant',owner_user_id:'owner',domain:'integrations',device_id:'device',revision:'1',
+    resource_key:catalogKey,body_item_id:'existing-catalog',body_sha256:digest,data:{configured:false},
     deleted_at:null,observed_at:null,updated_at:'2026-01-01T00:00:00Z' }
-}
-
-it('labels unconfigured catalog files without changing saved connections or stable catalog keys', async () => {
-  calls.stalled=false; calls.collectIntegrations=true; calls.uploadIntegrations=true
-  const cwd=await mkdtemp(join(tmpdir(),'panel-catalog-label-'))
-  const failed=vi.fn()
-  const catalog={id:'gitlab',en:{id:'gitlab',name:'GitLab',catalog:{categoryId:'coding'},auth:{methods:[]}},zh:{id:'gitlab',name:'GitLab',auth:{methods:[]}}}
-  const saved={providerId:'gitlab',accountId:'account',configured:true,displayName:'My GitLab',publicMetadata:{updatedAt:1}}
-  const runtime=createAssistantPanelRuntime({getAuth:async()=>({accessToken:'fixture',userId:'owner'}),instanceId:()=> 'runtime',deviceId:async()=> 'device',
-    local:{integrationCatalog:()=>[catalog],integrations:async()=>[saved]} as never,guguHome:cwd,kind:'computer',env:{},failed,locale:()=> 'en-US'})
+  const deleted = {...existing,resource_key:'catalog:deleted',deleted_at:'2026-01-02T00:00:00Z'}
+  const rows = new Map([[catalogKey,existing],[deleted.resource_key,deleted]])
+  const saves: string[] = []
+  let rejected = 0
+  catalogRpc.mockImplementation((name,args) => {
+    if (name === 'assistant_panel_snapshot') return {data:{version:1,revision:'1',items:[...rows.values()].filter(row=>!row.deleted_at),application:[]},error:null}
+    if (name === 'workspace_move_as') expect(rows.get(catalogKey)?.data.providerId).toBe('gitlab')
+    const key = String(args.p_resource_key), old = rows.get(key)
+    if (name === 'assistant_panel_resource') return {data:{version:1,item:old ?? null},error:null}
+    if (name !== 'assistant_panel_commit') return
+    const data = args.p_data as Record<string,unknown>
+    if (mode === 'legacy' && 'catalogBodyLabel' in data) {
+      rejected++
+      return {data:null,error:{code:'22023',message:'Panel data has unsupported fields'}}
+    }
+    if (args.p_expected_revision !== (old?.revision ?? '0')) return {data:null,error:{code:'PT409',message:'conflict'}}
+    const revision = String(Number(old?.revision ?? 0)+1)
+    rows.set(key,{ ...existing,resource_key:key,revision,data,body_item_id:args.p_body_item_id as string|null,body_sha256:args.p_body_sha256 as string|null })
+    saves.push(key)
+    return {data:{operationId:args.p_operation_id,revision,status:'applied'},error:null}
+  })
+  if (mode === 'denied') calls.moveError = new Error('denied')
+  if (mode === 'timeout') calls.moveError = new DOMException('rename timed out','TimeoutError')
+  const fresh = {...catalog,id:'fresh'}
+  const runtime = createAssistantPanelRuntime({getAuth:async()=>({accessToken:'fixture',userId:'owner'}),instanceId:()=> 'runtime',deviceId:async()=> 'device',
+    local:{sessions:async()=>[],apply:async()=>{},integrationCatalog:()=>[catalog,fresh,{...catalog,id:'deleted'}],integrations:async()=>[{providerId:'gitlab',accountId:'account',configured:true,publicMetadata:{updatedAt:1}}]} as never,
+    guguHome:cwd,kind:'computer',env:{},failed,locale:()=> 'en-US'})
   try {
     await runtime.bind({sessionId:'session',assistantId:'assistant',ownerId:'owner',cwd})
     await runtime.publish('session')
+    const firstWrites = [...saves]
+    await runtime.publish('session')
+    await runtime.publish('session')
+    expect(saves).toEqual(firstWrites)
+    expect(rejected).toBe(mode === 'legacy' ? 1 : 0)
+    expect(calls.moves).toEqual([{p_item_id:'existing-catalog',p_as_user_id:'owner',p_folder:null,p_name:label+'.bin'}])
+    expect(rows.get(catalogKey)?.data.catalogBodyLabel).toBe(mode === 'current' ? label : undefined)
+    expect(rows.get('catalog:fresh')?.data.catalogBodyLabel).toBe(mode === 'legacy' ? undefined : 'catalog:fresh (configurable, not connected)')
+    expect(uploads.mock.calls.map(([input])=>input.label)).toEqual(['catalog:fresh (configurable, not connected)',savedKey])
+    expect(rows.get(savedKey)?.data).toMatchObject({configured:true,providerId:'gitlab',accountId:'account'})
+    expect(rows.get(savedKey)?.data).not.toHaveProperty('catalogBodyLabel')
+    expect(rows.get('catalog:deleted')).toBe(deleted)
+    expect(rows.get('__collection__:device')?.data).toMatchObject({state:'ready',itemCount:3})
     expect(failed).not.toHaveBeenCalled()
-    expect(calls.integrationRows.map(row=>row.key)).toEqual(['catalog:gitlab',JSON.stringify(['gitlab','account'])])
-    expect(uploads.mock.calls.map(([input])=>(input as {label:string}).label)).toEqual(['catalog:gitlab (configurable, not connected)',JSON.stringify(['gitlab','account'])])
-    expect(calls.integrationRows[0].data.configured).toBe(false)
-    expect(calls.integrationRows[1].data.configured).toBe(true)
-    expect(calls.moves).toEqual([])
-
-    calls.uploadIntegrations=false
-    calls.previousIntegrations=[catalogItem({configured:false})]
-    await runtime.publish('session')
-    expect(calls.moves).toEqual([{p_item_id:'existing-catalog',p_as_user_id:'owner',p_folder:null,p_name:'catalog:gitlab (configurable, not connected).bin'}])
-    calls.previousIntegrations=[catalogItem(calls.integrationRows[0].data)]
-    await runtime.publish('session')
-    expect(calls.moves).toHaveLength(1)
-    calls.previousIntegrations=[{...catalogItem(),deleted_at:'2026-01-02T00:00:00Z'},
-      {...catalogItem({configured:true}),resource_key:JSON.stringify(['gitlab','account']),body_item_id:'saved-connection'}]
-    await runtime.publish('session')
-    expect(calls.moves).toHaveLength(1)
   } finally {runtime.dispose();await rm(cwd,{recursive:true,force:true})}
-})
-
-it.each(['denied','timeout'])('keeps publishing saved connections when a catalog rename fails: %s', async reason => {
-  calls.stalled=false; calls.collectIntegrations=true; calls.moveError=reason === 'timeout' ? new DOMException('rename timed out','TimeoutError') : new Error('denied'); calls.uploadIntegrations=true
-  calls.previousIntegrations=[catalogItem()]
-  const cwd=await mkdtemp(join(tmpdir(),'panel-catalog-denied-')),failed=vi.fn()
-  const runtime=createAssistantPanelRuntime({getAuth:async()=>({accessToken:'fixture',userId:'owner'}),instanceId:()=> 'runtime',deviceId:async()=> 'device',
-    local:{integrationCatalog:()=>[{id:'gitlab',en:{name:'GitLab'},zh:{name:'GitLab'}}],integrations:async()=>[{providerId:'gitlab',accountId:'account',configured:true,publicMetadata:{updatedAt:1}}]} as never,guguHome:cwd,kind:'computer',env:{},failed,locale:()=> 'en-US'})
-  try {
-    await runtime.bind({sessionId:'session',assistantId:'assistant',ownerId:'owner',cwd})
-    await runtime.publish('session')
-    expect(failed).not.toHaveBeenCalled()
-    expect(calls.integrationRows.map(row=>row.key)).toEqual(['catalog:gitlab',JSON.stringify(['gitlab','account'])])
-    expect(calls.integrationRows[0].data).not.toHaveProperty('catalogBodyLabel')
-    expect(calls.integrationRows[1].data.configured).toBe(true)
-    expect(uploads.mock.calls.map(([input])=>(input as {label:string}).label)).toEqual(['catalog:gitlab',JSON.stringify(['gitlab','account'])])
-    expect(calls.moves).toHaveLength(1)
-    await runtime.publish('session')
-    expect(calls.moves).toHaveLength(2)
-    expect(failed).not.toHaveBeenCalled()
-  }finally{runtime.dispose();await rm(cwd,{recursive:true,force:true})}
 })
