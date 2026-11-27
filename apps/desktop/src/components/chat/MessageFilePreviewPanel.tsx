@@ -108,7 +108,7 @@ export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, on
     </DropdownMenu>} /> : null
   const [undrawable, setUndrawable] = useState<string | null>(null)
   const failure = error ?? (undrawable !== null && undrawable === content ? t('chatArea.filePreview.renderFailed') : undefined)
-  const document = kind === 'html' || kind === 'pdf' || kind === 'docx' || kind === 'pptx' || kind === 'xlsx'
+  const isDocument = kind === 'html' || kind === 'pdf' || kind === 'docx' || kind === 'pptx' || kind === 'xlsx'
   const textRef = useRef<HTMLDivElement>(null)
   const { zoom, setZoom } = useFileZoom(kind === 'markdown' ? 'markdown' : 'text-code', textRef, undefined, zoomView)
   usePinchZoom(textRef, delta => setZoom(value => pinchZoom(value, delta, DOCUMENT_MIN_ZOOM, DOCUMENT_MAX_ZOOM)))
@@ -154,7 +154,7 @@ export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, on
       {fileToolbar || mobile || ((loading || error) && file.sizeBytes === 0) ? null : <div style={{ padding: '0 18px 10px', color: 'var(--text-tertiary)', fontSize: 'var(--font-caption)', flexShrink: 0 }}>{formatAttachmentSize(file.sizeBytes)}{file.mimeType ? ` (${file.mimeType})` : ''}</div>}
       <div ref={kind === 'text' || kind === 'markdown' ? textRef : undefined} data-file-selection style={{ flex: 1, minHeight: 0, overflow: 'auto', color: 'var(--text-primary)' }}>
         {loading && loadingQuiet ? <div style={statusStyle} data-testid="message-file-preview-loading" data-quiet="" /> : loading ? <div style={statusStyle} data-testid="message-file-preview-loading">{loadingLabel ?? t('chatArea.filePreview.loading')}{loadingFraction !== undefined ? <progress className="gg-progress" value={loadingFraction} max={1} /> : null}</div> : failure ? <div style={{ ...statusStyle, color: 'var(--danger-fg)' }}><p role="alert">{failure}</p>{onReadAgain ? <Button size="sm" variant="secondary" onClick={onReadAgain}>{t('chatArea.filePreview.readAgain')}</Button> : unreadableAction ? <div>{unreadableAction}</div> : null}</div> : kind === 'video' ? <video data-testid="message-file-preview-video" src={videoUrl} onError={event => onVideoError?.(event.currentTarget)} controls autoPlay playsInline className="block max-h-full w-full" /> : kind === 'unsupported' ? <div style={statusStyle}>{t('chatArea.filePreview.unsupported')}{unreadableAction ? <div>{unreadableAction}</div> : null}</div> : kind === 'image' && typeof content === 'string' ? <ImageRenderer file={{ path: file.fileName, content }} onError={() => setUndrawable(content)} /> : typeof content === 'string' && kind === 'text' && /\.csv$/i.test(file.fileName) ? <CsvTable content={content} /> : typeof content === 'string' && (kind === 'text' || kind === 'markdown') ? <FileTextContent key={content} content={content} kind={kind} selectable={selectable} style={{ padding: fileToolbar ? '4px 18px 16px' : '16px 18px', zoom }} /> : null}
-        {document && !failure && (
+        {isDocument && !failure && (
           <Suspense fallback={loading ? null : <div style={statusStyle} data-testid="message-file-preview-loading" data-quiet="" />}>
             <DocumentPreviewContent kind={kind} content={loading ? null : content} title={file.fileName} onOpenExternally={onOpenExternal} registerHtml={registerHtml} at={at} htmlAnnotation={htmlAnnotation && { ...htmlAnnotation, toolbar: annotationToolbar }} />
           </Suspense>
