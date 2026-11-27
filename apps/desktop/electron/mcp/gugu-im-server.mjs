@@ -1663,6 +1663,13 @@ async function handleMessage(args, deps) {
         toUserIds = [String(source.sender_user_id)]
         row.to_user_ids = toUserIds
       }
+      if (requestedAction === 'send') {
+        if (toUserIds.includes('*') || (!addressesNoOneExplicitly && !toUserIds.length && (kind === 'dm' || kind === 'ai'))) {
+          noticeRecipients = memberRows.map(member => member.user_id)
+        } else {
+          noticeRecipients = !addressesNoOneExplicitly && !toUserIds.length && isReply ? [source.sender_user_id] : toUserIds
+        }
+      }
       // 寻址表达一致性（spec「寻址的表达」）：群聊里校验并修补正文 @ 与 to_user_ids。DM 的寻址隐含
       // （对端唯一），不适用；widget 有独立的 App 视图发送入口。零寻址的 group send 还须加载 agent 名册，阻止正文
       // 裸名形成“看得见但没唤醒”的静默断链。
@@ -1683,6 +1690,10 @@ async function handleMessage(args, deps) {
             deps.restGet(`users?id=in.(${batch.map(enc).join(',')})&select=id,display_name,type,gugu_number`, 'identity')),
           needsSessions && deps.context.runHostAction ? deps.context.runHostAction({ action: 'peers' }) : [],
         ])
+        if (noticeRecipients?.length) {
+          const people = new Set(users.filter(user => user.type === 'human').map(user => user.id))
+          noticeRecipients = noticeRecipients.filter(id => !people.has(id))
+        }
         const rec = reconcileMentionExpression(users, args.text, toUserIds, source ? [source.sender_user_id] : [], sessionPeers)
         if (rec.mismatches.length) {
           throw new Error(
@@ -1704,13 +1715,6 @@ async function handleMessage(args, deps) {
       }
       row.content = String(sendText ?? '')
       await assertReadableMessageReferences(deps, row.content)
-      if (requestedAction === 'send') {
-        if (toUserIds.includes('*') || (!addressesNoOneExplicitly && !toUserIds.length && (kind === 'dm' || kind === 'ai'))) {
-          noticeRecipients = memberRows.map(member => member.user_id)
-        } else {
-          noticeRecipients = !addressesNoOneExplicitly && !toUserIds.length && isReply ? [source.sender_user_id] : toUserIds
-        }
-      }
       if (hasFile) {
         fileReceipt = await sendFileMessage(args, deps, { chatId, messageId: row.id, toUserIds: row.to_user_ids, noticeRecipients, replyToMessageId,
           isWhisper, threadRootId: sessionThread, caption: row.content })
