@@ -62,6 +62,7 @@ export function ContextThresholdChoices({ threshold, onCommit, lengths, defaultL
   const presets = PRESETS.filter(value => value >= minimum && value < maximum && value <= (autoCompact?.ceiling ?? value) && value !== defaultValue);
   if (!lengths && current != null && current !== defaultValue && !presets.includes(current)) presets.push(current);
   const options = lengths ?? presets.sort((a, b) => a - b);
+  const largest = lengths ? Math.max(...lengths) : undefined;
   const commit = async (value: number | null) => {
     if (saving) return;
     setSaving(true);
@@ -97,7 +98,9 @@ export function ContextThresholdChoices({ threshold, onCommit, lengths, defaultL
         {options.map(value => (
           <button type="button" key={value} disabled={saving} className={styles.contextThresholdOption}
             aria-pressed={current === value} onClick={() => void commit(value)}>
-            {lengths ? formatModelContextLength(value) : formatAutoCompactThreshold(value)}
+            {lengths ? (value === largest && lengths.length > 1
+              ? translate('composer.contextMaxOption', { value: formatModelContextLength(value) }) : formatModelContextLength(value))
+              : formatAutoCompactThreshold(value)}
             {current === value && <Check className={styles.modelSelectedCheck} size={14} aria-hidden />}
           </button>
         ))}

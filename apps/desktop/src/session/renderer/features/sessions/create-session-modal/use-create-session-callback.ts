@@ -13,6 +13,7 @@ import type { InitialSessionState } from '@renderer/features/sessions/session-co
 import { rpc, rpcOn } from '@renderer/lib/ipc';
 import { getRendererSession } from '@/lib/sessionPublication';
 import { machineRegistry } from '@renderer/lib/machine-routing';
+import { sessionPlatformSelection } from '@renderer/features/sessions/session-config/platform-model-catalog';
 import type { NavigateFnTyped } from '@renderer/lib/layout/navigation-provider';
 import { log } from '@renderer/utils/logger';
 import { shellPort } from '@renderer/lib/shell-port';
@@ -214,6 +215,18 @@ export function useCreateSessionCallback({
     });
     if (!baseSession) { finishSubmission(submission, true); setIsCreating(false); return; }
     const deviceId = machineRegistry.machineOf(selectedProjectId);
+    // #1570 The session page opens before this session's platform preselection has been read (about half a second), and
+    // until then its composer shows a blank model button and no context ring. What was just picked here is that
+    // preselection: put it under the new id now; once the session exists it is read again and the answer replaces it.
+    // Only for a signed-in account (`key` is null without one): the entry belongs to an account, and a display aid never
+    // stands in the way of creating the session.
+    const selectionArgs = baseSession.type === 'acp' && input.provider
+      ? [sessionId, input.provider, 'acp', deviceId] as Parameters<typeof sessionPlatformSelection.set>[0]
+      : null;
+    const selectionKey = selectionArgs && sessionPlatformSelection.key(...selectionArgs) ? selectionArgs : null;
+    if (selectionKey) {
+      sessionPlatformSelection.set(selectionKey, { agentDefault: null, sessionSelection: input.platformModel ? { modelId: input.platformModel } : null });
+    }
     const files = named.map(ref => deviceId && taskAttachmentUsesSsh(deviceId)
       ? { ...ref, path: undefined, workspacePath: taskAttachmentWorkspacePath(ref.itemId, ref.name) } : ref);
     // ACP keeps the person's words: Life prepares file context only after placement. PTY retains its text-only leg.
@@ -300,12 +313,13 @@ export function useCreateSessionCallback({
       },
     })).then(async () => {
       if (submission) submission.created = true;
+      if (selectionKey) void sessionPlatformSelection.refresh(...selectionKey);
       input.clearSubmittedContextChoice?.();
       // The new-session memory never stands in the way (L11 复核 58): the session is made, its first line sent and the
       // box closed even when this computer cannot save what was picked — said in the log and in a light notice. Written
       // once the session exists, not awaited: a first line that fails still leaves a started session to remember, so its
       // retry needs no second write.
-      void input.rememberStartedConfiguration().catch((error: unknown) => {
+      void input.rememberStartedConfiguration(sessionId).catch((error: unknown) => {
         log.error('remember the started configuration failed', { error: error instanceof Error ? error.message : String(error) });
         toast({ title: translateSessionMessage('task.newSessionMemoryNotSaved'), description: messageForUser(error), tier: 'warning' });
       });

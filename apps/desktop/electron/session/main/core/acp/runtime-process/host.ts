@@ -23,6 +23,7 @@ import { app } from 'electron';
 import { getHostIpc } from '@main/lib/host-ipc';
 import { appScope } from '@main/app/app-scope';
 import { resolveLocalAgentRunContext } from '@main/core/agents/agent-run-context';
+import { withLaunchedReview, type ClaudeReviewRunContext } from '@main/core/agents/claude-reviewer';
 import { setProviderSessionId } from '@main/core/sessions/set-session-id';
 import { committedTurnsObserved, forgetRevertedTurns, observeCommittedTurn } from '@main/core/sessions/committed-turn-observer';
 import { openNativeConversationPreviews } from '@main/core/sessions/session-conversation-live';
@@ -552,7 +553,7 @@ export async function withEmdashPlatformInjection<T extends { input: { sessionId
   capabilityPlatformConfigured = false,
   capabilityPlatformAccessSessionId?: string,
   capabilityPlatformModel?: string,
-): Promise<{ command: T; injected: boolean }> {
+): Promise<{ command: T; injected: boolean; autoReview?: ClaudeReviewRunContext }> {
   // 无条件先剥掉入参里的 `sessionMeta` / `platform` / `mcpServers`。这些字段是**宿主签发**的注入信封:
   // `sessionMeta` 会被适配器摊成 claude 的 options.env 与 options.settings —— 也就是任意环境变量
   // 和任意 settings 文件路径。而 `sessionMeta` 就挂在 renderer 面向的 acpStartInputSchema 上,
@@ -634,8 +635,9 @@ export async function withEmdashPlatformInjection<T extends { input: { sessionId
       }),
     },
   };
+  const autoReview = injection.kind === 'session-meta' ? injection.autoReview : undefined;
   return injection.platformAccessSessionId
-    ? { command: reportUnpinnedPlatformModel(command) as T, injected: true }
+    ? { command: reportUnpinnedPlatformModel(command) as T, injected: true, ...(autoReview ? { autoReview } : {}) }
     : { command: command as T, injected: false };
 }
 
@@ -748,8 +750,10 @@ function decorateRuntimeClient(client: ContractClient<AcpRuntimeApiContract>): A
  * 解析失败不在这里抛:它作为 `unresolved` 带着解析器的诊断原文进 worker,由会话边界照常报成
  * 「起不来」—— 与从前 worker 自己找不到时用户看到的是同一条路,只是消息换成了真正的原因。
  */
-export async function withHostResolvedCli<T extends { input: { providerId: string; sessionId: string; sourceSessionId?: string } }>(
-  command: T
+export async function withHostResolvedCli<T extends { input: { providerId: string; sessionId: string; sourceSessionId?: string; cwd?: string } }>(
+  command: T,
+  /** What this start's platform launch armed for Claude's Auto mode; it replaces the catalog's verdict. */
+  launchedReview?: ClaudeReviewRunContext,
 ): Promise<T & { input: T['input'] & { runContext: AgentRunContext } }> {
   const sessionId = command.input.sessionId;
   // Chat UI 会话 = acp 那条腿的程序(#6335:与终端腿可以不是同一个)。
@@ -760,6 +764,7 @@ export async function withHostResolvedCli<T extends { input: { providerId: strin
     // Runtime-only forks have no database row; inherit the persistent source's credential binding.
     sessionId,
     sourceSessionId: command.input.sourceSessionId,
+    cwd: command.input.cwd,
     bridgeWait: {
       onWaiting: (bridge) =>
         events.emit(sessionStartStageChannel, {
@@ -771,7 +776,8 @@ export async function withHostResolvedCli<T extends { input: { providerId: strin
       onSettled: () => events.emit(sessionStartStageChannel, { sessionId, stage: null }),
     },
   });
-  return { ...command, input: { ...command.input, runContext } };
+  return { ...command, input: { ...command.input,
+    runContext: launchedReview && command.input.providerId === 'claude' ? withLaunchedReview(runContext, launchedReview) : runContext } };
 }
 
 export async function callSessionStart<T extends { success: boolean }>(

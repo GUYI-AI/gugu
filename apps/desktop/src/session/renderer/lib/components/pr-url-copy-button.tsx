@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Button } from '@renderer/lib/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { cn } from '@renderer/utils/utils';
-import { copyExternalLink } from '@renderer/lib/open-external-link';
+import { copyExternalLink } from '@renderer/lib/open-web-link';
 
 interface PrUrlCopyButtonProps {
   url: string;

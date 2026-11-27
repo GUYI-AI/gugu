@@ -8,9 +8,8 @@ export const saveCustomModelSchema = z.object({
   id: z.string().min(1).optional(),
   name: z.string().trim().min(1).max(80),
   apiKey: z.string().trim().min(1).max(8192).optional(),
-  resolveUrlConflict: z.boolean().optional(),
   ...customModelMetaSchema.omit({ removed: true }).shape,
-}).refine(({ id, models, resolveUrlConflict, disabledModels }) => models.length > 0 || Boolean(id && (resolveUrlConflict || disabledModels?.length)), 'Pick at least one model');
+}).refine(({ id, models, disabledModels }) => models.length > 0 || Boolean(id && disabledModels?.length), 'Pick at least one model');
 export type SaveCustomModel = z.infer<typeof saveCustomModelSchema>;
 
 export const testCustomModelSchema = z.object({
@@ -38,12 +37,17 @@ export const customModelProtocolProbeSchema = z.object({
   /** What each step that failed reported, in the order tried. */
   failures: z.array(z.object({
     step: z.union([z.literal('models'), modelProtocolSchema]),
-    reason: z.enum([...connectionUnlistedReasonSchema.options, 'no-model', 'refused']),
+    reason: z.enum([...connectionUnlistedReasonSchema.options, 'no-model', 'refused', 'model-not-found']),
   })),
   /**
    * The protocols whose request the address refused for the key (401/403), each with the base URL that refused it, in the
    * order tried: the path exists, only the key was not accepted. A save through a refused key stores the first; absent when none was.
    */
   refused: z.array(modelEndpointSchema).optional(),
+  /**
+   * Where the address said it does not offer the model asked about (404 `model_not_found` and the like), with the base URL
+   * that said so: the path exists, the model is not served there. Probing stops at the first; absent when none said it.
+   */
+  unserved: z.array(modelEndpointSchema).optional(),
 });
 export type CustomModelProtocolProbe = z.infer<typeof customModelProtocolProbeSchema>;

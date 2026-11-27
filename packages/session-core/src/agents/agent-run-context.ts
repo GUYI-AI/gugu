@@ -49,6 +49,10 @@ export const agentRunContextSchema = z.object({
   autoReviewAllowed: z.boolean().optional(),
   autoReviewUnavailable: z.boolean().optional(),
   autoReviewByHaiku: z.boolean().optional(),
+  /** Who the host resolved to review Auto mode (shown beside it). */
+  autoReviewer: z.object({ label: z.string(), kind: z.enum(['platform', 'connection']) }).optional(),
+  /** A message key: why Auto mode is off for this session. */
+  autoReviewReason: z.string().optional(),
   /**
    * 底座 env:白名单透传 + 平台补偿(Windows 八个必备变量 / `SSH_AUTH_SOCK` 探测)
    * + **用户在 Agents 设置里填的 env**。

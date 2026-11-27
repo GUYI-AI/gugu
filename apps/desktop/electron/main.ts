@@ -6835,6 +6835,8 @@ app.whenReady().then(async () => {
             onSessionsGone: (cb) => emdash.onSessionsGone(cb),
             onSessionLifeView: (cb) => emdash.onSessionLifeView(cb),
             sessionLifeStatusOf: (sessionId) => emdash.sessionLifeStatusOf(sessionId),
+            sessionModelName: (sessionId) => emdash.sessionModelName(sessionId),
+            onSessionModelChanged: (cb) => emdash.onSessionModelChanged(cb),
           },
           { env: process.env, warn: (message) => sessionpageActivityLogger.warn(message) },
         )

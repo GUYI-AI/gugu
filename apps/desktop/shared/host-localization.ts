@@ -108,6 +108,8 @@ const HOST_CATALOG = {
      * 用设备的语言)。
      */
     sessionHost: {
+      /** @@@link-menu — the rows every link's menu offers (src/session/shared/link-menu.ts). */
+      linkMenu: { openInApp: '在咕咕浏览器中打开', openInSystem: '在系统浏览器中打开', copyLink: '复制链接' },
       agentNotifications: {
         needsApproval: '智能体需要你批准',
         needsAnswer: '智能体正在等待你回答',
@@ -275,6 +277,7 @@ const HOST_CATALOG = {
       text: 'Notifies you when someone needs your reply',
     },
     sessionHost: {
+      linkMenu: { openInApp: 'Open in Gugu Browser', openInSystem: 'Open in System Browser', copyLink: 'Copy Link' },
       agentNotifications: {
         needsApproval: 'Your agent needs your approval',
         needsAnswer: 'Your agent is waiting for your answer',

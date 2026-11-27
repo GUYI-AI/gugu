@@ -1,5 +1,5 @@
 {
   "repository": "GUYI-AI/gugu-supabase",
-  "ref": "a30552694b6d479c84b05e2e98b84c5b76a837f7",
-  "status": "Backend #413 merged on dev: owner-scoped App agent bindings and my_app_agent, including legacy provision compatibility and cancel cleanup; retains #409 annotations."
+  "ref": "da8a7f22b4a58795a8a5993f4fef4c2b4e8d0297",
+  "status": "Backend #421 merged on dev: agent presence carries model_name and set_agent_runtime_state takes a trailing p_model_name."
 }

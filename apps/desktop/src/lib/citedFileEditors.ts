@@ -19,7 +19,7 @@ export async function citedFileEditorIds(text: string, actorId: string): Promise
 
 /**
  * Who a group message that cites chat files and names no one goes to: the members, other than the sender, who made those
- * files. Every way such a message is sent asks this — the composer and a file selection's Send line alike.
+ * files. Every way such a message is sent asks this — the composer, its comments on files included.
  */
 export async function citeRecipientIds(chatId: string, text: string, senderId: string, memberIds: readonly string[]): Promise<string[]> {
   const editors = await citedFileEditorIds(text, senderId).catch((error: unknown) => {

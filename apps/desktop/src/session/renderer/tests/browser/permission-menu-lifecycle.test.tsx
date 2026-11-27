@@ -75,7 +75,7 @@ afterEach(() => {
 });
 
 it.each(['running', 'stopped', 'disconnected'].flatMap(lifecycle =>
-  ['allowed', 'native-denied', 'unreadable', 'connection-unknown'].map(qualification => ({ lifecycle, qualification }))
+  ['allowed', 'native-denied', 'unreadable', 'failed', 'connection-unknown'].map(qualification => ({ lifecycle, qualification }))
 ))('the real ACP panel keeps the complete menu for $lifecycle / $qualification', async ({ lifecycle, qualification }) => {
   registerSessionLocaleResources();
   setLocalePreference('zh-CN');
@@ -96,6 +96,7 @@ it.each(['running', 'stopped', 'disconnected'].flatMap(lifecycle =>
     data: { id, providerId: 'claude', model: 'opus', permissionMode: 'full-access', platformModel: null },
   }]]) };
   if (qualification === 'unreadable') active.read.mockRejectedValue(new Error('Native catalog unavailable'));
+  else if (qualification === 'failed') active.read.mockResolvedValue({ ok: false, error: { code: 'create_models_failed', message: 'Secure secret storage is unavailable on this system.' } });
   else active.read.mockResolvedValue({
     ok: true, value: { permissionOptions: buildSessionPermissionOptions({ modeMap, native, review: { allowed: qualification === 'allowed', reason: 'taskConfig.reviewNativeUnavailable' } }) },
   });
@@ -136,6 +137,11 @@ it.each(['running', 'stopped', 'disconnected'].flatMap(lifecycle =>
     const review = rows().find(row => row.textContent === '自动模式');
     return !!review && (review.getAttribute('aria-disabled') !== 'true') === (qualification === 'allowed');
   });
+  // A read that failed is said as one, never as an eligibility question (#4043).
+  if (qualification === 'unreadable' || qualification === 'failed') {
+    await page.getByRole('option', { name: '自动模式', exact: true }).hover();
+    await until('failed read explained', () => document.querySelector('[data-slot="permission-mode-detail"]')?.textContent === '读不到会话选项');
+  }
   if (active.knownConnection) expect(active.read.mock.calls[0][0]).toEqual({ harness: 'claude', sessionView: 'general', model: 'opus' });
   else expect(active.read).not.toHaveBeenCalled();
   expect(current.session !== null).toBe(lifecycle === 'running');

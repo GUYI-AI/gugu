@@ -58,6 +58,12 @@ export async function listEndpointModels(
   return result.ok ? result.value : { kind: 'unlisted', reason: result.reason };
 }
 
+/**
+ * The output limit every generating probe asks for. OpenAI Responses refuses fewer than 16, and relays that serve Chat
+ * through Responses pass a Chat `max_tokens` on as `max_output_tokens`, so a smaller limit reads as a refused protocol.
+ */
+export const PROBE_OUTPUT_TOKENS = 16;
+
 /** Try a tiny request only after the person asks to test a named model. */
 export async function verifyEndpointModel(input: Endpoint, modelId: string, fetchImpl?: Fetch): Promise<ConnectionModelList> {
   const { root, headers } = endpointRequest(input);
@@ -65,8 +71,8 @@ export async function verifyEndpointModel(input: Endpoint, modelId: string, fetc
   const messages = [{ role: 'user', content: 'OK' }];
   const probes = {
     'anthropic-messages': { path: '/messages/count_tokens', payload: { model: modelId, messages } },
-    'openai-responses': { path: '/responses', payload: { model: modelId, input: 'OK', max_output_tokens: 16, store: false } },
-    'openai-chat-completions': { path: '/chat/completions', payload: { model: modelId, messages, max_completion_tokens: 1 } },
+    'openai-responses': { path: '/responses', payload: { model: modelId, input: 'OK', max_output_tokens: PROBE_OUTPUT_TOKENS, store: false } },
+    'openai-chat-completions': { path: '/chat/completions', payload: { model: modelId, messages, max_completion_tokens: PROBE_OUTPUT_TOKENS } },
     'gemini-generate-content': {
       path: `/models/${encodeURIComponent(modelId.replace(/^models\//, ''))}:countTokens`,
       payload: { contents: [{ parts: [{ text: 'OK' }] }] },
@@ -89,21 +95,34 @@ async function sendMinimal(fetchImpl: Fetch | undefined, input: Endpoint, modelI
   headers.set('content-type', 'application/json');
   const messages = [{ role: 'user', content: 'OK' }];
   const probes: Partial<Record<ModelProtocol, { path: string; payload: unknown }>> = {
-    'anthropic-messages': { path: '/messages', payload: { model: modelId, max_tokens: 1, messages } },
-    'openai-chat-completions': { path: '/chat/completions', payload: { model: modelId, messages, max_tokens: 1 } },
-    'openai-responses': { path: '/responses', payload: { model: modelId, input: 'OK', max_output_tokens: 16, store: false } },
+    'anthropic-messages': { path: '/messages', payload: { model: modelId, max_tokens: PROBE_OUTPUT_TOKENS, messages } },
+    'openai-chat-completions': { path: '/chat/completions', payload: { model: modelId, messages, max_tokens: PROBE_OUTPUT_TOKENS } },
+    'openai-responses': { path: '/responses', payload: { model: modelId, input: 'OK', max_output_tokens: PROBE_OUTPUT_TOKENS, store: false } },
     'gemini-generate-content': {
       path: `/models/${encodeURIComponent(modelId.replace(/^models\//, ''))}:generateContent`,
-      payload: { contents: [{ role: 'user', parts: [{ text: 'OK' }] }], generationConfig: { maxOutputTokens: 1 } },
+      payload: { contents: [{ role: 'user', parts: [{ text: 'OK' }] }], generationConfig: { maxOutputTokens: PROBE_OUTPUT_TOKENS } },
     },
   };
   const probe = probes[input.protocol];
   if (!probe) return 'refused';
   const result = await requestEndpoint<'connected' | ProbeReason>(fetchImpl, root + probe.path, { method: 'POST', headers, body: JSON.stringify(probe.payload) }, input.env, async (response) => {
     if (response.ok) return 'connected';
-    return response.status === 401 || response.status === 403 ? 'unauthorized' : 'refused';
+    if (response.status === 401 || response.status === 403) return 'unauthorized';
+    return await saysModelNotServed(response) ? 'model-not-found' : 'refused';
   });
   return result.ok ? result.value : result.reason;
+}
+
+const MODEL_NOT_SERVED = /model_not_found|not_found_error[^}]{0,200}\bmodel\b|\bmodels?\b[^"\n]{0,160}\b(?:not found|does not exist|not supported)\b/i;
+
+/**
+ * The address's own word that it does not offer the model: OpenAI and the relays shaped like it answer `model_not_found`,
+ * Anthropic a `not_found_error` naming the model, Gemini a 404 saying the model is not found. Only that word is read
+ * (as a yes/no), never passed on.
+ */
+async function saysModelNotServed(response: Response): Promise<boolean> {
+  if (response.status !== 400 && response.status !== 404) return false;
+  return MODEL_NOT_SERVED.test((await response.text().catch(() => '')).slice(0, 4096));
 }
 
 /**
@@ -143,6 +162,7 @@ export async function probeEndpointProtocols(
   }
   const endpoints: ProtocolProbe['endpoints'] = [];
   const refused: ProtocolProbe['endpoints'] = [];
+  const unserved: ProtocolProbe['endpoints'] = [];
   for (const protocol of order) {
     let last: ProbeReason = 'unreachable';
     for (const endpoint of basesFor(protocol)) {
@@ -151,8 +171,12 @@ export async function probeEndpointProtocols(
       // 401/403: this path exists and only the key was refused. A later base's 404 for the same protocol does not take that back.
       if (result === 'unauthorized' && !refused.some((entry) => entry.protocol === protocol)) refused.push({ protocol, baseUrl: endpoint });
       if (last !== 'unauthorized') last = result;
+      if (result === 'model-not-found') { unserved.push({ protocol, baseUrl: endpoint }); break; }
     }
     if (!endpoints.some((entry) => entry.protocol === protocol)) failures.push({ step: protocol, reason: last });
+    // The address said it does not offer this model before any protocol carried it. Its other protocols are other doors to
+    // the same accounts (a relay answers per key group, not per protocol), so asking each again only makes the person wait.
+    if (unserved.length && !endpoints.length) break;
   }
-  return { endpoints, models, failures, ...(refused.length ? { refused } : {}) };
+  return { endpoints, models, failures, ...(refused.length ? { refused } : {}), ...(unserved.length ? { unserved } : {}) };
 }

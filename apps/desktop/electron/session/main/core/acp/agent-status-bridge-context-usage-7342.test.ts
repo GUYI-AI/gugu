@@ -1,7 +1,7 @@
 /**
  * #7342 状态桥把最后那份上下文读数记进会话记录 —— 性能那一半的合同:
  * 摘要每个 token 都来一份,而库只在**第一次见到这条会话时读一次**、**每轮落定写一次**;
- * 换了模型作废一次;会话停掉(摘要消失)就忘掉影子,下次起来重读。
+ * 换了模型不作废(owner 2026-11-27),新模型报了读数再写;会话停掉(摘要消失)就忘掉影子,下次起来重读。
  * 判据本身(写 / 作废 / 不动)在 record-context-usage.db.test.ts,这里用真的那一份。
  * 能判假:去掉桥里的影子、每份摘要都读库,前两条当场红(mac1 实测)。
  */
@@ -124,17 +124,16 @@ describe('#7342 状态桥记上下文读数', () => {
     bridge.dispose();
   });
 
-  it('热切之后:记录里旧模型那份作废一次,新读数到了再写', async () => {
+  it('热切之后:记录里旧模型那份留着(owner 2026-11-27),新模型报了读数再写', async () => {
     store.recorded = { used: 40_000, size: 200_000, modelId: 'gpt-5.5' };
     const { bridge, push } = await attachedBridge();
     const old = { contextTokens: 40_000, contextSize: 200_000, contextModelId: 'gpt-5.5' };
     push({ [SESSION]: summary({ ...old, modelId: 'gpt-5.5-mini' }) });
     push({ [SESSION]: summary({ ...old, modelId: 'gpt-5.5-mini', updatedAt: 1 }) });
-    expect(store.writes.map((w) => w.change)).toEqual([{ kind: 'clear' }]);
+    expect(store.writes.map((w) => w.change)).toEqual([]);
 
     push({ [SESSION]: summary({ contextTokens: 41_000, contextSize: 128_000, contextModelId: 'gpt-5.5-mini', modelId: 'gpt-5.5-mini' }) });
     expect(store.writes.map((w) => w.change)).toEqual([
-      { kind: 'clear' },
       { kind: 'write', reading: { used: 41_000, size: 128_000, modelId: 'gpt-5.5-mini' } },
     ]);
     bridge.dispose();

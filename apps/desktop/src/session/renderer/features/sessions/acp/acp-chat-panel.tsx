@@ -165,7 +165,7 @@ import { sessionBillingRoute, runningPlatformModelId, unavailablePlatformModelId
 import { planModelSwitch } from '@renderer/features/sessions/session-config/model-switch-plan';
 import { findSessionHostBridge } from '@renderer/lib/electron-api';
 import { SessionReloadConfirm } from '@renderer/features/sessions/session-reload-confirm';
-import { lastLiveEffort, rememberLiveEffort } from '@renderer/features/sessions/session-config/last-live-effort';
+import { lastLiveEffort, pickedEffort, rememberLiveEffort, rememberPickedEffort } from '@renderer/features/sessions/session-config/last-live-effort';
 import { requestSendQueuedPromptNow } from './send-queued-prompt-now-flow';
 import { requestSessionReload } from '@renderer/features/sessions/request-session-reload';
 import {
@@ -851,12 +851,24 @@ const ComposerForStore = observer(function ComposerForStore({
         writingModel.current = false;
       }
     });
+  // #3992 owner 2026-11-26「直接省事不问就好了……切模型后可以程序化让他续跑」: a model switch that needs a restart restarts
+  // right away, with no confirm. A reply running by then is interrupted and continued on the new model, the same path as
+  // a switch made while replying (`applyReload` with its id, 1b361b96). The MCP, permission and manual restarts still ask.
+  const restartOntoModel = useCallback((target: RestartTarget) => {
+    const reply = !store.isTransient && store.session?.sessionState.current().lifecycle === 'working'
+      ? store.session.activeTurn.current() : null;
+    if (reply) toast({ tier: 'info', title: translate('chat.modelSwitchContinuing', { model: target.label }), position: 'bottom-right' });
+    return applyReload(target, reply?.id);
+  }, [store, translate, applyReload]);
+
   const handleModelChange = useCallback(
-    (optionId: string, effort?: string) => {
+    (optionId: string, effort?: string, effortPicked?: boolean) => {
       if (writingModel.current) {
         toast({ title: translate('composer.modelBusy') });
         return;
       }
+      // gugu-dev#1579 A level picked on the model being switched to is the person's: it follows later switches.
+      if (effortPicked && effort) rememberPickedEffort(store.sessionId, effort);
       // 与 `sessionModelOptions` 同一个前提:能力声明没到,菜单本来就没摆出来。
       if (!providerCapabilities) return;
       if (
@@ -898,7 +910,7 @@ const ComposerForStore = observer(function ComposerForStore({
         // 两个 id 的分工见 `ModelSwitchPlan` 的 `wireValue` 注释。
         //
         // ⚠️ 即使 `planModelSwitch` 判了「热」,运行时仍可能回 `restart_required`
-        //    (声明与实际不一致时)。那时**不能只吞掉** —— 走同一个确认+重启动作。
+        //    (声明与实际不一致时)。那时**不能只吞掉** —— 走同一个重启动作(#3992 不再先问)。
         // `hot` 那一支**没有** displayName / source(它们只在 `reload` 上)—— 这是 typecheck
         // 抓到的:热切根本不需要它们,而这条防线需要。⇒ 从这里现有的两份真值取:
         // 显示名取目录(取不到就用 id,❌ 不猜一个好看的),计费路取用户点中那一条自己的来源。
@@ -909,7 +921,7 @@ const ComposerForStore = observer(function ComposerForStore({
         writingModel.current = true;
         void store.setModel(plan.wireValue).then(async (outcome) => {
           if (outcome?.kind === 'restart-required') {
-            setPendingReload({
+            await restartOntoModel({
               dimension: 'model',
               value: plan.modelId,
               label: catalogName ?? runtimeModelId(plan.modelId) ?? '',
@@ -967,15 +979,16 @@ const ComposerForStore = observer(function ComposerForStore({
       }
       // `source` 与模型一起送到宿主 —— 少了它重开会带着**旧的**那条计费路重来
       //(spawn 读的是每会话那份平台记录,不是 config.model)。见 session-reload.ts 的 modelSource。
-      setPendingReload({
+      writingModel.current = true;
+      void restartOntoModel({
         dimension: 'model',
         value: plan.modelId,
         label: plan.displayName,
         source: plan.source === 'platform' ? 'platform' : 'own',
         effort,
-      });
+      }).finally(() => { writingModel.current = false; });
     },
-    [store, planForOption, platformCatalog, sessionModelOptions, providerCapabilities, reportInputFailure, translate, providerId, switchBeforeFirstStart, handleEffortChange, applyReload]
+    [store, planForOption, platformCatalog, sessionModelOptions, providerCapabilities, reportInputFailure, translate, providerId, switchBeforeFirstStart, handleEffortChange, applyReload, restartOntoModel]
   );
 
   const confirmReload = useCallback(async () => {
@@ -1089,6 +1102,9 @@ const ComposerForStore = observer(function ComposerForStore({
   }, [liveUnrecordedEffort, store.sessionId]);
   const querySlashItems = useComposerSlashItems({ store, promptLibrary, promptOverrides, translate, providerId });
 
+  const selectedModelOption = composerSelectedOptionId({ platformModel: runningPlatformModel, model: store.model, customModel: runningCustomModel });
+  // 换了模型、新模型还没报读数:记录里那份已用量,分母换成此刻模型的窗口(recordedContextUsage)。
+  const usage = store.usageIn(selectedModelOption ? sessionModelOptions?.[selectedModelOption]?.modelFeatures?.contextWindowSize : undefined);
   const a = store.affordances;
   const agentUserId = sessionAgentBindings.bindingFor(store.sessionId)?.agentUserId ?? null;
 
@@ -1194,11 +1210,7 @@ const ComposerForStore = observer(function ComposerForStore({
         // 「哪几条现在切不了」由 sessionModelOptions 判,见 @@@session-options-disabled。
         modelOptions={sessionModelOptions}
         modelUnknown={merged === undefined || !platformCatalog.known}
-        selectedModel={composerSelectedOptionId({
-          platformModel: runningPlatformModel,
-          model: store.model,
-          customModel: runningCustomModel,
-        })}
+        selectedModel={selectedModelOption}
         onModelChange={handleModelChange}
         effortOptionsForModel={effortOptionsForModel}
         modelMenuOpenRequest={modelMenuRequest}
@@ -1212,11 +1224,14 @@ const ComposerForStore = observer(function ComposerForStore({
         effortOptions={localizeEffortOptions(sessionEffortOptions, translate)}
         selectedEffort={store.effort ?? undefined}
         defaultEffort={detachedDefaultEffort}
+        pickedEffort={pickedEffort(store.sessionId)}
         onEffortChange={effortId => {
           if (writingModel.current) {
             toast({ title: translate('composer.modelBusy') });
             return;
           }
+          // gugu-dev#1579 Picked by hand: this level follows a model switch ('' = reset to the app's level).
+          rememberPickedEffort(store.sessionId, effortId || null);
           void handleEffortChange(effortId);
         }}
         fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup,
@@ -1241,17 +1256,7 @@ const ComposerForStore = observer(function ComposerForStore({
         agentLocked
         onAgentChange={() => {}}
         contextThresholds={contextThresholds}
-        contextUsage={
-          store.usage
-            ? {
-                used: store.usage.contextUsed,
-                size: store.usage.contextSize,
-                autoCompact: store.usage.autoCompact,
-                cost: store.usage.cost,
-                costSource,
-              }
-            : null
-        }
+        contextUsage={usage ? { used: usage.contextUsed, size: usage.contextSize, autoCompact: usage.autoCompact, cost: usage.cost, costSource } : null}
         mentionProvider={mentionProvider}
         renderMentionIcon={renderMentionIcon}
         queryCommands={querySlashItems}

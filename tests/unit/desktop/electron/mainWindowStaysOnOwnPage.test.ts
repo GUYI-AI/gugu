@@ -2,9 +2,10 @@
 // 文件、外链都换不了主帧。
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('electron', () => ({ BrowserWindow: class {}, shell: { openExternal: vi.fn() } }))
+const openExternal = vi.hoisted(() => vi.fn(async (_url: string) => {}))
+vi.mock('electron', () => ({ BrowserWindow: class {}, shell: { openExternal } }))
 
-const { isOwnPage } = await import('../../../../apps/desktop/electron/aux-window')
+const { isOwnPage, openOutside } = await import('../../../../apps/desktop/electron/aux-window')
 
 describe('主窗能换到的页面', () => {
   it('应用自己的页面：同一协议、同一源(打包后的 gugu-app://、开发时的 vite)', () => {
@@ -20,5 +21,13 @@ describe('主窗能换到的页面', () => {
     expect(isOwnPage('http://localhost:5174/', 'http://localhost:5173/index.html')).toBe(false)
     expect(isOwnPage('gugu-app://other/', 'gugu-app://app/index.html')).toBe(false)
     expect(isOwnPage('not a url', 'gugu-app://app/index.html')).toBe(false)
+  })
+})
+
+describe('从这些窗口出去的链接', () => {
+  it('只有网页、邮件、电话交给系统;别的 scheme 一律不开', () => {
+    for (const url of ['https://example.com/', 'http://localhost:3000/', 'mailto:a@example.com', 'tel:+123']) openOutside(url)
+    for (const url of ['file:///etc/passwd', 'x-apple.systempreferences:com.apple.preference.security', 'javascript:alert(1)', 'vscode://x']) openOutside(url)
+    expect(openExternal.mock.calls.map(([url]) => url)).toEqual(['https://example.com/', 'http://localhost:3000/', 'mailto:a@example.com', 'tel:+123'])
   })
 })

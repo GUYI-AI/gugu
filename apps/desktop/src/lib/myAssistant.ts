@@ -1,7 +1,7 @@
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { identityDb } from './supabase'
 import { rendererLogger } from './log'
-import { ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC, pickAssistant } from './assistantProvision'
+import { ASSISTANT_APP_ID, pickAssistant } from './assistantProvision'
 import { replica, useReplica, type Reading } from './replica'
 import { subscribePrivateUserEventBus, unsubscribePrivateUserEventBus } from './realtimeChannel'
 import { useAuth } from '../store/auth'
@@ -14,7 +14,7 @@ const log = rendererLogger('assistant/identity')
 
 async function readMyAssistant(_owner: string): Promise<MyAssistant> {
   const { data, error, status } = await identityDb
-    .rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS)
+    .rpc('my_app_agent', { p_app_id: ASSISTANT_APP_ID })
   if (error) {
     // 读不到 ≠ 没有助理:读数就是错误,由看的一方说「读不到」。带着 code / status(瞬时的还是固定的,看的一方据此说)。
     log.error({ error: error.message }, 'read assistant binding failed')

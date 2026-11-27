@@ -15,7 +15,6 @@ import { AddRemoteModal } from '@renderer/features/sessions/add-remote-modal'
 import { HarnessLoginRequiredModal } from '@renderer/features/sessions/session-config/harness-login-required-modal'
 import { CreatePrModal } from '@renderer/features/sessions/diff-view/changes-panel/components/pr-entry/create-pr-modal'
 import { ConfirmActionDialog } from '@renderer/lib/components/confirm-action-dialog'
-import { ExternalLinkChoiceDialog } from '@renderer/lib/components/external-link-choice-dialog'
 import { OpenWithChooser } from '@renderer/features/extensions/open-with-chooser'
 import { AppCredentialDialog } from '@renderer/features/extensions/panel/app-credential-dialog'
 import { GithubDeviceFlowModal } from '@renderer/lib/components/github-device-flow-modal'
@@ -31,7 +30,6 @@ export const modalRegistry = {
   createProjectNameModal: createModal(CreateProjectNameModal, { size: 'sm' }),
   githubDeviceFlowModal: createModal(GithubDeviceFlowModal, { size: 'md' }),
   confirmActionModal: createModal(ConfirmActionDialog, { size: 'xs' }),
-  confirmExternalLinkModal: createModal(ExternalLinkChoiceDialog, { size: 'sm' }),
   openWithChooserModal: createModal(OpenWithChooser, { size: 'sm' }),
   appCredentialModal: createModal(AppCredentialDialog, { size: 'sm' }),
   unsavedChangesModal: createModal(UnsavedChangesDialog, { size: 'xs' }),

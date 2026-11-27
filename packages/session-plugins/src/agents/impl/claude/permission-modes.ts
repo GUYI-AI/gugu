@@ -1,4 +1,5 @@
 import type { ProviderPermissionModeMap } from '@gugu/session-core/acp/models/permissions';
+import { CLAUDE_AUTO_MODE_MODEL_PATTERN } from '@gugu/session-core/models/auto-review-model';
 
 export const CLAUDE_PERMISSION_MODES = {
   plan: { id: 'plan' },
@@ -6,7 +7,7 @@ export const CLAUDE_PERMISSION_MODES = {
   edit: { id: 'acceptEdits' },
   'ai-review': { id: 'auto', reviewRequirements: {
     minimumCliVersion: '2.1.302',
-    modelPattern: '^(?:claude-)?fable(?:-|$)|^(?:claude-)?opus(?:$|-(?:4-(?:[6-9]|[1-9]\\d+)|(?:[5-9]|[1-9]\\d+))(?:-|$))|^(?:claude-)?sonnet-(?:4-(?:[6-9]|[1-9]\\d+)|(?:[5-9]|[1-9]\\d+))(?:-|$)|^(?:claude-)?haiku-5-5(?:-|$)',
+    modelPattern: CLAUDE_AUTO_MODE_MODEL_PATTERN,
   } },
   'full-access': { id: 'bypassPermissions' },
 } satisfies ProviderPermissionModeMap;

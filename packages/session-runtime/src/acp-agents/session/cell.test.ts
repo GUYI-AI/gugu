@@ -198,6 +198,25 @@ describe('SessionCell prompts', () => {
     expect(request.prompt[1]).toMatchObject({ type: 'image' });
   });
 
+  // `/goal --tokens` reaches only an agent whose own /goal advertises the flag (the Codex leg). Claude Code's /goal takes
+  // only a condition: the flag would silently become part of it, so the person is told and nothing is sent.
+  it('refuses a /goal token budget the agent does not advertise, and sends it where it does', async () => {
+    const condition = makeCell();
+    condition.cell.push({ kind: 'commands', commands: [{ name: 'goal', description: '', input: { hint: '[<condition> | clear]' } }] });
+    condition.agent.prompt = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
+    const refused = await condition.cell.prompt({ text: '/goal --tokens 200k tests pass' });
+    expect(refused).toMatchObject({ success: false, error: { message: expect.stringContaining('no token budget (--tokens)') } });
+    expect(condition.agent.prompt).not.toHaveBeenCalled();
+    await condition.cell.prompt({ text: '/goal tests pass' });
+    expect((condition.agent.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0].prompt[0]).toEqual({ type: 'text', text: '/goal tests pass' });
+
+    const budget = makeCell();
+    budget.cell.push({ kind: 'commands', commands: [{ name: 'goal', description: '', input: { hint: '[--tokens N] <goal> | clear' } }] });
+    budget.agent.prompt = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
+    await budget.cell.prompt({ text: '/goal --tokens 200k tests pass' });
+    expect((budget.agent.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0].prompt[0]).toEqual({ type: 'text', text: '/goal --tokens 200k tests pass' });
+  });
+
   // #6264 另一台机器发来的图(以及首轮随启动队列带的图)是按路径带的 `local-file`:正文里已经有它的
   // 路径 mention。agent 握手时说收图片才另发图片块;说不收就只留路径 —— ❌ 给它塞一个它声明不认的块。
   it('sends a path-carried image as an image block only when the agent accepts images (#6264)', async () => {

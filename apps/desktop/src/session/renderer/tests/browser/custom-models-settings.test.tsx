@@ -26,7 +26,8 @@ import '@gugu/session-ui/styles/base.css';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
 import '@/lib/focus-modality';
-const state = vi.hoisted(() => ({ rows: [] as CustomModelConnection[], saved: null as SaveCustomModel | null, reads: [] as unknown[], probe: null as CustomModelProtocolProbe | null, probes: [] as unknown[], testResult: null as ConnectionModelList | null, agents: [] as unknown[] }));
+import { ToastContext } from '@/components/toastContext';
+const state = vi.hoisted(() => ({ rows: [] as CustomModelConnection[], saved: null as SaveCustomModel | null, reads: [] as unknown[], probe: null as CustomModelProtocolProbe | null, probes: [] as unknown[], testResult: null as ConnectionModelList | null, agents: [] as unknown[], saveError: null as string | null, toasts: [] as unknown[][] }));
 const catalog = vi.hoisted(() => ({ results: new Map<string, CustomModelEffortResult>() }));
 vi.mock('@renderer/lib/stores/use-agents', async (importOriginal) => ({
   ...await importOriginal<typeof import('@renderer/lib/stores/use-agents')>(),
@@ -39,13 +40,14 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({ getAgentConfigRunt
   })) }),
   testCustomModel: async (input: unknown) => { state.reads.push(input); return { success: true, data: state.testResult ?? { kind: 'unlisted', reason: 'no-list' } }; },
   detectCustomModelProtocols: async (input: unknown) => { state.probes.push(input); return { success: true, data: state.probe }; },
-  saveCustomModel: async (input: SaveCustomModel) => { state.saved = input; return { success: true, data: { ...input, id: input.id ?? '481825a8-60b9-4c83-8d1b-f104e3db0269', credentialRef: 'ref', keySaved: true } }; },
+  saveCustomModel: async (input: SaveCustomModel) => { if (state.saveError) return { success: false, error: { message: state.saveError } }; state.saved = input; return { success: true, data: { ...input, id: input.id ?? '481825a8-60b9-4c83-8d1b-f104e3db0269', credentialRef: 'ref', keySaved: true } }; },
 }) }));
 let root: Root, host: HTMLDivElement;
-beforeEach(() => { queryClient.clear(); catalog.results.clear(); setLocalePreference('en-US'); state.rows = []; state.saved = null; state.reads = []; state.probe = null; state.probes = []; state.testResult = null; state.agents = []; host = document.createElement('div'); host.className = 'gugu-skin emlight'; document.body.append(host); root = createRoot(host); });
+beforeEach(() => { queryClient.clear(); catalog.results.clear(); setLocalePreference('en-US'); state.rows = []; state.saved = null; state.reads = []; state.probe = null; state.probes = []; state.testResult = null; state.agents = []; state.saveError = null; state.toasts = []; host = document.createElement('div'); host.className = 'gugu-skin emlight'; document.body.append(host); root = createRoot(host); });
 afterEach(() => { root.unmount(); host.remove(); });
 const record = (): CustomModelConnection => ({ id: '481825a8-60b9-4c83-8d1b-f104e3db0269', name: 'Existing provider', credentialRef: 'ref', keySaved: false, preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://provider.test/v1' }], models: [] });
-const render = (content: React.ReactNode) => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>{content}</SessionLocalizationProvider></QueryClientProvider>);
+const toastSink = { toast: (...args: unknown[]) => { state.toasts.push(args); } };
+const render = (content: React.ReactNode) => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider><ToastContext.Provider value={toastSink}>{content}</ToastContext.Provider></SessionLocalizationProvider></QueryClientProvider>);
 const isChecked = (testId: string) => document.querySelector(`[data-testid="${testId}"] [data-slot=checkbox]`)?.hasAttribute('data-checked') ?? false;
 const settled = () => [...document.querySelectorAll('[data-testid="custom-model-dialog"], [data-slot=select-content]')]
   .every(element => element.getAnimations().every(animation => animation.playState === 'finished'));
@@ -193,7 +195,7 @@ it('saves every declared field, keeps the other models, and reads them back', as
   await expect.element(page.getByTestId('custom-model-default-effort')).toHaveTextContent('High');
   expect(['tool-call', 'image', 'thinking', 'thinking-only', 'thinking-optional', 'fast', 'effort-low', 'effort-medium', 'effort-high'].map(id => isChecked(`custom-model-${id}`)))
     .toEqual([false, true, true, true, true, true, true, false, true]);
-  await expect.element(page.getByTestId('custom-model-contextWindow')).toHaveValue(131_072);
+  await expect.element(page.getByTestId('custom-model-contextWindow')).toHaveValue('128K');
   await expect.element(page.getByRole('button', { name: '16K', exact: true })).toHaveAttribute('aria-pressed', 'true');
 });
 it('offers Fast only for an address that answers OpenAI Chat or Responses', async () => {
@@ -269,6 +271,14 @@ it('shows migrated records with no model or key and a repair entrypoint', async 
   await expect.element(page.getByTestId('custom-model-key')).toHaveFocus();
   await expect.element(page.getByTestId('custom-model-provider')).toHaveTextContent('Custom');
   expect(document.querySelector<HTMLInputElement>('[data-testid=custom-model-key]')?.value).toBe('');
+});
+it('says a saved key this device cannot read as unreadable, not as missing (#4043)', async () => {
+  state.rows = [{ ...record(), keyUnreadable: true }];
+  render(<Sheet ariaLabel="Settings" zIndex="var(--z-settings)" onClose={() => {}}><CustomModelsGroup /></Sheet>);
+  const row = () => document.querySelector('[data-custom-connection]');
+  await until('the device record renders inside Settings', () => !!row());
+  expect(row()?.textContent).toContain('The saved key can’t be read on this device right now');
+  expect(row()?.textContent).not.toContain('No key saved on this device');
 });
 it('keeps coding plans separate and groups API and custom models by their connections', async () => {
   state.rows = [
@@ -427,15 +437,31 @@ it('a custom address shows no protocol and saves the addresses it recognized for
   await until('the form saved', () => state.saved !== null);
   expect(state.saved).toMatchObject({ endpoints: state.probe.endpoints, models: [{ id: 'model-b', toolCall: true, image: false, thinking: true, efforts: [] }], apiKey: 'sk-test', routes: [] });
 });
+// owner 2026-11-27 03:17: routing is automatic; the dialog says in one line what the address takes, Responses first.
+it('says in one line which protocols a custom address takes, Responses first, and nothing when it took none', async () => {
+  state.probe = {
+    endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }, { protocol: 'openai-responses', baseUrl: 'https://relay.test/v1' }],
+    models: ['m'], failures: [],
+  };
+  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+  await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test/v1');
+  await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-test');
+  await expect.element(page.getByTestId('custom-model-recognized')).toHaveTextContent('Recognized: takes OpenAI Responses, OpenAI Chat');
+  expect(document.querySelector('[data-testid=custom-model-routes]')).toBeNull();
+  state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason: 'no-list' }] };
+  await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://other.test/v1');
+  await until('the new address is probed', () => state.probes.some(probe => JSON.stringify(probe).includes('other.test')));
+  await expect.element(page.getByTestId('custom-model-recognized')).not.toBeInTheDocument();
+});
 const failures = [
   ['unauthorized', 'This address refused the key.', '该地址拒绝了此 Key。'],
   ['unreachable', 'Cannot reach this address.', '无法连接到该地址。'],
-  ['dns', 'Cannot resolve this address. Check the hostname and DNS settings.', '无法解析该地址。请检查域名和 DNS 设置。'],
-  ['timeout', 'The connection timed out. Check the network or proxy and try again.', '连接超时。请检查网络或代理后重试。'],
-  ['certificate', 'Cannot verify this address’s security certificate. Check the certificate or proxy settings.', '无法验证该地址的安全证书。请检查证书或代理设置。'],
-  ['connection-refused', 'The address or proxy refused the connection. Check its port and whether it is running.', '该地址或代理拒绝了连接。请检查端口及服务是否已启动。'],
-  ['redirect', 'This address redirects requests. Enter the final API address instead.', '该地址会重定向请求。请直接填写最终的 API 地址。'],
-  ['proxy', 'Cannot use the configured proxy. Check its address and use an HTTP or HTTPS proxy.', '无法使用配置的代理。请检查地址，并使用 HTTP 或 HTTPS 代理。'],
+  ['dns', 'Cannot resolve this hostname.', '无法解析这个域名。'],
+  ['timeout', 'The connection timed out.', '连接超时。'],
+  ['certificate', 'Cannot verify this address’s certificate.', '无法验证这个地址的证书。'],
+  ['connection-refused', 'The connection was refused.', '连接被拒绝。'],
+  ['redirect', 'This address redirects; enter the final one.', '这个地址会跳转，请填最终地址。'],
+  ['proxy', 'The proxy cannot be used.', '代理用不了。'],
 ] as const;
 for (const locale of ['en-US', 'zh-CN'] as const) {
   it.each(failures)(`${locale} shows the specific %s diagnosis without collapsing it into unreachable`, async (reason, en, zh) => {
@@ -460,7 +486,7 @@ it.each(failures)('the saved connection’s Test connection action preserves %s'
 });
 const found = (): CustomModelConnection => ({ ...record(), id: 'found', name: 'OpenAI', preset: 'openai', keySaved: true, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://api.openai.com/v1' }], discovered: { source: 'shell-env', keyLast4: 'abcd' } });
 // A platform preset has no address field: 「check this address」 sends the person to a field that is not there (B7-F03).
-for (const [locale, text] of [['en-US', 'Could not read the model list. Check the API key or try again later.'], ['zh-CN', '模型列表获取失败，请检查 API Key 或稍后重试。']] as const) {
+for (const [locale, text] of [['en-US', 'Could not read the model list.'], ['zh-CN', '读不到模型列表。']] as const) {
   it(`${locale} says a preset's unread model list as what is known, not as an address to check`, async () => {
     setLocalePreference(locale);
     state.testResult = { kind: 'unlisted', reason: 'unreachable' };
@@ -474,7 +500,7 @@ it('the saved preset connection’s Test connection action says the unread list 
   state.testResult = { kind: 'unlisted', reason: 'dns' };
   render(<Sheet ariaLabel="Settings" zIndex="var(--z-settings)" onClose={() => {}}><CustomModelsGroup /></Sheet>);
   await userEvent.click(page.getByRole('button', { name: 'Test connection', exact: true }));
-  await expect.element(page.getByRole('status')).toHaveTextContent('Could not read the model list. Check the API key or try again later.');
+  await expect.element(page.getByRole('status')).toHaveTextContent('Could not read the model list.');
 });
 const keyField = () => document.querySelector<HTMLInputElement>('[data-testid=custom-model-key]')!;
 it('shows the key this computer holds when the eye is pressed, and reads with it until a new one is typed', async () => {
@@ -485,7 +511,7 @@ it('shows the key this computer holds when the eye is pressed, and reads with it
     render(<CustomModelDialog machine={null} group="api" connection={found()} onClose={() => {}} />);
     await expect.element(page.getByTestId('custom-model-key')).toHaveAttribute('placeholder', '••••••••abcd');
     await userEvent.click(page.getByTestId('custom-model-test'));
-    await expect.element(page.getByTestId('custom-model-test-result')).toHaveTextContent('This address refused the key above. Enter a new key.');
+    await expect.element(page.getByTestId('custom-model-test-result')).toHaveTextContent('This address refused the key; enter a new one.');
     await userEvent.click(page.getByRole('button', { name: 'Show key' }));
     await expect.element(page.getByTestId('custom-model-key')).toHaveValue('sk-found-0000abcd');
     expect(keyField().type).toBe('text');
@@ -514,16 +540,32 @@ it('a connection on another device shows only the end of its key, with no eye', 
     expect(page.getByRole('button', { name: 'Show key' }).query()).toBeNull();
   } finally { vi.unstubAllGlobals(); }
 });
-it('preserves a connection failure that first occurs during the save-time named-model probe', async () => {
+it('a connection failure that first occurs during the save-time named-model probe does not stop the save; it is kept as the reason', async () => {
   state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason: 'no-list' }] };
-  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+  const closed = vi.fn();
+  render(<CustomModelDialog machine={null} group="custom" onClose={closed} />);
   await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test/v1');
   await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-test');
   await userEvent.fill(page.getByTestId('custom-model-name'), 'my-model');
   state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason: 'dns' }, { step: 'openai-chat-completions', reason: 'dns' }] };
   await userEvent.click(page.getByTestId('custom-model-save'));
-  await expect.element(page.getByRole('alert')).toHaveTextContent('Cannot resolve this address. Check the hostname and DNS settings.');
-  expect(state.saved).toBeNull();
+  await until('the form saved and closed', () => state.saved !== null && closed.mock.calls.length === 1);
+  expect(state.saved).toMatchObject({ endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }], unverified: true, apiKey: 'sk-test' });
+  expect(state.saved?.unverifiedReason).toEqual({ reason: 'dns', modelId: 'my-model' });
+  expect(state.toasts).toEqual([]);
+});
+it('an address the background check could not resolve is said before saving, and saved unverified with the same reason', async () => {
+  state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason: 'dns' }] };
+  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+  await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test/v1');
+  await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-test');
+  await userEvent.fill(page.getByTestId('custom-model-name'), 'my-model');
+  await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent('Cannot resolve this hostname.');
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await until('the form saved', () => state.saved !== null);
+  expect(state.probes.some(probe => (probe as { modelId?: string }).modelId === 'my-model')).toBe(true);
+  expect(state.saved).toMatchObject({ unverified: true, unverifiedReason: { reason: 'dns', modelId: 'my-model' } });
+  expect(state.toasts).toEqual([]);
 });
 it('a converted third-party model is selectable and tagged with its vendor; an IP address gets no tag', async () => {
   const chat = (id: string, baseUrl: string, model: string): CustomModelConnection => ({ ...record(), id, name: id, keySaved: true, endpoints: [{ protocol: 'openai-chat-completions', baseUrl }], models: [{ id: model }] });
@@ -542,6 +584,28 @@ it('a converted third-party model is selectable and tagged with its vendor; an I
   expect(document.querySelector('[data-slot=composer-model-trigger-label]')?.textContent).toBe('deepseek-v4-flash');
   expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent?.replace('deepseek-v4-flash', '')).not.toContain('deepseek');
   expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent).not.toContain('·');
+});
+it('#1552: configurations sharing an address, key and provider are numbered alike in the menu and Settings; a lone one is not', async () => {
+  const at = (id: string, baseUrl: string, model: string): CustomModelConnection => ({ ...record(), id, name: 'OpenAI', preset: 'openai', keySaved: true,
+    endpoints: [{ protocol: 'openai-responses', baseUrl }], models: [{ id: model }] });
+  const openai = 'https://api.openai.com/v1';
+  state.rows = [
+    at('e7d4a5a8-6f1e-4b52-9a51-0d4d1d0d0011', openai, 'gpt-luna'),
+    at('e7d4a5a8-6f1e-4b52-9a51-0d4d1d0d0012', openai, 'gpt-astra'),
+    { ...at('e7d4a5a8-6f1e-4b52-9a51-0d4d1d0d0013', 'https://api.deepseek.com/v1', 'deepseek-v4'), name: 'DeepSeek', preset: 'deepseek' },
+  ];
+  const codex = { id: 'codex', name: 'Codex', capabilities: { modelProtocols: ['openai-responses' as const], customModel: undefined } };
+  const menu = Object.values(customComposerOptions(state.rows, codex, translateSessionMessage));
+  expect(menu.map(({ name, tag, providerLabel }) => [name, tag, providerLabel])).toEqual([
+    ['gpt-luna', 'openai 1', 'openai 1'], ['gpt-astra', 'openai 2', 'openai 2'], ['deepseek-v4', 'deepseek', 'deepseek'],
+  ]);
+  expect(Object.values(customComposerOptions(state.rows.slice(1), codex, translateSessionMessage))[0]).toMatchObject({ tag: 'openai' });
+  render(<CustomModelsGroup />);
+  await until('all three configurations render', () => document.querySelectorAll('[data-custom-connection]').length === 3);
+  expect(state.rows.map(({ id }) => document.querySelector(`[data-custom-connection="${id}"]`)?.textContent)).toEqual([
+    expect.stringContaining('OpenAI 1'), expect.stringContaining('OpenAI 2'), expect.not.stringContaining('DeepSeek 1'),
+  ]);
+  expect(document.body.textContent).not.toContain('Choose API key');
 });
 it('owner 11-24: a coding plan says whose plan; pay-as-you-go says its domain, preset or typed', () => {
   const tag = (id: string, baseUrl?: string) => connectionTag(providerPresets.find((preset) => preset.id === id), baseUrl);
@@ -598,16 +662,18 @@ it('a refusal that tells no path apart is saved as OpenAI Chat at the address as
   expect(state.saved).toMatchObject({ endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }], unverified: true, apiKey: 'sk-refused' });
 });
 for (const reason of ['timeout', 'unreachable'] as const) {
-  it(`an address that answers with ${reason} still stops the save`, async () => {
+  it(`an address that answers with ${reason} is saved unverified, and the reason is said (owner 11-27)`, async () => {
     state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason }] };
     render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
     await fillRefused();
     await userEvent.click(page.getByTestId('custom-model-save'));
-    await expect.element(page.getByRole('alert').last()).toHaveTextContent(reason === 'timeout' ? 'The connection timed out.' : 'Cannot reach this address.');
-    expect(state.saved).toBeNull();
+    await until('the form saved', () => state.saved !== null);
+    expect(state.saved).toMatchObject({ endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }], unverified: true });
+    expect(state.saved?.unverifiedReason).toEqual({ reason, modelId: 'relay/model' });
+    expect(state.toasts).toEqual([]);
   });
 }
-it('a save the address answers clears the unverified mark, and the list says which keys are unverified', async () => {
+it('a save the address answers clears the unverified record, and the list marks none (owner 11-27)', async () => {
   state.probe = { endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }], models: [], failures: [] };
   render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
   await fillRefused();
@@ -618,7 +684,8 @@ it('a save the address answers clears the unverified mark, and the list says whi
   root.unmount(); root = createRoot(host);
   state.rows = [{ ...record(), keySaved: true, unverified: true, models: [{ id: 'model' }] }];
   render(<Sheet ariaLabel="Settings" zIndex="var(--z-settings)" onClose={() => {}}><CustomModelsGroup /></Sheet>);
-  await expect.element(page.getByText('Key not verified')).toBeVisible();
+  await expect.element(page.getByText('Existing provider')).toBeVisible();
+  expect(document.body.textContent).not.toMatch(/verified/i);
 });
 for (const theme of ['light', 'dark'] as const) {
   it(`captures a refused key that still saves in the ${theme} theme`, async () => {
@@ -636,8 +703,135 @@ for (const theme of ['light', 'dark'] as const) {
       state.rows = [{ ...record(), name: 'relay.test', keySaved: true, unverified: true, endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }], models: [{ id: 'relay/model' }] }];
       root.unmount(); root = createRoot(host);
       render(<UiPortalContainerProvider value={host}><Sheet ariaLabel="Settings" zIndex="var(--z-settings)" onClose={() => {}}><CustomModelsGroup /></Sheet></UiPortalContainerProvider>);
-      await expect.element(page.getByText('Key 未验证')).toBeVisible();
+      await expect.element(page.getByText('relay.test')).toBeVisible();
+      expect(document.body.textContent).not.toContain('未验证');
       await page.screenshot({ path: `../../../../../../../test-results/custom-model-${theme}-unverified-row.png` });
     } finally { document.documentElement.dataset.theme = 'light'; }
   });
 }
+
+// owner 11-27 02:38 / 02:53: one 「最大上下文」 with 300K / 600K / 900K beside 「输入」; values read as 1M / 300K, never raw digits.
+it('saves one max context as the menu lengths, shows tokens as K / M, and presses no tier when empty', async () => {
+  const connection: CustomModelConnection = { ...record(), keySaved: true, models: [{ id: 'm', contextWindow: 1_000_000, contextLengths: [262_144, 1_000_000], defaultContextLength: 262_144 }] };
+  state.probe = { endpoints: connection.endpoints, models: [], failures: [] };
+  render(<CustomModelDialog machine={null} connection={connection} modelId="m" onClose={() => {}} />);
+  await expect.element(page.getByTestId('custom-model-maxContext')).toHaveValue('1M');
+  await expect.element(page.getByTestId('custom-model-contextWindow')).toHaveValue('1M');
+  await userEvent.click(page.getByRole('button', { name: '600K', exact: true }));
+  await expect.element(page.getByTestId('custom-model-maxContext')).toHaveValue('600K');
+  await expect.element(page.getByRole('button', { name: '600K', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await userEvent.clear(page.getByTestId('custom-model-maxContext'));
+  expect(document.querySelectorAll('.gg-model-limit-presets button[aria-pressed="true"]')).toHaveLength(0);
+  await userEvent.fill(page.getByTestId('custom-model-maxContext'), '2M');
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await expect.element(page.getByRole('alert')).toHaveTextContent('Max context cannot be larger than the input limit.');
+  await userEvent.fill(page.getByTestId('custom-model-maxContext'), '450k');
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await until('the form saved', () => state.saved !== null);
+  expect(state.saved?.models[0]).toMatchObject({ contextWindow: 1_000_000, contextLengths: [300_000, 450_000], defaultContextLength: 300_000 });
+});
+
+it('an empty max context saves no lengths, and a typo is refused instead of saved', async () => {
+  const connection: CustomModelConnection = { ...record(), keySaved: true, models: [{ id: 'm' }] };
+  state.probe = { endpoints: connection.endpoints, models: [], failures: [] };
+  render(<CustomModelDialog machine={null} connection={connection} modelId="m" onClose={() => {}} />);
+  await expect.element(page.getByTestId('custom-model-maxContext')).toHaveValue('');
+  expect(document.querySelectorAll('.gg-model-limit-presets button[aria-pressed="true"]')).toHaveLength(0);
+  await userEvent.fill(page.getByTestId('custom-model-maxContext'), '3oo k');
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await expect.element(page.getByRole('alert')).toHaveTextContent('Enter a number of tokens such as 300K or 1M');
+  await userEvent.clear(page.getByTestId('custom-model-maxContext'));
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await until('the form saved', () => state.saved !== null);
+  expect(state.saved?.models[0]?.contextLengths).toBeUndefined();
+  expect(state.saved?.models[0]?.contextWindow).toBeUndefined();
+});
+
+it('shows a Codex model_context_window as the max context and says where it came from', async () => {
+  const connection: CustomModelConnection = { ...record(), keySaved: true, discovered: { source: 'codex-provider', keyLast4: 'WXYZ' }, models: [{ id: 'm', contextWindow: 400_000 }] };
+  state.probe = { endpoints: connection.endpoints, models: [], failures: [] };
+  render(<CustomModelDialog machine={null} connection={connection} modelId="m" onClose={() => {}} />);
+  await expect.element(page.getByTestId('custom-model-maxContext')).toHaveValue('400K');
+  await expect.element(page.getByText('From your Codex config', { exact: true })).toBeVisible();
+});
+
+it('labels the largest menu length Max, and a model with one length offers no switch', async () => {
+  const codex = { id: 'codex', name: 'Codex', capabilities: { modelProtocols: ['openai-responses' as const], customModel: undefined } };
+  const connection: CustomModelConnection = { ...record(), keySaved: true, models: [
+    { id: 'big', contextWindow: 1_000_000, contextLengths: [300_000, 600_000, 900_000, 1_000_000], defaultContextLength: 300_000 },
+    { id: 'plain' },
+  ] };
+  const options = customComposerOptions([connection], codex, translateSessionMessage);
+  render(<div style={{ position: 'fixed', right: 24, bottom: 24, width: 640 }}><ChatComposer modelOptions={options} selectedModel={Object.keys(options)[0]}
+    agentOptions={[{ id: 'codex', name: 'Codex' }]} selectedAgent="codex" onModelChange={() => {}} onSubmit={() => {}} onStop={() => {}}
+    contextThresholds={(_id, maximum) => maximum ? { minimum: 8_000, maximum, value: null, selectWindow: async () => {} } : undefined} /></div>);
+  await userEvent.click(page.getByTestId('composer-model-trigger'));
+  const row = (name: string) => [...document.querySelectorAll('[data-slot=composer-model-name]')].find(e => e.textContent?.trim() === name)!.closest('[role=option]') as HTMLElement;
+  await until('the menu lists both', () => !!document.querySelector('[data-slot=combobox-content] [role=option]') && !!row('plain'));
+  await userEvent.hover(row('plain'));
+  await until('the plain detail', () => document.querySelector('[data-slot=composer-model-detail]')?.textContent?.includes('plain') ?? false);
+  expect(document.querySelector('[data-slot=composer-model-detail]')?.textContent).not.toContain('Context window');
+  await userEvent.hover(row('big'));
+  await until('the big detail', () => document.querySelector('[data-slot=composer-model-detail]')?.textContent?.includes('Context window') ?? false);
+  const trigger = [...document.querySelectorAll<HTMLButtonElement>('[data-slot=composer-model-detail] button')].find(button => button.textContent?.includes('Context window'))!;
+  expect(trigger.textContent).toContain('300K');
+  await userEvent.click(trigger);
+  await until('the lengths open', () => [...document.querySelectorAll('button')].some(button => button.textContent === 'Max (1M)'));
+  expect([...document.querySelectorAll('button[aria-pressed]')].map(button => button.textContent).filter(text => /K|M\)/.test(text ?? ''))).toEqual(['300K', '600K', '900K', 'Max (1M)']);
+});
+// owner 2026-11-27 02:10: "an error means something is wrong, but it must not stop the person saving". api.777358.xyz listed
+// gemini-4-neon and answered 404 model_not_found for it: the save said "cannot reach this address" and kept nothing.
+it('owner 11-27: a relay that does not offer the model is saved at the path that said so, closing without a prompt', async () => {
+  setLocalePreference('zh-CN');
+  const unserved = { protocol: 'openai-chat-completions' as const, baseUrl: 'https://relay.test/v1' };
+  state.probe = { endpoints: [], models: ['gemini-2.5-flash', 'gemini-4-neon'], unserved: [unserved], failures: [{ step: 'openai-chat-completions', reason: 'model-not-found' }] };
+  const closed = vi.fn();
+  render(<CustomModelDialog machine={null} group="custom" onClose={closed} />);
+  await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test');
+  await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-test');
+  await userEvent.fill(page.getByTestId('custom-model-name'), 'gemini-4-neon');
+  await until('the address is probed', () => state.probes.length > 0);
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await until('the form saved and closed', () => state.saved !== null && closed.mock.calls.length === 1);
+  expect(state.saved).toMatchObject({ endpoints: [unserved], unverified: true, unverifiedReason: { reason: 'model-not-found', modelId: 'gemini-4-neon' }, apiKey: 'sk-test', models: [{ id: 'gemini-4-neon' }] });
+  expect(state.toasts).toEqual([]);
+});
+it('owner 11-27: an unverified connection is listed like any other, with no mark', async () => {
+  setLocalePreference('zh-CN');
+  state.rows = [{ ...record(), keySaved: true, unverified: true, unverifiedReason: { reason: 'model-not-found', modelId: 'gemini-4-neon' }, models: [{ id: 'gemini-4-neon' }] }];
+  render(<Sheet ariaLabel="Settings" zIndex="var(--z-settings)" onClose={() => {}}><CustomModelsGroup /></Sheet>);
+  await expect.element(page.getByText('Existing provider')).toBeVisible();
+  expect(document.body.textContent).not.toMatch(/未验证|中转不提供/);
+});
+it('Test connection says a relay does not offer the named model instead of that it connected', async () => {
+  state.probe = { endpoints: [], models: ['other', 'm'], unserved: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }], failures: [{ step: 'openai-chat-completions', reason: 'model-not-found' }] };
+  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+  await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test');
+  await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-test');
+  await userEvent.fill(page.getByTestId('custom-model-name'), 'm');
+  await userEvent.click(page.getByTestId('custom-model-test'));
+  await expect.element(page.getByTestId('custom-model-test-result')).toHaveTextContent('The relay does not offer m.');
+});
+// owner 2026-11-27 02:28: on a long form the refusal sat at its bottom, out of view, in English; the button only flickered.
+it('a save the settings process refuses is said beside Save, translated, with the next step, on the longest form', async () => {
+  await page.viewport(1000, 640);
+  setLocalePreference('zh-CN');
+  state.probe = { endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }], models: ['m'], failures: [] };
+  state.saveError = 'Add a new connection to change this API address. Existing sessions still use this address.';
+  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+  await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test/v1');
+  await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-other');
+  await userEvent.fill(page.getByTestId('custom-model-name'), 'm');
+  await until('the address is probed', () => state.probes.length > 0);
+  await userEvent.click(page.getByTestId('custom-model-advanced'));
+  await userEvent.click(page.getByTestId('custom-model-image'));
+  for (const level of ['low', 'medium', 'high', 'xhigh', 'max']) await userEvent.click(page.getByTestId(`custom-model-effort-${level}`));
+  expect(dialogBody().scrollHeight).toBeGreaterThan(dialogBody().clientHeight);
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  const failure = page.getByTestId('custom-model-save-failure');
+  await expect.element(failure).toHaveTextContent('还有会话在用这个地址，请新加一条配置。');
+  expect(failure.element().closest('.gg-model-dialog-footer')).toBe(page.getByTestId('custom-model-save').element().parentElement);
+  const box = failure.element().getBoundingClientRect();
+  expect(box.top >= 0 && box.bottom <= window.innerHeight).toBe(true);
+  expect(state.saved).toBeNull();
+});

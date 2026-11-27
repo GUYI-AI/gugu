@@ -366,7 +366,7 @@ export function createSessionpagePlatformHooks(deps: SessionpagePlatformHooksDep
     async acpInjector(info) {
       if (!info.platformModel && info.providerId === 'claude') {
         const { claudeCustomModelSessionMeta } = await import('../session/main/core/agents/custom-model-run-context')
-        const sessionMeta = await claudeCustomModelSessionMeta(info.sessionId, info.sourceSessionId)
+        const sessionMeta = await claudeCustomModelSessionMeta(info.sessionId, info.sourceSessionId, { cwd: info.cwd })
         if (sessionMeta) return { kind: 'session-meta', sessionMeta }
       }
       // composer 没做过决定(存量会话、自动化任务、派生子会话)= 与选了 harness 自家模型(显式 null)同一条路:不上平台。
@@ -415,6 +415,8 @@ export function createSessionpagePlatformHooks(deps: SessionpagePlatformHooksDep
           // conversation-owned adapter environment.
           adapterEnv: claudeAcpAdapterEnv(platform.spawnEnv),
           ...(platform.model ? { model: platform.model } : {}),
+          // What this launch armed for Auto mode: the menu shows it, not the catalog's guess.
+          ...(platform.autoReview ? { autoReview: platform.autoReview } : {}),
         }
       }
 

@@ -226,29 +226,66 @@ it('the OpenCode writer and process receive the upstream model ID from the store
   expect(JSON.stringify(spawn)).not.toMatch(/opencode-secret|custom:/);
 });
 
-it.each(['default', 'same', 'other', 'deleted'] as const)('delivers the global reviewer through the same API connection (%s)', async selection => {
+async function claudeOnCompatibleConnection() {
   const connection = await saveCustomModel({ name: 'Compatible', apiKey: 'fixture-upstream-key', preset: null,
     endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://compatible.example/v1' }],
-    models: [{ id: 'claude-sonnet-5' }, { id: 'reviewer-v1' }],
-  });
-  if (selection !== 'default') await appSettingsService.update('autoReviewModel', {
-    kind: 'custom', connectionId: selection === 'other' ? '00000000-0000-4000-8000-000000000001' : connection.id,
-    modelId: selection === 'deleted' ? 'no-longer-listed' : 'reviewer-v1',
+    models: [{ id: 'claude-sonnet-5' }, { id: 'claude-haiku-5-5' }, { id: 'glm-5' }],
   });
   state.fixture!.sqlite.exec("INSERT INTO projects (id,name,path) VALUES ('project','Project','/repo')");
   state.fixture!.sqlite.prepare('INSERT INTO sessions (id,project_id,provider,runtime,config) VALUES (?,?,?,?,?)')
     .run('session-1', 'project', 'claude', 'acp', JSON.stringify({ version: '1', type: 'acp', model: customModelOptionId({ connectionId: connection.id, modelId: 'claude-sonnet-5' }) }));
-  const reviewer = selection === 'same' ? 'reviewer-v1' : 'claude-sonnet-5';
+  return connection;
+}
+async function claudeSessionSettings() {
+  const meta = (await claudeCustomModelSessionMeta('session-1'))!;
+  return JSON.parse(await readFile(meta.claudeCode.options.settings!, 'utf8'));
+}
+
+it.each(['default', 'same'] as const)('delivers the global reviewer through the same API connection (%s)', async selection => {
+  const connection = await claudeOnCompatibleConnection();
+  if (selection === 'same') await appSettingsService.update('autoReviewModel', { kind: 'custom', connectionId: connection.id, modelId: 'claude-haiku-5-5' });
+  const reviewer = selection === 'same' ? 'claude-haiku-5-5' : 'claude-sonnet-5';
   const spawn = await acpSpawn('claude');
   expect(spawn.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe(reviewer);
   expect(spawn.env.ANTHROPIC_MODEL).toBe('claude-sonnet-5');
   expect(spawn.autoReviewAllowed).toBe(true);
-  const meta = (await claudeCustomModelSessionMeta('session-1'))!;
-  const settings = JSON.parse(await readFile(meta.claudeCode.options.settings!, 'utf8'));
+  expect(spawn.autoReviewer).toEqual({ label: selection === 'same' ? 'claude-haiku-5-5 (Compatible)' : reviewer, kind: 'connection' });
+  const settings = await claudeSessionSettings();
   expect(settings.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe(reviewer);
   expect(settings.env.ANTHROPIC_MODEL).toBe('claude-sonnet-5');
   expect(settings.env.ANTHROPIC_BASE_URL).toContain(`/r/${connection.id}/`);
+  expect(settings.permissions?.disableAutoMode).toBeUndefined();
   expect(JSON.stringify(spawn)).not.toContain('fixture-upstream-key');
+});
+
+// unreviewable: GLM on an Anthropic-format connection, whose verdict the CLI cannot parse.
+it.each(['missing', 'unlisted', 'unreviewable'] as const)('turns Auto mode off when the picked reviewer is gone or cannot review (%s), never reviewing with the main model', async change => {
+  const connection = await claudeOnCompatibleConnection();
+  await appSettingsService.update('autoReviewModel', {
+    kind: 'custom', connectionId: change === 'missing' ? '00000000-0000-4000-8000-000000000001' : connection.id,
+    modelId: change === 'unlisted' ? 'no-longer-listed' : change === 'unreviewable' ? 'glm-5' : 'claude-haiku-5-5',
+  });
+  const spawn = await acpSpawn('claude');
+  expect(spawn.autoReviewAllowed).toBe(false);
+  expect(spawn.autoReviewUnavailable).toBe(true);
+  expect(spawn.autoReviewReason).toBe('taskConfig.reviewPreferenceUnavailable');
+  expect(spawn.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBeUndefined();
+  const settings = await claudeSessionSettings();
+  expect(settings.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBeUndefined();
+  expect(settings.permissions).toEqual({ disableAutoMode: 'disable' });
+});
+
+it('names a reviewer on another connection by a per-session alias the forwarder diverts', async () => {
+  await claudeOnCompatibleConnection();
+  const relay = await saveCustomModel({ name: 'Relay', apiKey: 'fixture-relay-key', preset: null,
+    endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://relay.example' }], models: [{ id: 'claude-haiku-5-5', label: 'Haiku 5.5' }],
+  });
+  await appSettingsService.update('autoReviewModel', { kind: 'custom', connectionId: relay.id, modelId: 'claude-haiku-5-5' });
+  const spawn = await acpSpawn('claude');
+  expect(spawn.autoReviewAllowed).toBe(true);
+  expect(spawn.autoReviewer).toEqual({ label: 'Haiku 5.5 (Relay)', kind: 'connection' });
+  expect(spawn.env.CLAUDE_CODE_AUTO_MODE_MODEL).toMatch(/^gugu-reviewer-[0-9a-f]{16}$/);
+  expect(JSON.stringify(spawn)).not.toMatch(/fixture-relay-key|fixture-upstream-key/);
 });
 
 it('carries the missing-main-model review veto through the host spawn contract', async () => {

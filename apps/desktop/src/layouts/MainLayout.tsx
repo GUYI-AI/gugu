@@ -131,6 +131,7 @@ import { setComposerVerb } from '../lib/composerVerbBridge'
 import { sessionPeek } from '../session/renderer/app/session-peek'
 import { pageModalOpen } from '../session/renderer/app/page-modal'
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider'
+import { requestSettingsFocus } from '../components/settings/settings-focus'
 
 const openChatLog = rendererLogger('chat/open-dm')
 
@@ -561,9 +562,10 @@ function InnerLayout({
     const open = (event: Event) => {
       const { section, action } = (event as CustomEvent<{
         section?: ActiveSection
-        action?: 'add-custom-model'
+        action?: 'add-custom-model' | 'review-model'
       }>).detail ?? {}
       setAddCustomModel(section === 'model' && action === 'add-custom-model')
+      requestSettingsFocus(section === 'model' && action === 'review-model' ? 'review-model' : null)
       if (section) openSettingsSection(section)
       else setSettingsModalOpen(true)
     }

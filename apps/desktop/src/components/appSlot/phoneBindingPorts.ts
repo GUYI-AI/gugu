@@ -1,6 +1,6 @@
 import { readAssistantPanelBody, uploadAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies'
 import { withAssistantPanelReadDeadline } from '@gugu/core/cloud/assistantPanelRead'
-import { ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC, pickAssistant } from '@gugu/core/shared/assistantProvision'
+import { ASSISTANT_APP_ID, pickAssistant } from '@gugu/core/shared/assistantProvision'
 import { userIdFromSupabaseAccessToken } from '@gugu/core/cloud/runtimeAuthProvider'
 import type { AssistantPanelClient } from '@gugu/core/cloud/assistantPanel'
 import { requireAssistantPanelBridge } from '../../lib/assistantPanelBridge'
@@ -56,7 +56,7 @@ export function phoneBindingPorts(files: ReturnType<typeof createAppFiles>): Pho
     },
     installed: phoneInstalledApp,
     async personalAssistant(_token, _ownerId) {
-      const bound = await identityDb.rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS).abortSignal(AbortSignal.timeout(5000))
+      const bound = await identityDb.rpc('my_app_agent', { p_app_id: ASSISTANT_APP_ID }).abortSignal(AbortSignal.timeout(5000))
       if (bound.error) throw failed('Could not verify the personal assistant')
       let pick: ReturnType<typeof pickAssistant>
       try {

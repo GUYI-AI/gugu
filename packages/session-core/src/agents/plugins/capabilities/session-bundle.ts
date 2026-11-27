@@ -1238,6 +1238,14 @@ export interface SessionModelCapability {
    * host-provided search); never a picker input. Absent = an older server = none.
    */
   platformCallableRoutes?: PlatformCallableRoutes
+  /**
+   * The model that reviews Auto mode on this platform session: a Gugu model on the same ticket, or a host alias the
+   * relay diverts to the user's own connection. The loader names it as the reviewer AND lists it as an allowed
+   * model — Claude Code silently swaps a reviewer the session's model policy excludes (2.1.309, measured).
+   * `null` = the host resolved no reviewer: the loader removes Auto mode from the session (`permissions.disableAutoMode`),
+   * so the CLI's own mode switch cannot start it with a swapped-in reviewer either.
+   */
+  autoReviewModel?: string | null
 }
 
 export interface SessionAutonomyCapability {

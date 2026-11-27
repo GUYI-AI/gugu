@@ -85,12 +85,18 @@ async function enrichModelEntries(entries: readonly CustomModelEntry[]): Promise
   });
 }
 
+/** A key this device stores but cannot read right now (the system keychain refused it): not the same as no key (#4043). */
+const UNREADABLE_KEY = Symbol('unreadable key');
+type StoredKey = string | null | typeof UNREADABLE_KEY;
+
 /** What a renderer may read of a stored connection: never the key, never the discovery identity. */
-function viewRow(row: StoredRow, key: string | null): CustomModelConnection {
+function viewRow(row: StoredRow, key: StoredKey): CustomModelConnection {
   const { discovery, mergedInto: _mergedInto, suppresses: _suppresses, ...meta } = row.meta!.customModel!;
+  const readable = typeof key === 'string' ? key : null;
   return {
-    id: row.accountId, name: row.meta?.displayName || row.accountId, credentialRef: row.credentialRef, keySaved: Boolean(key), ...meta,
-    ...(key ? { keyLast4: keyLast4(key) } : {}),
+    id: row.accountId, name: row.meta?.displayName || row.accountId, credentialRef: row.credentialRef, keySaved: Boolean(readable), ...meta,
+    ...(readable ? { keyLast4: keyLast4(readable) } : {}),
+    ...(key === UNREADABLE_KEY ? { keyUnreadable: true as const } : {}),
     ...(discovery ? { discovered: { source: discovery.source, keyLast4: discovery.keyLast4 } } : {}),
   };
 }
@@ -124,10 +130,12 @@ async function scanLocal(): Promise<DiscoveredConnection[]> {
  * The discovered connections nobody has stored yet. A stored connection hides its candidate when it is that candidate's
  * own record (removed ones included, so a removal sticks) or when it has the same address and key.
  */
-async function unstoredCandidates(rows: StoredRow[], secretOf: (id: string) => Promise<string | null>, candidates?: DiscoveredConnection[]): Promise<DiscoveredConnection[]> {
+async function unstoredCandidates(rows: StoredRow[], secretOf: (id: string) => Promise<StoredKey>, candidates?: DiscoveredConnection[]): Promise<DiscoveredConnection[]> {
   candidates ??= await scanLocal();
   if (candidates.length === 0) return [];
   const taken = new Set<string>();
+  // A stored key that cannot be read may be any candidate's key at its address: none there is offered (or stored) again.
+  const unreadableAt = new Set<string>();
   await Promise.all(rows.map(async (row) => {
     const meta = row.meta?.customModel;
     if (!meta) return;
@@ -135,10 +143,11 @@ async function unstoredCandidates(rows: StoredRow[], secretOf: (id: string) => P
     for (const identity of meta.suppresses ?? []) taken.add(identity);
     if (!meta.discovery) {
       const key = await secretOf(row.accountId);
-      if (key) for (const { baseUrl } of meta.endpoints) taken.add(discoveryIdentity(baseUrl, key));
+      if (key === UNREADABLE_KEY) for (const { baseUrl } of meta.endpoints) unreadableAt.add(baseUrl);
+      else if (key) for (const { baseUrl } of meta.endpoints) taken.add(discoveryIdentity(baseUrl, key));
     }
   }));
-  return candidates.filter(candidate => !taken.has(candidate.identity));
+  return candidates.filter(candidate => !taken.has(candidate.identity) && !candidate.endpoints.some(({ baseUrl }) => unreadableAt.has(baseUrl)));
 }
 
 const discoveredProbes = new Map<string, Promise<CustomModelMeta['endpoints']>>();
@@ -168,9 +177,13 @@ function candidateView(candidate: DiscoveredConnection): CustomModelConnection {
   };
 }
 
-function secretReader(): (id: string) => Promise<string | null> {
-  const cache = new Map<string, Promise<string | null>>();
-  return (id) => cache.get(id) ?? cache.set(id, registry.resolveSecret(namespace, id)).get(id)!;
+/** Each stored key read once per pass; one the keychain refuses is that connection's state, never the whole list's failure. */
+function secretReader(): (id: string) => Promise<StoredKey> {
+  const cache = new Map<string, Promise<StoredKey>>();
+  return (id) => cache.get(id) ?? cache.set(id, registry.resolveSecret(namespace, id).catch((error: unknown) => {
+    log.warn('[custom-models] a saved key could not be read on this device', { connectionId: id, error: error instanceof Error ? error.name : 'unknown' });
+    return UNREADABLE_KEY;
+  })).get(id)!;
 }
 
 let writes = Promise.resolve();
@@ -205,69 +218,6 @@ function combineModels(existing: CustomModelMeta['models'], added: CustomModelMe
   return [...models.values()];
 }
 
-async function mergeConnections(winner: StoredRow, duplicates: StoredRow[], preserveRoutes = true, pending: DiscoveredConnection[] = []): Promise<void> {
-  const meta = winner.meta!.customModel!;
-  const endpoints = new Map(meta.endpoints.map(endpoint => [endpoint.protocol, endpoint]));
-  const suppresses = new Set(meta.suppresses);
-  const routes = new Map((meta.routes ?? []).map(route => [route.id, route]));
-  let models = meta.models;
-  let disabledModels = meta.disabledModels ?? [];
-  for (const duplicate of duplicates) {
-    const other = duplicate.meta!.customModel!;
-    models = combineModels(models, other.models);
-    disabledModels = combineModels(disabledModels, other.disabledModels ?? []);
-    if (preserveRoutes) {
-      for (const route of other.routes ?? []) if (!routes.has(route.id)) routes.set(route.id, route);
-      for (const endpoint of other.endpoints) if (!endpoints.has(endpoint.protocol)) endpoints.set(endpoint.protocol, endpoint);
-    }
-    if (other.discovery) suppresses.add(other.discovery.identity);
-    for (const identity of other.suppresses ?? []) suppresses.add(identity);
-  }
-  for (const candidate of pending) {
-    suppresses.add(candidate.identity);
-    models = combineModels(models, candidate.models.filter(model => !disabledModels.some(disabled => disabled.id === model.id)));
-  }
-  const combined = { ...meta, ...customModelMetaSchema.parse({ ...meta, apiUrl: customModelApiUrl(meta), models, ...(routes.size ? { routes: [...routes.values()] } : {}), disabledModels: disabledModels.filter(entry => !models.some(model => model.id === entry.id)), endpoints: [...endpoints.values()] }),
-    suppresses: [...suppresses].slice(0, 16) };
-  await registry.upsertAccount({ providerId: namespace, accountId: winner.accountId, meta: { ...winner.meta, customModel: combined } });
-  for (const duplicate of duplicates) {
-    const alias = { ...duplicate.meta, customModel: { ...duplicate.meta!.customModel!, ...(!preserveRoutes ? { endpoints: meta.endpoints } : {}), mergedInto: winner.accountId } };
-    if (duplicate.credentialRef === winner.credentialRef) {
-      await registry.upsertAccount({ providerId: namespace, accountId: duplicate.accountId, meta: alias });
-    } else {
-      // Mark the alias before clearing its redundant key so an interrupted merge can still resolve the original session.
-      await registry.upsertAccount({ providerId: namespace, accountId: duplicate.accountId, meta: alias });
-      await registry.retireAccount(namespace, duplicate.accountId, alias);
-    }
-  }
-}
-
-async function reconcileSavedUrls(): Promise<void> {
-  const groups = new Map<string, StoredRow[]>();
-  for (const row of (await registry.listAccounts(namespace)).filter(isActive)) {
-    const apiUrl = customModelApiUrl(row.meta!.customModel!);
-    const group = groups.get(apiUrl) ?? [];
-    group.push(row);
-    groups.set(apiUrl, group);
-  }
-  for (const rows of groups.values()) {
-    if (rows.length < 2) continue;
-    const byKey = new Map<string, StoredRow[]>();
-    for (const row of rows) {
-      const key = await registry.resolveSecret(namespace, row.accountId);
-      if (!key) continue;
-      const group = byKey.get(key) ?? [];
-      group.push(row);
-      byKey.set(key, group);
-    }
-    for (const group of byKey.values()) {
-      if (group.length < 2) continue;
-      const [winner, ...duplicates] = group.sort((a, b) => b.meta!.customModel!.endpoints.length - a.meta!.customModel!.endpoints.length || a.createdAt - b.createdAt);
-      await mergeConnections(winner!, duplicates);
-    }
-  }
-}
-
 /**
  * First use of a discovered connection: store it under the id it was listed with. Nothing happens for an id that is
  * already stored (including a removed one), and an id whose source changed since it was listed is left unstored, so
@@ -279,10 +229,7 @@ async function ensureStored(id: string, options: { keepKey: boolean } = { keepKe
   const pending = await unstoredCandidates(rows, secretReader());
   const candidate = pending.find(entry => entry.id === id);
   if (!candidate) return;
-  const url = customModelApiUrl(candidate);
-  if (options.keepKey && (pending.some(entry => entry.id !== id && customModelApiUrl(entry) === url) ||
-    rows.some(row => isActive(row) && customModelApiUrl(row.meta!.customModel!) === url))) return;
-  await storeDiscovered(candidate, options.keepKey === true);
+  await storeDiscovered(candidate, options.keepKey);
 }
 
 async function storeDiscovered(candidate: DiscoveredConnection, keepKey: boolean): Promise<void> {
@@ -303,11 +250,6 @@ async function importHarnessConnections(candidates: DiscoveredConnection[]): Pro
   const rows = await registry.listAccounts(namespace);
   const secretOf = secretReader();
   const pending = await unstoredCandidates(rows, secretOf, candidates);
-  const pendingCounts = new Map<string, number>();
-  for (const entry of pending) {
-    const url = customModelApiUrl(entry);
-    pendingCounts.set(url, (pendingCounts.get(url) ?? 0) + 1);
-  }
   const active = rows.filter(isActive);
   for (const candidate of candidates) {
     const url = customModelApiUrl(candidate);
@@ -327,7 +269,7 @@ async function importHarnessConnections(candidates: DiscoveredConnection[]): Pro
           identity: candidate.identity, source: candidate.source, keyLast4: candidate.keyLast4, aliases: candidate.aliases,
         } },
       } });
-    } else if (!atUrl.length && pendingCounts.get(url) === 1 && pending.includes(candidate)) {
+    } else if (pending.includes(candidate)) {
       await storeDiscovered(candidate, true);
     }
   }
@@ -337,8 +279,11 @@ export async function listCustomModels(): Promise<CustomModelConnection[]> {
   migrateCustomModelConnections();
   return serializeCustomModelWrite(async () => {
     const candidates = await scanLocal();
-    await reconcileSavedUrls();
-    await importHarnessConnections(candidates);
+    // Storing what this machine already has configured is a side effect of listing: when it cannot write (a refused
+    // keychain), the list still shows what is stored, and the next listing tries again.
+    await importHarnessConnections(candidates).catch((error: unknown) => {
+      log.warn('[custom-models] the existing connections on this machine could not be saved', { error: error instanceof Error ? error.name : 'unknown' });
+    });
     const rows = await registry.listAccounts(namespace);
     const secretOf = secretReader();
     const nativeHarnesses = await Promise.all((['claude', 'codex'] as const).map(async harness => {
@@ -347,92 +292,48 @@ export async function listCustomModels(): Promise<CustomModelConnection[]> {
     }));
     const stored = await Promise.all(rows.filter(isActive).map(async row => viewRow(row, await secretOf(row.accountId))));
     const pending = (await unstoredCandidates(rows, secretOf, candidates)).map(candidateView);
-    const counts = new Map<string, number>();
-    const connections = [...stored, ...pending];
-    for (const connection of connections) {
-      const url = customModelApiUrl(connection);
-      counts.set(url, (counts.get(url) ?? 0) + 1);
-    }
-    return Promise.all(connections.map(async connection => {
+    return Promise.all([...stored, ...pending].map(async connection => {
       const url = customModelApiUrl(connection);
       const managedNativeHarnesses = nativeHarnesses.filter((harness): harness is "claude" | "codex" => harness !== null && candidates.some(candidate =>
         candidate.nativeHarnesses?.includes(harness) && customModelApiUrl(candidate) === url));
-      return { ...connection, models: await enrichModelEntries(connection.models), ...(managedNativeHarnesses.length ? { managedNativeHarnesses } : {}),
-        ...(counts.get(url)! > 1 ? { keyConflict: true } : {}) };
+      return { ...connection, models: await enrichModelEntries(connection.models), ...(managedNativeHarnesses.length ? { managedNativeHarnesses } : {}) };
     }));
   });
 }
 
+/**
+ * A save writes exactly one configuration: the one it names, or a new one. Configurations never merge, not even at the
+ * same address with the same key (owner 11-26 23:26, confirmed 11-27 00:16): each carries its own capabilities.
+ */
 export function saveCustomModel(input: SaveCustomModel): Promise<CustomModelConnection> {
   return serializeCustomModelWrite(async () => {
     migrateCustomModelConnections();
-    await reconcileSavedUrls();
     const apiUrl = customModelApiUrl(input);
-    const candidates = await scanLocal();
-    await importHarnessConnections(candidates);
-    const pending = (await unstoredCandidates(await registry.listAccounts(namespace), secretReader(), candidates))
-      .filter(candidate => customModelApiUrl(candidate) === apiUrl);
-    if (input.resolveUrlConflict) {
-      const chosen = pending.find(candidate => candidate.id === input.id);
-      if (chosen) await storeDiscovered(chosen, true);
-    } else if (pending.length) {
-      throw new Error('This API address has multiple saved keys. Choose which key to keep in Models settings.');
-    }
     let existing: StoredRow | null = null;
     if (input.id) {
       await ensureStored(input.id);
       existing = await registry.getAccount(namespace, input.id);
       if (!existing || !isActive(existing)) throw new Error('The custom model no longer exists');
-    }
-    const sameUrl = (await registry.listAccounts(namespace)).filter(row => isActive(row) && customModelApiUrl(row.meta!.customModel!) === apiUrl);
-    if (input.resolveUrlConflict) {
-      if (!existing || !sameUrl.some(row => row.accountId === existing!.accountId) || !await registry.resolveSecret(namespace, existing.accountId)) {
-        throw new Error('Choose a saved API key for this address');
-      }
-      const losingCandidates = pending.filter(candidate => candidate.id !== existing!.accountId);
-      await mergeConnections(existing, sameUrl.filter(row => row.accountId !== existing!.accountId), false, losingCandidates);
-      return view(existing.accountId);
-    }
-    if (sameUrl.length > 1) throw new Error('This API address has multiple saved keys. Choose which key to keep in Models settings.');
-    if (existing && apiUrl !== customModelApiUrl(existing.meta!.customModel!) &&
-      (await registry.listAccounts(namespace)).some(row => row.meta?.customModel?.mergedInto === existing!.accountId)) {
-      throw new Error('Add a new connection to change this API address. Existing sessions still use this address.');
-    }
-    if (existing && sameUrl.some(row => row.accountId !== existing!.accountId)) throw new Error('This API address is already configured. Open its existing settings to manage models.');
-    const append = !existing;
-    let materializedDiscovery = false;
-    if (!existing) {
-      existing = sameUrl[0] ?? null;
-      if (!existing) {
-        const rows = await registry.listAccounts(namespace);
-        const candidate = (await unstoredCandidates(rows, secretReader())).find(row => customModelApiUrl(row) === apiUrl);
-        if (candidate) {
-          await ensureStored(candidate.id);
-          existing = await registry.getAccount(namespace, candidate.id);
-          materializedDiscovery = Boolean(existing);
-        }
+      // Rows merged by builds before 11-27 still point here and resolve their sessions through this address.
+      if (apiUrl !== customModelApiUrl(existing.meta!.customModel!) &&
+        (await registry.listAccounts(namespace)).some(row => row.meta?.customModel?.mergedInto === existing!.accountId)) {
+        throw new Error('Add a new connection to change this API address. Existing sessions still use this address.');
       }
     }
     const id = existing?.accountId ?? randomUUID();
     const prior = existing?.meta?.customModel;
-    const priorKey = existing ? await registry.resolveSecret(namespace, id) : null;
-    if (append && priorKey && input.apiKey && priorKey !== input.apiKey) throw new Error('This API address already has a key. Edit the existing configuration to replace it.');
-    if (!priorKey && !input.apiKey) throw new Error('An API key is required on this device');
-    const key = append && priorKey ? undefined : input.apiKey;
-    const models = append && prior ? combineModels(prior.models, input.models) : input.models;
-    const disabledModels = append ? combineModels(prior?.disabledModels ?? [], input.disabledModels ?? []) : input.disabledModels ?? prior?.disabledModels;
-    const meta = customModelMetaSchema.parse({ apiUrl, preset: append && prior ? prior.preset : input.preset,
-      endpoints: append && prior ? prior.endpoints : input.endpoints,
-      models, routes: append && prior
-        ? [...new Map([...(prior.routes ?? []), ...(input.routes ?? [])].map(route => [route.id, route])).values()]
-        : input.routes ?? prior?.routes, harnessProtocols: input.harnessProtocols ?? prior?.harnessProtocols,
+    if (!input.apiKey && !(existing && await registry.resolveSecret(namespace, id))) throw new Error('An API key is required on this device');
+    const meta = customModelMetaSchema.parse({ apiUrl, preset: input.preset, endpoints: input.endpoints, models: input.models,
+      routes: input.routes ?? prior?.routes, harnessProtocols: input.harnessProtocols ?? prior?.harnessProtocols,
       // A save that does not say (switching a model on or off, keeping a key) keeps what the last check found.
       unverified: (input.unverified ?? prior?.unverified) || undefined,
-      disabledModels: disabledModels?.filter(entry => !models.some(model => model.id === entry.id)) });
+      // The reason travels with the mark: a save that says it is unverified says why, one the address answered clears both.
+      unverifiedReason: (input.unverified ?? prior?.unverified) ? (input.unverified ? input.unverifiedReason : prior?.unverifiedReason) : undefined,
+      disabledModels: (input.disabledModels ?? prior?.disabledModels)?.filter(entry => !input.models.some(model => model.id === entry.id)) });
     const discovery = prior?.discovery;
-    await registry.upsertAccount({ providerId: namespace, accountId: id, ...(key ? { secret: key } : {}), meta: {
-      displayName: append && existing && !materializedDiscovery ? existing.meta?.displayName : input.name,
-      customModel: { ...prior, ...meta, ...(discovery && key ? { discovery: { ...discovery, keyLast4: keyLast4(key) } } : {}) },
+    await registry.upsertAccount({ providerId: namespace, accountId: id, ...(input.apiKey ? { secret: input.apiKey } : {}), meta: {
+      displayName: input.name,
+      customModel: { ...prior, ...meta, ...(discovery && input.apiKey ? { discovery: { ...discovery, keyLast4: keyLast4(input.apiKey) } } : {}) },
     } });
     return view(id);
   });
@@ -536,6 +437,8 @@ export type ResolvedCustomModel = {
   upstreamEndpoint: string;
   routeId?: string;
   removed?: boolean;
+  /** The harness speaks another protocol and reaches this connection through a format converter. */
+  converted?: boolean;
   /** The session's recorded reasoning level. */
   effort?: string;
 };
@@ -550,6 +453,19 @@ async function resolveCustomRoute(connectionId: string, protocol: ModelProtocol,
   const apiKey = await readConnectionSecret(connectionId);
   if (!apiKey) return null;
   return { endpoint, apiKey, ...(sessionId && meta && FAST_PROTOCOLS.includes(protocol) && sessionAsksFast(sessionId, connectionId, meta) ? { priority: true } : {}) };
+}
+
+/** One saved connection as the renderer sees it, without the discovery scan `listCustomModels` runs (launch paths read this). */
+export async function storedCustomModel(connectionId: string): Promise<CustomModelConnection | null> {
+  migrateCustomModelConnections();
+  const row = await registry.getAccount(namespace, connectionId);
+  return row && isActive(row) ? viewRow(row, await readConnectionSecret(connectionId)) : null;
+}
+
+/** An Auto mode reviewer on this connection, read per request like the forwarder's own routes (review-routes.ts). */
+export async function customReviewTarget(connectionId: string): Promise<{ endpoint: string; apiKey: string } | null> {
+  const target = await resolveCustomRoute(connectionId, 'anthropic-messages');
+  return target ? { endpoint: target.endpoint, apiKey: target.apiKey } : null;
 }
 
 /**
@@ -574,6 +490,16 @@ function matchForHarness(providerId: string, connection: CustomModelMeta & { key
       convertFrom: descriptor?.customModel?.convertFrom,
       connection, modelId, hasModel: Boolean(modelId), allowDefaultModel: descriptor?.customModel?.modelOptional,
     }),
+  };
+}
+
+/** What the Auto mode review rule reads about a Claude session on this saved connection, before the session exists. */
+export function claudeReviewSessionFacts(record: CustomModelConnection, modelId: string | undefined) {
+  const { matched } = matchForHarness('claude', record, modelId);
+  if (matched.reason) return undefined;
+  return {
+    connectionId: record.id, endpoint: matched.endpoint.baseUrl, models: record.models,
+    ...(record.removed ? { removed: true } : {}), ...(matched.converted ? { converted: true } : {}),
   };
 }
 
@@ -621,19 +547,7 @@ async function listPiCustomModelProviders(): Promise<PiCustomModelProvider[]> {
 }
 
 async function readSelectedCustomModel(providerId: string, ref: CustomModelRef, selection: 'new' | 'bound') {
-  await serializeCustomModelWrite(async () => {
-    if (selection === 'new') {
-      const rows = await registry.listAccounts(namespace);
-      const row = rows.find(entry => entry.accountId === ref.connectionId && isActive(entry));
-      if (row) {
-        const url = customModelApiUrl(row.meta!.customModel!);
-        const pending = await unstoredCandidates(rows, secretReader());
-        if (rows.some(entry => entry !== row && isActive(entry) && customModelApiUrl(entry.meta!.customModel!) === url) ||
-          pending.some(entry => customModelApiUrl(entry) === url)) throw new Error('Choose which key to keep in Models settings');
-      }
-    }
-    await ensureStored(ref.connectionId);
-  });
+  await serializeCustomModelWrite(() => ensureStored(ref.connectionId));
   const row = await registry.getAccount(namespace, ref.connectionId);
   const meta = row?.meta?.customModel;
   if (!meta || (selection === 'new' && (meta.removed || meta.mergedInto))) throw new Error('The custom model no longer exists');
@@ -706,7 +620,7 @@ export async function resolveCustomModel(providerId: string, sessionId: string, 
     connectionId: ref.connectionId, name,
     apiKey, endpoint,
     models, protocol: selected.harnessProtocol ?? protocol, capabilities: selectedEntry, entries, routeId,
-    upstreamEndpoint: upstream.baseUrl, removed: meta.removed,
+    upstreamEndpoint: upstream.baseUrl, removed: meta.removed, ...(selected.harnessProtocol ? { converted: true } : {}),
     ...(config?.effort && customModelEfforts(selectedEntry, pluginRegistry.get(providerId)?.capabilities.effort)?.includes(config.effort) ? { effort: config.effort } : {}),
   };
 }

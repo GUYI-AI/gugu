@@ -15,7 +15,7 @@ export const appUndoChannel = defineEvent<void>('app:undo');
 export const appRedoChannel = defineEvent<void>('app:redo');
 export const appPasteChannel = defineEvent<void>('app:paste');
 
-export type TerminalContextMenuAction = 'paste' | 'select-all' | 'clear';
+export type TerminalContextMenuAction = 'paste' | 'select-all' | 'clear' | 'open-link';
 
 export const terminalContextMenuActionChannel = defineEvent<{
   requestId: string;
