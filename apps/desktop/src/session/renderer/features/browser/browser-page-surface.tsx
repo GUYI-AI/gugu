@@ -55,6 +55,7 @@ export function BrowserPageSurface({
   onHandleRef.current = onHandle;
   const initialUrlRef = useRef(initialUrl);
   const tickRef = useRef<(() => void) | null>(null);
+  const takenAt = useRef(''); // the size the page's picture was asked for at
 
   useEffect(() => {
     const element = ref.current;
@@ -78,7 +79,6 @@ export function BrowserPageSurface({
     let snapshotToken = 0;
     let mounted = false;
     let pendingSnapshotReport: (() => void) | null = null;
-    let takenAt = '';
 
     const report = (mode: BrowserPageMode, rect: PageRect | null) =>
       rpc.browser.layoutPage({
@@ -95,7 +95,7 @@ export function BrowserPageSurface({
       // 超时只放行浮层;截图晚到时仍然显示,不能把迟到的真实画面丢掉。
       let timer = 0;
       const timeout = new Promise<void>((resolve) => { timer = win.setTimeout(resolve, SNAPSHOT_WAIT_MS); });
-      takenAt = `${element.offsetWidth},${element.offsetHeight}`; // asked for on screen: what comes is of the page at this size
+      takenAt.current = `${element.offsetWidth},${element.offsetHeight}`; // asked for on screen: what comes is of the page at this size
       const capture = rpc.browser.snapshotPage(browserId).then(({ dataUrl }) => {
         if (disposed || token !== snapshotToken || !dataUrl) return;
         element.style.backgroundImage = `url("${dataUrl}")`;
@@ -139,8 +139,7 @@ export function BrowserPageSurface({
       if (key !== lastSent) {
         // 初次挂载或从后台回来也可能已经有浮层:每次进入遮挡态都先换上截图,不能留下纯白占位。
         const enteringOcclusion = mode === 'occluded' && !lastSent.startsWith('occluded:');
-        // At another size than it was taken at, the picture is not this page: dropped where it would be what is seen — its tab coming back, its cell fading. Under the view (placed a frame late) and under a drag it stays, filling the box, till the next is taken at rest.
-        if (takenAt !== `${element.offsetWidth},${element.offsetHeight}` && (riding || (mode !== 'background' && lastSent.startsWith('background:')))) element.style.backgroundImage = '';
+        if (riding && takenAt.current !== `${element.offsetWidth},${element.offsetHeight}`) element.style.backgroundImage = ''; // fading at another size than its picture's: not this page (as when its tab comes back, below). Under the view and under a drag it stays, filling the box, till the next is taken at rest.
         const wasShown = lastSent.startsWith('shown:');
         lastSent = key;
         if (enteringOcclusion && !(riding && element.style.backgroundImage)) {
@@ -159,7 +158,7 @@ export function BrowserPageSurface({
           void report(mode, rect);
           if (mode === 'shown' && !wasShown) takePicture();
         }
-      } else if (mode === 'shown' && takenAt !== `${element.offsetWidth},${element.offsetHeight}`) takePicture(); // at rest at a size it has no picture of
+      } else if (mode === 'shown' && takenAt.current !== `${element.offsetWidth},${element.offsetHeight}`) takePicture(); // at rest at a size it has no picture of
     };
 
     void rpc.browser
@@ -200,11 +199,11 @@ export function BrowserPageSurface({
     };
   }, [browserId, partition]);
 
-  // 切走这个页签:画之前就报,原生视图和换上来的那一帧一起撤(❌ 多留一帧)。切到:等这一帧画完再报 —— 原生视图先于新布局上屏会盖住旁边还没让开的格子;
-  // 这一帧占位上是它的画面。只在屏上时跟着占位、按 SAMPLE_MS 量,后台页签什么都不跑。
+  // 切走这个页签:画之前就报,原生视图和换上来的那一帧一起撤(❌ 多留一帧)。切到:等这一帧画完再报 —— 原生视图先于新布局上屏会盖住旁边还没让开的格子,这一帧占位上是它的画面。只在屏上时跟着占位、按 SAMPLE_MS 量,后台页签什么都不跑。
   useLayoutEffect(() => {
     const win = ref.current?.ownerDocument.defaultView;
     if (!visible || !win) return void tickRef.current?.();
+    if (takenAt.current !== `${ref.current!.offsetWidth},${ref.current!.offsetHeight}`) ref.current!.style.backgroundImage = ''; // its pane was resized while it was away: that picture is not this page
     let frame = win.requestAnimationFrame(() => { frame = win.requestAnimationFrame(() => { visibleRef.current = true; tickRef.current?.(); }); });
     const timer = win.setInterval(() => tickRef.current?.(), SAMPLE_MS);
     const stopFollowing = followBox(ref.current!, () => tickRef.current?.());
