@@ -793,7 +793,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
       arguments: { chat_id: '00000000-0000-4000-8000-000000000001', text: '行动开始', to_user_ids: ['user:44444444'] },
     })
     expect(result.isError).toBe(true)
-    expect(text(result)).toMatch(/no member of chat 00000000-0000-4000-8000-000000000001 matches aid:44444444/)
+    expect(text(result)).toMatch(/no member of chat 00000000-0000-4000-8000-000000000001 matches user:44444444/)
     expect(h.calls.inserts).toHaveLength(0)
     await client.close()
   })
@@ -1495,7 +1495,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(r.isError).toBe(true)
     // The refusal names who can be addressed instead, so a made-up recipient is corrected from the refusal itself.
     expect(text(r)).toContain('Recipients are not members of chat 00000000-0000-4000-8000-000000000001: ghost. Members you can address: ')
-    expect(text(r)).toMatch(/aid:alice\)?\. Send again to one of these addresses\./)
+    expect(text(r)).toMatch(/user:alice\)?\. Send again to one of these addresses\./)
     expect(h.calls.inserts).toHaveLength(0)
     await client.close()
   })
@@ -1631,7 +1631,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
       })
       expect(result.isError).toBe(true)
       expect(text(result)).toContain('the text calls on Ada, 分析甲')
-      expect(text(result)).toContain('aid:agent-ascii, aid:agent-long')
+      expect(text(result)).toContain('user:agent-ascii, user:agent-long')
       expect(h.calls.inserts).toHaveLength(0)
       expect(writeRpcs(h.calls.rpcs)).toEqual([])
       await client.close()

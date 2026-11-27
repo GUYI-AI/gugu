@@ -241,7 +241,7 @@ export const SESSION_TOOL_DEFS: readonly SessionpageToolDef[] = [
               || value.startsWith('aid:')
               || value.startsWith('user:')
               || value.startsWith('gugu:'),
-            { message: 'each to entry must be a typed address — "session:<id>" (a typed session id from session_spawn / session_children / session_get), "aid:<Agent ID>" (the Agent ID shown on a session\u2019s share card, listed by session_peers; the older spelling "user:<uuid>" is still accepted) or "gugu:<number>" (a 咕咕号 from session_peers); bare ids, bare numbers and other id types are rejected' },
+            { message: 'each to entry must be a typed address — "session:<id>" (a typed session id from session_spawn / session_children / session_get), "aid:<Agent ID>" (the Agent ID shown on a session\u2019s share card, listed by session_peers; "user:<id>", as a delivery envelope writes it in from_id, is the same) or "gugu:<number>" (a 咕咕号 from session_peers); bare ids, bare numbers and other id types are rejected' },
           ),
         ).min(1),
       // 集体记忆对账第 2 条：本机按项目设的闸 09-30 拆了，session: 够得着这个账号任何一台机器上的会话（跨机器

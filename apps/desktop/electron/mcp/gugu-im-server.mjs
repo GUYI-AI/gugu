@@ -295,7 +295,7 @@ async function resolveMessagePrefixes(args, deps) {
   if (recipients && chatId) {
     const members = (await memberRowsOfMyChat(chatId, deps)).map((row) => String(row.user_id))
     out.to_user_ids = out.to_user_ids.map((id) => prefixed(id) ? matchIdPrefix({
-      kind: 'aid', id, rows: members, keyOf: (member) => member, noun: 'members',
+      kind: 'user', id, rows: members, keyOf: (member) => member, noun: 'members',
       notFound: (written) => `to_user_ids: no member of chat ${address} matches ${written}; message_members lists them (someone outside the chat takes the whole id)`,
     }) : id)
   }
@@ -416,7 +416,7 @@ async function addressableMembers(chatId, deps) {
   const ids = (await memberRowsOfMyChat(chatId, deps)).map((row) => String(row.user_id)).filter((id) => id !== deps.context.agentId)
   const names = new Map((await restGetInBatches(ids, (batch) =>
     deps.restGet(`users?id=in.(${batch.map(enc).join(',')})&select=id,display_name`, 'identity'))).map((user) => [user.id, user.display_name]))
-  const shown = ids.slice(0, 30).map((id) => names.get(id) ? `${names.get(id)} (aid:${id})` : `aid:${id}`)
+  const shown = ids.slice(0, 30).map((id) => names.get(id) ? `${names.get(id)} (user:${id})` : `user:${id}`)
   const more = ids.length > shown.length ? ` and ${ids.length - shown.length} more (message_members lists them all)` : ''
   return `Members you can address: ${shown.join(', ') || 'none besides you'}${more}. Send again to one of these addresses.`
 }
@@ -758,10 +758,10 @@ function normalizeRecipientInput(v) {
 function normToList(v) {
   const normalized = normalizeRecipientInput(v)
   if (normalized == null) return null
-  if (!Array.isArray(normalized)) throw new Error('to_user_ids must be an array of addresses (aid:<Agent ID>, gugu:<number>, session:<id>)')
+  if (!Array.isArray(normalized)) throw new Error('to_user_ids must be an array of addresses (user:<id> as an envelope\'s from_id gives it, gugu:<number>, session:<id>)')
   if (!normalized.length) return null
   if (!normalized.every((uid) => typeof uid === 'string' && uid.trim())) {
-    throw new Error('to_user_ids must be an array of addresses (aid:<Agent ID>, gugu:<number>, session:<id>)')
+    throw new Error('to_user_ids must be an array of addresses (user:<id> as an envelope\'s from_id gives it, gugu:<number>, session:<id>)')
   }
   return normalized
 }
@@ -1694,7 +1694,7 @@ async function handleMessage(args, deps) {
         const rec = reconcileMentionExpression(users, args.text, toUserIds, source ? [source.sender_user_id] : [], sessionPeers)
         if (rec.mismatches.length) {
           throw new Error(
-            `The text @-mentions ${rec.mismatches.map((name) => { const member = users.find((user) => user.display_name === name); return member ? `${name} (aid:${member.id})` : name }).join(', ')}, but to_user_ids does not include them — what the text says and what the message does must match. ` +
+            `The text @-mentions ${rec.mismatches.map((name) => { const member = users.find((user) => user.display_name === name); return member ? `${name} (user:${member.id})` : name }).join(', ')}, but to_user_ids does not include them — what the text says and what the message does must match. ` +
             `To address them, add their addresses to to_user_ids and send again; if you are not addressing them, drop the @ (a plain name is not a mention).`
           )
         }
@@ -1703,7 +1703,7 @@ async function handleMessage(args, deps) {
           if (bareNameHits.length) {
             throw new Error(
               `This message addresses no one (to_user_ids is empty and there is no reply_to_message_id), but the text calls on ${bareNameHits.map((hit) => hit.name).join(', ')}. ` +
-              `An agent's unaddressed message wakes nobody; to call on them, add their addresses to to_user_ids (${bareNameHits.flatMap((hit) => hit.ids).map((id) => `aid:${id}`).join(', ')}) and send again; ` +
+              `An agent's unaddressed message wakes nobody; to call on them, add their addresses to to_user_ids (${bareNameHits.flatMap((hit) => hit.ids).map((id) => `user:${id}`).join(', ')}) and send again; ` +
               `if you only mention them, reword it without naming them.`
             )
           }
@@ -3088,7 +3088,7 @@ export const TOOL_DEFS = [
     description: 'Add yourself or one of your owner’s Agents to a group. Omit agent to add yourself. Uses your own group role; agent approval still applies. Returns joined, pending_approval or already_member. Other identities use message_invite.',
     schema: z.object({
       chat_id: chatIdSchema.describe(`The group to join, from group_list.`),
-      agent: z.string().trim().min(1).optional().describe('Optional: the agent to add when it is not you — one of your owner\'s agents as "aid:<Agent ID>" (or its older spelling "user:<uuid>"), "gugu:<number>", or "session:<id>" for a session on this machine (from session_spawn / session_children / session_peers). Omit it to add yourself.'),
+      agent: z.string().trim().min(1).optional().describe('Optional: the agent to add when it is not you — one of your owner\'s agents as "aid:<Agent ID>" (or "user:<id>", as a delivery envelope writes it in from_id), "gugu:<number>", or "session:<id>" for a session on this machine (from session_spawn / session_children / session_peers). Omit it to add yourself.'),
     }),
     handler: (args, deps) => handleGroup({ ...args, action: 'add-agent' }, deps),
   },
