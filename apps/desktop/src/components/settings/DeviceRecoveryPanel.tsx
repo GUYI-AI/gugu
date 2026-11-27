@@ -148,7 +148,7 @@ export function DeviceRecoveryPanel({ deviceId, state, name, address, version, p
   </>
   return <section ref={panelRef} className="gg-device-recovery" aria-label={key('title')}>
     {inTask && <h3>{t(prefix + '.title')}</h3>}
-    {(inTask || state !== 'connected') && <p>{restart ? typeof restart.busy === 'number'
+    {(inTask || state !== 'connected') && <p className="gg-recovery-message">{restart ? typeof restart.busy === 'number'
       ? t('devices.update.updateNowConfirmCount', { name, count: restart.busy }) : key('restartHint') : t(prefix + '.body')}</p>}
     {state === 'updating' && typeof progress === 'number' && <p role="status">{t('devices.loginState.updatingPercent', { percent: progress })}</p>}
     {hostKey && <div className="gg-recovery-fingerprint">
