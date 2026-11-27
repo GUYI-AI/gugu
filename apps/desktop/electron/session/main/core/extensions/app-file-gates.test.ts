@@ -580,6 +580,11 @@ describe('saveBytesAs: bytes the window holds, saved where the person says', () 
     expect(f.saveAskedAt).toBe(path.join('/downloads-of-downloads', 'dl-1127.md'));
   });
 
+  it('keeps the dialog in Downloads when the name carries a path', async () => {
+    await saveBytesAs(null, '../../outside/dl-1127.md', new Uint8Array([1]));
+    expect(f.saveAskedAt).toBe(path.join('/downloads-of-downloads', 'dl-1127.md'));
+  });
+
   it('writes nothing and says null when the person cancels', async () => {
     f.cancelSave = true;
     await expect(saveBytesAs(null, 'dl-1127.md', new Uint8Array([1, 2, 3]))).resolves.toBeNull();

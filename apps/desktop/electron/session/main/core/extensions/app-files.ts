@@ -1243,7 +1243,8 @@ export async function downloadAppFile(page: DesktopFilePage, args: { ref?: unkno
  * app's own data folder, so a plain Save hid the file there.
  */
 async function saveAsked(window: BrowserWindow | null, source: SaveSource, write: (filePath: string) => Promise<void>): Promise<string | null> {
-  const options = { defaultPath: path.join(app.getPath('downloads'), source.name) };
+  // basename: a name carrying separators (`../x`) must not point the dialog outside Downloads.
+  const options = { defaultPath: path.join(app.getPath('downloads'), path.basename(source.name)) };
   const target = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
   if (target.canceled || !target.filePath) { if (source.kind === 'file') await source.file.dispose(); return null; }
   await write(target.filePath);
