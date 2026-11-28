@@ -718,16 +718,12 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     await ingestMessages(userId, { writes: clearChatLocally(userId, chatId, through), revisions: [] })
   }, [cache, chatsRef, invalidateMessageSnapshots, userId])
 
-  const removeMessage = useCallback((messageId: string, chatId = activeChatIdRef.current) => {
-    if (chatId) { setMessagesAndCache((rows) => rows.filter((row) => row.id !== messageId), chatId); setThreadMessagesFor(chatId, (rows) => rows.filter((row) => row.id !== messageId)) }
-  }, [setMessagesAndCache, setThreadMessagesFor])
   const deleteMessage = useCallback(async (messageId: string, chatId = activeChatIdRef.current) => {
     if (!chatId || !userId) return
     invalidateMessageSnapshots(chatId)
     if (outboxRef.current?.outbox.has(messageId)) return outboxRef.current.outbox.discard(messageId)
     await ingestMessages(userId, { writes: hideMessageLocally(userId, chatId, messageId), revisions: [] })
-    removeMessage(messageId, chatId)
-  }, [invalidateMessageSnapshots, removeMessage, userId])
+  }, [invalidateMessageSnapshots, userId])
 
   const appendMessage = useCallback((msg: MessageItem) => {
     // @@@threads (#1114) — route replies only to their open thread; realtime owns reply counts, mainline stays separate.
@@ -829,12 +825,12 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     loadOlderMessages: () => loadHistoryPage('older', chatId, viewport), loadNewerMessages: () => loadHistoryPage('newer', chatId, viewport),
     loadMessageAnchor: (id, commit) => loadMessageAnchor(id, chatId, viewport, commit), returnToLatestMessages: () => loadHistoryPage('latest', chatId, viewport),
     markMessageVisible,
-    clearMessages: () => clearMessages(chatId), removeMessage: (id) => removeMessage(id, chatId),
+    clearMessages: () => clearMessages(chatId),
     deleteMessage: (id) => deleteMessage(id, chatId), appendMessage, openThread: (rootId) => openThread(rootId, chatId),
     openUnreadChat, unreadEntry: entryFor(chatId),
     jumpToUnreadEntry: (viewport) => jumpToUnreadEntry(chatId, viewport),
   }), [cache, sendAttachmentsToChat, sendMessageToChat, toggleReaction, refreshMessages, loadHistoryPage, loadMessageAnchor,
-    markMessageVisible, clearMessages, removeMessage, deleteMessage, appendMessage, openThread, openUnreadChat, entryFor, jumpToUnreadEntry])
+    markMessageVisible, clearMessages, deleteMessage, appendMessage, openThread, openUnreadChat, entryFor, jumpToUnreadEntry])
   const conversations = useMemo<ChatConversationAccess>(() => ({
     read: (id, viewport) => {
       readChatWindow(id)

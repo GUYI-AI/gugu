@@ -16,7 +16,7 @@ const conversationActions = {
   sendAttachments: async () => undefined, sendMessage: async () => undefined, toggleReaction: async () => {}, refreshMessages: async () => {},
   loadOlderMessages: async () => {}, loadNewerMessages: async () => {}, loadMessageAnchor: async () => {},
   returnToLatestMessages: async () => {}, setFollowingTail: () => {}, markMessageVisible: () => {},
-  clearMessages: async () => {}, removeMessage: () => {}, deleteMessage: async () => {}, appendMessage: () => {},
+  clearMessages: async () => {}, deleteMessage: async () => {}, appendMessage: () => {},
   openThread: () => {}, openUnreadChat: async () => {}, jumpToUnreadEntry: async () => {},
   unreadEntry: null,
 }

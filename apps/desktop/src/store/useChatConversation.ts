@@ -8,7 +8,7 @@ import { deriveThreadScope } from './threadScope'
 type ConversationActions = Pick<ChatContextValue,
   'sendAttachments' | 'sendMessage' | 'toggleReaction' | 'refreshMessages' | 'loadOlderMessages' | 'loadNewerMessages' |
   'loadMessageAnchor' | 'returnToLatestMessages' | 'markMessageVisible' |
-  'clearMessages' | 'removeMessage' | 'deleteMessage' | 'appendMessage' | 'openThread' |
+  'clearMessages' | 'deleteMessage' | 'appendMessage' | 'openThread' |
   'openUnreadChat' | 'jumpToUnreadEntry' | 'unreadEntry'>
 
 export type ChatConversationAccess = {

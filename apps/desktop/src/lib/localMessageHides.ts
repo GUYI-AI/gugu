@@ -10,10 +10,6 @@ type Hides = { messages: Record<string, string[]>; cleared: Record<string, strin
 const KEY = (accountId: string) => `gugu.localMessageHides.v1:${accountId}`
 const loaded = new Map<string, Hides>()
 const listeners = new Set<(accountId: string, chatId: string) => void>()
-// Another window of this app hid something: read it again on next use.
-globalThis.addEventListener?.('storage', (event: StorageEvent) => {
-  if (event.key?.startsWith(KEY(''))) loaded.delete(event.key.slice(KEY('').length))
-})
 
 function hides(accountId: string): Hides {
   let value = loaded.get(accountId)
@@ -47,17 +43,23 @@ export function clearChatLocally(accountId: string, chatId: string, through: str
   const after = historyTime(through) / 1000n + 1n
   const at = `${new Date(Number(after / 1000n)).toISOString().slice(0, -1)}${String(after % 1000n).padStart(3, '0')}Z`
   const state = hides(accountId)
-  if (!state.cleared[chatId] || historyTime(at) > historyTime(state.cleared[chatId])) { state.cleared[chatId] = at; save(accountId, chatId) }
+  if (later(state.cleared[chatId], at) !== state.cleared[chatId]) { state.cleared[chatId] = at; save(accountId, chatId) }
   return [{ type: 'chatAccess', access: { chatId, clearedAt: state.cleared[chatId] } }]
 }
 
+/** The later of two history cutoffs. */
+function later(a: string | null | undefined, b: string | null | undefined): string | undefined {
+  return !a || (b && historyTime(b) > historyTime(a)) ? b ?? undefined : a
+}
+
 export type LocalHides = {
-  clearedAt(chatId: string): string | undefined
+  /** This device's cutoff or `server`'s, whichever is later. */
+  clearedAt(chatId: string, server?: string | null): string | undefined
   hidden(message: { id: string; chat_id: string; created_at: string }): boolean
 }
 
 export function localHidesOf(accountId: string): LocalHides {
-  return { clearedAt: chatId => hides(accountId).cleared[chatId], hidden: message => isMessageHidden(accountId, message) }
+  return { clearedAt: (chatId, server) => later(hides(accountId).cleared[chatId], server), hidden: message => isMessageHidden(accountId, message) }
 }
 
 export function isMessageHidden(accountId: string, message: { id: string; chat_id: string; created_at: string }): boolean {

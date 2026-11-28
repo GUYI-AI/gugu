@@ -285,7 +285,6 @@ export function chatStore(overrides: Partial<ChatContextValue> = {}): ChatContex
     setFollowingTail: vi.fn(),
     createGroupChat: vi.fn(async () => 'group-chat-1'),
     clearMessages: vi.fn(async () => {}),
-    removeMessage: vi.fn(),
     deleteMessage: vi.fn(async () => {}),
     appendMessage: vi.fn(),
     upsertChat: vi.fn(),

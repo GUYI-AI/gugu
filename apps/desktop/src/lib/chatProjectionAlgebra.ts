@@ -515,9 +515,7 @@ export function assembleChat(source: AssembleSource, viewerId: string, chatId: s
   const notificationLevel = own.notification_level
   const messageAt = preview ? preview.created_at : chat.last_message_at
   const nativeAt = own.native_personal_activity_at
-  const localClear = source.local.clearedAt(chat.id)
-  const clearedAt = localClear && (!own.conversation_cleared_at || historyTime(localClear) > historyTime(own.conversation_cleared_at))
-    ? localClear : own.conversation_cleared_at
+  const clearedAt = source.local.clearedAt(chat.id, own.conversation_cleared_at)
   const messageVisible = messageAt && historyMessageVisible(messageAt, clearedAt)
   // A latest message hidden on this device keeps its place in the list, without its text.
   const previewHidden = !!preview?.id && !!messageAt && source.local.hidden({ id: preview.id, chat_id: chat.id, created_at: messageAt })
