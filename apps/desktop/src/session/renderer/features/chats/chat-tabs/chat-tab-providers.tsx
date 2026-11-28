@@ -39,7 +39,8 @@ export const CHAT_INFO_TAB_KIND = 'chat-info';
 export const CHAT_MIN_WIDTH_PX = 360;
 
 export type ChatTabState = { chatId: string };
-export type ChatInfoState = { group: boolean; page?: 'main' | 'members' | 'announcement'; at?: number };
+// #3934 `webhook:<id>`: a webhook's message card opens its settings page (useSettingsPages OpenablePage).
+export type ChatInfoState = { group: boolean; page?: 'main' | 'members' | 'announcement' | `webhook:${string}`; at?: number };
 
 /** The chat a strip belongs to (its place, `chat-layouts`). */
 export const chatIdOfView = (ctx: TabViewContext): string => (ctx.place?.kind === 'chat' ? ctx.place.chatId : '');

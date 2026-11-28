@@ -1,5 +1,5 @@
 {
   "repository": "GUYI-AI/gugu-supabase",
-  "ref": "497873bf4b647b039417dc1e481d296cb77665ac",
-  "status": "Backend #426 merged on dev: identity.purge_owned_agent_history(p_agent_user_ids text[]) for permanently deleting archived sessions; two ahead of the #422 pin (35baf6a5), so it also carries #424 (attachment GC lease reclaim), #422 (a document name without a text suffix is refused), #421 and #413."
+  "ref": "38f13321dbd0dfa656695bdcc7f04370a7c8d798",
+  "status": "Backend #428 merged on dev (webhook agent delivery fix, #420): contains #425 (group webhooks), #426, #421 and every earlier dev commit; the same commit staging runs."
 }

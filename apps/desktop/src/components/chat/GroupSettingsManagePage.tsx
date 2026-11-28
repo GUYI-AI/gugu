@@ -4,7 +4,7 @@ import type { GroupChatSettings, GroupJoinMode, UpdateGroupChatSettingsInput } f
 import { GroupAgentFloodSettings } from './GroupAgentFloodSettings'
 import { joinModeDescription } from './chatPresentation'
 import { isProjectGroupChat } from '../../lib/groupMemberPermissions'
-import { SettingsToggleRow } from './groupSettingsUi'
+import { SettingsNavRow, SettingsToggleRow } from './groupSettingsUi'
 import { Unknown } from '../ui/Unknown'
 import {
   settingsCenteredRowStyle,
@@ -26,12 +26,15 @@ const limitStyle: CSSProperties = { ...settingsMutedTextStyle, display: 'flex', 
  * 原来这些开关对普通成员以禁用态铺在一级页上;现在整页只对管理者存在。
  * 所有项即时落库(useGroupChatSettings.update);成员上限是数字,回车或失焦才写。
  */
-export function GroupSettingsManagePage({ chatId, settings, totalMembers, onUpdate }: {
+export function GroupSettingsManagePage({ chatId, settings, totalMembers, onUpdate, webhookCount, onOpenWebhooks }: {
   chatId: string
   settings: GroupChatSettings
   /** null until the roster is read. */
   totalMembers: number | null
   onUpdate: (input: UpdateGroupChatSettingsInput) => Promise<boolean>
+  /** #3934 null until the group's webhooks are read. */
+  webhookCount: number | null
+  onOpenWebhooks: () => void
 }) {
   const { t } = useTranslation('messaging')
   const [maxMembersDraft, setMaxMembersDraft] = useState(String(settings.max_members))
@@ -106,6 +109,10 @@ export function GroupSettingsManagePage({ chatId, settings, totalMembers, onUpda
       <div style={settingsSectionLabelStyle}>{t('group.settings.sectionAgents')}</div>
       {/* @@@5856 / #5999 agent 数量线(含话题阈值)统一在群设置里管,❌ 回到成员面板。 */}
       <GroupAgentFloodSettings key={chatId} chatId={chatId} scope="group" />
+
+      <div style={settingsSectionLabelStyle}>{t('group.settings.sectionExternal')}</div>
+      <SettingsNavRow title={t('group.webhooks.title')} testId="group-settings-webhooks" onClick={onOpenWebhooks}
+        value={webhookCount === null ? <Unknown className="w-[4ch]" /> : webhookCount ? t('group.webhooks.navCount', { count: webhookCount }) : t('group.webhooks.navNone')} />
 
       <div style={settingsSectionLabelStyle}>{t('group.settings.sectionMembers')}</div>
       <div style={settingsCenteredRowStyle}>

@@ -30,6 +30,7 @@ export function permissionOperation(caller: PermissionCaller, name: string, raw:
   if (core && name === 'catalog_call') { name = ''; args = {} }
   let namespace = core ? 'gugu' : caller.toolScope
   let risk = core && Object.hasOwn(CORE_TOOL_RISKS, name) ? CORE_TOOL_RISKS[name] : undefined
+  if (core && name === 'group_webhook' && args.action === 'list') risk = { risk: 'medium', effect: 'read' }
   // This explicit variant keeps the social identity; the default archive removes its seats.
   if (core && name === 'session_archive' && args.remove_social_identity === false) risk = { risk: 'medium', effect: 'write' }
   if (core && name === 'device_call') {
@@ -43,6 +44,10 @@ export function permissionOperation(caller: PermissionCaller, name: string, raw:
   const dynamic = !core || namespace === 'gugu' && name.includes('__')
   if (dynamic && core) namespace = `app:${name.split('__')[0]}`
   const resource: Record<string, string> = {}
+  if (core && name === 'group_webhook') {
+    if (typeof args.action === 'string') resource.action = args.action
+    if (typeof args.webhook_id === 'string') resource.webhook_id = args.webhook_id
+  }
   for (const key of targetKeys) if (args[key] !== undefined) resource[key] = typeof args[key] === 'string' ? args[key] as string : canonicalJson(args[key])
   if (!Object.keys(resource).length) resource.session = caller.sessionId
   return { tool: name, namespace, resource, ...(risk ?? { risk: 'high', effect: 'execute' }), classified: Boolean(risk), ...(dynamic ? { dynamic: true } : {}) }

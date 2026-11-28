@@ -13,11 +13,11 @@ import { chatService } from '../../lib/chat'
 import { GroupAvatarEditor } from './GroupAvatarEditor'
 import { useGroupAvatarUpload } from './useGroupAvatarUpload'
 import { ChatManagementActions } from './ChatManagementActions'
-import { GroupSettingsManagePage } from './GroupSettingsManagePage'
+import { GroupManagePages } from './GroupManagePages'
 import { MemberListPanel, type MemberListPanelProps } from './MemberListPanel'
 import { AnnouncementDrawer } from './AnnouncementDrawer'
 import { groupRoleRevision, useGroupChatSettings, type GroupChatSettingsState } from './useGroupChatSettings'
-import { useSettingsPages } from './useSettingsPages'
+import { isManagePage, useSettingsPages, type OpenablePage } from './useSettingsPages'
 import { SettingsNavRow, SettingsPageFrame, SettingsPageHead } from './groupSettingsUi'
 import {
   settingsBodyStyle,
@@ -73,7 +73,7 @@ export function GroupMembersSection({
 }: {
   chat: ChatItem
   /** Opened at the members' list or the announcement (the info tab's members button): no way back into the first page. */
-  initialPage?: 'main' | 'members' | 'announcement'
+  initialPage?: OpenablePage
   snapshot: GroupCollabSnapshot | null
   settingsState?: GroupChatSettingsState
   snapshotError?: MemberListPanelProps['error']
@@ -169,21 +169,8 @@ export function GroupMembersSection({
     content = <MemberListPanel settingsState={settingsState ?? ownSettings} chatId={chatId} chatKind="group" chatName={chat.alias?.trim() || groupName} snapshot={snapshot} error={snapshotError} onReload={onReload} onOpenUserChat={onOpenUserChat} onWhisper={onWhisper} head={subHead} />
   } else if (page === 'announcement') {
     content = <AnnouncementDrawer chatId={chatId} isAdmin={viewerIsManager} head={subHead} />
-  } else if (page === 'manage' && settings) {
-    content = (
-      <>
-        {subHead(t('group.settings.manage'))}
-        <div style={bodyStyle}>
-          <GroupSettingsManagePage
-            chatId={chatId}
-            settings={settings}
-            totalMembers={totalMembers}
-            onUpdate={update}
-          />
-          {errorLine}
-        </div>
-      </>
-    )
+  } else if (isManagePage(page) && settings) { // 群管理与它下面的 Webhook 页(#3934)
+    content = <GroupManagePages page={page} chatId={chatId} settings={settings} members={unifiedMembers} totalMembers={totalMembers} onUpdate={update} head={subHead} bodyStyle={bodyStyle} errorLine={errorLine} push={push} pop={pop} />
   } else if (page === 'rules' || page === 'description') {
     const isRules = page === 'rules'
     const saved = isRules ? settings?.group_prompt : settings?.description

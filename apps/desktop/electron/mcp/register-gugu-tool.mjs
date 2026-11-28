@@ -43,5 +43,10 @@ function strictArgs(def, args) {
       ? `不认识的参数 ${issue.keys.join('、')};合法参数:${Object.keys(def.schema.shape).join('、')}`
       : `${issue.path.join('.') || '(root)'}: ${issue.message}`)
     .join('; ')
+  const action = def.schema.shape.action
+  if (action) {
+    const scope = action.safeParse(args.action).success ? `${def.name} ${args.action}` : def.name
+    throw new Error(`Input validation error: ${scope}: ${detail}`)
+  }
   throw new Error(`Input validation error: ${detail}`)
 }
