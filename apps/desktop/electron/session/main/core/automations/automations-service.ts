@@ -40,7 +40,6 @@ import {
 } from './repo';
 import { markRunSkipped } from './run-transitions';
 import { mapAutomationRunRowToAutomationRun } from './utils';
-import { applySessionAdmissionChanges } from '../sessions/session-admission-preparation';
 
 const headRun = alias(automationRuns, 'head_run');
 
@@ -271,8 +270,6 @@ export class AutomationsService implements Hookable<AutomationsServiceHooks> {
   }
 
   async runAutomation(id: string): Promise<AutomationRun> {
-    const before = await getAutomation(id);
-    if (before?.agentSessionId) await applySessionAdmissionChanges(before.agentSessionId);
     if (this.deletingAutomationIds.has(id)) throw new Error('automation_deletion_in_progress');
     this.startingAutomationCounts.set(id, (this.startingAutomationCounts.get(id) ?? 0) + 1);
     try {

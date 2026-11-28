@@ -32,6 +32,8 @@ export function refusedOrUnavailable(error: unknown): Unavailable {
   if (code === 'account-changed' || code === 'signed-out' || code === '42501' || statusOf(error) === 401 || statusOf(error) === 403) {
     throw denied('This account may not read this agent\'s resources');
   }
+  // The assistant lives on another computer: what this one could show would be a copy its home no longer keeps up to date.
+  if (code === 'elsewhere') return unavailable('elsewhere');
   if (code === 'read-timeout') return unavailable('timed-out');
   if (code === '54000') return unavailable('too-large');
   if (code === 'stale') return unavailable('stale');

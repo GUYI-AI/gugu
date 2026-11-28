@@ -10,11 +10,6 @@ export type AssistantPanelItem = {
   /** Missing provenance is deliberately not permission to recreate a legacy tombstone. */
   deletion_source?: 'panel' | 'runtime' | null; deletion_runtime_instance_id?: string | null
 }
-export type AssistantPanelChange = {
-  operation_id: string; revision: string; assistant_user_id: string; owner_user_id: string
-  domain: string; resource_key: string; device_id: string | null; operation: AssistantPanelOperation | 'notice'
-  payload: Record<string, unknown>; status: 'pending' | 'failed' | 'applied'; error_code: string | null
-}
 export type AssistantPanelSnapshot = {
   version: 1; revision: string; items: AssistantPanelItem[]
   application: { operationId: string; revision: string; domain: string; resourceKey: string; status: 'pending' | 'failed'; errorCode: string | null; terminal?: boolean }[]
@@ -25,21 +20,12 @@ export type AssistantPanelCommit = {
   deviceId?: string | null; runtimeInstanceId?: string | null
 }
 export type AssistantPanelReceipt = { operationId: string; revision: string; status: 'pending' | 'failed' | 'applied' | 'superseded'; terminal?: boolean }
-export type AssistantPanelNotice = {
-  operationId: string; resource: string; operation: 'created' | 'edited' | 'removed' | 'saved'; id: string
-  deviceId?: string; section?: string; before?: object; after?: object
-}
 export type AssistantPanelTransport = (name: string, args: Record<string, unknown>) => Promise<{
   data: unknown; error: { message: string; code?: string } | null; status?: number
 }>
 
 export class AssistantPanelError extends Error {
   constructor(readonly code: string, message: string, readonly resourceKey?: string, readonly domain?: string, readonly status?: number) { super(message); this.name = 'AssistantPanelError' }
-}
-/** This guard identifies a lost assistant App binding, not a generic permission failure. */
-export function isAssistantPanelBindingRevoked(error: unknown): boolean {
-  const value = error as { code?: unknown; message?: unknown } | null
-  return value?.code === '42501' && value.message === 'Personal assistant is not available to this account'
 }
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
 const revision = (value: unknown): value is string => typeof value === 'string' && /^\d+$/.test(value)
@@ -119,36 +105,11 @@ export function createAssistantPanelClient(transport: AssistantPanelTransport, a
       if (data.item === null) return null
       return parseAssistantPanelSnapshot({ version: 1,revision: '0',items: [data.item],application: [] },owner,assistant).items[0]!
     }),
-    notice: (assistant: string, notice: AssistantPanelNotice) => request(assistant,'assistant_panel_notice',{ p_notice: notice },receipt),
     commit: (assistant: string, change: AssistantPanelCommit) => request(assistant,'assistant_panel_commit',{
       p_operation_id: change.operationId,p_domain: change.domain,p_resource_key: change.key,p_expected_revision: change.expectedRevision,
       p_operation: change.operation,p_data: change.data ?? {},p_body_item_id: change.body?.itemId ?? null,p_body_sha256: change.body?.sha256 ?? null,
       p_device_id: change.deviceId ?? null,p_runtime_instance_id: change.runtimeInstanceId ?? null,
     },receipt),
-    pending: (assistant: string, instance: string) => request(assistant,'assistant_panel_pending',{ p_runtime_instance_id: instance },(data,owner) => {
-      if (!record(data) || !revision(data.revision) || !Array.isArray(data.changes) || !Array.isArray(data.notices)) return invalid()
-      for (const change of [...data.changes,...data.notices]) {
-        if (!record(change) || change.assistant_user_id !== assistant || change.owner_user_id !== owner
-          || !revision(change.revision) || typeof change.operation_id !== 'string' || typeof change.domain !== 'string'
-          || typeof change.resource_key !== 'string' || !record(change.payload) || !nullableString(change.device_id)
-          || !['save','remove','enable','disable','prepared','error','notice'].includes(String(change.operation))
-          || !['pending','failed'].includes(String(change.status)) || !nullableString(change.error_code)) return invalid()
-      }
-      if (data.changes.some(change => change.operation === 'notice') || data.notices.some(change => change.operation !== 'notice')) return invalid()
-      return data as { revision: string; changes: AssistantPanelChange[]; notices: AssistantPanelChange[] }
-    }),
-    ack: (assistant: string, instance: string, operationId: string, errorCode: string | null = null) => request(assistant,'assistant_panel_ack',{
-      p_runtime_instance_id: instance,p_operation_id: operationId,p_error_code: errorCode,
-    },receipt),
-    reject: (assistant: string, instance: string, operationId: string, errorCode: string) => request(assistant,'assistant_panel_reject',{
-      p_runtime_instance_id: instance,p_operation_id: operationId,p_error_code: errorCode,
-    },receipt),
-    admit: (assistant: string, instance: string, head: string) => request(assistant,'assistant_panel_admit',{
-      p_runtime_instance_id: instance,p_expected_revision: head,
-    },data => {
-      if (!record(data) || typeof data.admitted !== 'boolean' || !revision(data.revision)) return invalid()
-      return data as { admitted: boolean; revision: string; domain?: string; resourceKey?: string; errorCode?: string | null }
-    }),
   }
 }
 export type AssistantPanelClient = ReturnType<typeof createAssistantPanelClient>

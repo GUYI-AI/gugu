@@ -1,4 +1,4 @@
-// 所有「保存」都走这里:先取 blob,再交给宿主的 saveFile(桌面 / 网页是 a[download],安卓是系统的「保存到…」)。
+// 所有「保存」都走这里:先取 blob,再交给宿主的 saveFile(桌面是主进程的保存框,网页是浏览器下载,安卓是系统的「保存到…」)。
 import { platform } from '../platform'
 
 export async function fetchBlob(url: string): Promise<Blob> {

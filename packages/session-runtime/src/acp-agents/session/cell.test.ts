@@ -3171,6 +3171,23 @@ describe('SessionCell arrival order between typed prompts and deliveries', () =>
   });
 });
 
+// An agent that takes an input but keeps no record of it (a Codex /goal) says so on the receipt; the person's message
+// carries the mark into its committed turn, where the host journals it.
+describe('input the agent keeps no record of', () => {
+  const marks = (cell: SessionCell) => cell.history().committed.flatMap((turn) => turn.items)
+    .flatMap((item) => item.kind === 'message' && item.role === 'user' ? [[item.text, item._meta?.guguUnrecorded ?? null]] : []);
+
+  it('marks only the message whose receipt says the agent keeps no record of it', async () => {
+    const { cell, agent } = makeCell();
+    agent.prompt = vi.fn()
+      .mockResolvedValueOnce({ stopReason: 'end_turn', _meta: { guguUnrecorded: true } })
+      .mockResolvedValueOnce({ stopReason: 'end_turn' });
+    await cell.prompt({ text: '/goal find ten places' });
+    await cell.prompt({ text: 'thanks' });
+    await vi.waitFor(() => expect(marks(cell)).toEqual([['/goal find ten places', true], ['thanks', null]]));
+  });
+});
+
 describe('native in-place conversation revert', () => {
   const bridged = (agent = new FakeAcpAgent()) => makeCell(agent, { revert: guguBridgeRevert });
   const anchors = (cell: SessionCell) => cell.history().committed.flatMap((turn) => turn.items).filter((item) => item.kind === 'message')

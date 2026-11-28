@@ -6,7 +6,7 @@ import { getRendererSession, observeRendererSession } from '@/lib/sessionPublica
 import { chatDb } from '@/lib/supabase'
 import { subscribePrivateUserEventBus, unsubscribePrivateUserEventBus } from '@/lib/realtimeChannel'
 import type { AssistantPanelBridge, AssistantPanelWindow } from '@/lib/assistantPanelBridge'
-import { assistantPanelCloud, assertAssistantPanelOwner, queueAssistantAppChange } from './assistant-panel-cloud'
+import { assistantPanelCloud, assertAssistantPanelOwner } from './assistant-panel-cloud'
 import { assistantPanel, assistantPanelReadCache } from './assistant-panel-replica'
 import { assistantPanelBodies } from '@/lib/assistantPanelBodies'
 import { myAssistant } from '@/lib/myAssistant'
@@ -52,7 +52,6 @@ const bridge: AssistantPanelBridge = {
     assertAssistantPanelOwner(ownerId)
     return snapshot
   },
-  queueNotice: queueAssistantAppChange,
 }
 
 /** App entry only: install before the embedded session-page bundle mounts. */

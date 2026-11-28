@@ -11,7 +11,6 @@ import { automationChangedChannel, automationRunChangedChannel } from '@shared/c
 import type { TriggerConfig } from '@shared/core/automations/config';
 import type { AppBoundSchedule, AppScheduleControl } from '@shared/extensions/bound-schedules';
 import { MAX_ACTIVE_SCHEDULES_PER_SESSION, runAgentScheduleAction } from './agent-schedules';
-import { prepareAgentScheduleChanges } from './assistant-panel-schedule-preparation';
 import { automationsService } from './automations-service';
 import { deleteAndTell, setEnabledAndTell, tellAgent, updateSettingsAndTell } from './person-schedule-changes';
 import { getAutomation, listAgentSchedules, listAutomationRunCleanupTargets } from './repo';
@@ -20,8 +19,7 @@ import { resolveScheduleTrigger } from './schedule-time';
 /**
  * #1928 An App's view of, and changes to, the schedules one agent session on this computer set for itself — the person's
  * own agent, found by the host from the App's binding (extensions/app-bound-schedules.ts). Nothing here keeps a second
- * scheduler or a queue: a list reads the store the scheduler reads, after the saved changes it would apply first
- * (`prepareAgentScheduleChanges`, as before a due run); a change is the person's own (`person-schedule-changes.ts`, the
+ * scheduler or a queue: a list reads the store the scheduler reads; a change is the person's own (`person-schedule-changes.ts`, the
  * 已安排 page's), and a registration is the agent's own `schedule_create`. A run already under way is never stopped.
  */
 
@@ -81,14 +79,7 @@ export function appScheduleOf(automation: Automation, next: AutomationRun | null
   };
 }
 
-/** The saved changes the scheduler applies before a due run (the assistant panel's), applied first here too. */
-export async function applySavedScheduleChanges(sessionId: string): Promise<void> {
-  const blocked = await prepareAgentScheduleChanges();
-  if (blocked.has(sessionId)) throw coded('unavailable', 'Saved changes to these schedules are not applied yet: try again later');
-}
-
 export async function listAppSchedules(home: AgentScheduleHome): Promise<AppBoundSchedule[]> {
-  await applySavedScheduleChanges(home.sessionId);
   return Promise.all((await listAgentSchedules(home.sessionId)).map(async (automation) => {
     const [next, last] = await Promise.all([automationsService.getNextScheduledRun(automation.id), automationsService.getLatestRun(automation.id)]);
     return appScheduleOf(automation, next, last);

@@ -624,6 +624,16 @@ describe('tail intent survives layout inputs that land after the projection', ()
     ).toBeLessThanOrEqual(1);
   });
 
+  it('gives the composer layer\'s height to the scroller only, ❌ inherited by every row', async () => {
+    const { host, scrollEl, view } = await mountTranscript(40, { composer: 'slot' });
+    const composer = document.createElement('div');
+    composer.style.cssText = 'height:120px;';
+    view.composerSlot!.appendChild(composer);
+    await until('the scroller has the layer\'s height', () => scrollEl.style.getPropertyValue('--chat-composer-slot-h') === `${view.composerSlot!.getBoundingClientRect().height}px` && composer.isConnected && view.composerSlot!.getBoundingClientRect().height >= 120);
+    // Written on the root, the whole transcript restyled on every change of the composer's height.
+    expect(host.querySelector<HTMLElement>('[data-chat-root]')?.style.getPropertyValue('--chat-composer-slot-h') ?? '').toBe('');
+  });
+
   it('holds the end when the viewport shrinks under a settled transcript', async () => {
     const { host, scrollEl, view } = await mountTranscript(120, { composer: 'slot' });
 

@@ -1,11 +1,9 @@
 import { z } from 'zod'
-import type { AssistantPanelClient, AssistantPanelCommit, AssistantPanelDomain, AssistantPanelItem, AssistantPanelReceipt, AssistantPanelSnapshot } from '@gugu/core/cloud/assistantPanel'
+import type { AssistantPanelClient, AssistantPanelItem, AssistantPanelReceipt } from '@gugu/core/cloud/assistantPanel'
 import { ASSISTANT_PANEL_PATHS, createAssistantPanelFiles } from '@gugu/core/cloud/assistantPanelFiles'
-import { resourceRejection } from '@gugu/core/shared/assistantResourceRules'
 import { VOICE_NOTE_META_FILE, VOICE_NOTES_DIR, parseVoiceNoteMeta } from '@gugu/core/shared/voiceNotes'
-import { splitInstructions } from '@gugu/core/shared/assistantInstructions'
 import {
-  READABLE_RESOURCE_DOMAINS, WRITABLE_RESOURCE_DOMAINS, appResourceOf, resourceChangeSchema, resourceDomainOf, resourceKeyOf,
+  READABLE_RESOURCE_DOMAINS, WRITABLE_RESOURCE_DOMAINS, resourceChangeSchema, resourceDomainOf, resourceKeyOf,
   type AppResourceEvent, type AppResourceList, type AppResourceRead, type AppResourceWrite, type ReadableResourceDomain, type ResourceBindingAction,
 } from '../../session/shared/extensions/agent-resources'
 import { DEFAULT_TEXT_MAX_BYTES, type AppFileEntry } from '../../session/shared/extensions/app-runtime-protocol'
@@ -13,7 +11,7 @@ import type { PathText } from '../../session/shared/extensions/app-files-core'
 import { dispatchCallOf } from '../../session/shared/extensions/app-dispatch-core'
 import { ASSISTANT_SCREENS, assistantFigureSchema, renameCheck, withoutAssistant, type AppAssistantRead, type AppAssistantStatus, type AssistantRenameResult } from '../../session/shared/extensions/assistant-binding'
 import { assistantLayerEntry, type AssistantAppInstall } from '../../session/shared/extensions/assistant-entry'
-import { domainState, reasonOf, refusedOrUnavailable, savedData, unavailable, writeOutcome } from '../../session/shared/extensions/bound-resources-core'
+import { reasonOf, refusedOrUnavailable, unavailable } from '../../session/shared/extensions/bound-resources-core'
 import {
   RESOURCES_MANAGEMENT_API_VERSION, folderArgsSchema, renameArgsSchema, uploadArgsSchema, VOICE_NOTES_MANAGE_ACTION, voiceNoteArgsSchema,
   type AppRemoveAllAnswer, type AppUploadAnswer, type Unavailable,
@@ -26,8 +24,7 @@ import {
   BINDING_ACTION_CAPABILITY, boundEntryOf, boundPathOf,
   type AppBindingSurface, type AppBoundList, type AppBoundRead, type AppSurfaceIntent, type AppUnreadBinding, type ConversationBindingAction,
 } from '../../session/shared/extensions/unread-binding'
-import { scheduleControlSchema, type AppBoundSchedules, type AppScheduleReceipt } from '../../session/shared/extensions/bound-schedules'
-import { commitPanelRequest, listPanelSchedules, panelSchedulesPrint, planPanelChange, type PanelHome, type PanelOutcome, type PanelRequest } from '../../session/shared/extensions/bound-schedules-panel'
+import type { AppBoundSchedules, AppScheduleReceipt } from '../../session/shared/extensions/bound-schedules'
 import type { AppBindingWork, AppWorkItem, PushedWorkLedger } from '../../session/shared/extensions/work-binding'
 import type { PhoneLayerActions, PhoneLayerShown, PhoneLayerStatus } from './phoneAssistantLayer'
 
@@ -65,16 +62,11 @@ export interface PhoneBindingPorts {
   draft(chatId: string, text: string): Promise<void>
   /** The assistant renamed the way 自定义 renames it (its identity in the cloud and this phone's contacts). */
   renameAssistant(agentId: string, name: string): Promise<void>
-  /** API 50 `upload`: the phone's own picker, inside the person's gesture; null: cancelled. */
-  pickFiles(): Promise<PhonePickedFile[] | null>
   /** API 50 `removeVoiceNote`: the layer's own question first (删除“…”？); true = yes. */
   confirmRemoval(question: { kind: 'voice-note'; title: string | null }): Promise<boolean>
   panel: {
     /** The assistant panel's client as the person (its schedules are read and changed through it, #1928). */
     client: AssistantPanelClient
-    snapshot(ownerId: string, agentId: string): Promise<AssistantPanelSnapshot>
-    resource(ownerId: string, agentId: string, domain: AssistantPanelDomain, key: string): Promise<AssistantPanelItem | null>
-    commit(ownerId: string, agentId: string, change: AssistantPanelCommit): Promise<AssistantPanelReceipt>
     readBody(item: AssistantPanelItem, access: { token: string; ownerId: string; chatId: string; maxBytes: number }): Promise<Uint8Array>
     uploadBody(access: { token: string; ownerId: string; chatId: string; label: string; bytes: Uint8Array }): Promise<{ itemId: string; sha256: string }>
     discard(token: string, ownerId: string, itemId: string): Promise<void>
@@ -94,16 +86,12 @@ export interface PhoneBindingPorts {
     onIntent(listener: (intent: AppSurfaceIntent) => void): () => void
   }
   randomUUID(): string
-  sha256(bytes: Uint8Array): Promise<string>
 }
-
-/** A file the person picked on the phone: its name, size and type, its bytes read when written. */
-export type PhonePickedFile = { name: string; size: number; contentType: string; read(): Promise<Uint8Array> }
 
 /** The page asking: which App, which of its tabs (`tabId`), and whether the person works it (a phone page always is). */
 export type PhoneBindingPage = { extensionId: string; tabId: string }
 
-const coded = (code: 'denied' | 'invalid' | 'failed' | 'not-found', message: string) => Object.assign(new Error(message), { code })
+const coded = (code: 'denied' | 'invalid' | 'failed' | 'not-found' | 'elsewhere', message: string) => Object.assign(new Error(message), { code })
 const codeOf = (error: unknown) => (error as { code?: unknown } | null)?.code
 function argsOf<T extends z.ZodType>(schema: T, input: unknown, what: string): z.infer<T> {
   const parsed = schema.safeParse(input)
@@ -330,133 +318,42 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
       return outcome
     }
   }
+  /**
+   * On a phone the assistant always lives elsewhere: its resources are read and changed on its computer, and this phone has
+   * no up-to-date copy of them — `unavailable` (`elsewhere`), once the binding and the domain hold.
+   */
+  const ELSEWHERE = unavailable('elsewhere')
   async function resources(extensionId: string, input: unknown): Promise<AppResourceList> {
     const args = argsOf(z.strictObject({ name: z.string(), domain: z.unknown() }), input, RESOURCE_ARGS)
     const domain = readableDomainOf(args.domain)
     const named = { name: args.name, domain }
-    const answer = await withResources(extensionId, args.name, domain, async (at): Promise<AppResourceList> => {
-      const snapshot = await ports.panel.snapshot(at.ownerId, at.agentId)
-      const readable = domainState(snapshot, domain)
-      if (readable.state !== 'ready') return { ...named, ...readable }
-      return { ...named, state: 'ready', revision: snapshot.revision, resources: readable.items.map((item) => appResourceOf(domain, item)) }
-    })
-    return answer === 'unbound' ? { ...named, state: answer } : 'name' in answer ? answer : { ...named, ...answer }
+    const answer = await withResources(extensionId, args.name, domain, async () => ELSEWHERE)
+    return answer === 'unbound' ? { ...named, state: answer } : { ...named, ...answer }
   }
   async function resource(extensionId: string, input: unknown): Promise<AppResourceRead> {
     const args = argsOf(z.strictObject({ name: z.string(), domain: z.unknown(), key: z.unknown() }), input, RESOURCE_ARGS)
     const domain = readableDomainOf(args.domain)
-    const key = resourceKeyOf(domain, args.key)
-    const named = { name: args.name, domain, key }
-    const answer = await withResources(extensionId, args.name, domain, async (at): Promise<AppResourceRead> => {
-      const [snapshot, item] = await Promise.all([
-        domain === 'voice-notes' ? null : ports.panel.snapshot(at.ownerId, at.agentId),
-        ports.panel.resource(at.ownerId, at.agentId, domain as AssistantPanelDomain, key),
-      ])
-      at.recheck()
-      const readable = snapshot ? domainState(snapshot, domain) : null
-      if (readable && readable.state !== 'ready') return { ...named, ...readable }
-      if (!item) return { ...named, state: 'missing', revision: '0' }
-      if (item.deleted_at) return { ...named, state: 'missing', revision: item.revision, deleted: true }
-      if (item.stale_at) return { ...named, ...unavailable('stale') }
-      const found = appResourceOf(domain, item)
-      const ready = (bytes: Uint8Array) => {
-        if (bytes.byteLength > DEFAULT_TEXT_MAX_BYTES) return { ...named, state: 'ready' as const, resource: found, content: '', truncated: true, totalSize: bytes.byteLength }
-        try {
-          return { ...named, state: 'ready' as const, resource: found, content: new TextDecoder('utf-8', { fatal: true }).decode(bytes), truncated: false, totalSize: bytes.byteLength }
-        } catch {
-          return { ...named, state: 'ready' as const, resource: found, content: '', binary: true as const, truncated: false, totalSize: bytes.byteLength }
-        }
-      }
-      if (domain === 'personality') return ready(new TextEncoder().encode(typeof item.data.text === 'string' ? item.data.text : ''))
-      if (!item.body_item_id) return item.data.kind === 'directory' ? ready(new Uint8Array()) : { ...named, state: 'unprepared' }
-      try {
-        const bytes = await ports.panel.readBody(item, { token: at.token, ownerId: at.ownerId, chatId: at.chatId, maxBytes: DEFAULT_TEXT_MAX_BYTES })
-        at.recheck()
-        return ready(bytes)
-      } catch (error) {
-        const code = codeOf(error)
-        if (code === 'too-large') return { ...named, state: 'ready', resource: found, content: '', truncated: true, totalSize: Number((error as { size?: unknown }).size) || 0 }
-        if (code === 'deleted') return { ...named, state: 'missing', revision: item.revision, deleted: true }
-        if (code === 'body-unavailable') return { ...named, state: 'unprepared' }
-        throw error
-      }
-    })
-    return answer === 'unbound' ? { ...named, state: answer } : 'name' in answer ? answer : { ...named, ...answer }
+    const named = { name: args.name, domain, key: resourceKeyOf(domain, args.key) }
+    const answer = await withResources(extensionId, args.name, domain, async () => ELSEWHERE)
+    return answer === 'unbound' ? { ...named, state: answer } : { ...named, ...answer }
   }
-
-  type Writable = 'memory' | 'files' | 'personality' | 'skills'
-  type Prepared = { data: Record<string, unknown>; body?: { itemId: string; sha256: string }; uploaded?: string } | 'conflict'
-  async function change(extensionId: string, input: unknown, operation: 'save' | 'remove',
-    prepare: (at: Bound, change: { domain: Writable; key: string; expectedRevision: string; content: string }) => Promise<Prepared>): Promise<AppResourceWrite> {
+  async function change(extensionId: string, input: unknown, operation: 'save' | 'remove'): Promise<AppResourceWrite> {
     const schema = operation === 'save'
       ? resourceChangeSchema.extend({ name: z.string(), content: z.string() })
       : resourceChangeSchema.omit({ content: true }).extend({ name: z.string() })
     const args = argsOf(schema, input, RESOURCE_ARGS) as z.infer<typeof resourceChangeSchema> & { name: string }
-    const domain = readableDomainOf(args.domain) as Writable
+    const domain = readableDomainOf(args.domain)
     if (!(WRITABLE_RESOURCE_DOMAINS as readonly string[]).includes(domain)) throw coded('invalid', `The ${domain} resources are read only`)
-    const key = resourceKeyOf(domain, args.key, true)
-    const named = { name: args.name, domain, key }
-    const content = args.content ?? ''
-    if (new TextEncoder().encode(content).byteLength > DEFAULT_TEXT_MAX_BYTES) throw coded('invalid', 'content is at most 20 MiB')
-    // A change needs reading the domain too, as on a computer.
+    const named = { name: args.name, domain, key: resourceKeyOf(domain, args.key, true) }
     const at = await bound(extensionId, args.name, ['resources', 'resources:write'], domain).catch((error: unknown) => {
       if (codeOf(error) === 'failed') return unavailable(reasonOf(error))
       throw error
     })
     if (!at) return { ...named, state: 'unbound' }
-    if ('state' in at) return { ...named, ...at }
-    let uploaded: string | undefined
-    try {
-      const prepared = await prepare(at, { domain, key, expectedRevision: args.expectedRevision, content })
-      if (prepared !== 'conflict') uploaded = prepared.uploaded
-      at.recheck()
-      if (prepared === 'conflict') return { ...named, state: 'conflict' }
-      const receipt = await ports.panel.commit(at.ownerId, at.agentId, {
-        operationId: args.operationId, domain, key, expectedRevision: args.expectedRevision, operation, data: prepared.data,
-        ...(prepared.body ? { body: prepared.body } : {}), deviceId: null,
-      })
-      uploaded = undefined
-      at.recheck()
-      const { operationId, revision, status, terminal } = receipt
-      return { ...named, state: 'committed', receipt: { operationId, revision, status, ...(terminal === undefined ? {} : { terminal }) } }
-    } catch (error) {
-      let outcome: ReturnType<typeof writeOutcome>
-      try {
-        outcome = writeOutcome(error)
-      } catch (refusal) {
-        if (uploaded) await ports.panel.discard(at.token, at.ownerId, uploaded)
-        throw refusal
-      }
-      // Whether an unanswered commit landed is unknown: its body stays, for the same call again to find.
-      if (uploaded && outcome.state !== 'unavailable') await ports.panel.discard(at.token, at.ownerId, uploaded)
-      at.recheck()
-      return { ...named, ...outcome }
-    }
+    return { ...named, ...('state' in at ? at : ELSEWHERE) }
   }
-  const save = (extensionId: string, input: unknown) => change(extensionId, input, 'save', async (at, { domain, key, expectedRevision, content: text }) => {
-    if (domain === 'personality') return { data: { text: splitInstructions(text).user } }
-    const bytes = new TextEncoder().encode(text)
-    const existing = await ports.panel.resource(at.ownerId, at.agentId, domain, key)
-    at.recheck()
-    if (existing && !existing.deleted_at && existing.data.kind === 'directory') throw coded('invalid', 'A folder has no content to save')
-    const digest = await ports.sha256(bytes)
-    if (existing && !existing.deleted_at && existing.body_item_id && existing.body_sha256 === digest) {
-      return { data: existing.data, body: { itemId: existing.body_item_id, sha256: digest } }
-    }
-    if ((existing?.revision ?? '0') !== expectedRevision) return 'conflict'
-    const data = savedData(domain, key, existing, text, new Date().toISOString())
-    const body = await ports.panel.uploadBody({ token: at.token, ownerId: at.ownerId, chatId: at.chatId, label: domain === 'skills' ? 'SKILL.md' : key.split('/').pop()!, bytes })
-    return { data, body, uploaded: body.itemId }
-  })
-  const remove = (extensionId: string, input: unknown) => change(extensionId, input, 'remove', async (at, { domain, key }) => {
-    if (domain === 'personality') throw coded('invalid', 'The personality is saved, never removed')
-    if (domain === 'files') {
-      const existing = await ports.panel.resource(at.ownerId, at.agentId, domain, key)
-      at.recheck()
-      if (existing && !existing.deleted_at && existing.data.kind === 'directory') throw coded('invalid', 'Remove a folder\'s files one by one')
-    }
-    return { data: {} }
-  })
+  const save = (extensionId: string, input: unknown) => change(extensionId, input, 'save')
+  const remove = (extensionId: string, input: unknown) => change(extensionId, input, 'remove')
 
   /** Each page's resource watches: ended when the page goes, or the authority it was granted under no longer holds. */
   const watches = new Map<string, { stop(): void }>()
@@ -494,97 +391,25 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     for (const [key, held] of [...watches]) if (key.startsWith(`${pageId}/`)) held.stop()
   }
 
-  // ── 43: the assistant's schedules (#1928), through its panel — on a phone it always lives elsewhere ───────────────
-  const homeOf = (at: Bound): PanelHome => ({ ownerId: at.ownerId, assistantId: at.agentId, deviceId: at.deviceId, cloud: ports.panel.client })
-  const asyncRecheck = (at: Bound) => async () => at.recheck()
+  // ── 43: the assistant's schedules (#1928) — on a phone it always lives elsewhere, where they are read and changed ─────
   async function schedules(extensionId: string, input: unknown): Promise<AppBoundSchedules> {
     const { name } = argsOf(z.strictObject({ name: z.string() }), input, 'gugu.bindings.schedules takes the binding\'s name alone')
     const at = await boundOrUnavailable(extensionId, name, ['schedules'])
     if (at === 'unavailable') return { name, state: 'unavailable' }
     if (!at) return { name, state: 'unbound' }
-    try {
-      const list = await listPanelSchedules(homeOf(at), asyncRecheck(at))
-      at.recheck()
-      return { name, state: 'ready', schedules: list }
-    } catch (error) {
-      if (codeOf(error) === 'denied') throw error
-      at.recheck()
-      return { name, state: 'unavailable' }
-    }
+    return { name, state: 'elsewhere' }
   }
-  /** Each operation id's record on this phone (by account and App): the same id again answers it, never a second change. */
-  const kept = new Map<string, { digest: string; receipt?: AppScheduleReceipt; panel?: PanelRequest }>()
+  const SCHEDULES_ELSEWHERE = 'The assistant lives on another computer, which keeps its schedules'
   async function controlSchedule(extensionId: string, input: unknown): Promise<AppScheduleReceipt> {
-    const parsed = scheduleControlSchema.safeParse(input)
-    if (!parsed.success) throw coded('invalid', `controlSchedule takes the binding's name, an operationId and one change — never an agent, chat or account (${parsed.error.issues.map((issue) => issue.path.join('.') || issue.message).join(', ')})`)
-    const change = parsed.data
-    const at = await bound(extensionId, change.name, ['schedules', 'schedules:control'])
-    if (!at) throw coded('not-found', `No conversation is bound for "${change.name}" on this phone`)
-    const key = JSON.stringify([at.ownerId, extensionId, change.operationId])
-    const digest = JSON.stringify(Object.entries(change).filter(([, value]) => value !== undefined).sort(([a], [b]) => a.localeCompare(b)))
-    const before = kept.get(key)
-    if (before && before.digest !== digest) throw coded('invalid', 'This operationId was already used for another change: use a new one')
-    const scheduleId = 'scheduleId' in change ? change.scheduleId : ''
-    const answer = (outcome: PanelOutcome, panel?: PanelRequest): AppScheduleReceipt => {
-      const receipt = { name: change.name, operationId: change.operationId, op: change.op, at: before?.receipt?.at ?? new Date().toISOString(), ...outcome } as AppScheduleReceipt
-      kept.set(key, { digest, receipt, ...(panel ? { panel } : {}) })
-      at.recheck()
-      return receipt
-    }
-    if (before?.receipt && ['applied', 'conflict', 'missing', 'failed', 'superseded'].includes(before.receipt.status)) {
-      at.recheck()
-      return before.receipt
-    }
-    const home = homeOf(at)
-    try {
-      if (before?.panel) {
-        if (before.panel.assistantId !== at.agentId) throw coded('denied', 'The bound conversation is not your private chat with your own assistant')
-        return answer(await commitPanelRequest(home, before.panel, scheduleId, asyncRecheck(at)), before.panel)
-      }
-      const plan = await planPanelChange(home, change, asyncRecheck(at))
-      at.recheck()
-      if ('outcome' in plan) return answer(plan.outcome)
-      kept.set(key, { digest, panel: plan.request })
-      return answer(await commitPanelRequest(home, plan.request, scheduleId, asyncRecheck(at)), plan.request)
-    } catch (error) {
-      // Adding or retiming one is asked of the assistant, as in the person's own list: said so, as a computer says it.
-      if (codeOf(error) === 'elsewhere') throw coded('invalid', (error as Error).message)
-      throw error
-    }
+    const { name } = argsOf(z.object({ name: z.string() }), input, 'controlSchedule takes the binding\'s name and one change')
+    if (!(await bound(extensionId, name, ['schedules', 'schedules:control']))) throw coded('not-found', `No conversation is bound for "${name}" on this phone`)
+    throw coded('elsewhere', SCHEDULES_ELSEWHERE)
   }
-  /** `onSchedulesChanged(name, fn)`'s host half: the panel's change word, heard only when the schedules differ. */
-  const scheduleWatches = new Map<string, () => void>()
-  async function watchSchedules(page: PhoneBindingPage & { pageId: number }, input: unknown, hear: (binding: string) => void) {
+  async function watchSchedules(page: PhoneBindingPage & { pageId: number }, input: unknown, _hear: (binding: string) => void): Promise<{ name: string; state: 'stopped' }> {
     const { name, on } = argsOf(z.strictObject({ name: z.string(), on: z.boolean() }), input, 'gugu.bindings.watchSchedules takes the binding\'s name and on')
-    const key = `${page.pageId}/${name}`
-    scheduleWatches.get(key)?.()
-    scheduleWatches.delete(key)
-    if (!on) return { name, state: 'stopped' as const }
-    const at = await bound(page.extensionId, name, ['schedules'])
-    if (!at) throw coded('not-found', `No conversation is bound for "${name}" on this phone`)
-    const home = homeOf(at)
-    let last = await panelSchedulesPrint(home).catch(() => null)
-    at.recheck()
-    let stopped = false
-    const off = ports.panel.subscribe(at.ownerId, () => {
-      void (async () => {
-        if (stopped) return
-        at.recheck()
-        const now = await panelSchedulesPrint(home).catch(() => null)
-        at.recheck()
-        if (now === last || stopped) return
-        last = now
-        hear(name)
-      })().catch(() => { stop() })
-    })
-    const stop = () => {
-      if (stopped) return
-      stopped = true
-      off()
-      scheduleWatches.delete(key)
-    }
-    scheduleWatches.set(key, stop)
-    return { name, state: 'watching' as const }
+    if (!on) return { name, state: 'stopped' }
+    if (!(await bound(page.extensionId, name, ['schedules']))) throw coded('not-found', `No conversation is bound for "${name}" on this phone`)
+    throw coded('elsewhere', SCHEDULES_ELSEWHERE)
   }
 
   // ── 46: the assistant's work list (任务) and a task's own conversation ──────────────────────────────────────────
@@ -721,7 +546,6 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     return 'renamed'
   }
   // ── 50: managing 给助理的资料 and voice notes ─────────────────────────────────────────────────────────────────────
-  const FILES_ROOT = ASSISTANT_PANEL_PATHS.resourcesDir
   const VOICE_ROOT = `${ASSISTANT_PANEL_PATHS.memoryDir}/${VOICE_NOTES_DIR}`
   const MANAGE_ARGS = 'gugu.bindings takes the binding\'s name and the key, folder or new name it changes, never an owner, agent, chat or path on disk'
   const receiptOf = ({ operationId, revision, status, terminal }: AssistantPanelReceipt) =>
@@ -770,44 +594,11 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
       return { name, ...outcome }
     }
   }
-  /**
-   * `gugu.bindings.upload(name, { folder? })` (50, `resources:write` listing `files`, in a click): the phone's own picker, each
-   * file the built-in page's rules take (50 MB, no video, audio or archive) written as that page wrote it, the others named back.
-   */
+  /** `gugu.bindings.upload` (50, `resources:write`): `elsewhere` — on a phone the assistant always lives on another computer. */
   async function upload(extensionId: string, input: unknown): Promise<AppUploadAnswer> {
     const args = argsOf(uploadArgsSchema, input, MANAGE_ARGS)
-    const folder = args.folder ? resourceKeyOf('files', args.folder) : ''
-    return under(extensionId, args.name, ['resources', 'resources:write'], 'files', async (at, panel): Promise<AppUploadAnswer> => {
-      const picked = await ports.pickFiles()
-      at.recheck()
-      if (!picked) return { name: args.name, state: 'cancelled' }
-      const uploaded: Extract<AppUploadAnswer, { state: 'done' }>['uploaded'] = []
-      const refused: Extract<AppUploadAnswer, { state: 'done' }>['refused'] = []
-      for (const file of picked) {
-        const rule = resourceRejection({ name: file.name, size: file.size, type: file.contentType })
-        if (rule) { refused.push({ name: file.name, why: rule === 'too_large' ? 'too-large' : 'unsupported' }); continue }
-        const key = folder ? `${folder}/${file.name}` : file.name
-        try {
-          resourceKeyOf('files', key)
-        } catch {
-          refused.push({ name: file.name, why: 'not-saved' })
-          continue
-        }
-        const before = panel.receipts.length
-        try {
-          await panel.files.write(`${FILES_ROOT}/${key}`, await file.read(), file.contentType || 'application/octet-stream')
-          const receipt = panel.receipts.slice(before).at(-1)
-          if (receipt) uploaded.push({ key, name: file.name, receipt: receiptOf(receipt) })
-          else refused.push({ name: file.name, why: 'not-saved' })
-        } catch (error) {
-          if (codeOf(error) === 'denied') throw error
-          refusedOrUnavailable(error)
-          refused.push({ name: file.name, why: 'not-saved' })
-        }
-        at.recheck()
-      }
-      return { name: args.name, state: 'done', uploaded, refused }
-    })
+    if (args.folder) resourceKeyOf('files', args.folder)
+    return under(extensionId, args.name, ['resources', 'resources:write'], 'files', async () => ({ name: args.name, ...ELSEWHERE }))
   }
   /** `gugu.bindings.removeVoiceNote(name, key)` (50, `voice-notes:manage`, in a click): the note and all of it, once the person said yes. */
   async function removeVoiceNote(extensionId: string, input: unknown): Promise<AppRemoveAllAnswer> {
@@ -940,7 +731,6 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
       offStatus()
       offWork()
       pageGone(page.pageId)
-      for (const [key, stop] of [...scheduleWatches]) if (key.startsWith(`${page.pageId}/`)) stop()
     }
   }
 

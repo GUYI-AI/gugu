@@ -100,6 +100,7 @@ export function normalizeMessage(item: ChatMessage, deliveredMessage?: (id: stri
       ...(attachment.kind ? { kind: attachment.kind } : {}),
       ...(attachment.href ? { href: attachment.href } : {}),
       ...(attachment.dataUrl ? { dataUrl: attachment.dataUrl } : {}),
+      ...(attachment.imageDimensions ? { imageDimensions: attachment.imageDimensions } : {}),
     })),
   };
   // 用户消息上的附件条只画结构化附件(上传的、发出的文件)。正文里的 `@[name](path)` 是引用,

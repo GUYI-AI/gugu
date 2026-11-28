@@ -100,10 +100,10 @@ export function readTypedIdLenient(kind, value) {
  * @returns {IdentityAddress}
  */
 export function decodeIdentityAddress(value, field) {
-  // `aid:` 是产品面的写法 —— 分享浮层那一栏原文就叫 **Agent ID**,前缀跟界面上的词对上
-  // (owner 2026-09-16 拍板)。`user:` 是它的旧拼法,继续收:线上已经有带 `user:` 的会话记录与
-  // 排队中的消息,改名不能让它们当场失效(❌ 只改新的、留旧的自生自灭)。两种解出同一个东西。
-  const forms = 'aid:<Agent ID> or gugu:<number>'
+  // `user:` 是信封(from_id、participant_id)与 message_members 写出来的那一种,agent 照抄就能用;`aid:` 是分享浮层
+  // 「Agent ID」那一栏的写法(owner 2026-09-16)。两种解出同一个东西,报错里写信封那一种(2026-11-27:信封里出现的写法,
+  // 在所有工具入参里原样能用)。
+  const forms = 'user:<id> as an envelope\'s from_id gives it, or gugu:<number>'
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new Error(`${field}: expected an identity address (${forms}), got ${JSON.stringify(value)}`)
   }
@@ -111,13 +111,13 @@ export function decodeIdentityAddress(value, field) {
   const separator = trimmed.indexOf(':')
   if (separator === -1) {
     throw new Error(
-      `${field}: expected an identity address (${forms}), got the bare value "${trimmed}" — pass the Agent ID with its aid: prefix exactly as a tool returned it, or gugu:<number> for a gugu number`,
+      `${field}: expected an identity address (${forms}), got the bare value "${trimmed}" — pass it with its user: prefix exactly as an envelope or a tool gave it, or gugu:<number> for a gugu number`,
     )
   }
   const prefix = trimmed.slice(0, separator)
   const raw = trimmed.slice(separator + 1)
   if (prefix === 'aid' || prefix === 'user') {
-    if (raw.length === 0) throw new Error(`${field}: ${prefix}: has no Agent ID after the prefix ("${trimmed}")`)
+    if (raw.length === 0) throw new Error(`${field}: ${prefix}: has no id after the prefix ("${trimmed}")`)
     return { kind: 'user', id: raw }
   }
   if (prefix === 'gugu') {

@@ -70,51 +70,10 @@
  * 它同样不假装能原样续写那半句。两颗按钮的分工与「为什么这颗能接、`onRestorePrompt` 那颗
  * 明令不许接成发送」逐句写在 `commands.ts` 的 `onContinueTurn` 上。
  *
- * # 高度：默认单行，展开原文时才长高
- *
- * 上游 error-state 与 stopped-run 都是带内距的多行块。我们**不照搬那个形状** —— transcript 是
- * 离屏测量 + 虚拟化，`measure()` 与真实 DOM 高度不一致会让行重叠/跳动（`height.contract.test.tsx`
- * 守着）。徽章与动作按钮都做成 20px 高的行内胶囊，塞在 32px 的 `ROW_H` 里 ⇒ 默认那一行的
- * `measure()` 一个字都不用改。这里取的是上游的**解剖**（语义 role、可读文案、`data-slot` 命名、
- * 「徽章 + 动作」那条 lane），不是它的像素。
- *
- * ⚠️ 2026-09-20(#5858)这一段收回半句:此前写的是「这一族也就不需要 `ctx.expanded(id)` 那条
- * 变高路径」。它**需要**了 —— 但只在用户自己点开「详情」的时候。理由是真机读数:provider 的原文
- * 当时只住在徽章的 `title` 里,而「三种毫不相干的真因在屏幕上是同一句话」正是票的缺陷;
- * tooltip 要悬停一枚 24px 的胶囊才出得来,拿不到鼠标的人根本读不到。
- * ⇒ 收起时仍然是常量 `ROW_H`(那一格的契约一个字没动),展开后 = lane + 那块原文,
- *   两者由 `turnOutcomeDetailId` **同一个开关**决定,判据在 `tests/turn-outcome-detail.contract.test.tsx`。
- *
- * ⚠️ 上游 stopped-run 的**上半条**（停之前流出来的 `words` + 一枚光标）本仓不移植：那半条解决的是
- * 「run 停了以后半截答案没地方待」，而在这里它一直待在自己的行里（正文行 / 工具行）—— 再画一遍
- * 就是把同一段内容在屏幕上放两份。移植的是下半条那条 lane，逐条对照见 `turn-outcome.css.ts`。
- *
- * ⚠️ 那枚光标**曾经**被摆在这条 lane 的行首（理由是「下一个字本该出现的位置」）。owner 拿上游 demo
- * 实机对照后判掉了：上游的光标跟在那段字的**末尾、同一行**，摆到下一行行首就成了一枚孤立的竖线，
- * 上游从没有那个东西。要它就得由**正文行自己出**（那一行有自己的行盒排版与 `measure()`），
- * 且那时还得处理「这一轮最后一件东西不是文字而是工具行 / diff」的情形。⇒ 这条 lane 上不画。
- *
- * # ⚠️ 尺寸照抄，别再自己收紧
- *
- * 第一版把上游的数值整体缩了一档（徽章 20px / 按钮 20px / gap 6px，而上游是 24 / 28 / 8），
- * 又把按钮紧贴在徽章右边（上游是 `ms-auto` 顶到最右），于是同一副骨架画出来小一圈、挤成一条。
- * owner 实机对照 demo 后指出差别明显。
- * ⇒ `turn-outcome.css.ts` 里每一项都标了上游的原值，改之前先看那一列。
- *
- * # ⚠️ 为什么**失败**行没有图标，而**被停止**行有一枚方块
- *
- * 失败行**曾经**有一枚 `IconError`，而那枚字形与工具行状态槽里的那枚是同一个组件 ⇒ 一次工具失败
- * 会在相邻两行的左右两端各画一个一模一样的红叉：一个管那一次调用，一个管整轮，屏幕上无从分辨
- * （#3568）。现在失败行的作用域记号是**跨度**（行尾那一条发丝线），不是字形；判据在
- * `tests/failure-scope.contract.test.tsx`，完整理由在 `turn-outcome.css.ts`。
- *
- * `cancelled` 那一支的徽章里有一枚 `IconStop`，这**不是**把 #3568 改回去：
- * ① 它不出现在失败行上，而那条判据读的正是失败行 ⇒ 两个作用域的字形交集照样为空；
- * ② 它说的不是「这里出错了」而是「你按了停止」—— 与用户消息卡上那颗停止按钮是**同一个组件**，
- *    按下去的那枚与留下来的那枚同形，且两者永不同框（一个在轮子跑的时候，一个在它停下之后）；
- * ③ 这一行本来就已经有一枚合法的 turn 级字形（「取回指令」那颗 `IconRestorePrompt`）⇒
- *    #3568 判的从来不是「收尾行不许有字形」，而是**同一枚字形不得同时替两种范围说话**。
+ * Failure previews and their raw details share one disclosure and one measured row.
  */
+import type { MeasureCtx } from '@session-chat/core/define';
+import { measureSoftWrap } from '@session-chat/core/measure/soft-wrap';
 import { readableLabel, rowTranslator, wrappedRowHeight } from '../readable-label';
 import { CreditExhaustionRow, creditExhaustionLayout, isCreditExhaustion } from './credit-exhaustion';
 import { ROW_H } from '@session-chat/components/engine/row-metrics';
@@ -129,16 +88,21 @@ import { turnDiscardedId, turnOutcomeDetailId } from '@session-chat/state/flatte
 import type { ChatCommands } from '@session-chat/commands';
 import type { TranscriptTurnOutcome, TurnOutcomeItem } from '@session-chat/model';
 import { vars } from '@session-chat/styles/theme.css';
-import { Show, createSignal } from 'solid-js';
+import { Show, createMemo, createSignal } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
 import { useChatTranslator, type ChatTranslationKey, type ChatTranslator } from '@session-chat/localization';
 import {
   outcomeAction,
   outcomeActionPrimary,
   outcomeBadge,
-  outcomeBadgeDisclosing,
+  failureBadge,
+  failurePreview,
+  failureRule,
+  FAILURE_INSET,
+  FAILURE_SEPARATOR,
   DETAIL_LINE_H,
   DETAIL_PAD_Y,
+  DETAIL_PAD_X,
   outcomeDetail as outcomeDetailBand,
   outcomeShell,
   outcomeBadgeGlyph,
@@ -172,9 +136,9 @@ const ERROR_REASON_KEY: Record<ErrorReason, ChatTranslationKey> = {
   set_mode_failed: 'transcript.reasonSetModeFailed',
 };
 
-const CANCELLED_REASON_KEY: Record<CancelledReason, ChatTranslationKey> = {
+/** `interrupted_for_message` has no words: `flatten` draws no row for a turn stopped to take a new message. */
+const CANCELLED_REASON_KEY: Record<Exclude<CancelledReason, 'interrupted_for_message'>, ChatTranslationKey> = {
   cancelled: 'transcript.reasonCancelledByUser',
-  interrupted_for_message: 'transcript.reasonInterruptedForMessage',
 };
 
 /** 原因的人话说明；没有 reason 时返回 null（文案自己已经说清了发生什么）。 */
@@ -190,7 +154,7 @@ function reasonText(outcome: TranscriptTurnOutcome, translate: ChatTranslator): 
       if (outcome.said) return outcome.said;
       return outcome.reason ? translate(ERROR_REASON_KEY[outcome.reason]) : null;
     case 'cancelled':
-      return outcome.reason ? translate(CANCELLED_REASON_KEY[outcome.reason]) : null;
+      return outcome.reason && outcome.reason !== 'interrupted_for_message' ? translate(CANCELLED_REASON_KEY[outcome.reason]) : null;
     default:
       return null;
   }
@@ -216,20 +180,14 @@ function outcomeDetail(outcome: TranscriptTurnOutcome): string | null {
   return detail || null;
 }
 
-/**
- * 展开后那块原文一次给几行。
- *
- * 封顶的理由是**高度契约**,不是审美:这一族的 `measure()` 必须与真实 DOM 高度一致
- * (`height.contract.test.tsx` 守着),而"一段任意长的文字换行后有多高"在离屏测量里算不准。
- * ⇒ 高度按**源文里的行数**算(换行符,不猜折行),封顶之后那块框自己滚 ——
- * **一个字都没被截掉**,只是一次看几行。这正是仓规那句「超长在 UI 侧折叠,不在数据侧砍」。
- */
-const DETAIL_MAX_LINES = 6;
-
-function detailBandHeight(detail: string | null): number {
-  if (!detail) return 0;
-  const lines = Math.min(detail.split('\n').length, DETAIL_MAX_LINES);
-  return lines * DETAIL_LINE_H + 2 * DETAIL_PAD_Y;
+/** Raw details scroll after six visual lines, including soft wraps. */
+function detailBandHeight(text: string, width: number, ctx: MeasureCtx): number {
+  let lines = 0;
+  for (const line of text.split('\n')) {
+    lines += measureSoftWrap(line, Math.max(1, width - 2 * DETAIL_PAD_X), ctx.theme.fonts.code.font).visualLineCount;
+    if (lines >= 6) break;
+  }
+  return Math.min(6, lines) * DETAIL_LINE_H + 2 * DETAIL_PAD_Y;
 }
 
 /**
@@ -273,18 +231,11 @@ function hasRestorablePrompt(data: TurnOutcomeItem): boolean {
     && !(data.outcome.kind === 'error' && data.outcome.reason === 'send_failed');
 }
 
-function outcomeLaneLayout(data: TurnOutcomeItem, ctx: import('@session-chat/core/define').MeasureCtx) {
+function outcomeLaneLayout(data: TurnOutcomeItem, ctx: MeasureCtx) {
   const t = rowTranslator(ctx), outcome = data.outcome, commands = ctx.commands;
   const refused = outcome.kind === 'error' && outcome.guguReason ? commands?.describeRefusal?.(outcome.guguReason) : null;
   const parts = badgeParts(outcome, t);
   const reason = refused?.text ?? parts.reason;
-  const glyph = outcome.kind === 'cancelled' ? 16 : 0;
-  const label = readableLabel(parts.label, ctx, ctx.width - 20 - glyph, 12, 18);
-  const separator = reason ? 2 * OUTCOME_BADGE_GAP_PX : 0;
-  const natural = label.width + (reason ? readableLabel(reason, ctx).width + separator : 0) + 20 + glyph;
-  const badgeWidth = Math.min(ctx.width, natural);
-  const description = reason ? readableLabel(reason, ctx, badgeWidth - 20 - glyph - label.width - separator) : null;
-  const badgeHeight = Math.max(24, label.height + 6, (description?.height ?? 0) + 6);
   const actions: number[] = [];
   const actionWidth = (text: string, icon = false) => readableLabel(text, ctx, ctx.width, 14, 20, 500).width + 20 + (icon ? 18 : 0);
   if (refused?.action) actions.push(actionWidth(refused.action.label));
@@ -295,10 +246,31 @@ function outcomeLaneLayout(data: TurnOutcomeItem, ctx: import('@session-chat/cor
     actions.push(actionWidth(t('transcript.discardTurn')));
   } else if (rewindItemId(data, commands)) actions.push(actionWidth(t('transcript.rewindTurn')));
   else if (hasRestorablePrompt(data) && !refused?.action && commands?.onRestorePrompt) actions.push(actionWidth(t('transcript.restorePrompt'), true));
+  if (isStuckOutcome(outcome)) {
+    const available = Math.max(1, ctx.width - FAILURE_INSET);
+    const actionSpace = actions.reduce((sum, width) => sum + Math.ceil(width) + 8, 0);
+    const wrapActions = actionSpace > 0 && available - actionSpace < readableLabel(parts.label, ctx, available, 14, 20).width;
+    const badgeWidth = wrapActions ? available : Math.max(1, available - actionSpace);
+    const preview = reason ? parts.label + FAILURE_SEPARATOR + reason : parts.label;
+    const measured = readableLabel(preview, ctx, badgeWidth, 14, 20);
+    const detail = outcomeDetail(outcome) ?? (measured.height > 40 ? reason ?? parts.label : null);
+    const badgeHeight = detail && ctx.expanded(turnOutcomeDetailId(data.turnId))
+      ? detailBandHeight(detail, badgeWidth, ctx)
+      : Math.min(40, measured.height);
+    const height = wrappedRowHeight([{ width: badgeWidth, height: badgeHeight }, ...actions.map(width => ({ width: Math.ceil(width), height: 28 }))], available, 8, 4);
+    return { label: parts.label, reason, badgeWidth, badgeHeight, wrapped: wrapActions, height: Math.max(ROW_H, height + 4), detail };
+  }
+  const glyph = outcome.kind === 'cancelled' ? 16 : 0;
+  const label = readableLabel(parts.label, ctx, ctx.width - 20 - glyph, 12, 18);
+  const separator = reason ? 2 * OUTCOME_BADGE_GAP_PX : 0;
+  const natural = label.width + (reason ? readableLabel(reason, ctx).width + separator : 0) + 20 + glyph;
+  const badgeWidth = Math.min(ctx.width, natural);
+  const description = reason ? readableLabel(reason, ctx, badgeWidth - 20 - glyph - label.width - separator) : null;
+  const badgeHeight = Math.max(24, label.height + 6, (description?.height ?? 0) + 6);
   const rule = outcome.kind !== 'cancelled' ? [{ width: 8, height: 1 }] : [];
   const wrapped = badgeWidth + actions.reduce((sum, value) => sum + value + 8, 0) + (rule.length ? 16 : 0) > ctx.width;
   const height = wrappedRowHeight([{ width: badgeWidth, height: badgeHeight }, ...rule, ...actions.map(width => ({ width, height: 28 }))], ctx.width, 8, 4);
-  return { label, reason: description, badgeWidth, badgeHeight, wrapped, height: Math.max(32, height + 4) };
+  return { label: label.text, reason: description?.text, detail: null, badgeWidth, badgeHeight, wrapped, height: Math.max(32, height + 4) };
 }
 
 export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>({
@@ -309,22 +281,14 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
   margin: { top: 8, bottom: 4 },
   vars: { rowH: ROW_H },
 
-  /**
-   * lane 永远是常量 `ROW_H`;展开后再加上那块原文的高度。
-   *
-   * ⚠️ 读的开关必须与 `Render` 里那颗**同一个 id**(`turnOutcomeDetailId`)——
-   * 量高度与画内容各读各的开关,行就会长成一个高度与内容对不上的框。
-   */
   measure(data, ctx) {
     if (isCreditExhaustion(data.outcome)) return creditExhaustionLayout(ctx, ctx.commands, data.outcome).height;
-    const detail = outcomeDetail(data.outcome);
-    if (!detail || !ctx.expanded(turnOutcomeDetailId(data.turnId))) return outcomeLaneLayout(data, ctx).height;
-    return outcomeLaneLayout(data, ctx).height + detailBandHeight(detail);
+    return outcomeLaneLayout(data, ctx).height;
   },
 
   Render(props) {
     const translate = useChatTranslator();
-    const lane = () => outcomeLaneLayout(props.data, props.ctx.measureCtx!());
+    const lane = createMemo(() => outcomeLaneLayout(props.data, props.ctx.measureCtx!()));
     const commands = useCommands();
     const isError = () => isStuckOutcome(props.data.outcome);
     const isCancelled = () => props.data.outcome.kind === 'cancelled';
@@ -338,12 +302,8 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
       const describe = commands().describeRefusal;
       return outcome.kind === 'error' && outcome.guguReason && describe ? describe(outcome.guguReason) : null;
     };
-    const parts = () => {
-      const refused = refusal();
-      const base = badgeParts(props.data.outcome, translate);
-      return refused ? { ...base, reason: refused.text } : base;
-    };
-    const detail = () => outcomeDetail(props.data.outcome);
+    const parts = () => badgeParts(props.data.outcome, translate);
+    const detail = () => lane().detail;
     const [retryingJob, setRetryingJob] = createSignal<string | null>(null);
     const retryablePhone = () => {
       const outcome = props.data.outcome, go = commands().onRetryPhoneTask;
@@ -385,20 +345,13 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
     const detailId = () => turnOutcomeDetailId(props.data.turnId);
     // 反转语义:存下来的 "collapsed" 就是「展开了」—— 与 `ctx.expanded(id)` 同一个开关。
     const detailOpen = () => Boolean(detail()) && props.ctx.viewState.isCollapsed(detailId());
-    const detailH = () => {
-      const text = detail();
-      if (!text || !detailOpen()) return 0;
-      const lines = Math.min(text.split('\n').length, DETAIL_MAX_LINES);
-      return lines * DETAIL_LINE_H + 2 * DETAIL_PAD_Y;
-    };
-
     return <Show when={isCreditExhaustion(props.data.outcome)} fallback={(
       <div
         data-slot="turn-outcome"
         data-outcome={props.data.outcome.kind}
         data-detail-open={detailOpen() ? 'true' : undefined}
         class={outcomeShell}
-        style={{ height: `${lane().height + detailH()}px` }}
+        style={{ height: `${lane().height}px` }}
       >
         <div
           data-slot="turn-outcome-lane"
@@ -407,6 +360,8 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
           class={outcomeRow}
           style={{
             height: `${lane().height}px`,
+            position: 'relative',
+            'padding-left': isError() ? FAILURE_INSET + 'px' : undefined,
             'flex-wrap': 'wrap', 'row-gap': '4px',
             color: isError() ? vars.fgError : vars.fgMuted,
           }}
@@ -419,64 +374,47 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
             component={detail() ? 'button' : 'span'}
             type={detail() ? 'button' : undefined}
             data-slot="turn-outcome-badge"
-            // 有原文可看时,**整颗徽章就是那个开关** —— lane 上❌ 不多放一颗按钮、徽章里也
-            // ❌ 不多一截字:两者都会把 `outcomeRuleTrail`(失败作用域的记号)的剩余空间吃掉,
-            // #3568 的契约当场红(两次都实测过,算账写在 turn-outcome.css.ts)。
-            // 可见性由那圈 inset 描边给(不参与布局);走的仍是 ChatRoot 既有的点击委派。
             data-detail-toggle={detail() ? 'true' : undefined}
             data-collapse-id={detail() ? detailId() : undefined}
             // 开关的 id 带命名空间后缀,`unitIndexOf` 查不到 ⇒ 这里报出自己所在的那一行,
             // 让滚动锚点钉得住(否则点开视口上方那一行时,transcript 会在读者眼皮底下跳)。
             data-collapse-anchor={detail() ? props.data.id : undefined}
             aria-expanded={detail() ? (detailOpen() ? 'true' : 'false') : undefined}
-            class={detail() ? `${outcomeBadge} ${outcomeBadgeDisclosing}` : outcomeBadge}
+            class={isError() ? failureBadge : outcomeBadge}
             // aria-label 会**整条顶掉**可见文案的无障碍名 ⇒ 两截话都得带上，否则读屏用户听到的是
             // 「回合失败: <原文>」,丢了「这一轮怎么了」那半句。❌ 别写成 `{...(detail() ? {…} : {})}`:
             // spread 里的 `detail()` 只在创建那一刻求值一次,而行组件按下标复用 ⇒ 换单元时不重算。
             aria-label={
               detail()
-                ? `${[parts().label, parts().reason].filter(Boolean).join(translate('metadata.separator'))}: ${detail()}`
+                ? `${[parts().label, refusal()?.text ?? parts().reason].filter(Boolean).join(translate('metadata.separator'))}: ${detail()}`
                 : undefined
             }
-            // ⚠️ `title` **就是 detail 本身,一个字不多** —— `failure-scope.contract.test.tsx`
-            // 有一条判据对它做逐字相等(「错误详情保留在徽章的悬浮提示中」)。
-            // 「这颗可以点开」那件事❌ 不往这里塞:它由 button 角色 + `aria-expanded`
-            // (读屏会念「折叠/展开」)+ 那圈 inset 描边 + 指针来说 —— 这就是 disclosure 的标准形状,
-            // 不需要再编一句文案,也就不必去动别人那条判据。
             title={detail() ?? undefined}
           >
-            <Show when={isCancelled()}>
-              <span data-slot="turn-outcome-badge-glyph" aria-hidden="true" class={outcomeBadgeGlyph}>
-                <IconStop />
-              </span>
-            </Show>
-            <span data-slot="turn-outcome-label" class={outcomeBadgeLabel}>{lane().label.text}</span>
-            <Show when={parts().reason}>
-              {(text) => (
-                <>
-                  <span aria-hidden="true" class={outcomeBadgeSeparator} />
-                  <span data-slot="turn-outcome-reason" class={outcomeReason}>
-                    {lane().reason?.text ?? text()}
+            <Show when={detailOpen()} fallback={
+              <span class={isError() ? failurePreview : undefined} style={{ display: isError() ? undefined : 'contents' }}>
+                <Show when={isCancelled()}>
+                  <span data-slot="turn-outcome-badge-glyph" aria-hidden="true" class={outcomeBadgeGlyph}>
+                    <IconStop />
                   </span>
-                </>
-              )}
+                </Show>
+                <span data-slot="turn-outcome-label" class={isError() ? undefined : outcomeBadgeLabel}>{lane().label}</span>
+                <Show when={lane().reason}>{reason => <>
+                  <Show when={isError()} fallback={<span aria-hidden="true" class={outcomeBadgeSeparator} />}>{FAILURE_SEPARATOR}</Show>
+                  <span data-slot="turn-outcome-reason" class={isError() ? undefined : outcomeReason} style={{ color: vars.fgMuted }}>
+                    {reason()}
+                  </span>
+                </>}</Show>
+              </span>
+            }>
+              <pre data-slot="turn-outcome-detail" class={outcomeDetailBand} style={{ height: lane().badgeHeight + 'px' }}>{detail()}</pre>
             </Show>
           </Dynamic>
-          {/* 这一段宽度办两件事：把动作顶到右边（上游那两颗按钮的 `ms-auto`），
-              并在**失败 / 中断**上兼作作用域记号那条发丝线（#3568）。
-              被停止不是失败 ⇒ 那一支只留空白，与上游 lane 一致。理由见 turn-outcome.css.ts。 */}
-          <Show
-            when={isCancelled()}
-            fallback={
-              <span
-                data-slot="turn-outcome-rule"
-                data-rule="trail"
-                aria-hidden="true"
-                class={outcomeRuleTrail} style={{ 'min-width': lane().wrapped ? '8px' : undefined }}
-              />
-            }
-          >
+          <Show when={!isCancelled()} fallback={
             <span data-slot="turn-outcome-spacer" aria-hidden="true" class={outcomeSpacer} style={{ display: lane().wrapped ? 'none' : undefined }} />
+          }>
+            <span data-slot="turn-outcome-rule" data-rule={isError() ? 'leading' : 'trail'} aria-hidden="true"
+              class={isError() ? failureRule : outcomeRuleTrail} />
           </Show>
           <Show when={refusal()?.action}>
             {(action) => (
@@ -576,18 +514,6 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
             )}
           </Show>
         </div>
-        {/* 原文,逐字。`pre` 而不是 `div`:里面常常是多行(退出码 + 适配器 stderr 的尾巴、
-            或者上游那句话 + 它的结构化负载),空白与换行都是内容的一部分。
-            高度封顶后自己滚 ⇒ 一个字都没被截掉,只是一次看几行。 */}
-        <Show when={detailOpen()}>
-          <pre
-            data-slot="turn-outcome-detail"
-            class={outcomeDetailBand}
-            style={{ height: `${detailH()}px` }}
-          >
-            {detail()}
-          </pre>
-        </Show>
       </div>
     )}><CreditExhaustionRow outcome={props.data.outcome} ctx={() => props.ctx.measureCtx!()} /></Show>;
   },

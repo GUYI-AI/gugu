@@ -1,4 +1,4 @@
-import { Fragment, type MouseEvent } from 'react';
+import { Fragment, memo, type MouseEvent } from 'react';
 import { formatCalendarDate } from '@/i18n/format';
 import { Trash } from '@/lib/icons';
 import type { SessionImportSource } from '@renderer/features/session-import/import-source';
@@ -9,6 +9,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import type { SessionMessageKey } from '@renderer/localization/messages';
 import { cn } from '@renderer/utils/utils';
 import { HistoryCheckbox } from './history-checkbox';
+import type { HistoryEntry } from './history-sections';
 import { LOCAL_SESSION_ENGINE_LABEL } from '@shared/core/session-import/session-import';
 import {
   displaySessionTitle,
@@ -98,9 +99,13 @@ function GuguDetail({ row }: { row: SessionHistoryRowData }) {
  * 批量(owner 2026-11-27 设计稿第 2 稿):勾选框在行**外**左侧那一格(悬停才露;进了多选常显),勾一条就进多选。
  * 进了多选,行右侧的动作钮与垃圾桶都藏起来(位置留着,行不跳)。已归档的行悬停时动作钮左边露一个垃圾桶:
  * 永久删除这一条,不弹框,8 秒内可撤销。未导入的行没有勾选框(要先导入)。
+ *
+ * 一页几百行,整页重画(勾一条、进度走一格、收起一批)只该重画变了的那几行:memo,动作都带着行回调
+ * (调用方给的是不随重画变的同一个函数),行对象没变就是同一个(entryOf)。
  */
-export function SessionHistoryRow({
+export const SessionHistoryRow = memo(function SessionHistoryRow({
   row,
+  sectionKey,
   isSelected,
   isHighlighted,
   isExpanded,
@@ -118,7 +123,9 @@ export function SessionHistoryRow({
   onToggle,
   onDelete,
 }: {
-  row: SessionHistoryRowData;
+  row: HistoryEntry;
+  /** 这一行在哪一节(勾选、删除按节记)。 */
+  sectionKey: string;
   /** 光标:键盘上下移动的那一行。 */
   isSelected: boolean;
   /** 选中底色:只给用户自己点过 / 键盘走到的那一行 —— 光标的缺省落点(第一行)不上色,页面上不常驻一块 live 蓝。 */
@@ -126,11 +133,11 @@ export function SessionHistoryRow({
   /** 详情展开在这条下面(本机行 = 原件预览,咕咕行 = 详情)。 */
   isExpanded: boolean;
   /** 点行:没在多选时展开详情;在多选、或按着 ⌘ / Ctrl / Shift 时勾选(由调用方看修饰键定)。 */
-  onSelect: (event: MouseEvent<HTMLElement>) => void;
-  onAction: () => void;
-  /** #6264 原件在哪台机器上:预览问那一台。 */
-  previewSource: SessionImportSource;
-  describePreviewError: (error: unknown) => string;
+  onSelect: (row: HistoryEntry, sectionKey: string, event: MouseEvent<HTMLElement>) => void;
+  onAction: (row: HistoryEntry) => void;
+  /** #6264 原件在哪台机器上:预览问那一台。只有展开着的那一行要(别的行给 null)。 */
+  previewSource: SessionImportSource | null;
+  describePreviewError: (error: unknown, row: HistoryEntry) => string;
   /** 这一行在哪台机器上;列表只有一台机器时为 null(不标)。 */
   machineLabel: string | null;
   /** 那台机器离线:这一行来自它的心跳摘要。 */
@@ -144,9 +151,9 @@ export function SessionHistoryRow({
   busy?: boolean;
   /** 页上已经在多选:勾选框常显,动作钮与垃圾桶藏起来。 */
   selecting?: boolean;
-  onToggle?: (event: MouseEvent<HTMLElement>) => void;
+  onToggle?: (row: HistoryEntry, sectionKey: string, event: MouseEvent<HTMLElement>) => void;
   /** 给了才长垃圾桶(已归档行;正在跑永久删除时不给 —— 同一时间只跑一个)。 */
-  onDelete?: () => void;
+  onDelete?: (row: HistoryEntry, sectionKey: string) => void;
 }) {
   const { translate, locale } = useSessionMessages();
   const title = row.title || translate('sessionHistory.untitled');
@@ -162,7 +169,7 @@ export function SessionHistoryRow({
         data-source={row.source}
         data-status={row.status}
         data-picked={picked || undefined}
-        onClick={onSelect}
+        onClick={(event) => onSelect(row, sectionKey, event)}
         className={cn(
           'group/row relative -mx-4 flex min-h-15 cursor-default items-center gap-3 px-4 py-2 group-first/item:rounded-t-sm group-last/item:rounded-b-sm hover:bg-row-hover active:bg-row-press',
           (picked || (isHighlighted && !selecting)) && 'bg-row-selected'
@@ -174,7 +181,7 @@ export function SessionHistoryRow({
             <HistoryCheckbox
               state={picked ? 'on' : 'off'}
               label={translate('sessionHistory.selectRow', { title })}
-              onClick={onToggle}
+              onClick={(event) => onToggle(row, sectionKey, event)}
               disabled={busy}
               testId="session-history-checkbox"
               className={cn('transition-opacity duration-100', selecting || picked ? 'opacity-100' : 'opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100')}
@@ -213,7 +220,7 @@ export function SessionHistoryRow({
               data-testid="session-history-trash"
               onClick={(event) => {
                 event.stopPropagation();
-                onDelete();
+                onDelete(row, sectionKey);
               }}
             >
               <Trash className="size-4" />
@@ -228,7 +235,7 @@ export function SessionHistoryRow({
             tabIndex={selecting ? -1 : undefined}
             onClick={(event) => {
               event.stopPropagation();
-              onAction();
+              onAction(row);
             }}
           >
             {translate(ACTION_MESSAGE_KEY[row.status])}
@@ -239,7 +246,9 @@ export function SessionHistoryRow({
         <div data-testid="session-history-detail" className="-mx-4 bg-foreground/[0.025]">
           <div className="max-h-72 overflow-y-auto">
             {row.local ? (
-              <SessionPreviewPane session={row.local} source={previewSource} describeError={describePreviewError} />
+              previewSource ? (
+                <SessionPreviewPane session={row.local} source={previewSource} describeError={(error) => describePreviewError(error, row)} />
+              ) : null
             ) : (
               <GuguDetail row={row} />
             )}
@@ -248,4 +257,4 @@ export function SessionHistoryRow({
       ) : null}
     </div>
   );
-}
+});

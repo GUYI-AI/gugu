@@ -68,6 +68,8 @@ interface ChatPickSheetProps {
   headerAction?: ReactNode
   /** A row's 「更多话题」 pressed: draw all of its topics. */
   onMoreTopics?: (id: string) => void
+  /** Stacking order, as Sheet's: only a sheet mounted outside the surface it serves names its layer. */
+  zIndex?: number | string
 }
 
 // The topic sub-row of the chat list (TopicSubRow): indented onto the `.gg-topic-subrows` rail, the topic mark for an avatar.
@@ -134,6 +136,7 @@ export function ChatPickSheet(props: ChatPickSheetProps) {
       fullScreenMobile
       testId={props.testId}
       ariaLabel={props.title}
+      zIndex={props.zIndex}
     >
       <div className="flex min-h-0 flex-1 flex-col">
         <div className={cn('flex items-center gap-2', mobile ? '!px-3 !pt-3 !pb-2' : '!px-5 !pt-4 !pb-3')}>

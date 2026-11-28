@@ -21,7 +21,6 @@ import { deleteMemoryNote } from './phoneMemoryData'
 import type { Reading } from '@/lib/replica'
 import { useAssistantPanelCollection } from '@/components/assistant/assistant-panel-reads'
 import { assistantPanel } from '@/components/assistant/assistant-panel-replica'
-import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client'
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
 type NotesRead = Reading<{ notes: MemoryEntry[]; index: string | null }>
@@ -112,8 +111,7 @@ function MemoryNoteBody({ assistant, askInChat, go, machine, note }: OpenedPageP
           onClose={() => setConfirming(false)}
           onConfirmed={() => { if (machine.panel) void assistantPanel.refresh(machine.panel.assistantId); go(null) }}
           onConfirm={async () => {
-            await deleteMemoryNote(machine, note, () => reportAssistantAppChange(machine, assistant.id, { resource: 'memory', operation: 'removed',
-              id: note.path, deviceId: machine.deviceId, before: { name: note.title, path: note.path } }))
+            await deleteMemoryNote(machine, note)
           }}
         />
 

@@ -3,6 +3,9 @@ import { ShellSidebarToggle } from '@renderer/lib/components/titlebar/shell-titl
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { INNER_SIDEBAR_MIN_WIDTH_PX, innerSidebarMaxWidth, SIDEBAR_MIN_WIDTH_PX } from '@renderer/lib/layout/layout-provider';
 import { PanelSlot } from '@renderer/lib/layout/panel-slot';
+import { PANEL_LANDED_PX } from '@renderer/lib/layout/panel-track';
+import { INNER_FOLD_FADES, INNER_FOLD_LINE, innerFoldOpacity } from '@renderer/lib/layout/inner-fold-paint';
+import { RESTORE_LANE_FOLLOWER } from '@renderer/lib/components/titlebar/shell-restore-lane';
 import { PanelResizeDragGuard, PanelResizeHandle } from '@renderer/lib/layout/panel-resize-handle';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
@@ -64,7 +67,39 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     observer.observe(root);
     return () => observer.disconnect();
   }, [workspaceRootRef, setWorkspaceWidth]);
-  const fillRef = useCallback((element: HTMLDivElement | null) => track.attachFill(element), [track]);
+  const fillNode = useRef<HTMLDivElement | null>(null);
+  const fillRef = useCallback((element: HTMLDivElement | null) => {
+    fillNode.current = element;
+    track.attachFill(element);
+  }, [track]);
+  // @@@inner-fold-motion (owner 11-26) — every frame of the inner column's move: the restore lane's button and the tab strip that
+  // leaves it room get `--shell-restore-lane-shown` on themselves (0 → 1 over the second half of a fold, 1 → 0 over the first
+  // half of an unfold), and the card's `data-inner-column` (@@@inner-on-card) is held while any of the column is drawn, so the
+  // card gives up its left corners at the start of an unfold and takes them back at the end of a fold, ❌ at the click (a seam
+  // for the whole move). ❌ An inherited variable on the shell or the page: every frame would restyle every element under it
+  // (11-26: the fold ran far slower than the list's and the tools' for that alone). The followers are a live collection.
+  // Inside the column (inner-fold-paint.ts): the line's `right` and the fading blocks' `opacity`, written on those elements only.
+  useLayoutEffect(() => {
+    const fill = fillNode.current;
+    const followers = fill?.getElementsByClassName(RESTORE_LANE_FOLLOWER);
+    const column = workspaceRootRef.current?.querySelector(':scope > [data-panel-slot="inner"]');
+    const lines = column?.getElementsByClassName(INNER_FOLD_LINE);
+    const fades = column?.getElementsByClassName(INNER_FOLD_FADES);
+    const paint = () => {
+      const drawn = track.drawn('inner');
+      const content = track.content('inner');
+      const shown = String(Math.max(0, Math.min(1, 1 - (2 * drawn) / (content || 1))));
+      for (const follower of followers ?? []) (follower as HTMLElement).style.setProperty('--shell-restore-lane-shown', shown);
+      const clip = content - drawn;
+      const held = clip > PANEL_LANDED_PX && content > 0;
+      for (const line of lines ?? []) (line as HTMLElement).style.right = held ? `${clip}px` : '';
+      const opacity = held ? String(innerFoldOpacity(drawn / content)) : '';
+      for (const block of fades ?? []) (block as HTMLElement).style.opacity = opacity;
+      fill?.toggleAttribute('data-inner-column', innerSidebarShown || drawn > PANEL_LANDED_PX);
+    };
+    paint();
+    return track.subscribe(paint);
+  }, [track, workspaceRootRef, innerSidebarShown]);
 
   const maxSidebarWidth = () => {
     const rootWidth = workspaceRootRef.current?.clientWidth ?? 0;

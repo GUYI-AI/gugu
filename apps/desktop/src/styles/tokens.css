@@ -1110,10 +1110,11 @@
   --shell-bg: var(--ground);
   --nav-rail: transparent;
 }
-/* The two sidebars lie on the window ground, not on a card: their secondary text, whichever renderer's name it goes by,
+/* The sidebar lies on the window ground, not on a card: its secondary text, whichever renderer's name it goes by,
    is the ground's. A var() resolves where it is declared, so the derived names (--color-*, --text-secondary) that were
-   resolved at the root are set here too, ❌ only their sources. */
-:root[data-theme='light'][data-window-material] :is([data-region='left-sidebar'], [data-region='inner-sidebar']) {
+   resolved at the root are set here too, ❌ only their sources. The group's inner column is on the group's card
+   (desktop-shell.css @@@inner-on-card), so it keeps the card's own secondary text. */
+:root[data-theme='light'][data-window-material] [data-region='left-sidebar'] {
   --muted-fg: var(--shell-muted-fg);
   --text-secondary: var(--shell-muted-fg);
   --foreground-muted: var(--shell-muted-fg);
@@ -1130,7 +1131,7 @@
    它们靠根的底色当正文底,不能跟着透。 */
 :root[data-window-material] .gg-session-frame:has([data-workspace-left-panel]:not(.hidden)),
 :root[data-window-material] .gugu-skin:has([data-workspace-left-panel]:not(.hidden)),
-:root[data-window-material] .gugu-skin :is([data-workspace-left-panel], [data-region='inner-sidebar']),
+:root[data-window-material] .gugu-skin [data-workspace-left-panel],
 :root[data-window-material] .gugu-skin [data-workspace-left-panel] [data-region='left-sidebar']:not(.bg-background-2) {
   background-color: transparent;
 }
@@ -1199,7 +1200,7 @@ button, [role="button"] {
   /* 二维码两套主题都要深字浅底才扫得出:码和码底下的白框都用这一对,不随主题变。 */
   --qr-ink: #1f2933;
   --qr-paper: #ffffff;
-  /* 压在照片上的底和字(标注台、App 商店头图):两套主题同值 —— 主题的 fg/bg 会在浅色里出现黑字压黑照片。 */
+  /* 压在照片上的底和字(看图查看器的遮罩、标注台、App 商店头图):两套主题同值 —— 主题的 fg/bg 会在浅色里出现黑字压黑照片。 */
   --image-bg: #000000;
   --image-fg: #ffffff;
   /* 文档预览画的是白纸:文档内容本身按白页面排版,不随主题变。 */
@@ -1214,6 +1215,9 @@ button, [role="button"] {
 /* ChatBottomDock 的两个高度只落在 [data-chat-dock-reads] 上(@@@dock-height-rule):不继承,改一次只重算读它的那几个元素。 */
 @property --chat-dock-h { syntax: '<length>'; inherits: false; initial-value: 0px; }
 @property --chat-dock-avatar-h { syntax: '<length>'; inherits: false; initial-value: 0px; }
+/* The composer layer's height, written on the transcript's scroller and read there only (ChatRoot, assistant-task-chat.css):
+   not inherited, so a change of the composer's height restyles the scroller, ❌ every row in it. */
+@property --chat-composer-slot-h { syntax: '<length>'; inherits: false; initial-value: 0px; }
 /* 形象工坊舞台跟着选中的身体颜色走,注册成 <color> 才能平滑过渡;initial-value 只能写字面值,所以注册放在这里。 */
 @property --gg-look-color {
   syntax: '<color>';

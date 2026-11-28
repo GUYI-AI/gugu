@@ -6,6 +6,7 @@ import {
   FAST_PROTOCOLS, customModelApiUrl, customModelMetaSchema, customModelEfforts, customModelRefFromOption, detectModelProtocol, matchCustomModel, normalizeModelBaseUrl,
   type CustomModelConnection, type CustomModelEffortResult, type CustomModelEntry, type CustomModelMeta, type CustomModelRef, type ModelProtocol, type PiCustomModelProvider,
 } from '@gugu/session-core/models/custom-model';
+import { providerPresets } from '@gugu/session-core/models/provider-presets';
 import type { ConnectionModelList, CustomModelProtocolProbe, DetectCustomModelProtocols, SaveCustomModel, TestCustomModel } from '@gugu/session-core/workspace-server/agent-config';
 import { providerAccountRegistry as registry } from '@main/core/provider-accounts/provider-account-registry-instance';
 import { db } from '@main/db/client';
@@ -435,6 +436,7 @@ export type ResolvedCustomModel = {
   capabilities?: CustomModelEntry;
   entries: CustomModelEntry[];
   upstreamEndpoint: string;
+  supportsToolSearch: boolean;
   routeId?: string;
   removed?: boolean;
   /** The harness speaks another protocol and reaches this connection through a format converter. */
@@ -600,6 +602,10 @@ export async function resolveCustomModel(providerId: string, sessionId: string, 
   const selected = await readSelectedCustomModel(providerId, ref, 'bound');
   const { meta, name, model, endpoint: upstream, routeId } = selected;
   const { protocol } = upstream;
+  // Preset identity alone does not describe a route with an overridden address.
+  const preset = providerPresets.find(({ id }) => id === meta.preset);
+  const supportsToolSearch = preset?.endpoints.some((endpoint) => endpoint.supportsToolSearch
+    && endpoint.protocol === protocol && normalizeModelBaseUrl(endpoint.baseUrl) === upstream.baseUrl) ?? false;
   const routedEntries = meta.models.filter(({ id }) => {
     const { matched } = matchForHarness(providerId, { ...meta, keySaved: true }, id);
     return matched.endpoint?.protocol === protocol && matched.routeId === routeId;
@@ -620,7 +626,7 @@ export async function resolveCustomModel(providerId: string, sessionId: string, 
     connectionId: ref.connectionId, name,
     apiKey, endpoint,
     models, protocol: selected.harnessProtocol ?? protocol, capabilities: selectedEntry, entries, routeId,
-    upstreamEndpoint: upstream.baseUrl, removed: meta.removed, ...(selected.harnessProtocol ? { converted: true } : {}),
+    upstreamEndpoint: upstream.baseUrl, supportsToolSearch, removed: meta.removed, ...(selected.harnessProtocol ? { converted: true } : {}),
     ...(config?.effort && customModelEfforts(selectedEntry, pluginRegistry.get(providerId)?.capabilities.effort)?.includes(config.effort) ? { effort: config.effort } : {}),
   };
 }

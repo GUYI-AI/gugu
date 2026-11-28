@@ -200,8 +200,8 @@ async function draftRefsOf(extensionId: string, name: string, chatId: string, at
   }
   const resources = attach.map((item, index) => ({ item, index })).filter((entry): entry is { item: Extract<DraftAttachment, { domain: string }>; index: number } => 'domain' in entry.item);
   if (resources.length > 0) {
-    const { boundAgent, storeOf, refusedOrUnavailable, domainState, reasonOf } = await import('./app-bound-resources');
-    const { withAssistantPanelReadDeadline } = await import('@gugu/core/cloud/assistantPanelRead');
+    const { boundAgent, refusedOrUnavailable, domainState, reasonOf } = await import('./app-bound-resources');
+    const { isHomeBody } = await import('./assistant-home-store');
     for (const { item, index } of resources) {
       if (item.domain === 'personality') throw invalid('personality keeps its words in the resource itself: there is no file to attach');
       const key = resourceKeyOf(item.domain, item.key);
@@ -212,12 +212,12 @@ async function draftRefsOf(extensionId: string, name: string, chatId: string, at
       if (!bound) throw notFound(`No conversation is chosen for "${name}" yet`);
       if (bound.chatId !== chatId) throw denied('Conversation binding changed');
       rechecks.push(bound.recheck);
-      const store = storeOf(bound.ownerId);
       const body = await (async () => {
+        const store = (await bound.store()).client;
         // Found as `bindings.resource` finds one: the domain readable (voice notes excepted, as there), then the resource.
         const [snapshot, row] = await Promise.all([
-          item.domain === 'voice-notes' ? null : withAssistantPanelReadDeadline(() => store.snapshot(bound.agentId)),
-          withAssistantPanelReadDeadline(() => store.resource(bound.agentId, item.domain as Exclude<typeof item.domain, 'personality'>, key)),
+          item.domain === 'voice-notes' ? null : store.snapshot(bound.agentId),
+          store.resource(bound.agentId, item.domain as Exclude<typeof item.domain, 'personality'>, key),
         ]);
         await bound.recheck();
         const readable = snapshot ? domainState(snapshot, item.domain as Exclude<typeof item.domain, 'personality' | 'voice-notes'>) : null;
@@ -229,6 +229,8 @@ async function draftRefsOf(extensionId: string, name: string, chatId: string, at
           if (row.data.kind === 'directory') throw invalid('A folder is not a file: attach the files in it');
           return { state: 'unavailable' as const, reason: 'unreadable' as const };
         }
+        // A file of the assistant's home on this computer is not a file of the conversation: there is nothing to link.
+        if (isHomeBody(row.body_item_id)) return { state: 'unavailable' as const, reason: 'unreadable' as const };
         const file = await groupFile(chatId, row.body_item_id);
         await bound.recheck();
         // Its body is a file of this very private conversation, or it is not attached.

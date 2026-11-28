@@ -56,7 +56,7 @@ describe('the turn outcome in the master\'s tiers (#7333 chrome)', () => {
   it.each([
     { label: 'failed, with a detail to open', item: outcome('exit code=1'), slots: ['turn-outcome-badge'] },
     { label: 'stopped, with continue and discard', item: cancelled, slots: ['turn-outcome-badge', 'turn-outcome-continue', 'turn-outcome-discard'] },
-  ])('$label: the lane text 14/20, the badge 12/18 in its 24, the actions 14/20 in their 28, all inside the 32px lane', async ({ item, slots }) => {
+  ])('$label: the failure text uses compact type and the stopped badge keeps its caption tier', async ({ item, slots }) => {
     const reading = await renderAndMeasureUnit(turnOutcomeUnitDef, item, makeContractCtx({ width: 640 }), (host) => {
       const lane = host.querySelector<HTMLElement>('[data-slot="turn-outcome-lane"]')
       const read: Record<string, number> = { lane: lane ? 1 : 0 }
@@ -73,8 +73,8 @@ describe('the turn outcome in the master\'s tiers (#7333 chrome)', () => {
     expect(reading.dom).toBe(reading.computed)
     expect(read.laneHeight).toBe(ROW_H)
     expectTier(read, 'lane', COMPACT)
-    expectTier(read, 'turn-outcome-badge', CAPTION)
-    expect(read['turn-outcome-badge:height'], 'the badge is no longer 24 high').toBe(24)
+    expectTier(read, 'turn-outcome-badge', item === cancelled ? CAPTION : COMPACT)
+    expect(read['turn-outcome-badge:height'], 'badge height').toBe(item === cancelled ? 24 : 20)
     for (const slot of slots.filter((s) => s !== 'turn-outcome-badge')) {
       expectTier(read, slot, COMPACT)
       expect(read[`${slot}:height`], `${slot} is no longer 28 high`).toBe(28)
@@ -108,7 +108,7 @@ describe('the turn outcome in the master\'s tiers (#7333 chrome)', () => {
     expect({ size: read.size, leading: read.leading, mono: read.mono }).toEqual({ ...CODE, mono: 1 })
     expect(read.height, 'the band is not lines × 20 + its padding').toBe(lines * CODE.leading + 2 * DETAIL_PAD_Y)
     expect(reading.dom, `measure()=${reading.computed} but the DOM is ${reading.dom}`).toBe(reading.computed)
-    expect(reading.computed).toBe(ROW_H + lines * CODE.leading + 2 * DETAIL_PAD_Y)
+    expect(reading.computed).toBe(4 + lines * CODE.leading + 2 * DETAIL_PAD_Y)
     expect(read.chars, 'the verbatim detail lost characters').toBe(detail.length)
     expect(read.scrolls, lines === 6 ? 'nine lines did not scroll inside six' : 'a short detail scrolls').toBe(lines === 6 ? 1 : 0)
     expect(read.selectable).toBe(1)

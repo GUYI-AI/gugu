@@ -21,10 +21,11 @@
   /* The block's own 6px end padding; while the hover ⋯ shows, also clear it (it sits over the block's end). */
   padding-inline-end: calc(var(--head-reserve) - 30px) !important;
 }
-/* .ihl.on in the design: 7% black over the window, translucent so the warm window shows through. */
-.gg-inner-head-double [data-inner-head-open][aria-current='page'] { background-color: color-mix(in oklab, var(--fg) 7%, transparent); }
-/* Paint the hover independently of the two-line button, over the block only (not the collapse button). */
-.gg-inner-head-double [data-inner-head]:is(:hover, :focus-within, :has([aria-expanded='true']))::before {
+/* The head is the group's title on the group's card (desktop-shell.css @@@inner-on-card): no selected chip under it; the
+   hover below stays. */
+/* Paint the hover independently of the two-line button, over the block only (not the collapse button). The collapse button
+   sits inside [data-inner-head] but is not part of the block: pointing at it or focusing it lights the button alone. */
+.gg-inner-head-double [data-inner-head]:is(:hover, :focus-within, :has([aria-expanded='true'])):not(:has([data-inner-head-fold]:is(:hover, :focus)))::before {
   content: '';
   position: absolute;
   inset: 0 32px 0 0;
@@ -75,6 +76,25 @@
 }
 .gg-inner-head-create svg { width: 13px; height: 13px; }
 
+/* @@@inner-modules (owner 11-26): the modules are not a closed card. One thin line on the column's right edge parts them from the
+   messages: it starts under the head row (where the floating panel's top was) and stops --spacing-sm above the card's bottom,
+   level with the composer's bottom; neither end meets the card's edge. */
+[data-region='inner-sidebar'] [data-inner-module-stack] {
+  flex: 1 1 auto;
+  margin-bottom: var(--spacing-sm);
+  padding-block: var(--spacing-sm);
+}
+/* The line is the column's right edge, wherever that edge is drawn: through a fold the column's contents stay where they are and
+   its edge closes over them (panel-track.ts `exit: 'clip'`), and the layout sets this element's `right` to stay on the drawn
+   edge (inner-fold-paint.ts @@@inner-fold-motion). It does not fade with the modules. */
+[data-region='inner-sidebar'] [data-inner-line] {
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  width: 1px;
+  background: var(--border-color);
+  pointer-events: none;
+}
 [data-region='inner-sidebar'] [data-inner-sidebar-section] { margin-bottom: 14px; }
 [data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child {
   height: 29px;
@@ -102,3 +122,21 @@
 /* Row hover actions (pin, archive …): the design's two 14px icons 6px apart, flush with the row's 8px end padding. */
 [data-region='inner-sidebar'] [data-inner-rows] [data-row-hover-actions] > * { gap: 6px; }
 [data-region='inner-sidebar'] [data-inner-rows] [data-row-hover-actions] button { width: 14px; min-width: 14px; height: 14px; padding: 0; }
+
+/* Use the existing gap between sections for the hit target, leaving row clicks and native topic drags independent. */
+[data-inner-sidebar-section='topics'] { position: relative; }
+[data-topic-resize] {
+  position: absolute;
+  inset: 100% 8px auto;
+  height: 12px;
+  cursor: row-resize;
+  touch-action: none;
+  user-select: none;
+}
+[data-topic-resize]:is(:hover, :focus-visible:not([data-pointer-focus]))::after {
+  content: '';
+  position: absolute;
+  inset: 5px 0 auto;
+  height: 1px;
+  background: var(--border-color);
+}

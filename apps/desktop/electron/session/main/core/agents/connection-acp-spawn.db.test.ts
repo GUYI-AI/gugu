@@ -258,6 +258,25 @@ it.each(['default', 'same'] as const)('delivers the global reviewer through the 
   expect(JSON.stringify(spawn)).not.toContain('fixture-upstream-key');
 });
 
+it.each([
+  { name: 'disables tool search for the DeepSeek preset', preset: 'deepseek', baseUrl: 'https://api.deepseek.com/anthropic', flag: 'false' },
+  { name: 'leaves the default for the official Anthropic preset', preset: 'anthropic', baseUrl: 'https://api.anthropic.com/v1/messages', flag: undefined },
+  { name: 'disables tool search for a manually entered address', preset: null, baseUrl: 'https://api.anthropic.com', flag: 'false' },
+  { name: 'disables tool search for an overridden route on the Anthropic preset', preset: 'anthropic', baseUrl: 'https://api.anthropic.com',
+    routeUrl: 'https://compatible.example/v1', flag: 'false' },
+])('$name in both the spawn env and the settings document', async ({ preset, baseUrl, routeUrl, flag }) => {
+  const key = await saveCustomModel({
+    name: 'Provider', apiKey: 'claude-secret', preset, models: [{ id: 'model-two' }],
+    endpoints: [{ protocol: 'anthropic-messages', baseUrl }],
+    ...(routeUrl ? { routes: [{ id: '00000000-0000-4000-8000-000000000001', incoming: 'any', outgoing: 'anthropic-messages', baseUrl: routeUrl }] } : {}),
+  });
+  state.fixture!.sqlite.exec("INSERT OR IGNORE INTO projects (id,name,path) VALUES ('project','Project','/repo')");
+  state.fixture!.sqlite.prepare('INSERT INTO sessions (id,project_id,provider,runtime,config) VALUES (?,?,?,?,?)').run('session-1', 'project', 'claude', 'acp', JSON.stringify({ version: '1', type: 'acp', model: customModelOptionId({ connectionId: key.id, modelId: 'model-two' }) }));
+  const spawn = await acpSpawn('claude');
+  expect(spawn.env.ENABLE_TOOL_SEARCH).toBe(flag);
+  expect((await claudeSessionSettings()).env.ENABLE_TOOL_SEARCH).toBe(flag);
+});
+
 // unreviewable: GLM on an Anthropic-format connection, whose verdict the CLI cannot parse.
 it.each(['missing', 'unlisted', 'unreviewable'] as const)('turns Auto mode off when the picked reviewer is gone or cannot review (%s), never reviewing with the main model', async change => {
   const connection = await claudeOnCompatibleConnection();

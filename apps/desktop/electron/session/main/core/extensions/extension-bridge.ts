@@ -59,7 +59,7 @@ import { currentAccountAccessToken } from '@main/core/extensions/account-token';
 import { endCallsIn } from '@main/core/extensions/extension-program-surface';
 import { userIdFromSupabaseAccessToken } from '@gugu/core';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
-import { fileRefOf, folderOf, isWorkspace, openingNameOf, openingViewOf, opensAsLink, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceFolder, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileOpened, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
+import { chatListOptionsOf, fileRefOf, folderOf, isWorkspace, openingNameOf, openingViewOf, opensAsLink, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceFolder, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileOpened, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type ChatListOptions, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
 import { placeFor, placeLink, type FileOpenerCandidate } from '@shared/extensions/file-openers';
 import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
 import { rosterMoved, type MemberChange } from '@shared/extensions/app-files-core';
@@ -1284,9 +1284,11 @@ const chatIsRead = (binding: SurfaceBinding) => {
 
 /**
  * The folder's first reads belong to this binding, consumed once even on failure. Machine presence may move before that first call.
- * What the App reads first: the top, one folder — never the whole tree.
+ * What the Files App reads first (workspace/app.js `readFolders`): the top's first page and its folders — never the whole tree.
+ * Keyed by the list's options, as the App's call names them.
  */
-const OPENING_FOLDERS = [''] as const;
+const OPENING_LISTS: readonly ChatListOptions[] = [{ folder: '', limit: 100 }, { folder: '', kind: 'folder' }];
+const listKey = (options: ChatListOptions) => JSON.stringify(Object.entries(options).sort(([a], [b]) => a.localeCompare(b)));
 const openingFolders = new WeakMap<SurfaceBinding, { lists: Map<string, Promise<AppFileEntry[]>>; preferences?: Promise<{ showAppData: boolean }> }>();
 function preloadFolder(binding: SurfaceBinding, pageId: number): void {
   if (binding.extensionId !== 'workspace' || binding.tabName !== 'main' || !binding.resourceChat || binding.workspace || binding.itemId || binding.modal
@@ -1294,7 +1296,7 @@ function preloadFolder(binding: SurfaceBinding, pageId: number): void {
   const page = pageCaller(binding, pageId, false).filePage({});
   const args = { place: { chat: binding.resourceChat } };
   const files = import('@main/core/extensions/app-files');
-  const lists = new Map(OPENING_FOLDERS.map((folder) => [folder, files.then((files) => files.listAppFiles(page, { ...args, folder }))] as const));
+  const lists = new Map(OPENING_LISTS.map((options) => [listKey(options), files.then((files) => files.listAppFiles(page, { ...args, ...options }))] as const));
   const preferences = files.then((files) => files.appFileViewPreferences(page, args));
   openingFolders.set(binding, { lists, preferences });
   // Observe rejection while the App is loading; the original promises still deliver those same errors to its calls.
@@ -2516,12 +2518,12 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       const page = method === 'filesClose' ? caller.filePage(args) : asCallingAgent(caller, await caller.resourcePage(args), args);
       if (binding && (method === 'filesList' || method === 'filesViewPreferences')) {
         const opening = openingFolders.get(binding);
-        const folder = typeof args.folder === 'string' ? args.folder : undefined;
         let read: Promise<unknown> | undefined;
         if (method === 'filesList') {
           // A list it did not read ahead (the whole tree, another folder): what it did is not the App's to be handed later.
-          read = folder === undefined ? undefined : opening?.lists.get(folder);
-          if (read) opening?.lists.delete(folder!);
+          const key = (() => { try { return listKey(chatListOptionsOf(args, true)); } catch { return undefined; } })();
+          read = key === undefined ? undefined : opening?.lists.get(key);
+          if (read) opening?.lists.delete(key!);
           else opening?.lists.clear();
         } else if (method === 'filesViewPreferences') {
           read = opening?.preferences;

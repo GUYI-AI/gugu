@@ -3,6 +3,7 @@ import { appendFile, mkdir, open, readFile, rename, rm, writeFile } from 'node:f
 import { join } from 'node:path';
 import { app } from 'electron';
 import { markHistoryReverted, type TranscriptTurn } from '@gugu/session-core/acp';
+import { UNRECORDED_PROMPT } from '@gugu/session-core/acp/native-prompt';
 import type { JournalLine, SessionRecordLocator } from '@gugu/session-core/session-record';
 import { eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
@@ -68,6 +69,16 @@ export function journalHasTurns(sessionId: string): boolean {
 export function appendJournalTurn(sessionId: string, turn: TranscriptTurn, recorded = false): Promise<void> {
   const line: JournalLine = { id: journalLineId(turn), at: turn.startedAt ?? Date.now(), turn, ...(recorded ? { recorded: true as const } : {}) };
   return queued(sessionId, async () => {
+    await mkdir(root(), { recursive: true });
+    await appendFile(fileOf(sessionId), `${JSON.stringify(line)}\n`, 'utf8');
+  });
+}
+
+/** `appendJournalTurn`, unless the journal already holds a line for this turn (same id): then nothing is written. */
+function appendJournalTurnOnce(sessionId: string, turn: TranscriptTurn): Promise<void> {
+  const line: JournalLine = { id: journalLineId(turn), at: turn.startedAt ?? Date.now(), turn };
+  return queued(sessionId, async () => {
+    if ((await readLines(sessionId)).has(line.id)) return;
     await mkdir(root(), { recursive: true });
     await appendFile(fileOf(sessionId), `${JSON.stringify(line)}\n`, 'utf8');
   });
@@ -156,6 +167,21 @@ export function mergeIntoJournal(sessionId: string, incoming: readonly JournalLi
 }
 
 /**
+ * A person's input the agent took but keeps no record of (`UNRECORDED_PROMPT`: a Codex `/goal` command is a thread goal,
+ * not a user message). The record's turn has the agent's work and no input, so the input is kept here as a turn of its
+ * own; the timeline places it before the record's turn by when it started.
+ */
+function journalUnrecordedInput(sessionId: string, turn: TranscriptTurn): void {
+  const items = turn.items.filter((item) => item.kind === 'message' && item.role === 'user' && item._meta?.[UNRECORDED_PROMPT] === true);
+  if (items.length === 0) return;
+  const input: TranscriptTurn = { ...turn, id: `${turn.id}~input`, items, outcome: { kind: 'done' }, endedAt: turn.startedAt };
+  // A turn can be committed again (a reconnect commits the same turn once more): its input is written once.
+  void appendJournalTurnOnce(sessionId, input).catch((error: unknown) => {
+    log.warn('sessionJournal: an unrecorded input was not written', { sessionId, error: String(error) });
+  });
+}
+
+/**
  * A turn the runtime committed, kept here when its agent keeps no record gugu reads. With a record, the record has
  * the turn, but not always how it ended when that was not a plain finish: a failure only the runtime saw (the engine
  * died mid-turn, a prompt never delivered; a revision when the exit comes after), or a stop the agent wrote no end
@@ -166,6 +192,7 @@ export function journalCommittedTurn(event: { sessionId: string; providerId?: st
   if (event.source === 'replay') return;
   const provider = event.providerId ?? db.select({ provider: sessions.provider }).from(sessions).where(eq(sessions.id, event.sessionId)).get()?.provider;
   const recorded = sessionRecordHarnessForProvider(provider) !== null;
+  if (recorded) journalUnrecordedInput(event.sessionId, event.turn);
   if (recorded && event.turn.outcome?.kind !== 'error' && event.turn.outcome?.kind !== 'cancelled') return;
   void appendJournalTurn(event.sessionId, event.turn, recorded).catch((error: unknown) => {
     log.warn('sessionJournal: a committed turn was not written', { sessionId: event.sessionId, error: String(error) });

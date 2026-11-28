@@ -15,8 +15,8 @@ import '@renderer/index.css';
 
 /**
  * The inner column's head and the content's tab strip share one line: same top, same height. Folding the column swaps
- * its fold button for the restore lane's expand button —
- * both controls use the same arrow-free icon and 28px target.
+ * its fold button (head row, far end) for the restore lane's expand button: both are the one panel toggle icon
+ * (PanelToggleIcon: open in the head, folded in the lane) on the same 28px target.
  */
 
 let harness: ReturnType<typeof createReactHarness>;
@@ -64,8 +64,8 @@ it('the head band and the tab strip line up, and the fold button is the expand b
 
   const fold = box('[data-inner-head-fold]');
   const expand = box('[data-shell-restore-lane] button');
-  const foldIcon = box('[data-inner-head-fold] svg.lucide-panel-left');
-  const expandIcon = box('[data-shell-restore-lane] svg.lucide-panel-left');
+  const foldIcon = box('[data-inner-head-fold] svg[data-panel-toggle-icon]');
+  const expandIcon = box('[data-shell-restore-lane] svg[data-panel-toggle-icon]');
   expect([fold.width, fold.height]).toEqual([expand.width, expand.height]);
   expect([foldIcon.width, foldIcon.height]).toEqual([TITLEBAR_ACTION_ICON_SIZE_PX, TITLEBAR_ACTION_ICON_SIZE_PX]);
   expect([expandIcon.width, expandIcon.height]).toEqual([foldIcon.width, foldIcon.height]);
@@ -101,7 +101,7 @@ it('the two-line group button covers the avatar and lower row, with independent 
   expect([group.width, group.height, getComputedStyle(button()).borderRadius]).toEqual([173, 58, '12px']);
   expect([avatar.left - group.left, avatar.top - group.top, avatar.width, avatar.height]).toEqual([6, 9, 40, 40]);
   const fold = harness.container.querySelector<HTMLElement>('[data-inner-head-fold]')!;
-  const icon = fold.querySelector('svg.lucide-panel-left')!;
+  const icon = fold.querySelector('svg[data-panel-toggle-icon]')!;
   expect([fold.offsetWidth, fold.offsetHeight, getComputedStyle(fold).borderRadius]).toEqual([28, 28, '8px']);
   expect(icon.getBoundingClientRect().width).toBe(TITLEBAR_ACTION_ICON_SIZE_PX);
 
@@ -126,9 +126,40 @@ it('the two-line group button covers the avatar and lower row, with independent 
   await page.elementLocator(harness.container.firstElementChild!).hover({ position: { x: 450, y: 100 } });
   await harness.render(row(true));
   expect(button()).toHaveAttribute('aria-current', 'page');
-  // v16: the open group's block wears the selected fill (7% of the foreground).
-  expect(getComputedStyle(button()).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+  // Direction A (GUYI-AI/gugu-dev#1515): the head is the group's title on the group's card, so the open group's block wears
+  // no selected fill; it stays marked as the current page.
+  expect(getComputedStyle(button()).backgroundColor).toBe('rgba(0, 0, 0, 0)');
   // Keyboard focus keeps the same hover surface on the selected block.
   expect(hoverLayer().content).toBe('""');
   expect([hoverLayer().left, hoverLayer().right, hoverLayer().borderRadius]).toEqual(['0px', '32px', '12px']);
+});
+
+it('pointing at the collapse button lights the button alone, not the group block beside it', async () => {
+  harness = createReactHarness();
+  await harness.render(
+    <div className="gugu-skin emlight" style={{ position: 'fixed', inset: 0 }}>
+      <SessionLocalizationProvider>
+        <div data-region="inner-sidebar" style={{ width: 219 }}>
+          <InnerHeadRowLayout headKey="group" name="产品讨论群" active onOpen={() => {}} trailingButtons={1}
+            avatar={<span className="block size-10" />}
+            createAction={{ label: '创建智能体', onClick: () => {} }}
+          >
+            <InnerSidebarFoldButton />
+          </InnerHeadRowLayout>
+        </div>
+      </SessionLocalizationProvider>
+    </div>
+  );
+  const head = harness.container.querySelector<HTMLElement>('[data-inner-head]')!;
+  const blockHover = () => getComputedStyle(head, '::before').content;
+  const fold = harness.container.querySelector<HTMLElement>('[data-inner-head-fold]')!;
+
+  await page.elementLocator(fold).hover();
+  expect(fold.matches(':hover'), 'the pointer is on the collapse button').toBe(true);
+  expect(blockHover(), 'the group block does not light up with it').toBe('none');
+  expect(getComputedStyle(fold).backgroundColor, 'the button shows its own hover').not.toBe('rgba(0, 0, 0, 0)');
+
+  // The block's own hover is unchanged.
+  await page.getByRole('button', { name: '产品讨论群', exact: true }).hover({ position: { x: 20, y: 42 } });
+  expect(blockHover()).toBe('""');
 });

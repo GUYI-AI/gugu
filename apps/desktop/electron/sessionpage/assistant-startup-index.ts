@@ -1,3 +1,6 @@
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import { isAgentHostDevice } from '@gugu/core/cloud/devices'
 import type { AssistantLocalSource } from './assistant-local-index'
@@ -29,10 +32,20 @@ export interface AssistantStartupIndexDeps {
   accountId(): Promise<string | null>
   run(action: { action: string; [key: string]: unknown }, signal: AbortSignal): Promise<unknown>
   localSources?: () => Promise<AssistantLocalSource[]>
-  observed?: (lines: string[], account: string) => Promise<number | undefined>
   overflow?: (index: string, account: string) => Promise<string>
   now?: () => Date
   timeoutMs?: number
+}
+
+/** Only budgeted-out metadata moves to this file. Configured applications stay
+ * inline in the bounded index; no instruction or credential body is written. */
+export async function writeResourceOverflow(guguHome: string, owner: string, index: string): Promise<string> {
+  const path = join(guguHome, 'assistant-resource-state', `index-${createHash('sha256').update(owner).digest('hex')}.md`)
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+  const temporary = `${path}.${randomUUID()}.tmp`
+  try { await writeFile(temporary, index, { mode: 0o600 }); await rename(temporary, path) }
+  finally { await rm(temporary, { force: true }) }
+  return path
 }
 
 type ReadResult<T> = { status: 'read'; value: T } | { status: 'unavailable' }
@@ -139,8 +152,6 @@ export async function assistantStartupIndex(deps: AssistantStartupIndexDeps): Pr
   lines.push('项目（按所属设备读取，不包含全文）：', ...scoped.flat())
   lines.push(...await localSources)
   if (await deps.accountId() !== account) throw new Error('Assistant startup index: account changed during collection')
-  const version = await deps.observed?.(lines, account)
-  if (version !== undefined) lines.push(json({ source: 'resource_version', version }))
   const complete = [...lines, '</gugu_resource_index>']
   const full = complete.join('\n')
   const details = full.length > ASSISTANT_INDEX_LIMIT ? await deps.overflow?.(full, account) : undefined

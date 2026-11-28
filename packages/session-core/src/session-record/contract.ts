@@ -871,7 +871,10 @@ export type SessionpageScheduleDigest = {
   nextAt: string | null;
   /** 下一个要回来的那条的标题;只剩没送到的就是那一条的。 */
   title: string;
-  /** 有一条最近一次没送到:失败,或错过(机器关着过了点 / 上一次还没跑完);带它自己的标题(未必是下一个那条)。 */
+  /**
+   * 有一条最近一次没送到:失败,或错过(机器关着过了点 / 上一次还没跑完);带它自己的标题(未必是下一个那条)。
+   * 只给手机在只剩它时写一句中性的「未送达」;❌ 拿它在行上画 ⚠ —— 行上的标志只说 agent 此刻怎样。
+   */
   attention: { kind: 'failed' | 'missed'; title: string } | null;
 };
 

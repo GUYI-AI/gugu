@@ -114,8 +114,6 @@ it('preserves ordinary App file creation and chunk reads', async () => {
 it('refuses project import of a protected source before hashing or creating a shared copy', async () => {
   const ordinary = path.join(root, 'ordinary');
   fs.mkdirSync(ordinary);
-  const find = vi.fn(async () => null);
-  await expect(importProjectFile(ordinary, { path: secret, name: 'copied.bin', size: privateBytes.length }, find)).rejects.toThrow(PROTECTED);
-  expect(find).not.toHaveBeenCalled();
+  await expect(importProjectFile(ordinary, { path: secret, name: 'copied.bin', size: privateBytes.length })).rejects.toThrow(PROTECTED);
   expect(fs.existsSync(path.join(ordinary, '.gugu'))).toBe(false);
 });

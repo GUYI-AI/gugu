@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { taggedTemplateNonAsciiRanges } from '../../../scripts/build/renderer-chunking.mts'
 
 describe('助理 hook 脚本的 String.raw 段只含 ASCII', () => {
-  for (const name of ['note', 'pending', 'panel', 'resource']) {
+  for (const name of ['note', 'pending', 'resource']) {
     it(`assistant-${name}-hook.ts`, () => {
       const file = join(import.meta.dirname, '../../../apps/desktop/electron/sessionpage', `assistant-${name}-hook.ts`)
       const js = transformSync(readFileSync(file, 'utf8'), { loader: 'ts', format: 'esm' }).code

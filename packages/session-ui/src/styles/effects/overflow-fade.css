@@ -19,7 +19,8 @@
  */
 @property --sf-t {
   syntax: '<number>';
-  inherits: true;
+  /* Only the viewport's own mask reads it: inherited, every scroll frame that moves it restyled everything inside. */
+  inherits: false;
   initial-value: 0;
 }
 

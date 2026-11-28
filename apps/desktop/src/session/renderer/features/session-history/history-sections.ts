@@ -62,9 +62,22 @@ export function mergeSorted<T>(lists: ReadonlyArray<readonly T[]>, compare: (a: 
   }
 }
 
+/** 读来的每一行(主进程那一页里的同一个对象)记住它的那一条:整页重画时没变的行拿到的还是同一个对象,行组件(memo)就不重画。 */
+const entriesByMachine = new Map<string, WeakMap<SessionHistoryRow, HistoryEntry>>();
+
 /** 在线机器读来的一行。别的机器的行 key 带上机器:本机行按文件路径认,两台上可以撞。 */
 export function entryOf(machine: string, row: SessionHistoryRow): HistoryEntry {
-  return { ...row, key: machine === LOCAL_IMPORT_DEVICE ? row.key : `${machine}/${row.key}`, machine, offline: false, opens: true };
+  let entries = entriesByMachine.get(machine);
+  if (!entries) {
+    entries = new WeakMap();
+    entriesByMachine.set(machine, entries);
+  }
+  let entry = entries.get(row);
+  if (!entry) {
+    entry = { ...row, key: machine === LOCAL_IMPORT_DEVICE ? row.key : `${machine}/${row.key}`, machine, offline: false, opens: true };
+    entries.set(row, entry);
+  }
+  return entry;
 }
 
 /** 离线机器心跳摘要里的一条:咕咕自己的活跃会话(摘要里没有归档的、也没有原件)。 */

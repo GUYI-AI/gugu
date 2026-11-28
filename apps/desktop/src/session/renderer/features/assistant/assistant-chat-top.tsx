@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Avatar } from '@/components/Avatar';
-import { PanelRight, Search, Settings } from '@/lib/icons';
+import { PanelToggleIcon } from '@/components/PanelToggleIcon';
+import { Search, Settings } from '@/lib/icons';
 import type { AssistantShellAssistant } from '@/lib/assistantShellBridge';
 import { searchInChat } from '@renderer/features/global-search/search-session';
 
@@ -80,7 +81,7 @@ export function AssistantChatTop({ testIdPrefix, identity, chatId, onSettings, p
             onClick={onExpand}
             data-testid={`${testIdPrefix}-panel-expand`}
           >
-            <PanelRight />
+            <PanelToggleIcon side="right" open={false} />
           </button>
         )}
       </div>

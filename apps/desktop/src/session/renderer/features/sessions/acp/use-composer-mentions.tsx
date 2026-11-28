@@ -27,7 +27,8 @@ import type { useSessionMessages } from '@renderer/localization/use-session-mess
 import { log } from '@renderer/utils/logger';
 import { linkedIssueMentionName, type LinkedIssue } from '@shared/core/linked-issue';
 import type { AcpChatStore } from './acp-chat-store';
-import { filterSlashCommands } from './slash-command-matching';
+import { catalogCommandItems, filterSlashCommands } from './slash-command-matching';
+import type { HarnessCatalogState } from '@main/core/agents/harness-model-catalog';
 
 type Translate = ReturnType<typeof useSessionMessages>['translate'];
 type PromptLibrary = ReturnType<typeof usePromptLibrary>;
@@ -276,17 +277,22 @@ export function useComposerMentions({ store, editorApiRef, composerSlot, attachF
 }
 
 /** What the session composer offers after `/`: the agent's commands, the person's and Apps' prompts, and `/mcp`. */
-export function useComposerSlashItems({ store, promptLibrary, promptOverrides, translate, providerId }: {
+export function useComposerSlashItems({ store, promptLibrary, promptOverrides, translate, providerId, harnessCatalog }: {
   store: AcpChatStore;
   promptLibrary: PromptLibrary['value'];
   promptOverrides: PromptLibrary['overrides'];
   translate: Translate;
   providerId: string | null;
+  /** The harness's probed catalog: its commands stand in while this session has no engine running to report its own. */
+  harnessCatalog: HarnessCatalogState;
 }) {
   const querySlashItems = useCallback(
     async (query: string): Promise<CommandItem[]> => {
       const normalized = query.trim().toLowerCase();
-      const commands = filterSlashCommands(store.commands, normalized)
+      // gugu-dev#1644: a session reopened before its engine starts has heard no commands yet; its harness's are the ones it
+      // will take, so `/goal` is offered (and recognised) there as it is once the engine runs.
+      const advertised = store.session ? store.commands : catalogCommandItems(harnessCatalog);
+      const commands = filterSlashCommands(advertised, normalized)
         .map((command) => ({
           ...command,
           // Codex's `/compact` is implemented by gugu's own bridge (codex-app-server-acp.mjs), so its line follows the UI
@@ -315,7 +321,7 @@ export function useComposerSlashItems({ store, promptLibrary, promptOverrides, t
         : [];
       return [...clientCommands, ...commands, ...prompts];
     },
-    [store, promptLibrary, promptOverrides, translate, providerId]
+    [store, promptLibrary, promptOverrides, translate, providerId, harnessCatalog]
   );
 
   return querySlashItems;

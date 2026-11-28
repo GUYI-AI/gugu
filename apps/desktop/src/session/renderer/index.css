@@ -922,6 +922,7 @@
   --chat-fg: var(--foreground);
   --chat-color-scheme: light;
   --chat-fg-muted: var(--foreground-muted);
+  --chat-fg-error: var(--danger-fg);
   --chat-fg-passive: var(--foreground-passive);
   --chat-bg: var(--background);
   --chat-bg-1: var(--background-1);
@@ -981,6 +982,7 @@
   --chat-fg: var(--foreground);
   --chat-color-scheme: dark;
   --chat-fg-muted: var(--foreground-muted);
+  --chat-fg-error: var(--danger-fg);
   --chat-fg-passive: var(--foreground-passive);
   /* 对话画在页面那一层(--bg)上,和浅色同一结构:页头也是这一层,两者❌ 差一档(owner 11-26 GitHub 深色页头比对话区深)。
      从前深色把它抬到 --card,对话区就比自己的页头亮一档。 */

@@ -8,7 +8,7 @@
 // refresh, the profile review, the dispatch wrapper, the executor's context) ask it themselves.
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as policy from '@gugu/core/shared/assistantPolicy'
@@ -16,7 +16,6 @@ import * as workflow from '@gugu/core/shared/assistantWorkflow'
 import { GUGU_PLATFORM_BLOCK, personalAssistantPlatformPrompt } from '../../../../apps/desktop/electron/product-platform-prompt'
 import { assistantRules } from '../../../../apps/desktop/electron/assistant-rules-resolver'
 import { assistantHomeTaskContext, personalAssistantContext, refreshAssistantContext } from '../../../../apps/desktop/electron/sessionpage/assistant-context'
-import { prepareAssistantProfileReview } from '../../../../apps/desktop/electron/sessionpage/assistant-profile-review'
 import { coordinateAssistantAction } from '../../../../apps/desktop/electron/sessionpage/assistant-work'
 import type { Materialization } from '../../../../apps/desktop/electron/capability-bundle'
 
@@ -141,17 +140,6 @@ export async function captureAssistantRenders(): Promise<Record<string, string>>
         const parsed = JSON.parse(settings) as { claudeMdExcludes?: string[] }
         return JSON.stringify({ ...parsed, claudeMdExcludes: parsed.claudeMdExcludes?.filter(path => path.startsWith('<ROOT>')) }, null, 2)
       })())
-    }
-
-    // The per-turn profile review: missing index, outdated version, unreadable index, current version.
-    const admission = { text: 'hi', accepted: async () => {} }
-    for (const [name, index] of [['missing', null], ['outdated', '- [关于你](owner-profile.md) — 事实；profile_rules: 2\n'], ['unreadable', 'dir'], ['current', `- [关于你](owner-profile.md) profile_rules: ${rules.defaults.profileRulesVersion}\n`]] as const) {
-      const memory = join(root, 'review', name)
-      await mkdir(memory, { recursive: true })
-      await writeFile(join(memory, 'owner-profile.md'), '称呼：测试\n')
-      if (index === 'dir') await mkdir(join(memory, 'MEMORY.md'))
-      else if (index !== null) await writeFile(join(memory, 'MEMORY.md'), index)
-      put(`profileReview/${name}`, (await prepareAssistantProfileReview(admission, memory)).beforeText ?? '<none>')
     }
 
     // The executor report wording attached to every assistant dispatch (work ids are random: only the report is kept).
