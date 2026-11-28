@@ -21,6 +21,8 @@ export type ImMessageWrite =
   | { type: 'deleteChat'; chatId: string }
   | { type: 'chatAccess'; access: ImChatAccess }
   | { type: 'truncateRange'; chatId: string }
+  /** Arrivals of this chat up to throughSeq were not delivered. What is already verified stays; nothing bridges the hole. */
+  | { type: 'gap'; chatId: string; throughSeq: number }
 
 export interface ImMessageRange {
   chatId: string

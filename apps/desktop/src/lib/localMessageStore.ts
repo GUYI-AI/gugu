@@ -120,6 +120,10 @@ class AccountRows {
         this.ranges.set(`${chatId}\u0000${root}`, [...ranges])
         record({ store: 'ranges', put: { accountId, chatId, root, ranges: [...ranges] } satisfies RangeRecord })
       },
+      rangeRoots: chatId => {
+        this.chat(chatId)
+        return [...this.ranges.keys()].filter(key => key.startsWith(`${chatId}\u0000`)).map(key => key.slice(chatId.length + 1))
+      },
       dropRanges: chatId => {
         this.chat(chatId)
         for (const key of [...this.ranges.keys()]) if (key.startsWith(`${chatId}\u0000`)) {

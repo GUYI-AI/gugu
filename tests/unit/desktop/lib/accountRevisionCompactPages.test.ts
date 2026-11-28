@@ -4,7 +4,7 @@ import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localS
 import { imSelectors, openImRepository } from '../../../../apps/desktop/src/lib/imRepository'
 import { createAccountRevisionCoordinator } from '../../../../apps/desktop/src/lib/accountRevisionCoordinator'
 import { parseRevisionPage, validatePage, type AccountRevisionOperation, type AccountRevisionPage } from '../../../../apps/desktop/src/lib/accountRevisionRuntime'
-import { ingestMessagePage, readMessagePage } from '../../../../apps/desktop/src/lib/messageIngest'
+import { ingestMessagePage, ingestMessages, readMessagePage } from '../../../../apps/desktop/src/lib/messageIngest'
 import { clearMessageWindows, initializeMessageWindows } from '../../../../apps/desktop/src/lib/messageWindows'
 
 const stops: Array<() => void> = []
@@ -28,7 +28,7 @@ it('reads an ordinary page as consecutive and a compacted page as increasing ins
   expect(() => parseRevisionPage({ operations: [], has_more: true, compacted: true })).toThrow('without its window')
 })
 
-it('asks for the compacted read, takes its window as the cursor, voids a stream at its gap and recovers nothing', async () => {
+it('asks for the compacted read, takes its window as the cursor, keeps what it holds verified and recovers nothing', async () => {
   initializeMessageWindows('viewer')
   const repository = await openImRepository('viewer', { adapter: createMemoryLocalSyncDb() })
   await repository.transaction(tx => tx.putSyncState('account-revision-cursor', { revision: '0' }))
@@ -36,9 +36,9 @@ it('asks for the compacted read, takes its window as the cursor, voids a stream 
   let wake!: (head?: string | null) => void
   const pages: Record<string, AccountRevisionPage> = {
     0: { operations: [arrival('1', 'held-1', 1), arrival('2', 'held-2', 2)], hasMore: false },
-    2: { operations: [{ revision: '700', event: 'message_created', payload: { chat_id: 'room', entity_id: 'newest', gap: true, tombstone: false } },
+    2: { operations: [{ revision: '700', event: 'message_created', payload: { chat_id: 'room', entity_id: 'newest', gap: true, seq: 40, tombstone: false } },
       { revision: '880', event: 'chat_changed', payload: { chat_id: 'room', tombstone: false } }], hasMore: false, through: '900' },
-    900: { operations: [arrival('901', 'after-gap', 480)], hasMore: false },
+    900: { operations: [arrival('901', 'after-gap', 45)], hasMore: false },
   }
   const asked: unknown[] = []
   const coordinator = createAccountRevisionCoordinator('viewer', repository, {
@@ -49,15 +49,18 @@ it('asks for the compacted read, takes its window as the cursor, voids a stream 
   coordinator.start()
   await coordinator.whenIdle()
   expect(asked[0]).toEqual(['0', 500, true])
-  expect((await readMessagePage('viewer', { chatId: 'room', beforeSeq: 3, limit: 2 })).covered).toBe(true)
   wake('900'); await coordinator.whenIdle()
   expect((imSelectors.syncState('account-revision-cursor')(repository.snapshot()) as { revision: string }).revision).toBe('900')
-  expect((await readMessagePage('viewer', { chatId: 'room', beforeSeq: 3, limit: 2 })).covered).toBe(false)
   expect(recover).not.toHaveBeenCalled()
-  // An arrival after the gap starts a new range: it does not bridge back to the rows held before it.
+  // The rows held before the gap are still a verified range.
+  expect((await readMessagePage('viewer', { chatId: 'room', beforeSeq: 3, limit: 2 })).covered).toBe(true)
+  // An arrival after the gap starts after it: it does not bridge back to the rows held before.
   wake('901'); await coordinator.whenIdle()
-  expect((await readMessagePage('viewer', { chatId: 'room', beforeSeq: 481, limit: 3 })).rows.map(row => row.id)).toEqual(['held-1', 'held-2', 'after-gap'])
-  expect((await readMessagePage('viewer', { chatId: 'room', beforeSeq: 481, limit: 3 })).covered).toBe(false)
+  expect((await readMessagePage('viewer', { chatId: 'room', beforeSeq: 46, limit: 3 })).covered).toBe(false)
+  // A page read from the server fills the hole; the stream is one verified range again.
+  const filler = Array.from({ length: 42 }, (_, index) => message({ id: `fill-${index + 3}`, seq: index + 3, chat_id: 'room', sender_user_id: 'peer', to_user_ids: ['viewer'] }))
+  await ingestMessages('viewer', { writes: filler.map(row => ({ type: 'put' as const, message: row })), revisions: [], ranges: [{ chatId: 'room', fromSeq: 3, toSeq: 44 }] })
+  expect((await readMessagePage('viewer', { chatId: 'room', beforeSeq: 46, limit: 45 })).covered).toBe(true)
 })
 
 // A collapsed chat still delivers each deletion (the backend keeps message_deleted out of the collapse).
@@ -71,7 +74,7 @@ it('removes deleted rows it holds when their chat arrives collapsed, and refuses
   const pages: Record<string, AccountRevisionPage> = {
     0: { operations: [arrival('1', 'held-1', 1), arrival('2', 'held-2', 2), arrival('3', 'held-3', 3)], hasMore: false },
     // Away: 'middle' and 'newest' arrived and were deleted, and so was held-2. The marker names the deleted newest message.
-    3: { operations: [{ revision: '700', event: 'message_created', payload: { chat_id: 'room', entity_id: 'newest', gap: true, tombstone: false } },
+    3: { operations: [{ revision: '700', event: 'message_created', payload: { chat_id: 'room', entity_id: 'newest', gap: true, seq: 90, tombstone: false } },
       deleted('710', 'held-2'), deleted('720', 'middle'), deleted('730', 'newest')], hasMore: false, through: '900' },
   }
   const recover = vi.fn(async () => null)

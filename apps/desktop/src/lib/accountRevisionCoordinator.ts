@@ -162,13 +162,17 @@ export function readDeliveryRevision(
 // 客户端直接追加进窗口,不再跑一次「断线补洞」。旧行 / 行已硬删 ⇒ message 为 null,调用方按旧路补洞。
 export function readMessageCreatedRevision(
   payload: unknown,
-): { chatId: string; messageId: string; message: RawMessageRow | null; gap?: true } {
+): { chatId: string; messageId: string; message: RawMessageRow | null; gap?: { throughSeq: number | null } } {
   const key = readRevisionResourceKey(payload, 'message_created')
   if (!key.entityId) throw new Error('message_created revision requires entity_id')
   const raw = (payload as { message?: unknown }).message
-  // @@@stream-gap - a compacted catch-up names the newest message of a chat whose earlier arrivals it left out. There is
-  // no body to commit or to recover: the stream's coverage ends here, and whoever shows it reads its newest page.
-  if ((payload as { gap?: unknown }).gap === true) return { chatId: key.chatId, messageId: key.entityId, message: null, gap: true }
+  // @@@stream-gap - a compacted catch-up folds the messages a chat received into one operation naming the newest, with
+  // the chat's newest sequence number. There is no body to commit or to recover: whoever shows the chat reads its
+  // newest page, and what the account already holds stays verified.
+  if ((payload as { gap?: unknown }).gap === true) {
+    const seq = (payload as { seq?: unknown }).seq
+    return { chatId: key.chatId, messageId: key.entityId, message: null, gap: { throughSeq: Number.isSafeInteger(seq) && (seq as number) >= 1 ? seq as number : null } }
+  }
   if (raw === undefined || raw === null) return { chatId: key.chatId, messageId: key.entityId, message: null }
   if (typeof raw !== 'object' || Array.isArray(raw) || (raw as { id?: unknown }).id !== key.entityId) {
     throw new Error('message_created revision has malformed message')
@@ -199,7 +203,11 @@ export type AccountRevisionCoordinator = {
   retryPending(): void
   /** A head-unknown wake: pull from the committed cursor once (the reconcile beat). */
   wake(head?: string): void
+  /** See AccountRevisionRuntime.resume. */
+  resume(): void
   whenIdle(): Promise<void>
+  /** See AccountRevisionRuntime.behind. */
+  behind(): Promise<boolean>
 }
 
 type PendingOperation = {
@@ -493,10 +501,12 @@ export function createAccountRevisionCoordinator(
     },
     retryPending: scheduleDispatch,
     wake: head => runtime.wake(head),
+    resume: () => runtime.resume(),
     async whenIdle() {
       await runtime.whenIdle()
       await dispatchPromise
     },
+    behind: () => runtime.behind(),
   }
 }
 
