@@ -1,5 +1,5 @@
 {
   "repository": "GUYI-AI/gugu-supabase",
-  "ref": "a30552694b6d479c84b05e2e98b84c5b76a837f7",
-  "status": "Backend #413 merged on dev: owner-scoped App agent bindings and my_app_agent, including legacy provision compatibility and cancel cleanup; retains #409 annotations."
+  "ref": "497873bf4b647b039417dc1e481d296cb77665ac",
+  "status": "Backend #426 merged on dev: identity.purge_owned_agent_history(p_agent_user_ids text[]) for permanently deleting archived sessions; two ahead of the #422 pin (35baf6a5), so it also carries #424 (attachment GC lease reclaim), #422 (a document name without a text suffix is refused), #421 and #413."
 }

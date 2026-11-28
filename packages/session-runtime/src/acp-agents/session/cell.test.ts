@@ -198,6 +198,25 @@ describe('SessionCell prompts', () => {
     expect(request.prompt[1]).toMatchObject({ type: 'image' });
   });
 
+  // `/goal --tokens` reaches only an agent whose own /goal advertises the flag (the Codex leg). Claude Code's /goal takes
+  // only a condition: the flag would silently become part of it, so the person is told and nothing is sent.
+  it('refuses a /goal token budget the agent does not advertise, and sends it where it does', async () => {
+    const condition = makeCell();
+    condition.cell.push({ kind: 'commands', commands: [{ name: 'goal', description: '', input: { hint: '[<condition> | clear]' } }] });
+    condition.agent.prompt = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
+    const refused = await condition.cell.prompt({ text: '/goal --tokens 200k tests pass' });
+    expect(refused).toMatchObject({ success: false, error: { message: expect.stringContaining('no token budget (--tokens)') } });
+    expect(condition.agent.prompt).not.toHaveBeenCalled();
+    await condition.cell.prompt({ text: '/goal tests pass' });
+    expect((condition.agent.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0].prompt[0]).toEqual({ type: 'text', text: '/goal tests pass' });
+
+    const budget = makeCell();
+    budget.cell.push({ kind: 'commands', commands: [{ name: 'goal', description: '', input: { hint: '[--tokens N] <goal> | clear' } }] });
+    budget.agent.prompt = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
+    await budget.cell.prompt({ text: '/goal --tokens 200k tests pass' });
+    expect((budget.agent.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0].prompt[0]).toEqual({ type: 'text', text: '/goal --tokens 200k tests pass' });
+  });
+
   // #6264 另一台机器发来的图(以及首轮随启动队列带的图)是按路径带的 `local-file`:正文里已经有它的
   // 路径 mention。agent 握手时说收图片才另发图片块;说不收就只留路径 —— ❌ 给它塞一个它声明不认的块。
   it('sends a path-carried image as an image block only when the agent accepts images (#6264)', async () => {
@@ -858,6 +877,53 @@ describe('SessionCell prompts', () => {
     const outcome = cell.history().committed.at(-1)!.outcome;
     expect(outcome).toMatchObject({ kind: 'error', reason: 'prompt_failed' });
     expect(outcome).not.toHaveProperty('guguReason');
+  });
+
+  // #3939 A custom model whose address refuses the key the person typed. The message and data are the ones Codex sent on d22
+  // (2026-11-26), with the status the bridge lifts to `data.httpStatusCode`.
+  const KEY_REFUSED = 'unexpected status 401 Unauthorized: Incorrect API key provided: sk-stub***. You can find your API key at https://platform.example.com/account/api-keys., url: http://127.0.0.1:39973/v1/responses';
+  const refusal = (data: Record<string, unknown>) => Object.assign(new Error(KEY_REFUSED), { code: -32603, data: { message: KEY_REFUSED, ...data } });
+
+  it('#3939 a custom model key the address refuses (401/403): Gugu says so, the provider sentence stays in the detail', async () => {
+    for (const status of [401, 403]) {
+      const agent = new FakeAcpAgent();
+      const { cell } = makeCell(agent, { hostCredentials: true, customModelKey: true });
+      agent.prompt = vi.fn(async () => { throw refusal({ httpStatusCode: status }); });
+      await cell.prompt({ text: 'hi' });
+      const outcome = cell.history().committed.at(-1)!.outcome;
+      expect(outcome).toMatchObject({ kind: 'error', reason: 'prompt_failed', guguReason: 'key-rejected' });
+      expect(outcome).toHaveProperty('detail', expect.stringContaining('Incorrect API key provided'));
+      expect(outcome).not.toHaveProperty('said');
+      expect(outcome).not.toHaveProperty('signInRequired');
+    }
+  });
+
+  it('#3939 Claude reports the same refusal by its SDK error kind', async () => {
+    const agent = new FakeAcpAgent();
+    const { cell } = makeCell(agent, { hostCredentials: true, customModelKey: true });
+    agent.prompt = vi.fn(async () => { throw Object.assign(new Error('Internal error: Failed to authenticate. API Error: 401 invalid x-api-key'), { code: -32603, data: { errorKind: 'authentication_failed' } }); });
+    await cell.prompt({ text: 'hi' });
+    expect(cell.history().committed.at(-1)!.outcome).toMatchObject({ kind: 'error', guguReason: 'key-rejected' });
+  });
+
+  it('#3939 [阴性对照] a platform ticket refused with 401 is not a key the person typed: the provider sentence stays the row', async () => {
+    const agent = new FakeAcpAgent();
+    const { cell } = makeCell(agent, { hostCredentials: true });
+    agent.prompt = vi.fn(async () => { throw refusal({ httpStatusCode: 401 }); });
+    await cell.prompt({ text: 'hi' });
+    const outcome = cell.history().committed.at(-1)!.outcome;
+    expect(outcome).not.toHaveProperty('guguReason');
+    expect(outcome).toHaveProperty('said', expect.stringContaining('Incorrect API key provided'));
+  });
+
+  it('#3939 [阴性对照] a custom model failing for another reason keeps the provider sentence', async () => {
+    for (const status of [429, 500]) {
+      const agent = new FakeAcpAgent();
+      const { cell } = makeCell(agent, { hostCredentials: true, customModelKey: true });
+      agent.prompt = vi.fn(async () => { throw refusal({ httpStatusCode: status }); });
+      await cell.prompt({ text: 'hi' });
+      expect(cell.history().committed.at(-1)!.outcome).not.toHaveProperty('guguReason');
+    }
   });
 
   it('不在回合里递进来的原因不收(还在起的会话没有这一轮)', async () => {
@@ -3102,6 +3168,23 @@ describe('SessionCell arrival order between typed prompts and deliveries', () =>
     expect(sentTexts(agent)).toEqual(['first', 'batch', 'new words', 'during']);
     expect(cell.sessionState.queuedPrompts).toEqual([]);
     expect(cell.sessionState.lifecycle).toBe('ready');
+  });
+});
+
+// An agent that takes an input but keeps no record of it (a Codex /goal) says so on the receipt; the person's message
+// carries the mark into its committed turn, where the host journals it.
+describe('input the agent keeps no record of', () => {
+  const marks = (cell: SessionCell) => cell.history().committed.flatMap((turn) => turn.items)
+    .flatMap((item) => item.kind === 'message' && item.role === 'user' ? [[item.text, item._meta?.guguUnrecorded ?? null]] : []);
+
+  it('marks only the message whose receipt says the agent keeps no record of it', async () => {
+    const { cell, agent } = makeCell();
+    agent.prompt = vi.fn()
+      .mockResolvedValueOnce({ stopReason: 'end_turn', _meta: { guguUnrecorded: true } })
+      .mockResolvedValueOnce({ stopReason: 'end_turn' });
+    await cell.prompt({ text: '/goal find ten places' });
+    await cell.prompt({ text: 'thanks' });
+    await vi.waitFor(() => expect(marks(cell)).toEqual([['/goal find ten places', true], ['thanks', null]]));
   });
 });
 

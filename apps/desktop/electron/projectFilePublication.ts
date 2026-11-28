@@ -7,8 +7,8 @@ import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import { DEVICE_STORE, FILE_CHUNK_BYTES, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { imagePixelSize } from '@gugu/core/shared/imagePixelSize'
-import { isInside, readWorkspaceChunk } from './session/main/core/files/workspace-transfer'
-import { findProjectFileCopy, rememberProjectFile } from './sessionpage/sessionpage-project-groups'
+import { readWorkspaceChunk } from './session/main/core/files/workspace-transfer'
+import { rememberProjectFile } from './sessionpage/sessionpage-project-groups'
 import { importProjectFile } from './projectFileImport'
 import { sanitizeRemoteFileName } from './remoteFileOpen'
 import { createLogger } from './lib/logger'
@@ -57,7 +57,7 @@ export function createProjectFilePublisher(deps: {
     return { identity, projectId: bound ?? DEVICE_STORE, storage: await deps.storage() }
   }
   const publishFile = async (chatId: string, file: SelectedProjectFile, parentId: string | null, actor: string,
-    store?: Parameters<Publisher>[4], { message, next, task, itemId }: ProjectFilePublishOptions = {}, temporary = false): Promise<Awaited<ReturnType<Publisher>> & { message?: Record<string, unknown>; path?: string } | null> => {
+    store?: Parameters<Publisher>[4], { message, next, task, itemId }: ProjectFilePublishOptions = {}): Promise<Awaited<ReturnType<Publisher>> & { message?: Record<string, unknown>; path?: string } | null> => {
     const here = await place(chatId, task)
     if (!here) return null
     if (here.storage?.proactive_upload) return store ? store() : null
@@ -66,8 +66,7 @@ export function createProjectFilePublisher(deps: {
     const root = await deps.root(projectId)
     if (!root) throw new Error('Project root is unavailable')
     if (!isAbsolute(file.path)) throw new Error('Choose an original file on this computer')
-    if (temporary || !isInside(root, file.path)) file = { ...file,
-      path: await importProjectFile(root, file, sha => findProjectFileCopy(projectId, sha, identity.accountId, identity.deviceId, deps.env)) }
+    file = { ...file, path: await importProjectFile(root, file) }
     const path = relative(root, file.path).split(sep).join('/')
     const first = await readWorkspaceChunk(root, { path, offset: 0, length: 0 }), hash = createHash('sha256')
     if (first.size !== file.size) throw new Error('Selected file changed before it was sent')
@@ -118,8 +117,7 @@ export function createProjectFilePublisher(deps: {
     try {
       const path = await requireAgentFileAccess(join(directory, sanitizeRemoteFileName(file.name)))
       await writeFile(path, bytes, { mode: 0o600 })
-      // `temporary`: the temp copy is always imported, even when a bound root happens to contain the temp directory.
-      return await publishFile(chatId, { ...selected, path }, parentId, actor, store, options, true)
+      return await publishFile(chatId, { ...selected, path }, parentId, actor, store, options)
     } finally { await rm(directory, { recursive: true, force: true }).catch(() => undefined) } // the message is already committed: a stuck temp file must not turn it into an error
   }
   return Object.assign(publish, { async local(chatId: string) { const here = await place(chatId); return !!here && !here.storage?.proactive_upload } })

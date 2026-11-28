@@ -25,7 +25,14 @@ function toModeOption(raw: RawOption): ModeOption {
   const opt: ModeOption = { id: raw.value, name: raw.name };
   if (raw._meta?.['gugu:auto-review-disabled'] === true) opt.disabled = true;
   if (raw._meta?.['gugu:auto-review-haiku'] === true) opt.reviewByHaiku = true;
+  const reviewer = raw._meta?.['gugu:auto-reviewer'] as { label?: unknown; kind?: unknown } | undefined;
+  if (reviewer && typeof reviewer.label === 'string' && (reviewer.kind === 'platform' || reviewer.kind === 'connection')) {
+    opt.reviewer = { label: reviewer.label, kind: reviewer.kind };
+  }
   if (raw.description) opt.description = raw.description;
+  // A disabled Auto mode says why (a message key), in place of the producer's own description.
+  const reason = raw._meta?.['gugu:auto-review-reason'];
+  if (opt.disabled && typeof reason === 'string') opt.description = reason;
   return opt;
 }
 

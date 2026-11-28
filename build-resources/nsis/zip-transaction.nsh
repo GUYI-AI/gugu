@@ -9,6 +9,7 @@ Var guguLogHandle
 Var guguLogSize
 Var guguLogReady
 Var guguFailureWasLock
+Var guguFailureBlocked
 Var guguFailureForeignTarget
 Var guguFailureTitle
 Var guguFailureMessage
@@ -89,8 +90,10 @@ Function guguShowFailure
   StrCpy $guguFailureShown "true"
   ${If} $LANGUAGE == 2052
     StrCpy $guguFailureTitle "安装未完成"
-    ${If} $guguFailureWasLock == "true"
-      StrCpy $guguFailureMessage "有程序正在使用咕咕的安装目录，请关闭后重试。日志：$guguDiagnosticDir"
+    ${If} $guguFailureBlocked == "true"
+      StrCpy $guguFailureMessage "咕咕的文件无法写入，可能被安全软件或游戏反作弊程序拦截。请关闭它们后重新运行安装器，原来的咕咕已保留。$\r$\n$\r$\n$guguFailureOutput$\r$\n日志：$guguDiagnosticDir"
+    ${ElseIf} $guguFailureWasLock == "true"
+      StrCpy $guguFailureMessage "有程序正在使用咕咕的安装目录，请关闭后重试。$\r$\n$\r$\n$guguFailureOutput$\r$\n日志：$guguDiagnosticDir"
     ${ElseIf} $guguFailureForeignTarget == "true"
       StrCpy $guguFailureMessage "所选文件夹包含无法识别为咕咕的文件，已保留。请重新运行安装器，选择新的空文件夹。目录：$INSTDIR。日志：$guguDiagnosticDir"
     ${Else}
@@ -98,8 +101,10 @@ Function guguShowFailure
     ${EndIf}
   ${Else}
     StrCpy $guguFailureTitle "Installation could not be completed"
-    ${If} $guguFailureWasLock == "true"
-      StrCpy $guguFailureMessage "An application is using the installation folder. Close it and retry. Log: $guguDiagnosticDir"
+    ${If} $guguFailureBlocked == "true"
+      StrCpy $guguFailureMessage "Gugu's files could not be written; security software or a game anti-cheat may be blocking them. Close them and run the installer again. The previous installation has been preserved.$\r$\n$\r$\n$guguFailureOutput$\r$\nLog: $guguDiagnosticDir"
+    ${ElseIf} $guguFailureWasLock == "true"
+      StrCpy $guguFailureMessage "An application is using the installation folder. Close it and retry.$\r$\n$\r$\n$guguFailureOutput$\r$\nLog: $guguDiagnosticDir"
     ${ElseIf} $guguFailureForeignTarget == "true"
       StrCpy $guguFailureMessage "This folder contains unrecognized files and was preserved. Run the installer again and choose a new empty folder. Folder: $INSTDIR. Log: $guguDiagnosticDir"
     ${Else}
@@ -155,6 +160,8 @@ FunctionEnd
       StrCpy $guguFailureWasLock "true"
     ${ElseIf} $guguTransactionResult == "4"
       StrCpy $guguFailureForeignTarget "true"
+    ${ElseIf} $guguTransactionResult == "5"
+      StrCpy $guguFailureBlocked "true"
     ${EndIf}
     Call guguRollback
     Call guguShowFailure
@@ -172,6 +179,7 @@ FunctionEnd
   !endif
   StrCpy $guguDiagnosticDir "$TEMP\gugu-installer"
   StrCpy $guguFailureWasLock "false"
+  StrCpy $guguFailureBlocked "false"
   StrCpy $guguFailureForeignTarget "false"
   StrCpy $guguFailureOutput ""
   StrCpy $guguFailureShown "false"
@@ -279,18 +287,10 @@ FunctionEnd
   !ifdef COMPRESS
     SetCompress "${COMPRESS}"
   !endif
-  nsisunz::Unzip "$PLUGINSDIR\app-$packageArch.zip" "$guguStage"
-  Pop $guguTransactionResult
-  ${If} $guguTransactionResult != "success"
-    StrCpy $guguFailureOutput "ZIP extraction failed: $guguTransactionResult"
-    Push "$guguFailureOutput"
-    Call guguWriteLog
-    DetailPrint "ZIP extraction failed: $guguTransactionResult"
-    Call guguRollback
-    Call guguShowFailure
-    SetErrorLevel 2
-    Abort "Unable to extract the application. The previous installation has been preserved."
-  ${EndIf}
+  # @@@extract-diagnostics in install-transaction.ps1: names the file it cannot write and retries a transient block.
+  WriteINIStr "$PLUGINSDIR\transaction-request.ini" "transaction" "Package" "$PLUGINSDIR\app-$packageArch.zip"
+  !insertmacro guguTransaction extract
+  !insertmacro guguRequireTransactionSuccess
   SetOutPath "$guguStage"
   File "/oname=${UNINSTALL_FILENAME}" "${UNINSTALLER_OUT_FILE}"
   !ifdef UNINSTALLER_ICON

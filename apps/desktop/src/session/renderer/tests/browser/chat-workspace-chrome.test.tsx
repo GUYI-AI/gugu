@@ -325,6 +325,31 @@ it('the conversation keeps its look through a move: a title, narrow or not by it
   expect(await looks(), 'showing: while the tools are on screen, one look').toEqual(['title=true tab=false narrow=true']);
 });
 
+it('dragging the divider reads the workspace\'s style once, ❌ on every move (each read restyled the page mid-frame)', async () => {
+  const { inside, mode } = await mountWorkspace();
+  await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
+  await mode('split');
+  const separator = () => inside('[data-chat-tool-divider]')!.getBoundingClientRect();
+  await untilStable('the split comes to rest', () => separator().left);
+  const rect = separator();
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + 96;
+  const read = vi.spyOn(window, 'getComputedStyle');
+  const reads = () => read.mock.calls.filter(([element]) => element instanceof Element && element.matches('[data-chat-tool-workspace]')).length;
+  try {
+    await mouse('mouseMoved', x, y);
+    await mouse('mousePressed', x, y, true);
+    for (let step = 1; step <= 20; step += 1) {
+      await mouse('mouseMoved', x + step * 3, y, true);
+      await new Promise(requestAnimationFrame);
+    }
+    await mouse('mouseReleased', x + 60, y);
+    expect(reads(), 'the strip re-renders only when its look changes, ❌ for every width it is dragged through').toBeLessThanOrEqual(3);
+  } finally {
+    read.mockRestore();
+  }
+});
+
 it('keeps the conversation as the first tab of the strip however narrow, and keeps both pages alive', async () => {
   const { inside, workspace, chat, tool, mode, width } = await mountWorkspace();
   await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));

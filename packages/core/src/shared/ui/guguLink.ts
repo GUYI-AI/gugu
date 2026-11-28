@@ -1,3 +1,4 @@
+import { uuidPrefixRange } from '../idPrefix'
 export { guguLinkScheme, tierSuffix } from './linkScheme.mjs'
 
 export type LinkPlace = { chat: string } | { session: string }
@@ -160,15 +161,11 @@ export function classifyFileLink(href: string): FileLinkClassification {
   return { kind: 'workspace-file', path, ...placed }
 }
 
-/**
- * A conversation, optionally one message in it. The reader still checks access when opening it. `messagePrefix`: the
- * message written as the first 8+ characters of its id (owner 2026-11-16) — the reader resolves it in this chat
- * (idPrefix.ts); it is never a `messageId`, so whatever stores or routes on one keeps requiring the full id.
- */
-export type ConversationLink = { chatId: string; messageId?: string; messagePrefix?: string }
+/** A conversation, optionally one message in it. The reader still checks access when opening it. */
+export type ConversationLink = { chatId: string; messageId?: string }
 
 const MESSAGE_UUID = new RegExp(`^${UUID}$`, 'i')
-const LINK = new RegExp(`^gugu-chat://(${UUID})(?:/(${UUID}|[0-9a-f][0-9a-f-]{7,34}))?/?$`, 'i')
+const LINK = new RegExp(`^gugu-chat://(${UUID})(?:/(${UUID}))?/?$`, 'i')
 
 /** A stable Markdown destination, shared by agent tools, chat and session transcripts. */
 export function conversationLink(chatId: string, messageId?: string): string {
@@ -189,8 +186,27 @@ export function storedMessageLink(chatId: string, messageId: string): string {
 export function parseConversationLink(href: string): ConversationLink | null {
   const match = LINK.exec(href.trim())
   if (!match) return null
-  const message = match[2]?.toLowerCase()
-  return { chatId: match[1]!.toLowerCase(), ...(message ? MESSAGE_UUID.test(message) ? { messageId: message } : { messagePrefix: message } : {}) }
+  return { chatId: match[1]!.toLowerCase(), ...(match[2] ? { messageId: match[2].toLowerCase() } : {}) }
+}
+
+/**
+ * A message or a session written short: `msg:<id>` / `session:<id>`, the whole id or its first 8+ characters (owner
+ * 2026-11-16, 2026-11-27: a reference is either a whole link the product wrote, or this — nothing in between). The
+ * reader resolves it as it can see them (idPrefix.ts): a message in the chat the text is a message of, a session among
+ * the reader's own.
+ */
+export type ShortRef = { kind: 'msg' | 'session'; id: string }
+
+const SHORT_REF = /^(msg|session):([0-9a-f]{8}[0-9a-f-]{0,28})$/i
+/** Where one stands in prose: not inside a word, a path or a link. */
+export const SHORT_REF_IN_TEXT = /(?<![\w:/-])(?:msg|session):[0-9a-f]{8}[0-9a-f-]{0,28}(?![\w-])/gi
+
+export function parseShortRef(text: string): ShortRef | null {
+  const match = SHORT_REF.exec(text.trim())
+  if (!match) return null
+  const id = match[2]!.toLowerCase()
+  if (!MESSAGE_UUID.test(id) && !uuidPrefixRange(id)) return null
+  return { kind: match[1]!.toLowerCase() as ShortRef['kind'], id }
 }
 
 export type WidgetLink = { widgetId: string }

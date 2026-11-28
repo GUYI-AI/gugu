@@ -31,7 +31,7 @@ import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
 import { messageReferenceBlocks } from '@gugu/session-shared/markdown/dialect'
 import { attachmentFolderLine, SHARED_READ_ONLY_COPY } from '../../../../packages/core/src/shared/attachmentFolderLine'
-import { accountAttachmentsEndpoint, AttachmentsError, commitAttachment, contentRequestId, retryableAttachmentError, sendFileAsOwner, shareAttachment, withUploadedAttachment } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { accountAttachmentsEndpoint, AttachmentsError, commitAttachment, contentRequestId, placeAttachment, retryableAttachmentError, sendFileAsOwner, shareAttachment, withUploadedAttachment } from '../../../../packages/core/src/cloud/attachmentsApi'
 import { fileSha256 } from '../../../../packages/core/src/local/agent/sessionFileHandoff'
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
 import { createGroupAdmin, setGroupAvatar } from '../../../../packages/core/src/cloud/groupAdmin'
@@ -73,6 +73,8 @@ const USER_ID_FIELDS = new Set([
   'userId', 'agentUserId',
 ])
 const USER_ID_LIST_FIELDS = new Set(['to_user_ids', 'member_user_ids'])
+/** `*` in to_user_ids is @all, as the composer's @all writes it: the one way a message addresses everyone. */
+const ALL = '*'
 const MESSAGE_ID_FIELDS = new Set([
   'reply_to_message_id', 'thread_root_id', 'source_message_id', 'message_id', 'client_message_id',
 ])
@@ -107,7 +109,7 @@ function decodeRecipientList(list, field) {
   return list.map((value, index) => {
     if (typeof value !== 'string' || !value.trim()) return value
     const trimmed = value.trim()
-    if (trimmed.startsWith('session:')) return trimmed
+    if (trimmed.startsWith('session:') || trimmed === ALL) return trimmed
     const address = decodeIdentityAddress(trimmed, `${field}[${index}]`)
     return address.kind === 'user' ? address.id : `gugu:${address.number}`
   })
@@ -196,7 +198,7 @@ export async function resolveRecipientAddresses(list, deps, field = 'to_user_ids
   const needsSessions = list.some((v) => typeof v === 'string' && v.startsWith('session:'))
   const needsNumbers = list.some((v) => typeof v === 'string' && v.startsWith('gugu:'))
   if (!needsSessions && !needsNumbers) return list
-  const byConversation = new Map()
+  const addressable = []
   if (needsSessions) {
     if (!deps.context.runHostAction) {
       throw new Error(`${field}: session:<id> addressing needs the local session host bridge, which this caller has none of; pass user:<uuid> or gugu:<number> (from message_members) instead`)
@@ -205,9 +207,7 @@ export async function resolveRecipientAddresses(list, deps, field = 'to_user_ids
     for (const row of Array.isArray(peers) ? peers : []) {
       const conversationId = row?.sessionId
       const userId = row?.identity?.users?.id
-      if (typeof conversationId === 'string' && typeof userId === 'string' && userId) {
-        byConversation.set(conversationId, userId)
-      }
+      if (typeof conversationId === 'string' && typeof userId === 'string' && userId) addressable.push({ conversationId, userId })
     }
   }
   // #5048 咕咕号短址:一号一次名录往返,同号去重;号不存在在这里就响,❌ 不静默丢掉一个收件人。
@@ -221,14 +221,13 @@ export async function resolveRecipientAddresses(list, deps, field = 'to_user_ids
   return list.map((value, index) => {
     if (typeof value !== 'string') return value
     if (value.startsWith('session:')) {
-      const conversationId = decodeTypedId('session', value, `${field}[${index}]`)
-      const userId = byConversation.get(conversationId)
-      if (!userId) {
-        throw new Error(
-          `${field}: ${value} is not an addressable session on this machine — it has no gugu identity yet (a just-spawned child gets one as it starts up) or it was deleted. ` +
-          `session_peers lists what is addressable; message_members lists this chat's members as user:<uuid> with their gugu_number.`
-        )
-      }
+      // Written whole or as its first 8+ characters: the same matcher as every short id (idPrefix.ts).
+      const conversationId = matchIdPrefix({
+        kind: 'session', id: decodeTypedId('session', value, `${field}[${index}]`), rows: addressable, keyOf: (row) => row.conversationId, noun: 'sessions',
+        notFound: (written) => `${field}: ${written} is not an addressable session on this machine — it has no gugu identity yet (a just-spawned child gets one as it starts up) or it was deleted. ` +
+          `session_peers lists what is addressable; message_members lists this chat's members.`,
+      })
+      const userId = addressable.find((row) => row.conversationId === conversationId).userId
       if (!UUID_RE.test(userId)) throw new Error(`${field}: host resolved ${value} to a non-UUID identity ${JSON.stringify(userId)}`)
       return userId
     }
@@ -279,17 +278,29 @@ async function fullMessageId(deps, id, chatId = null, chatLabel = chatId) {
   })
 }
 
-/** Every message-id argument of an IM tool, before its handler (client_message_id is the agent's own key, never looked up). */
+/**
+ * Every id argument of an IM tool written short, before its handler: message ids (client_message_id is the agent's own
+ * key, never looked up), and recipients written `aid:` + a prefix — matched among the chat's members, the ones a message
+ * there can address (the same matcher, idPrefix.ts).
+ */
 async function resolveMessagePrefixes(args, deps) {
   const prefixed = (value) => typeof value === 'string' && uuidPrefixRange(value) !== null
   const fields = [...MESSAGE_ID_FIELDS].filter((field) => field !== 'client_message_id' && prefixed(args[field]))
   const lists = [...MESSAGE_ID_LIST_FIELDS].filter((field) => Array.isArray(args[field]) && args[field].some(prefixed))
-  if (!fields.length && !lists.length) return args
+  const recipients = Array.isArray(args.to_user_ids) && args.to_user_ids.some(prefixed)
+  if (!fields.length && !lists.length && !recipients) return args
   const address = typeof args.chat_id === 'string' ? args.chat_id.trim() : ''
   const chatId = address && !/^(aid|user|gugu):/.test(address) ? await requireChat(args, deps) : null
   const out = { ...args }
   for (const field of fields) out[field] = await fullMessageId(deps, out[field], chatId, address)
   for (const field of lists) out[field] = await Promise.all(out[field].map((value) => fullMessageId(deps, value, chatId, address)))
+  if (recipients && chatId) {
+    const members = (await memberRowsOfMyChat(chatId, deps)).map((row) => String(row.user_id))
+    out.to_user_ids = out.to_user_ids.map((id) => prefixed(id) ? matchIdPrefix({
+      kind: 'user', id, rows: members, keyOf: (member) => member, noun: 'members',
+      notFound: (written) => `to_user_ids: no member of chat ${address} matches ${written}; message_members lists them (someone outside the chat takes the whole id)`,
+    }) : id)
+  }
   return out
 }
 
@@ -303,7 +314,7 @@ function encodeImValue(value, { messageRows }) {
   const out = {}
   for (const [key, entry] of Object.entries(value)) {
     if (USER_ID_FIELDS.has(key)) out[key] = encodeIdIfBare('user', entry)
-    else if (USER_ID_LIST_FIELDS.has(key) && Array.isArray(entry)) out[key] = entry.map((v) => encodeIdIfBare('user', v))
+    else if (USER_ID_LIST_FIELDS.has(key) && Array.isArray(entry)) out[key] = entry.map((v) => v === ALL ? v : encodeIdIfBare('user', v))
     else if (MESSAGE_ID_FIELDS.has(key)) out[key] = encodeIdIfBare('msg', entry)
     else if (MESSAGE_ID_LIST_FIELDS.has(key) && Array.isArray(entry)) out[key] = entry.map((v) => encodeIdIfBare('msg', v))
     else if (key === 'id' && messageRows) out[key] = encodeIdIfBare('msg', entry)
@@ -407,7 +418,7 @@ async function addressableMembers(chatId, deps) {
   const ids = (await memberRowsOfMyChat(chatId, deps)).map((row) => String(row.user_id)).filter((id) => id !== deps.context.agentId)
   const names = new Map((await restGetInBatches(ids, (batch) =>
     deps.restGet(`users?id=in.(${batch.map(enc).join(',')})&select=id,display_name`, 'identity'))).map((user) => [user.id, user.display_name]))
-  const shown = ids.slice(0, 30).map((id) => names.get(id) ? `${names.get(id)} (aid:${id})` : `aid:${id}`)
+  const shown = ids.slice(0, 30).map((id) => names.get(id) ? `${names.get(id)} (user:${id})` : `user:${id}`)
   const more = ids.length > shown.length ? ` and ${ids.length - shown.length} more (message_members lists them all)` : ''
   return `Members you can address: ${shown.join(', ') || 'none besides you'}${more}. Send again to one of these addresses.`
 }
@@ -749,10 +760,10 @@ function normalizeRecipientInput(v) {
 function normToList(v) {
   const normalized = normalizeRecipientInput(v)
   if (normalized == null) return null
-  if (!Array.isArray(normalized)) throw new Error('to_user_ids must be an array of canonical identity.users.id UUIDs')
+  if (!Array.isArray(normalized)) throw new Error('to_user_ids must be an array of addresses (user:<id> as an envelope\'s from_id gives it, gugu:<number>, session:<id>)')
   if (!normalized.length) return null
   if (!normalized.every((uid) => typeof uid === 'string' && uid.trim())) {
-    throw new Error('to_user_ids must be an array of canonical identity.users.id UUIDs')
+    throw new Error('to_user_ids must be an array of addresses (user:<id> as an envelope\'s from_id gives it, gugu:<number>, session:<id>)')
   }
   return normalized
 }
@@ -900,12 +911,12 @@ export async function sendExtensionCardOf(context, { chatId, filePath, fileName,
 }
 
 /**
- * F40 app_install { chat_id, data }: the group's data file, made as this agent — or the one already there with
- * that name (a reinstall after a fix keeps the group's data), or (F102, `itemId`) a document already in the group,
- * opened as it is. Judged by the same rule as an upload
- * (`workspaceUploadKind`): a `.json` must be a JSON object, and every data file is a live document.
+ * F40 app_install { chat_id, data }: the group's data file — a file on this computer put in the folder as file_put puts
+ * it (`putFile`), as this agent — or the one already there with that name (a reinstall after a fix keeps the group's
+ * data), or (F102, `itemId`) a document already in the group, opened as it is. Judged before it goes by the same rule
+ * as an upload (`workspaceUploadKind`): a `.json` must be a JSON object, and every data file is a live document.
  */
-export async function groupDataFileOf(context, { chatId, name, content, itemId }, injected = {}) {
+export async function groupDataFileOf(context, { chatId, filePath, fileName, itemId }, injected = {}) {
   const deps = createDeps(context, injected)
   const chat = await requireChat({ chat_id: String(chatId) }, deps)
   // 摩擦单 F102 (S20): the data is already in the group — that file itself, read as this agent; never a copy of it.
@@ -915,22 +926,20 @@ export async function groupDataFileOf(context, { chatId, name, content, itemId }
     if (item.kind !== 'document') throw new Error(`data.item_id ${itemId} (${item.filename}) is a stored file, not a document an App opens`)
     return { item: summarizeWorkspaceItem(item), link: workspaceFileLink(item), reused: true }
   }
+  const args = { file_path: filePath, ...(fileName ? { file_name: fileName } : {}) }
+  const name = resolveUploadName(args)
   // An App's data file is at the top (子文件夹): looked for there only, by the name as the database keeps names (`p_exact`:
   // its own rule, case not counted) — never worked out here.
   const [same] = await workspaceRpcRows(deps, 'workspace_list_as', {
     p_chat_id: chat, p_name: name, p_kind: 'document', p_folder: '', p_exact: true, p_offset: 0, p_limit: 1,
   }, 'app_install')
   if (same) return { item: summarizeWorkspaceItem(same), link: workspaceFileLink(same), reused: true }
-  const text = typeof content === 'string' ? content : JSON.stringify(content ?? {}, null, 2)
-  const kind = workspaceUploadKind(name, null, new TextEncoder().encode(text))
+  const { size } = await uploadTarget('app_install', args)
+  const kind = size > WORKSPACE_TEXT_MAX_BYTES
+    ? { kind: 'file', why: `over the ${WORKSPACE_TEXT_MAX_BYTES / 1024 / 1024} MiB of a live text file` }
+    : workspaceUploadKind(name, null, new Uint8Array(await readUploadBytes('app_install', args, WORKSPACE_TEXT_MAX_BYTES)))
   if (kind.kind !== 'document') throw new Error(`the data file ${name} was not made: ${kind.why}`)
-  const item = await workspaceRpcItem(deps, 'workspace_create_document_as', {
-    p_chat_id: chat,
-    p_title: name,
-    p_content: kind.text,
-    p_content_type: kind.contentType,
-    p_source_message_ids: [],
-  }, 'app_install')
+  const item = await putFile(args, deps, { chatId: chat, label: 'app_install' })
   return { item: summarizeWorkspaceItem(item), link: workspaceFileLink(item), reused: false }
 }
 
@@ -1081,7 +1090,7 @@ async function assertReadableMessageReferences(deps, content) {
 }
 
 function addressMentionSpans(text) {
-  const addresses = [...String(text ?? '').matchAll(/@((?:user|gugu|session):[A-Za-z0-9_-]+)/g)].map(match => match[1])
+  const addresses = [...String(text ?? '').matchAll(/@((?:aid|user|gugu|session):[A-Za-z0-9_-]+)/g)].map(match => match[1])
   // Address lexing is separate; mention boundaries still use the shared grammar.
   return findMentionSpans(text, addresses)
 }
@@ -1094,6 +1103,7 @@ export function reconcileMentionExpression(members, content, toUserIds, exemptId
   const exempt = new Set(exemptIds)
   const named = members.filter((m) => m.display_name)
   const byAddress = new Map(named.flatMap(m => [
+    [`aid:${m.id}`, m],
     [`user:${m.id}`, m],
     ...(m.gugu_number ? [[`gugu:${m.gugu_number}`, m]] : []),
   ]))
@@ -1119,15 +1129,16 @@ export function reconcileMentionExpression(members, content, toUserIds, exemptId
   normalized += text.slice(cursor)
   const mentionsAll = findMentionSpans(text, ['all'], { ignoreCase: true }).length > 0
   const mismatches = named
-    .filter((m) => mentioned.has(m.id) && !declaredSet.has(m.id) && !declaredSet.has('*') && !exempt.has(m.id))
+    .filter((m) => mentioned.has(m.id) && !declaredSet.has(m.id) && !declaredSet.has(ALL) && !exempt.has(m.id))
     .map((m) => m.display_name)
   const prefixes = []
-  if (declaredSet.has('*') && !mentionsAll) prefixes.push('@all')
+  if (declaredSet.has(ALL) && !mentionsAll) prefixes.push('@all')
   for (const uid of declared) {
-    if (uid === '*' || mentioned.has(uid)) continue
+    if (uid === ALL || mentioned.has(uid)) continue
     const m = named.find((x) => x.id === uid)
     if (m) prefixes.push('@' + m.display_name)
   }
+  if (mentionsAll && !declaredSet.has(ALL)) mismatches.push('@all')
   return { content: prefixes.length ? `${prefixes.join(' ')} ${normalized}` : normalized, mismatches: [...mismatches, ...unresolved] }
 }
 
@@ -1631,7 +1642,7 @@ async function handleMessage(args, deps) {
       const { isWhisper } = delivery
       let { toUserIds } = delivery
       if (isWhisper && sessionThread) {
-        throw new Error(`message_send: a whisper can only go to the main timeline, and this session is bound to thread=${sessionThread}; to say it here, set whisper:false and send normally`)
+        throw new Error(`message_send: a whisper can only go to the main timeline, and this session is bound to thread=${encodeTypedId('msg', sessionThread)}; to say it here, set whisper:false and send normally`)
       }
       row.to_user_ids = toUserIds.length ? toUserIds : null
       if (isWhisper) row.is_whisper = true
@@ -1676,7 +1687,7 @@ async function handleMessage(args, deps) {
         // The addressability gate also admits source-group recipients not yet in a topic. Resolve their
         // body aliases too, without widening the existing non-address/bare-name lookup path.
         const peerIds = [...new Set([...memberRows.map(r => r.user_id), ...(bodyAddresses.length ? toUserIds : [])])]
-          .filter(uid => uid !== deps.context.agentId && uid !== '*')
+          .filter(uid => uid !== deps.context.agentId && uid !== ALL)
         const needsSessions = bodyAddresses.some(span => span.name.startsWith('session:'))
         const [users, sessionPeers] = await Promise.all([
           restGetInBatches(peerIds, (batch) =>
@@ -1686,8 +1697,8 @@ async function handleMessage(args, deps) {
         const rec = reconcileMentionExpression(users, args.text, toUserIds, source ? [source.sender_user_id] : [], sessionPeers)
         if (rec.mismatches.length) {
           throw new Error(
-            `The text @-mentions ${rec.mismatches.join(', ')}, but to_user_ids does not include them — what the text says and what the message does must match. ` +
-            `To address them, add their user ids to to_user_ids and send again; if you are not addressing them, drop the @ (a plain name is not a mention).`
+            `The text @-mentions ${rec.mismatches.map((name) => { const member = users.find((user) => user.display_name === name); return name === '@all' ? '@all ("*")' : member ? `${name} (user:${member.id})` : name }).join(', ')}, but to_user_ids does not include them — what the text says and what the message does must match. ` +
+            `To address them, add their addresses to to_user_ids and send again; if you are not addressing them, drop the @ (a plain name is not a mention).`
           )
         }
         if (addressesNobody) {
@@ -1695,7 +1706,7 @@ async function handleMessage(args, deps) {
           if (bareNameHits.length) {
             throw new Error(
               `This message addresses no one (to_user_ids is empty and there is no reply_to_message_id), but the text calls on ${bareNameHits.map((hit) => hit.name).join(', ')}. ` +
-              `An agent's unaddressed message wakes nobody; to call on them, add their user ids to to_user_ids (${bareNameHits.flatMap((hit) => hit.ids).join(', ')}) and send again; ` +
+              `An agent's unaddressed message wakes nobody; to call on them, add their addresses to to_user_ids (${bareNameHits.flatMap((hit) => hit.ids).map((id) => `user:${id}`).join(', ')}) and send again; ` +
               `if you only mention them, reword it without naming them.`
             )
           }
@@ -2349,11 +2360,11 @@ async function handleProfile(args, deps) {
 
 
 /** The bytes of a file on this computer that the shared classifier makes a text document; `null` for stored bytes. */
-async function documentUploadBytes(args) {
+async function documentUploadBytes(label, args) {
   // Only a file within the live text size can be a document: anything larger is never read here.
-  const { size } = await uploadTarget('message_send', args)
+  const { size } = await uploadTarget(label, args)
   if (size > WORKSPACE_TEXT_MAX_BYTES) return null
-  const bytes = await readUploadBytes('message_send', args, WORKSPACE_TEXT_MAX_BYTES)
+  const bytes = await readUploadBytes(label, args, WORKSPACE_TEXT_MAX_BYTES)
   const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
   return workspaceUploadKind(resolveUploadName(args), contentType, new Uint8Array(bytes)).kind === 'document' ? bytes : null
 }
@@ -2373,36 +2384,81 @@ async function uploadForSend(args, deps, requestId, send) {
 }
 
 /**
- * A project chat: a file other than an image stays on this machine, through the one publisher the composer uses — the
- * message pins it. `next` (a folder file and the version it started from) makes it that file's next version, kept here
- * too, an image included. Null when this is not a project chat, the account uploads its files, or for a new image
- * (uploaded when sent): the ordinary upload then decides.
+ * A project chat: a file other than an image stays on this machine, through the one publisher the composer uses — with
+ * `message`, the message pins it; without, it only goes in the folder. `next` (a folder file and the version it started
+ * from) makes it that file's next version, kept here too, an image included. Null when this is not a project chat, the
+ * account uploads its files, or for a new image (uploaded when sent): the ordinary upload then decides.
  */
-async function publishHere(args, deps, chatId, message, next) {
+async function publishHere(local, deps, chatId, message) {
   const publish = deps.context.publishFile
   if (!publish) return null
-  const fileName = resolveUploadName(args)
-  const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
-  const { target, size } = await uploadTarget('message_send', args)
-  const sent = await publish(chatId, { name: fileName, path: target, size, contentType }, deps.context.agentId,
-    { ...message, file_name: fileName, content_type: contentType }, next)
-  return sent?.message ?? null
+  return await publish(chatId, { name: local.fileName, path: local.target, size: local.size, contentType: local.contentType }, deps.context.agentId,
+    message ? { ...message, file_name: local.fileName, content_type: local.contentType } : undefined, local.next) ?? null
 }
 
-/** A next version that started from a version the file is no longer at: nothing was sent, and what to do. */
-function newerVersionRefusal(file, version) {
-  return `message_send: someone stored a newer version of ${file} since version ${version}, and nothing was sent. Download the current one (message_download_file), make your change on it, and send it with that version.`
+/** A next version that started from a version the file is no longer at: nothing was written, and what to do. */
+function newerVersionRefusal(label, file, version) {
+  return `${label}: someone stored a newer version of ${file} since version ${version}, and nothing was written. Download the current one (message_download_file), make your change on it, and give that version.`
 }
 
-/** Read under the sending agent's membership before choosing a replacement route; SQL checks again at the write. */
-async function replacementTarget(args, deps, chatId, file) {
-  const item = await workspaceRpcItem(deps, 'workspace_get_as', { p_item_id: file.itemId }, 'message_send')
-  if (item.chat_id !== chatId) throw new Error('message_send: the file belongs to another chat; nothing was sent')
-  if (item.kind !== 'file' && item.kind !== 'document') throw new Error('message_send: the target is not a file or text document; nothing was sent')
-  if (!Number.isInteger(item.version) || item.version < 1) throw new Error('message_send: the server did not confirm the current file version')
-  if (item.version > file.version) throw new Error(newerVersionRefusal(args.file, file.version))
-  if (item.version !== file.version) throw new Error(`message_send: the file is at version ${item.version}, not the supplied version ${file.version}; nothing was sent`)
+/** Read under the agent's membership before choosing a replacement route; SQL checks again at the write. */
+async function replacementTarget(label, args, deps, chatId, file) {
+  const item = await workspaceRpcItem(deps, 'workspace_get_as', { p_item_id: file.itemId }, label)
+  if (item.chat_id !== chatId) throw new Error(`${label}: the file belongs to another chat; nothing was written`)
+  if (item.kind !== 'file' && item.kind !== 'document') throw new Error(`${label}: the target is not a file or text document; nothing was written`)
+  if (!Number.isInteger(item.version) || item.version < 1) throw new Error(`${label}: the server did not confirm the current file version`)
+  if (item.version > file.version) throw new Error(newerVersionRefusal(label, args.file, file.version))
+  if (item.version !== file.version) throw new Error(`${label}: the file is at version ${item.version}, not the supplied version ${file.version}; nothing was written`)
   return item
+}
+
+/**
+ * @@@local-file-into-folder - A file on this computer on its way into a chat's folder: message_send's file_path and
+ * file_put's one route, up to whether a message goes with it. Its name (resolveUploadName), its bytes (uploadTarget,
+ * read whole only when the shared classifier may make it a text document: documentUploadBytes), its type, and with
+ * `file` the folder file it becomes the next version of (replacementTarget, from the version the agent started from).
+ */
+async function localFileIntoFolder(label, args, deps, chatId) {
+  const folderFile = folderFileArg(args.file, label)
+  if (folderFile && folderFile.version === undefined) {
+    throw new Error(`${label}: file_path as the next version of ${args.file} needs the version you started from: gugu-file://${folderFile.itemId}?v=<n>`)
+  }
+  const replacement = folderFile ? await replacementTarget(label, args, deps, chatId, folderFile) : null
+  // A text file the shared classifier makes a document goes up through the attachments service, where the server makes
+  // it one (as a person's upload does); only stored bytes are published from a project.
+  const documentBytes = replacement?.kind === 'document'
+    ? await readUploadBytes(label, args, WORKSPACE_TEXT_MAX_BYTES)
+    : !folderFile ? await documentUploadBytes(label, args) : null
+  const { target, size } = await uploadTarget(label, args)
+  return {
+    folderFile, documentBytes, target, size,
+    fileName: resolveUploadName(args),
+    contentType: resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type),
+    next: folderFile ? { itemId: folderFile.itemId, expectedVersion: folderFile.version } : undefined,
+  }
+}
+
+/**
+ * file_put: the file into the chat's folder, no message — a new file, or with `file` (gugu-file://<id>?v=<n>, the version
+ * it was downloaded at) that file's next version. The same route as message_send's file_path, the folder's own write
+ * (attachments/place) in place of the message commit: a document changed since that version is refused, never overwritten.
+ */
+async function putFile(args, deps, { chatId, folder = null, label = 'file_put' }) {
+  const local = await localFileIntoFolder(label, args, deps, chatId)
+  const published = local.documentBytes ? null : await publishHere(local, deps, chatId, null)
+  if (published) return published
+  const endpoint = await deps.attachmentsEndpoint()
+  const bytes = local.documentBytes ? new Uint8Array(local.documentBytes) : await uploadBlob(label, args, local.contentType)
+  const keep = args.temporary === true ? { keep: 'temporary' } : {}
+  return withUploadedAttachment(endpoint, { bytes, name: local.fileName, contentType: local.contentType }, { chat_id: chatId, as: deps.context.agentId },
+    (stagingKey) => placeAttachment(endpoint, local.next
+      ? { staging_key: stagingKey, item_id: local.next.itemId, expected_version: local.next.expectedVersion, as_user_id: deps.context.agentId, content_type: local.contentType, ...keep }
+      : { staging_key: stagingKey, chat_id: chatId, file_name: local.fileName, folder, as_user_id: deps.context.agentId, content_type: local.contentType,
+        ...keep }))
+    .catch(async (error) => {
+      if (local.folderFile && error instanceof AttachmentsError && error.code === 'version_conflict') await replacementTarget(label, args, deps, chatId, local.folderFile)
+      throw error
+    })
 }
 
 async function sendMessageAsOwner(args, deps, content, extra = {}, outcome = { uncertain: false }) {
@@ -2574,11 +2630,11 @@ async function downloadFile(args, deps) {
 }
 
 /** message_send 的 file:群文件夹里一个文件的 gugu-file 链接(?v= 是它的那一版),或者裸的 item_id。 */
-function folderFileArg(raw) {
+function folderFileArg(raw, label = 'message_send') {
   if (raw === undefined || raw === null || raw === '') return null
   const text = String(raw).trim()
-  const link = parseGroupFileLink(text) ?? (/^[0-9a-f-]{36}$/i.test(text) ? { itemId: text.toLowerCase() } : null)
-  if (!link) throw new Error(`message_send: file is a file of the chat's folder, its gugu-file://<item_id>?v=<n> link — not ${JSON.stringify(text)}`)
+  const link = parseGroupFileLink(text)
+  if (!link) throw new Error(`${label}: file is a gugu-file://<item_id>?v=<n> link, as workspace__list (link) and message_history (file) give it — not ${JSON.stringify(text)}`)
   return link
 }
 
@@ -2622,9 +2678,6 @@ async function ownerNotificationFile(args, deps) {
  */
 async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, replyToMessageId = null, isWhisper = false, threadRootId = null, caption = '' }) {
   const folderFile = folderFileArg(args.file)
-  if (folderFile && args.file_path && folderFile.version === undefined) {
-    throw new Error(`message_send: file_path as the next version of ${args.file} needs the version you started from: gugu-file://${folderFile.itemId}?v=<n>`)
-  }
   // #2383 收件人合不合格由库判(与文字消息同一条规则);被拒时 recipientRefusal 说清是谁。
   const refused = async (error) => { throw await recipientRefusal(error, chatId, deps) }
   const said = String(caption ?? '').trim()
@@ -2632,13 +2685,9 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
   let message
   let fileName
   let uploadReceipt = {}
-  // A text file the shared classifier makes a document goes up through the attachments commit, where the server makes it
-  // one (as a person's upload does); only stored bytes are published from a project.
-  const replacement = folderFile && args.file_path ? await replacementTarget(args, deps, chatId, folderFile) : null
-  const documentBytes = replacement?.kind === 'document'
-    ? await readUploadBytes('message_send', args, WORKSPACE_TEXT_MAX_BYTES)
-    : !folderFile ? await documentUploadBytes(args) : null
-  if (folderFile && !args.file_path) {
+  // A file on this computer: the same route as file_put (localFileIntoFolder), with the message.
+  const local = args.file_path ? await localFileIntoFolder('message_send', args, deps, chatId) : null
+  if (!local) {
     // 按引用发(attachments/share):消息钉住群文件夹里那个文件的那一版,不传字节;文本文件钉住它此刻的正文。
     if (isWhisper) throw new Error('message_send: a whisper cannot carry a file of the chat\'s folder; send it openly, or a file_path')
     message = await shareAttachment(await deps.attachmentsEndpoint(), {
@@ -2646,20 +2695,18 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
       sender_user_id: deps.context.agentId, ...meta,
     }).catch(refused)
     fileName = attachmentNameOf(message)
-  } else if (!documentBytes && (message = await publishHere(args, deps, chatId, { message_id: messageId, chat_id: chatId,
-    sender_user_id: deps.context.agentId, ...meta, ...(isWhisper ? { is_whisper: true } : {}) },
-    folderFile ? { itemId: folderFile.itemId, expectedVersion: folderFile.version } : undefined).catch(async (error) => {
+  } else if (!local.documentBytes && (message = (await publishHere(local, deps, chatId, { message_id: messageId, chat_id: chatId,
+    sender_user_id: deps.context.agentId, ...meta, ...(isWhisper ? { is_whisper: true } : {}) }).catch(async (error) => {
     const reason = String(error?.message ?? error)
-    if (folderFile && /File revision conflict/.test(reason)) await replacementTarget(args, deps, chatId, folderFile)
+    if (folderFile && /File revision conflict/.test(reason)) await replacementTarget('message_send', args, deps, chatId, folderFile)
     await refused(error)
-  }))) {
-    fileName = resolveUploadName(args)
+  }))?.message)) {
+    fileName = local.fileName
   } else {
     // The message goes with the file's index; its bytes follow it (owner 11-15: one path for every sender).
-    const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
-    const { target, size } = await uploadTarget('message_send', args)
+    const { target, size, contentType, documentBytes } = local
     const endpoint = await deps.attachmentsEndpoint()
-    fileName = resolveUploadName(args)
+    fileName = local.fileName
     if (!deps.attachments) throw new Error('The device attachment upload host is unavailable')
     const { declared, uploaded } = await deps.attachments.declare({ file: { path: target, name: fileName, size, contentType,
       ...(documentBytes ? { data: new Uint8Array(documentBytes).buffer } : {}) }, chatId, as: deps.context.agentId, messageId })
@@ -2686,7 +2733,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
           note: 'Whether the message committed is uncertain; this machine keeps delivering its bytes. Check message_history for this message_id before deciding whether to resend.' })
       }
       await deps.attachments.drop(messageId)
-      if (folderFile && error.code === 'version_conflict') await replacementTarget(args, deps, chatId, folderFile)
+      if (folderFile && error.code === 'version_conflict') await replacementTarget('message_send', args, deps, chatId, folderFile)
       await refused(error)
     }
     if (message?.id) await uploaded.catch((error) => {
@@ -2726,7 +2773,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
 // ACP XML/JSON bridges sometimes serialize array parameters as JSON strings. Accept that shape at
 // the schema boundary, then handlers still validate recipients against chat membership (#1064).
 // 地址三种写法各是什么、从哪来,平台提示词讲一次;这里只列形态。裸 id、错类型的报错会按参数名说清楚。
-const RECIPIENT_ADDRESS_FORMS = 'Typed addresses: "gugu:<number>", "user:<uuid>", or "session:<id>" for a session on this machine.'
+const RECIPIENT_ADDRESS_FORMS = '"user:<id>", "gugu:<number>" or "session:<id>" (this machine).'
 // 每个数组外层已经写了 RECIPIENT_ADDRESS_FORMS,元素上不再重复一遍(P5)。
 const recipientIdSchema = z.string().refine((value) => value.trim().length > 0, 'Recipient id cannot be blank.')
 const toUserIdsSchema = z.preprocess(normalizeRecipientInput, z.array(
@@ -2735,7 +2782,7 @@ const toUserIdsSchema = z.preprocess(normalizeRecipientInput, z.array(
 // 正文的规矩只在 message_send 上写一次(P5);别的工具拒收时,报错原话会说清楚。
 const CHAT_MESSAGE_TEXT_RULES = 'Message body in Markdown. Visible escaped line breaks and malformed math are rejected.'
 const chatMessageTextSchema = z.string()
-const chatRecipientsSchema = toUserIdsSchema.describe(`Who you address and notify; multiple recipients allowed. ${RECIPIENT_ADDRESS_FORMS} @mentions must match this list.`)
+const chatRecipientsSchema = toUserIdsSchema.describe(`Who you address and notify: ${RECIPIENT_ADDRESS_FORMS} "*" is @all. @mentions must match this list.`)
 // 话题里点名 = 把人拉进来,所以收件人**必填**:一条谁也没点名的邀请消息拉不进任何人,是静默的空动作。
 // 地址形态与 chatRecipientsSchema 同一份契约(RECIPIENT_ADDRESS_FORMS),只是去掉 optional。
 const topicInviteeIdsSchema = z.preprocess(normalizeRecipientInput, z.array(recipientIdSchema).min(1)).describe(
@@ -2821,6 +2868,27 @@ export const TOOL_DEFS = [
       temporary: z.boolean().optional().describe('The cloud copy expires: for files sent only to be looked at.'),
     }),
     handler: (args, deps) => handleMessage({ ...args, action: 'send' }, deps),
+  },
+  {
+    name: 'file_put',
+    writer: true,
+    description: 'Put a file from this computer in a chat\'s folder, without a message: a new file, or with file its next version. Its name is its format: for Markdown end it in .md (no text suffix: a plain file). To change a folder file: message_download_file, change your copy, then file_put it back with that file link; if someone changed it since, nothing is written.',
+    schema: z.object({
+      chat_id: chatIdSchema,
+      file_path: uploadFilePathSchema.describe('A file on this computer.'),
+      file: z.string().optional().describe('gugu-file://<id>?v=<n>, as message_download_file gave it: file_path becomes its next version.'),
+      file_name: uploadFileNameSchema,
+      mime_type: uploadMimeTypeSchema,
+      folder: z.string().optional().describe('A new file goes in this folder (合同/2026), made when missing; left out: the top.'),
+      temporary: z.boolean().optional().describe('The cloud copy expires: for files put only to be looked at.'),
+    }),
+    handler: async (args, deps) => {
+      const chatId = await requireChat(args, deps)
+      if (args.file && args.folder !== undefined) throw new Error('file_put: folder places a new file; a next version stays where its file is (move it with the Files App)')
+      const item = await putFile(args, deps, { chatId, folder: args.folder ?? null })
+      return JSON.stringify({ status: 'put', file: groupFileLink(String(item.id), { version: Number(item.version) }), name: item.filename, path: item.path ?? item.filename,
+        version: item.version, type: item.kind === 'document' ? 'document' : 'file' })
+    },
   },
   {
     name: 'message_send_as_owner',
@@ -3023,7 +3091,7 @@ export const TOOL_DEFS = [
     description: 'Add yourself or one of your owner’s Agents to a group. Omit agent to add yourself. Uses your own group role; agent approval still applies. Returns joined, pending_approval or already_member. Other identities use message_invite.',
     schema: z.object({
       chat_id: chatIdSchema.describe(`The group to join, from group_list.`),
-      agent: z.string().trim().min(1).optional().describe('Optional: the agent to add when it is not you — one of your owner\'s agents as "aid:<Agent ID>" (or its older spelling "user:<uuid>"), "gugu:<number>", or "session:<id>" for a session on this machine (from session_spawn / session_children / session_peers). Omit it to add yourself.'),
+      agent: z.string().trim().min(1).optional().describe('Optional: the agent to add when it is not you — one of your owner\'s agents as "user:<id>", "aid:<Agent ID>", "gugu:<number>", or "session:<id>" for a session on this machine (from session_spawn / session_children / session_peers). Omit it to add yourself.'),
     }),
     handler: (args, deps) => handleGroup({ ...args, action: 'add-agent' }, deps),
   },

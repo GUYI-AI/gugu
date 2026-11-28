@@ -195,6 +195,7 @@ const STRINGS = {
     files: '文件',
     today: '今天',
     showMore: '再显示 {n} 条',
+    showMoreUnknown: '再显示更多',
     yesterday: '昨天',
     week: '过去 7 天',
     earlier: '更早',
@@ -445,6 +446,7 @@ const STRINGS = {
     files: 'Files',
     today: 'Today',
     showMore: 'Show {n} more',
+    showMoreUnknown: 'Show more',
     yesterday: 'Yesterday',
     week: 'Past 7 days',
     earlier: 'Earlier',
@@ -553,7 +555,8 @@ const state = {
   releaseBack: null, // the held claim's release, once it has succeeded
   folder: null, // the folder the list shows (子文件夹): a folder entry's id, null for the top
   listed: new Set(), // the folders whose contents are known ('' the top): both roots are read one folder at a time
-  whole: null, // the chat's whole tree, read when a search, 「移动到…」 or a folder far down needs it: its read, then true
+  more: new Map(), // the chat folders read so far ('' the top): { last } the last row read; the rest is read when wanted
+  searched: null, // a search's answer from the whole chat: { needle, entries, full } (full: there may be more)
   rootOf: null, // a working copy's root once known, for the path of the file open here: { workspace, root }
   folderWatches: new Map(), // the listed folders below the top that are heard, each by its own watch
   dragging: null, // the entry being dragged onto a folder (desktop)
@@ -750,6 +753,7 @@ async function applyContext(ctx) {
       state.showAppData = false
       await refreshList(!restored)
       if (restored && Number.isFinite(restored.scrollTop)) $('file-list').scrollTop = restored.scrollTop
+      if (state.filter.trim()) findSoon()
     }
   } else {
     // The same place, more said of it (its path, its machine): the line that says where it is says so.
@@ -798,6 +802,7 @@ function renderChrome() {
   // Nothing to go back to on screen (the conversation is beside it): no button that does nothing.
   $('page-back').hidden = !state.ctx?.navigation?.canBack
   $('select-files').textContent = state.selecting || state.picked.size ? t.pickDone : t.pick
+  $('pick-all').setAttribute('aria-label', t.pickAll)
   renderTools()
   $('new-label').textContent = t.new
   $('new-doc').hidden = !canWriteHere()
@@ -839,15 +844,14 @@ async function refreshList(readPreferences = false) {
   const asked = (state.listing = inWorkspace() ? null : { heard: [] })
   renderList()
   if (inWorkspace()) return listDownTo(state.folder ?? '')
-  // A folder this page was left in (its view state) that no read has named: the whole tree, for the way up to it.
+  // A folder this page was left in (its view state) that no read has named: every folder too, for the way up to it.
   const far = state.folder && !state.entries.some((e) => e.id === state.folder)
-  // The whole tree read before is from before now: the next search reads it again (what it holds is shown meanwhile).
-  if (state.whole === true) state.whole = null
   let listError = null
   try {
     const place = rootPlace()
-    const [, preferences] = await Promise.all([
-      far ? readWhole(asked) : readFolders([state.folder ?? ''], asked),
+    const [, , preferences] = await Promise.all([
+      readFolders([state.folder ?? ''], asked),
+      far ? readFolderTree(asked) : null,
       readPreferences ? gugu.files.viewPreferences(place) : null,
     ])
     if (state.listing === asked && preferences) state.showAppData = preferences.showAppData
@@ -871,65 +875,109 @@ async function refreshList(readPreferences = false) {
 function forgetListed() {
   state.entries = []
   state.listed = new Set()
-  state.whole = null
+  state.more = new Map()
+  state.searched = null
+}
+
+// What a chat folder's list reads at a time: its folders, all of them, and a page of the rest, the latest change first (the
+// list's own order, `workspace_list_as`). The host reads the top's first ahead (extension-bridge OPENING_LISTS).
+const PAGE = 100
+
+// Where a row stands in that order: later change first, then the larger id — as the database orders them.
+const orderOf = (entry) => {
+  const at = changedAt(entry) ?? ''
+  const seconds = Math.floor((Date.parse(at) || 0) / 1000)
+  const micros = Number((/\.(\d+)/.exec(at)?.[1] ?? '').padEnd(6, '0').slice(0, 6))
+  return { seconds, micros, id: entry.id }
+}
+const ahead = (a, b) => a.seconds !== b.seconds ? a.seconds > b.seconds : a.micros !== b.micros ? a.micros > b.micros : a.id > b.id
+// A folder read so far (state.more): the rows down to the last one read are all here; past it, not yet.
+const readSoFar = (entry, folder) => {
+  const last = state.more.get(folder)?.last
+  return !last || isFolder(entry) || !ahead(last, orderOf(entry))
 }
 
 /**
- * Chat folders ('' the top, else a folder's id), all read at once: what is directly in each goes into the list in place of
- * what was there, drawn once every answer is in.
+ * Chat folders ('' the top, else a folder's id), all read at once: what is directly in each — its folders and its first
+ * page — goes into the list in place of what was there, drawn once every answer is in. A page that comes back full leaves
+ * the folder read so far (state.more): the rest is read when it is wanted (readMore).
  */
 async function readFolders(folders, asked) {
   const chat = state.ctx.chat.id
-  const answers = await Promise.all(folders.map((folder) => gugu.files.list({ chat, folder })))
+  const answers = await Promise.all(folders.map((folder) => Promise.all([
+    gugu.files.list({ chat, folder, limit: PAGE }),
+    gugu.files.list({ chat, folder, kind: 'folder' }),
+  ])))
   // Another chat by now, or a newer refresh: this one's answer is dropped.
   if (state.ctx?.chat?.id !== chat || inWorkspace() || (asked && state.listing !== asked)) return
   folders.forEach((folder, at) => {
     const parent = folder || null
-    state.entries = [...state.entries.filter((entry) => (entry.parentId ?? null) !== parent), ...answers[at]]
+    const [page, subfolders] = answers[at]
+    const fresh = new Map([...page, ...subfolders].map((entry) => [entry.id, entry]))
+    state.entries = [...state.entries.filter((entry) => (entry.parentId ?? null) !== parent), ...fresh.values()]
     state.listed.add(folder)
+    if (page.length === PAGE) state.more.set(folder, { last: orderOf(page.at(-1)) })
+    else state.more.delete(folder)
   })
   showList()
 }
 
 /**
- * The chat's whole tree, read once (every page at once, the host's), for what needs every folder: a search by name,
- * 「移动到…」, a folder far down. Changes heard meanwhile go over it again.
+ * The next page of a folder read so far, from where the rows it has end: as many rows as it holds down to the last one read
+ * (its changes heard meanwhile — added, changed, gone — move that count as they move the database's). `all`: every page
+ * left. Changes heard while it reads go over its answer.
  */
-function readWhole(asked = null) {
-  if (state.whole === true) return Promise.resolve()
-  if (state.whole) return state.whole
+async function readMore(folder, all = false) {
   const chat = state.ctx.chat.id
+  const at = state.more.get(folder)
+  if (!at || at.reading) return at?.reading
+  const parent = folder || null
   const heard = []
-  const reading = (state.whole = gugu.files.list({ chat }).then((entries) => {
-    if (state.ctx?.chat?.id !== chat || state.whole !== reading) return
-    if (asked && state.listing !== asked) return void (state.whole = null)
-    state.entries = entries
-    state.whole = true
-    state.listed = new Set(['', ...entries.filter(isFolder).map((e) => e.id)])
-    for (const change of heard) take(change)
-  }, (error) => {
-    if (state.whole === reading) state.whole = null
-    throw error
-  }))
-  reading.heard = heard
-  return reading
-}
-
-/** The whole tree read, then `next` (true when it was): what went wrong is said on the list. */
-function wholeThen(next = () => {}) {
-  const chat = state.ctx.chat.id
-  return readWhole().then(() => state.ctx?.chat?.id === chat && state.whole === true && (next(), true), (error) => {
-    showBanner(error.code === 'denied' ? state.t.denied : fmt(state.t.failed, { e: error.message }), 'error')
-    return false
-  })
+  at.reading = (async () => {
+    for (let more = state.more.get(folder); more === at;) {
+      const offset = state.entries.filter((entry) => (entry.parentId ?? null) === parent && !ahead(at.last, orderOf(entry))).length
+      const page = await gugu.files.list({ chat, folder, offset, limit: all ? 1000 : PAGE })
+      if (state.ctx?.chat?.id !== chat || state.more.get(folder) !== at) return
+      const held = new Set(state.entries.map((entry) => entry.id))
+      state.entries = [...state.entries, ...page.filter((entry) => !held.has(entry.id))]
+      if (page.length === (all ? 1000 : PAGE)) at.last = orderOf(page.at(-1))
+      else state.more.delete(folder)
+      if (!all) break
+    }
+  })()
+  at.heard = heard
+  try {
+    await at.reading
+  } catch (error) {
+    at.failed = true
+    if (state.ctx?.chat?.id === chat) showBanner(error.code === 'denied' ? state.t.denied : fmt(state.t.failed, { e: error.message }), 'error')
+  } finally {
+    delete at.reading
+    delete at.heard
+  }
+  for (const change of heard) take(change)
+  showList()
 }
 
 /**
- * A chat folder pressed open: drawn with what is known of it, and read (one folder: what it holds now). Back at the top
- * it is not read again: the chat's changes keep it.
+ * Every folder of the chat (not what is in them), for what needs them all: 「移动到…」, a folder far down whose way up is
+ * drawn. Into the list beside what it has; a folder not entered yet is not read by this.
+ */
+async function readFolderTree(asked = null) {
+  const chat = state.ctx.chat.id
+  const folders = await gugu.files.list({ chat, kind: 'folder' })
+  if (state.ctx?.chat?.id !== chat || inWorkspace() || (asked && state.listing !== asked)) return false
+  const fresh = new Map(folders.map((entry) => [entry.id, entry]))
+  state.entries = [...state.entries.filter((entry) => !fresh.has(entry.id)), ...fresh.values()]
+  return true
+}
+
+/**
+ * A chat folder pressed open: read once (one folder: what it holds now). One read before is not read again, the top or any
+ * other: the chat's changes keep every folder listed here.
  */
 function readChatFolder(folderId) {
-  if (folderId === '' && state.listed.has('')) return
+  if (state.listed.has(folderId)) return
   const chat = state.ctx?.chat?.id
   void readFolders([folderId], null).catch((error) => {
     // Late, for a list no longer on screen: it has no say in the one that is.
@@ -992,7 +1040,7 @@ const heardIn = (root) => (change) => {
 function heard(change) {
   if (change.kind !== 'entries') return
   state.listing?.heard.push(change)
-  if (state.whole && state.whole !== true) state.whole.heard.push(change)
+  for (const at of state.more.values()) at.heard?.push(change)
   keepLater(take(change))
   showList()
 }
@@ -1006,6 +1054,7 @@ function take(change) {
   const listsKeep = state.entries.some((entry) => 'keep' in entry)
   const fresh = new Map(change.entries.map((entry) => [entry.id, 'keep' in entry || !before.has(entry.id) || !('keep' in before.get(entry.id)) ? entry : { ...listed(before.get(entry.id)), ...entry }]))
   state.entries = [...state.entries.filter((entry) => !fresh.has(entry.id) && !change.gone.includes(entry.id)), ...fresh.values()]
+  if (state.searched) state.searched = { ...state.searched, entries: state.searched.entries.filter((entry) => !change.gone.includes(entry.id)) }
   if (!listsKeep) return []
   // An item come into, moved in or out of, or gone from a folder not read yet changes the count its row says
   // (childCount): the folder that row is listed in is read again.
@@ -1105,12 +1154,19 @@ function inside(folderId) {
 // and a folder above it renamed or moved since leaves that stale (only the changed row is read again).
 function pathOf(entry) {
   const names = []
-  for (let at = entry, hops = 0; at && hops <= 64; at = at.parentId ? state.entries.find((e) => e.id === at.parentId) : null, hops++) names.unshift(at.name)
+  for (let at = entry, hops = 0; at && hops <= 64; hops++) {
+    names.unshift(at.name)
+    if (!at.parentId) break
+    const up = state.entries.find((e) => e.id === at.parentId)
+    // A search's row whose folders are not read here: the way up is its path as it was found.
+    if (!up) return [...(at.path ?? '').split('/').slice(0, -1), ...names].filter(Boolean).join('/')
+    at = up
+  }
   return names.join('/')
 }
 
 // Whether everything under a folder has been read: a folder not read yet is not empty for all the list knows.
-const knownBelow = (folderId) => state.listed.has(folderId) && under(folderId).every((e) => !isFolder(e) || state.listed.has(e.id))
+const knownBelow = (folderId) => state.listed.has(folderId) && !state.more.has(folderId) && under(folderId).every((e) => !isFolder(e) || (state.listed.has(e.id) && !state.more.has(e.id)))
 
 // Everything under a folder, however deep: what its delete takes with it, and where it cannot be moved into.
 function under(folderId) {
@@ -1152,21 +1208,31 @@ function renderList() {
   const needle = state.filter.trim().toLocaleLowerCase()
   // One clock for the whole list, the one relative times read (Date.now).
   const now = new Date(Date.now())
-  const shown = (needle ? state.entries : inside(state.folder ?? null))
+  // A search: what the database found by name across the chat, with what is read here (fresher, its changes heard). A
+  // folder read so far: its rows down to the last one read; past that, its next page.
+  const here = state.folder ?? ''
+  const found = needle && state.searched?.needle === state.filter.trim() ? state.searched : null
+  const partial = !needle && state.more.has(here)
+  const shown = (needle ? [...new Map([...(found?.entries ?? []), ...state.entries].map((e) => [e.id, e])).values()]
+    : inside(state.folder ?? null).filter((e) => !partial || readSoFar(e, here)))
     .filter(visibleEntry)
     .filter((e) => !needle || e.name.toLocaleLowerCase().includes(needle) || shownName(e).toLocaleLowerCase().includes(needle))
   const ofKind = (state.ofKind = shown.filter((e) => !isFolder(e) && (state.kind === 'all' || kindOf(e) === state.kind)))
   renderTools()
   // A folder not read yet, nothing of it known, is not empty: it says it is being read until its answer is drawn (what is
   // picked in it waits for that answer too).
-  if (!shown.length && canRead() && !state.listError && !state.listed.has(state.folder ?? '')) {
+  const filtering = Object.values(state.filters).some(Boolean)
+  // Another order, a kind or a filter is about every file of the folder: the rest of it is read first.
+  // (One whose read failed says so in the banner, and shows what it has.)
+  const wantsAll = partial && !state.more.get(here).failed && (state.sort !== 'recent' || state.kind !== 'all' || filtering)
+  if (wantsAll) void readMore(here, true)
+  if (wantsAll || (!shown.length && canRead() && !state.listError && !state.listed.has(state.folder ?? ''))) {
     list.replaceChildren()
     $('empty-upload').hidden = true
     empty.hidden = $('files-empty-progress').hidden = false
     $('files-empty-message').textContent = t.listing
     return
   }
-  const filtering = Object.values(state.filters).some(Boolean)
   const folders = state.kind === 'all' && !filtering ? shown.filter(isFolder).sort(folderOrder) : []
   const picked = ofKind.filter((e) => matches(e, state.filters, machineOf, now)).sort(comparer(state.sort, shownName, changedAt, state.ctx?.locale))
   // Unreadable files stay in folded sections under the rest, each named by the service's evidenced reason.
@@ -1174,6 +1240,7 @@ function renderList() {
   const expired = picked.filter(fileUnavailable)
   const grid = viewOf(state.kind) === 'grid'
   list.classList.toggle('as-grid', grid)
+  list.closest('aside.files')?.classList.toggle('grid-view', grid)
   const item = (entry) => (grid && !isFolder(entry) ? gridItem(entry, now) : listItem(entry, now))
   const rows = []
   if (!grid && (folders.length || files.length)) rows.push(tableHead())
@@ -1190,23 +1257,28 @@ function renderList() {
       if (at.key !== sections.at(-1)?.at.key) sections.push({ at, entries: [] })
       sections.at(-1).entries.push(entry)
     }
-    for (const { at, entries } of sections) {
+    sections.forEach(({ at, entries }, index) => {
+      // The last section of a folder read so far goes on past what is read: no count, and its 「再显示」 reads on.
+      const open = partial && index === sections.length - 1
       const closed = state.closedSections.has(at.key)
-      rows.push(sectionToggle(at, entries.length, closed))
-      if (closed) continue
+      rows.push(sectionToggle(at, open ? null : entries.length, closed))
+      if (closed) return
       const cut = state.openSections.has(at.key) ? entries.length : SECTION_ROWS
       draw(entries.slice(0, cut))
-      if (entries.length > cut) rows.push(moreRow(at, entries.length - cut))
-    }
+      if (open) rows.push(moreRow(at, null, () => readMore(here)))
+      else if (entries.length > cut) rows.push(moreRow(at, entries.length - cut))
+    })
+    if (partial && !sections.length) rows.push(moreRow(null, null, () => readMore(here)))
   } else {
     if (folders.length && files.length) rows.push(sectionRow(t.files))
     draw(files)
   }
+  if (found?.full) rows.push(moreRow(null, null, () => find(true)))
   for (const block of UNAVAILABLE_BLOCKS) {
     const entries = expired.filter((entry) => unavailableState(entry) === block.key)
     if (!entries.length) continue
     const open = state.openSections.has(block.key)
-    rows.push(sectionToggle(block, entries.length, !open, state.openSections))
+    rows.push(sectionToggle(block, partial ? null : entries.length, !open, state.openSections))
     if (open) draw(entries)
   }
   list.replaceChildren(...rows)
@@ -1253,7 +1325,7 @@ function sectionToggle(section, count, closed, flips = state.closedSections) {
   chevron.setAttribute('name', closed ? 'chevron-right' : 'chevron-down')
   button.append(chevron,
     Object.assign(document.createElement('span'), { textContent: sectionName(section) }),
-    Object.assign(document.createElement('span'), { className: 'section-count', textContent: String(count) }))
+    Object.assign(document.createElement('span'), { className: 'section-count', textContent: count === null ? '' : String(count) }))
   button.onclick = () => {
     if (flips.has(section.key)) flips.delete(section.key)
     else flips.add(section.key)
@@ -1263,14 +1335,15 @@ function sectionToggle(section, count, closed, flips = state.closedSections) {
   return li
 }
 
-/** Under a long section: the rest of it, one press away. */
-function moreRow(section, rest) {
+/** Under a long section: the rest of it, one press away. `rest` null: how many is not known yet — `more` reads them. */
+function moreRow(section, rest, more) {
   const li = sectionRow('')
   li.classList.add('list-more')
-  const button = Object.assign(document.createElement('button'), { type: 'button', className: 'section-more', textContent: fmt(state.t.showMore, { n: rest }) })
+  const button = Object.assign(document.createElement('button'), { type: 'button', className: 'section-more', textContent: rest === null ? state.t.showMoreUnknown : fmt(state.t.showMore, { n: rest }) })
   button.onclick = () => {
-    state.openSections.add(section.key)
+    if (section) state.openSections.add(section.key)
     renderList()
+    void more?.()
   }
   li.append(button)
   return li
@@ -1532,7 +1605,28 @@ function setFilterText(text) {
   state.filter = $('filter').value = text
   $('filter-clear').hidden = !text
   renderList()
+  if (state.filter.trim() && state.root === 'chat') findSoon()
 }
+
+// A search names files in every folder: the database finds them by name, a page at a time (what is read here already is
+// searched meanwhile). `more`: the next page of the same search.
+const SEARCH_PAGE = 200
+async function find(more = false) {
+  const needle = state.filter.trim()
+  const chat = state.ctx?.chat?.id
+  if (!needle || !chat || state.root !== 'chat') return
+  const had = more && state.searched?.needle === needle ? state.searched.entries : []
+  try {
+    const page = await gugu.files.list({ chat, name: needle, offset: had.length, limit: SEARCH_PAGE })
+    if (state.filter.trim() !== needle || state.ctx?.chat?.id !== chat) return
+    const held = new Set(had.map((entry) => entry.id))
+    state.searched = { needle, entries: [...had, ...page.filter((entry) => !held.has(entry.id))], full: page.length === SEARCH_PAGE }
+  } catch (error) {
+    return showBanner(error.code === 'denied' ? state.t.denied : fmt(state.t.failed, { e: error.message }), 'error')
+  }
+  renderList()
+}
+const findSoon = debounce(() => void find(), 250)
 
 // One folder up (上一级, and the host's Back on the phone while in a folder).
 // One of a project's folders picked, or (null) back to picking.
@@ -1553,6 +1647,7 @@ function renderFolderChoice() {
   const t = state.t
   const list = $('file-list')
   list.classList.remove('as-grid')
+  list.closest('aside.files')?.classList.remove('grid-view')
   $('files-empty').hidden = true
   list.replaceChildren(...chatFolders().map((folder) => {
     const li = Object.assign(document.createElement('li'), { className: 'file' })
@@ -1690,11 +1785,11 @@ async function moveTo(entry, folderId) {
 // under it (a folder cannot go inside itself). Where it is now is marked and cannot be picked.
 async function showMoveDialog(entry) {
   if (!canWriteHere(entry) || entry.systemRole || state.current?.entry.id === entry.id && state.current.file.readOnly) return
-  // A document page has no directory subscription. Read its chat only when Move is chosen; reuse the same tree below.
+  // A document page has no directory subscription. Read its chat's folders only when Move is chosen; the same tree below.
   if (state.ctx.file) {
     const current = state.current, file = state.ctx.file, chat = state.ctx.chat?.id
     try {
-      const entries = await gugu.files.list({ chat: entry.chat })
+      const entries = await gugu.files.list({ chat: entry.chat, kind: 'folder' })
       if (state.current !== current || state.ctx.file?.id !== file.id || state.ctx.file?.chat !== file.chat
         || state.ctx.chat?.id !== chat || !canWriteHere(entry) || current?.file.readOnly) return
       state.entries = entries
@@ -1705,8 +1800,14 @@ async function showMoveDialog(entry) {
       return
     }
   }
-  // Every folder of the chat is a place to move to: the whole tree, read once.
-  if (!state.ctx.file && state.root === 'chat' && state.whole !== true && !(await wholeThen())) return
+  // Every folder of the chat is a place to move to: all of them, read as the dialog opens (not what is in them).
+  if (!state.ctx.file && state.root === 'chat') {
+    try {
+      if (!(await readFolderTree())) return
+    } catch (error) {
+      return showBanner(error.code === 'denied' ? state.t.denied : fmt(state.t.failed, { e: error.message }), 'error')
+    }
+  }
   const t = state.t
   const off = new Set(isFolder(entry) ? [entry.id, ...under(entry.id).map((e) => e.id)] : [])
   const rows = []
@@ -1970,7 +2071,7 @@ function metaOf(entry, now) {
     // count its list came with (entry.childCount). A computer's folders are read one at a time and come with none: a count
     // only for those already entered would come and go.
     // The list counts up to 1000: 1000 there means 1000 or more.
-    const n = inCopy(entry) ? undefined : state.listed.has(entry.id) ? inside(entry.id).filter(visibleEntry).length
+    const n = inCopy(entry) ? undefined : state.listed.has(entry.id) && !state.more.has(entry.id) ? inside(entry.id).filter(visibleEntry).length
       : entry.childCount >= 1000 ? '999+' : entry.childCount
     if (n !== undefined) cells.push(['size', counted('items', { n })])
   } else {
@@ -4298,8 +4399,8 @@ function renderPicks() {
   const select = $('select-files')
   select.textContent = state.selecting || count ? t.pickDone : t.pick
   select.setAttribute('aria-pressed', String(state.selecting || count > 0))
-  const all = $('file-list').querySelector('.pick-all')
-  all?.setAttribute('aria-checked', count && count === state.order.length ? 'true' : count ? 'mixed' : 'false')
+  const checked = count && count === state.order.length ? 'true' : count ? 'mixed' : 'false'
+  for (const all of document.querySelectorAll('.pick-all')) all.setAttribute('aria-checked', checked)
   const bar = $('pick-bar')
   bar.hidden = count === 0
   if (!count) return void bar.replaceChildren()
@@ -4531,8 +4632,6 @@ function start() {
   lasso()
   $('filter').oninput = (event) => {
     setFilterText(event.target.value)
-    // A search names files in every folder: the whole tree is read for it, once (what is read so far is searched meanwhile).
-    if (state.filter.trim() && state.root === 'chat' && state.whole !== true) wholeThen(renderList)
   }
   $('filter').onkeydown = (event) => { if (event.key === 'Escape') closeSearch() }
   $('filter-clear').onclick = () => { setFilterText(''); $('filter').focus() }
@@ -4541,6 +4640,7 @@ function start() {
   $('search').addEventListener('focusout', (event) => {
     if (!state.filter && !$('search').contains(event.relatedTarget) && event.relatedTarget !== $('search-toggle')) showSearch(false)
   })
+  $('pick-all').onclick = () => pickAll()
   $('select-files').onclick = () => {
     if (state.selecting || state.picked.size) clearPicks()
     else { state.selecting = true; renderPicks() }

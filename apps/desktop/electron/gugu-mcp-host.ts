@@ -288,6 +288,11 @@ export class GuguMcpHost<TContext> {
       if (current.size === 0) this.toolsListedListeners.delete(key)
     }
   }
+  /** 本 host 发出的这个地址背后那张卡的 key;别处的地址是 undefined。 */
+  grantKeyFor(url: string): string | undefined {
+    for (const record of this.grants.values()) if (this.grantUrl(record.slot) === url) return record.key
+    return undefined
+  }
   /** 这张卡已经送出过 `tools/list` 应答(含宿主重启前) —— 晚于那一刻才来问的人(接回的会话)读这份状态。 */
   hasListedTools(key: string): boolean {
     return this.grants.get(key)?.toolsListed === true

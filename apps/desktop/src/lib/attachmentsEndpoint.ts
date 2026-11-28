@@ -1,7 +1,7 @@
 // 渲染层调 attachments 函数(core 的那一份客户端,packages/core/src/cloud/attachmentsApi.ts):这个构建的服务器,登录的人现在的令牌。
 import { commitAttachment, configuredEndpoint, declareAttachment, drawImagePreviews, placeAttachment, withUploadedAttachment, type AttachmentsEndpoint, type CommitArgs, type DeclaredAttachment } from '@gugu/core/cloud/attachmentsApi'
 import { beginAttachmentUpload } from './attachmentUploads'
-import { imagePreview } from './imagePreview'
+import { imagePreview, imageSize } from './imagePreview'
 import { resolveFileMimeType, sniffFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract'
 import { isHeicLikeFile, mustCopyRatherThanReference } from '@renderer/lib/pty/terminal-image-paths'
@@ -91,7 +91,9 @@ export async function prepareTaskAttachment(file: File): Promise<TurnFileRef | n
   const dropped = pathOfFile(file)
   const own = dropped && !mustCopyRatherThanReference(dropped) && !isHeicLikeFile(file)
   const copy = own ? null : await api.invoke('files:task-copy', { name, data: await file.arrayBuffer(), mimeType }) as { path: string; name: string; size: number; mimeType?: string }
-  const ref = { itemId: crypto.randomUUID(), version: 1, name: copy?.name ?? name, mimeType: copy?.mimeType ?? mimeType, sizeBytes: copy?.size ?? file.size, path: copy?.path ?? dropped }
+  const size = mimeType.startsWith('image/') ? await imageSize(file) : undefined
+  const ref = { itemId: crypto.randomUUID(), version: 1, name: copy?.name ?? name, mimeType: copy?.mimeType ?? mimeType, sizeBytes: copy?.size ?? file.size, path: copy?.path ?? dropped,
+    ...(size ? { imageDimensions: size } : {}) }
   // The picture shows from this device until the folder can answer for it (a first message that is a picture alone).
   if (mimeType.startsWith('image/') && !isHeicLikeFile(file)) holdSentItem(ref.itemId, ref.version, file)
   return ref
@@ -141,7 +143,8 @@ export async function placeTaskAttachment(file: File, prepared: TurnFileRef | nu
       signal?.throwIfAborted()
       return placeAttachment(endpoint, { staging_key, chat_id: to.chatId, file_name: name, as_user_id: to.owner, content_type: mimeType })
     }, { signal, onProgress: onProgress && (progress => onProgress(progress.loaded, progress.total ?? file.size)) }) as { id: string; version: number }
-    placement.published = { itemId: item.id, version: item.version, name, mimeType, sizeBytes: file.size }
+    const size = mimeType.startsWith('image/') ? await imageSize(file) : undefined
+    placement.published = { itemId: item.id, version: item.version, name, mimeType, sizeBytes: file.size, ...(size ? { imageDimensions: size } : {}) }
   }
   signal?.throwIfAborted()
   await prefetchTaskFiles(to, [placement.published], signal)

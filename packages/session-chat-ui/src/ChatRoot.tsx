@@ -443,8 +443,9 @@ export function ChatRoot(props: ChatRootProps) {
     const height = props.composer !== 'slot' || effectiveComposerPlacement() === 'center' ? 0 : boxHeight ?? composerSlotEl?.getBoundingClientRect().height ?? 0;
     setSlotPadBottom(height);
     // The composer layer's height for a host's CSS: a host whose surface shows through (no painted fades) masks the
-    // scroller off where the layer begins.
-    outerEl?.style.setProperty('--chat-composer-slot-h', `${height}px`);
+    // scroller off where the layer begins. On the scroller, which is what reads it, and registered not inherited
+    // (desktop tokens.css): inherited from the root it restyled the whole transcript on every change of the composer's height.
+    scrollEl?.style.setProperty('--chat-composer-slot-h', `${height}px`);
   };
 
   const setComposerPlacement = (

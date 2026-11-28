@@ -10,6 +10,10 @@ const rpcs = new Set<string>(Object.values(PERMANENT_REMOVAL_RPCS))
 // Explicit deletion and named non-identity local cleanup are the only roster-removal callers.
 const removalCallers: Record<string, Record<string, string>> = {
   permanentlyDeleteAgentSession: {},
+  // owner 2026-11-26: the one explicit "permanently delete" in 已归档 purges the removed identities' DM history.
+  purgeOwnedAgentHistory: {
+    'apps/desktop/electron/sessionpage/sessionpage-identity-host.ts': 'purgeHistory',
+  },
   permanentlyRemove: {
     'packages/core/src/cloud/devices.ts': 'removeDevice',
   },
@@ -20,6 +24,11 @@ const removalCallers: Record<string, Record<string, string>> = {
     'packages/core/src/cloud/deviceRuntimeHost.ts': 'dropLocalAgentByGuguUserId',
     'packages/core/src/local/agent/deviceCommandRuntime.ts': 'pruneDeadGuestRecords',
   },
+}
+// Task cleanup archives; session rows are deleted in exactly one place: the owner's explicit permanent delete of an
+// already-archived session (owner 2026-11-26, 已归档 → 永久删除). Every other `.delete(sessions)` stays an error.
+const sessionRowDeleters: Record<string, string> = {
+  'apps/desktop/electron/session/main/core/sessions/permanently-delete-session.ts': 'deleteLocalSessionRows',
 }
 function enclosingFunction(node: ts.Node): string | undefined {
   for (let parent = node.parent; parent; parent = parent.parent) {
@@ -53,7 +62,8 @@ export function removalViolations(file: string, text: string): string[] {
       if (!removalCallers[operation][file] || removalCallers[operation][file] !== enclosingFunction(node)) flag(node)
     }
     if (ts.isCallExpression(node)) {
-      if (ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'delete' && /(?:^|\.)sessions$/.test(node.arguments[0]?.getText(source) ?? '')) flag(node)
+      if (ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'delete' && /(?:^|\.)sessions$/.test(node.arguments[0]?.getText(source) ?? '')
+        && !(sessionRowDeleters[file] && sessionRowDeleters[file] === enclosingFunction(node))) flag(node)
     }
     ts.forEachChild(node, visit)
   }

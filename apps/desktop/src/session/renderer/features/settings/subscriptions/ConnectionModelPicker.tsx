@@ -1,4 +1,4 @@
-import type { CustomModelMeta } from '@gugu/session-core/models/custom-model'
+import type { CustomModelMeta, ModelProtocol } from '@gugu/session-core/models/custom-model'
 import type { ConnectionModelList, CustomModelProtocolProbe } from '@gugu/session-core/workspace-server/agent-config'
 import { metadataSeparator } from '@/i18n/format'
 import { useEffect, useId, useState } from 'react'
@@ -27,14 +27,19 @@ import { errorText } from './subscription-queries'
 export type ConnectionModelSource =
   | { apiKey: string; endpoints: CustomModelMeta['endpoints'] }
   | { connectionId: string; endpoints?: CustomModelMeta['endpoints'] }
-  | ({ baseUrl: string } & ({ apiKey: string } | { connectionId: string }))
+  // `modelId`: the model the person named, so the check asks about it rather than the first listed one (gugu-dev#1617).
+  | ({ baseUrl: string; modelId?: string } & ({ apiKey: string } | { connectionId: string }))
 
-/** `endpoints`: what the background check found the typed address speaks (only for a `baseUrl` source; may be empty). */
+/**
+ * `endpoints`: what the background check found the typed address speaks (only for a `baseUrl` source; may be empty).
+ * `undecided`: the protocols the check could not decide, neither taken nor answered no to: it ran out of time, could not
+ * reach the address or did not get to ask (gugu-dev#1617).
+ */
 export type ModelList =
   | { kind: 'waiting' }
   | { kind: 'reading' }
-  | { kind: 'listed'; models: string[]; endpoints?: CustomModelMeta['endpoints'] }
-  | { kind: 'unlisted'; reason: Extract<ConnectionModelList, { kind: 'unlisted' }>['reason']; endpoints?: CustomModelMeta['endpoints']; refused?: CustomModelMeta['endpoints'] }
+  | { kind: 'listed'; models: string[]; endpoints?: CustomModelMeta['endpoints']; undecided?: ModelProtocol[] }
+  | { kind: 'unlisted'; reason: Extract<ConnectionModelList, { kind: 'unlisted' }>['reason']; endpoints?: CustomModelMeta['endpoints']; refused?: CustomModelMeta['endpoints']; undecided?: ModelProtocol[] }
   | { kind: 'failed'; message: string }
 
 /** 手填的几个模型名:逗号(中英文)、空格、换行都算隔开;去空、去重。 */
@@ -44,14 +49,17 @@ export function parseModelNames(text: string): string[] {
 
 /** The background check's answer as the model list a typed address gives. */
 export function probeModelList(probe: CustomModelProtocolProbe): ModelList {
-  const { endpoints, models, failures } = probe
-  if (models.length) return { kind: 'listed', models, endpoints }
-  if (failures.some(({ reason }) => reason === 'unauthorized')) return { kind: 'unlisted', reason: 'unauthorized', endpoints, refused: probe.refused ?? [] }
-  // The address answered, just without a list: the person names the model and the check reruns with it on save.
-  if (endpoints.length || failures.some(({ step, reason }) => step === 'models' && reason === 'no-list')) return { kind: 'unlisted', reason: 'no-list', endpoints }
-  const failure = failures.find(({ reason }) => reason !== 'no-list' && reason !== 'no-model' && reason !== 'refused')
+  const { models, failures } = probe
+  const undecided = failures.flatMap(({ step, reason }) => step !== 'models' && reason !== 'refused' && reason !== 'unauthorized' && reason !== 'model-not-found' ? [step] : [])
+  const endpoints = probe.endpoints
+  if (models.length) return { kind: 'listed', models, endpoints, ...(undecided.length ? { undecided } : {}) }
+  if (failures.some(({ reason }) => reason === 'unauthorized')) return { kind: 'unlisted', reason: 'unauthorized', endpoints, refused: probe.refused ?? [], ...(undecided.length ? { undecided } : {}) }
+  // The address answered, just without a list (or only that it does not offer the model it was asked about): the person
+  // names the model and the check reruns with it on save.
+  if (endpoints.length || probe.unserved?.length || failures.some(({ step, reason }) => step === 'models' && reason === 'no-list')) return { kind: 'unlisted', reason: 'no-list', endpoints, ...(undecided.length ? { undecided } : {}) }
+  const failure = failures.find(({ reason }) => reason !== 'no-list' && reason !== 'no-model' && reason !== 'refused' && reason !== 'model-not-found')
   const reason = failure?.reason
-  return { kind: 'unlisted', reason: reason && reason !== 'no-model' && reason !== 'refused' ? reason : 'unreachable', endpoints }
+  return { kind: 'unlisted', reason: reason && reason !== 'no-model' && reason !== 'refused' && reason !== 'model-not-found' ? reason : 'unreachable', endpoints, ...(undecided.length ? { undecided } : {}) }
 }
 
 /** key / 地址一变就重读(表单里打字时等 400ms 停下再读);已存的连接立刻读。 */

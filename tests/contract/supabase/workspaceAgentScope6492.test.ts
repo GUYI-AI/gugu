@@ -144,6 +144,7 @@ const staged = new Map<string, Uint8Array>()
  * The attachments function's place, as it is in the database: the staged bytes registered as a blob (service_role, as the
  * function does after reading them), then the *_as door as the signed-in person — its refusal mapped as the function maps it.
  */
+const { workspaceUploadKind } = await import('@gugu/core/shared/workspaceUpload.mjs')
 vi.mock('@gugu/core/cloud/attachmentsApi', async (importOriginal) => {
   const real = await importOriginal<typeof import('@gugu/core/cloud/attachmentsApi')>()
   return {
@@ -161,6 +162,11 @@ vi.mock('@gugu/core/cloud/attachmentsApi', async (importOriginal) => {
       await db.query('SELECT chat.file_blob_register($1,$2,$3,$4,$5,null,null)',
         [current!.owner, key, createHash('sha256').update(bytes).digest('hex'), bytes.byteLength, args.content_type ?? 'application/octet-stream'])
       await db.query('RESET role')
+      // The function's registration: a text file the shared classifier makes a document is placed as one (registerStaged).
+      const kind = args.file_name ? workspaceUploadKind(String(args.file_name), String(args.content_type ?? ''), bytes) : null
+      if (kind?.kind === 'document') {
+        await db.query('UPDATE chat.file_blob_uploads SET document=$2 WHERE staging_key=$1', [key, { text: kind.text, content_type: kind.contentType }])
+      }
       const as = args.as_user_id ?? current!.owner
       const { data, error } = args.item_id
         ? await client.rpc('file_replace_as', { p_staging_key: key, p_item_id: args.item_id, p_as_user_id: as, p_expected_version: args.expected_version })
@@ -286,7 +292,7 @@ describe('#6492 an App acting for an agent, against the migrated database', () =
     const w = await world()
     // A file owner made, written directly as the server (people write only through the doors since gugu-supabase 20261017083403).
     const { rows } = await db.query<{ id: string }>(
-      `INSERT INTO chat.workspace_items (chat_id, kind, filename, inline_text, created_by) VALUES ($1,'document','Owner notes','OWNER-6492',$2) RETURNING id`,
+      `INSERT INTO chat.workspace_items (chat_id, kind, filename, inline_text, created_by) VALUES ($1,'document','Owner notes.md','OWNER-6492',$2) RETURNING id`,
       [w.group, w.owner],
     )
     await db.query('RESET role')
@@ -301,6 +307,21 @@ describe('#6492 an App acting for an agent, against the migrated database', () =
     expect(await files.versions(surface, { ref: { id: doc } })).toEqual([])
   })
 
+  it('a folder past 1,000 items reads whole when the database leaves total out (gugu-supabase workspace_list_recent_page): every row, once', async () => {
+    const w = await world()
+    await join(w)
+    const folder = (await db.query<{ id: string }>(
+      `INSERT INTO chat.workspace_items (chat_id, kind, filename, content_type, created_by) VALUES ($1,'folder','Many','inode/directory',$2) RETURNING id`,
+      [w.group, w.owner])).rows[0]!.id
+    await db.query(`INSERT INTO chat.workspace_items (chat_id, parent_id, kind, filename, inline_text, created_by)
+      SELECT $1, $2, 'document', 'n' || g || '.md', '', $3 FROM generate_series(1, 1201) g`, [w.group, folder, w.owner])
+    await db.query('RESET role')
+    const { files } = agentFiles(w)
+    const listed = await files.groupFiles(w.group, { asAgent: w.agent, folder })
+    expect(listed).toHaveLength(1201)
+    expect(new Set(listed.map((entry) => entry.id)).size).toBe(1201)
+  })
+
   it('*_as 按 uuid 查行:不是 uuid 的串与不存在同一句话;get_as 仍带正文给已发出的 MCP,其余只回元数据', async () => {
     const w = await world()
     await join(w)
@@ -308,7 +329,7 @@ describe('#6492 an App acting for an agent, against the migrated database', () =
     for (const bad of [randomUUID(), `${randomUUID()}' OR 1=1 --`]) {
       await expect(files.rename(surface, { ref: { id: bad }, name: 'x' })).rejects.toMatchObject({ code: 'not-found' })
     }
-    const created = await files.create(w.group, { name: 'Plan', content: 'BODY-6492' }, { asAgent: w.agent })
+    const created = await files.create(w.group, { name: 'Plan.md', content: 'BODY-6492' }, { asAgent: w.agent })
     // 大写的 uuid 也是同一行(按 uuid 比,不按文本比)。
     expect(((await client.rpc('workspace_get_as', { p_item_id: created.id.toUpperCase(), p_as_user_id: w.agent })).data ?? [])[0]).toMatchObject({ id: created.id })
     const columnsOf = async (sql: string, values: unknown[]) => {
@@ -323,7 +344,7 @@ describe('#6492 an App acting for an agent, against the migrated database', () =
     expect(await columnsOf('SELECT * FROM chat.workspace_get_as($1, $2)', [created.id, w.agent])).toEqual(expect.arrayContaining([...meta, 'inline_text', 'epoch']))
     expect(await columnsOf('SELECT * FROM chat.workspace_list_as($1, $2)', [w.group, w.agent])).toEqual(expect.arrayContaining([...meta, 'total']))
     // 改名 = 原地 move(gugu-supabase 20261017083403 起 workspace_update_document_as 没了)。
-    expect(await columnsOf('SELECT * FROM chat.workspace_move_as($1, $2, NULL, $3)', [created.id, w.agent, 'Plan 2'])).toEqual(expect.arrayContaining(meta))
+    expect(await columnsOf('SELECT * FROM chat.workspace_move_as($1, $2, NULL, $3)', [created.id, w.agent, 'Plan 2.md'])).toEqual(expect.arrayContaining(meta))
     // 已发出的旧 MCP 只按名传前两个参数:list 照旧拿到全部行(只剩元数据),get 照旧带正文。
     await asUser(w.owner)
     const oldList = await db.query('SELECT * FROM chat.workspace_list_as(p_chat_id => $1, p_as_user_id => $2)', [w.group, w.agent])
@@ -333,14 +354,14 @@ describe('#6492 an App acting for an agent, against the migrated database', () =
     expect(oldGet.rows[0]?.inline_text).toBe('BODY-6492')
     const projected = await client.rpc('workspace_get_as', { p_item_id: created.id, p_as_user_id: w.agent }).select('id,filename')
     expect(projected.error).toBeNull()
-    expect(projected.data).toEqual([{ id: created.id, filename: 'Plan 2' }])
+    expect(projected.data).toEqual([{ id: created.id, filename: 'Plan 2.md' }])
   })
 
   it('workspace_list_as 在库里分页与筛选(已发出的 MCP 用它):总数、下一段、名字按字面(% _ 不是通配)、种类;按名字找文件也用它', async () => {
     const w = await world()
     await join(w)
     const { files, surface } = agentFiles(w)
-    const names = ['100% done', 'a_b', 'axb', 'Notes']
+    const names = ['100% done.md', 'a_b.md', 'axb.md', 'Notes.md']
     for (const name of names) await files.create(w.group, { name, content: '' }, { asAgent: w.agent })
     const list = async (args: Record<string, unknown>) =>
       ((await client.rpc('workspace_list_as', { p_chat_id: w.group, p_as_user_id: w.agent, ...args })).data ?? []) as Array<{ filename: string; total: string }>
@@ -349,13 +370,13 @@ describe('#6492 an App acting for an agent, against the migrated database', () =
     expect(Number(first[0]!.total)).toBe(4)
     expect(await list({ p_offset: 3, p_limit: 3 })).toHaveLength(1)
     expect(await list({ p_offset: 40, p_limit: 20 })).toEqual([])
-    expect((await list({ p_name: '%' })).map((row) => row.filename)).toEqual(['100% done'])
-    expect((await list({ p_name: '_' })).map((row) => row.filename)).toEqual(['a_b'])
-    expect((await list({ p_name: 'NOTES' })).map((row) => row.filename)).toEqual(['Notes'])
+    expect((await list({ p_name: '%' })).map((row) => row.filename)).toEqual(['100% done.md'])
+    expect((await list({ p_name: '_' })).map((row) => row.filename)).toEqual(['a_b.md'])
+    expect((await list({ p_name: 'NOTES' })).map((row) => row.filename)).toEqual(['Notes.md'])
     expect(await list({ p_kind: 'file' })).toEqual([])
     // The App names a file by its name through the same door: exactly that name, never the ILIKE neighbour.
-    expect(await files.rename(surface, { ref: { chat: w.group, name: 'a_b' }, name: 'a_b.md' })).toMatchObject({ name: 'a_b.md' })
-    expect((await files.groupFiles(w.group, { asAgent: w.agent })).map((entry) => entry.name).sort()).toEqual(['100% done', 'Notes', 'a_b.md', 'axb'])
+    expect(await files.rename(surface, { ref: { chat: w.group, name: 'a_b.md' }, name: 'a_b.txt' })).toMatchObject({ name: 'a_b.txt' })
+    expect((await files.groupFiles(w.group, { asAgent: w.agent })).map((entry) => entry.name).sort()).toEqual(['100% done.md', 'Notes.md', 'a_b.txt', 'axb.md'])
   })
 
   it('建文件、改名(不动内容)、上传、给文件改名、删除:created_by 是 agent,来源消息记上;存成文件的是一份 blob,客户端不删字节', async () => {
@@ -364,12 +385,15 @@ describe('#6492 an App acting for an agent, against the migrated database', () =
     const { files, surface, bytes } = agentFiles(w)
     const message = randomUUID()
 
-    const created = await files.create(w.group, { name: 'Plan', content: 'v1', sourceMessageIds: [message] }, { asAgent: w.agent })
-    expect(created).toMatchObject({ name: 'Plan', type: 'text', createdBy: { id: `user:${w.agent}` }, sourceMessageIds: [message] })
-    expect(await files.rename(surface, { ref: { id: created.id }, name: 'Plan.md' })).toMatchObject({ id: created.id, name: 'Plan.md' })
+    // A document's name is its format: one without a text suffix is refused, never guessed (gugu-supabase workspace_document_type).
+    await expect(files.create(w.group, { name: 'Plan', content: 'v1' }, { asAgent: w.agent })).rejects.toMatchObject({ code: 'invalid', message: expect.stringContaining('「Plan」没有文本文件的后缀') })
+    const created = await files.create(w.group, { name: 'Plan.md', content: 'v1', sourceMessageIds: [message] }, { asAgent: w.agent })
+    expect(created).toMatchObject({ name: 'Plan.md', contentType: 'text/markdown', type: 'text', createdBy: { id: `user:${w.agent}` }, sourceMessageIds: [message] })
+    await expect(files.rename(surface, { ref: { id: created.id }, name: 'Plan' })).rejects.toMatchObject({ code: 'invalid' })
+    expect(await files.rename(surface, { ref: { id: created.id }, name: 'Plan.txt' })).toMatchObject({ id: created.id, name: 'Plan.txt', contentType: 'text/plain' })
     const body = await db.query('SELECT inline_text FROM chat.workspace_items WHERE id = $1', [created.id])
     expect(body.rows[0]?.inline_text).toBe('v1')
-    const json = await files.create(w.group, { name: 'state.json', content: '{}', contentType: 'application/json' }, { asAgent: w.agent })
+    const json = await files.create(w.group, { name: 'state.json', content: '{}' }, { asAgent: w.agent })
     // bigint 经 node-pg 回来是字符串,PostgREST 回的是数。
     expect(json).toMatchObject({ contentType: 'application/json' })
     expect(Number(json.size)).toBe(2)
@@ -403,7 +427,7 @@ describe('#6492 an App acting for an agent, against the migrated database', () =
     await join(w)
     // A file peer made, written directly as the server (people write only through the doors since gugu-supabase 20261017083403).
     const { rows } = await db.query<{ id: string }>(
-      `INSERT INTO chat.workspace_items (chat_id, kind, filename, inline_text, created_by) VALUES ($1,'document','Peer notes','PEER-6492',$2) RETURNING id`,
+      `INSERT INTO chat.workspace_items (chat_id, kind, filename, inline_text, created_by) VALUES ($1,'document','Peer notes.md','PEER-6492',$2) RETURNING id`,
       [w.group, w.peer],
     )
     await db.query('RESET role')
@@ -450,10 +474,11 @@ describe('G1 files.replace acting for an agent: a stored file\'s next version', 
     await expect(files.replace(surface, { ref: { id: uploaded!.id }, file: { name: '', contentType: '', bytes: bytes([8]) }, expectedVersion: 1 }))
       .rejects.toMatchObject({ code: 'content-changed', message: expect.stringMatching(/is version 2 now, not 1/) })
     expect(await blobOf()).toBe(second)
-    // 文本文件不换版本:拒,说改用 edit
-    const doc = await files.create(w.group, { name: 'Notes', content: 'x' }, { asAgent: w.agent })
-    await expect(files.replace(surface, { ref: { id: doc.id }, file: { name: '', contentType: '', bytes: bytes([1]) }, expectedVersion: doc.version }))
-      .rejects.toThrow(/live text file/)
+    // A text document's next version goes to the server's door too (API 67), never refused here: the database takes it only
+    // once the file service has checked it against the live text (prepared), which this fixture has no service for.
+    const doc = await files.create(w.group, { name: 'Notes.md', content: 'x' }, { asAgent: w.agent })
+    await expect(files.replace(surface, { ref: { id: doc.id }, file: { name: '', contentType: '', bytes: bytes('# y') }, expectedVersion: doc.version }))
+      .rejects.toThrow(/Document replacement is not prepared/)
 
     removed.length = 0
     await files.remove(surface, { ref: { id: uploaded!.id } })

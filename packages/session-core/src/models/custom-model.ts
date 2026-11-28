@@ -113,10 +113,16 @@ export const customModelMetaSchema = z.object({
   /** The protocol the person picked for a harness (harness id → protocol); a harness not named here takes `matchCustomModel`'s order. */
   harnessProtocols: z.record(z.string(), modelProtocolSchema).optional(),
   /**
-   * The address refused the key when this was saved and the person added it anyway with a protocol of their choosing
-   * ("Add anyway"). The first real request tells whether the key works; a later save that the address answers clears it.
+   * The address refused the key (401/403) when this was saved; the save went ahead with the key as typed and the protocol
+   * inferred from the refusal. The first real request tells whether the key works; a later save that the address answers clears it.
    */
   unverified: z.boolean().optional(),
+  /** What the check that left it unverified found, kept for diagnosis and not shown (owner 2026-11-27); absent on older records. */
+  unverifiedReason: z.object({
+    reason: z.enum(['model-not-found', 'answered', 'unchecked', 'unauthorized', 'unreachable', 'dns', 'timeout', 'certificate', 'connection-refused', 'redirect', 'proxy']),
+    /** The model the check asked about. */
+    modelId: z.string().max(200).optional(),
+  }).optional(),
   removed: z.boolean().optional(),
 });
 export type CustomModelMeta = z.infer<typeof customModelMetaSchema>;
@@ -206,6 +212,13 @@ export type PiCustomModelProvider = {
   models: readonly CustomModelEntry[];
 };
 
+/**
+ * How long checking which protocols an address takes may run in all, every request included (gugu-dev#1617). The requests run
+ * side by side and each may use all of it: a relay's first request to a model it has to wake measured over 10 s, the next
+ * ones 3–8 s. What has not answered by then reads as timed out.
+ */
+export const CUSTOM_MODEL_PROBE_DEADLINE_MS = 25_000;
+
 /** A session owns this choice; changing another session or a default cannot replace it. */
 export const sessionModelSelectionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('native'), modelId: z.string().optional() }),
@@ -224,8 +237,9 @@ export const customModelConnectionSchema = z.object({
   name: z.string(),
   credentialRef: z.string(),
   keySaved: z.boolean(),
+  /** A key is stored but this device cannot read it now (the system keychain refused it); `keySaved` is false (#4043). */
+  keyUnreadable: z.literal(true).optional(),
   managedNativeHarnesses: z.array(z.enum(['codex', 'claude'])).optional(),
-  keyConflict: z.boolean().optional(),
   keyLast4: z.string().max(4).optional(),
   ...customModelMetaSchema.shape,
   models: z.array(customModelViewSchema),
@@ -259,9 +273,15 @@ export function runtimeModelId(value: string | undefined | null): string | undef
 export type CustomModelUnavailableReason = 'protocol' | 'missing-key' | 'unsupported' | 'no-model';
 
 /**
+ * Which protocol a harness is converted to when the address does not take its own: Responses first, then OpenAI Chat
+ * (owner 2026-11-27 03:17, routing is automatic). The settings dialog lists what an address takes in this order too.
+ */
+export const CONVERSION_PREFERENCE: readonly ModelProtocol[] = ['openai-responses', 'openai-chat-completions', 'anthropic-messages', 'gemini-generate-content'];
+
+/**
  * The protocol the person picked for this harness wins when the harness can use it; otherwise native protocol, then the
  * writer's other explicitly supported protocols, then a protocol the harness declares the bundled local router can
- * convert (`converted: true`).
+ * convert (`converted: true`), in `CONVERSION_PREFERENCE` order.
  */
 export function matchCustomModel(input: {
   harness?: string;
@@ -275,7 +295,7 @@ export function matchCustomModel(input: {
 }): { endpoint: CustomModelMeta['endpoints'][number]; routeId?: string; converted?: true; reason?: never } | { endpoint?: never; routeId?: never; converted?: never; reason: CustomModelUnavailableReason } {
   if (!input.nativeProtocol) return { reason: 'unsupported' };
   const direct = [input.nativeProtocol, ...(input.protocols ?? [])];
-  const convertible = input.convertFrom ?? [];
+  const convertible = [...(input.convertFrom ?? [])].sort((a, b) => CONVERSION_PREFERENCE.indexOf(a) - CONVERSION_PREFERENCE.indexOf(b));
   const find = (protocols: readonly HarnessWireProtocol[]) =>
     protocols.map((protocol) => input.connection.endpoints.find((item) => item.protocol === protocol)).find(Boolean);
   const routes = input.connection.routes;

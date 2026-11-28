@@ -382,7 +382,7 @@ export default {
     "send": "Send",
     "settings": "Settings"
   },
-  "linkPill": {"unavailable": "Unavailable: removed, or you cannot see it", "message": "{{sender}}: {{words}}", "noSuchMessage": "No message in this chat starts with {{prefix}}", "messageUnavailable": "Message unavailable", "chatUnavailable": "Chat unavailable", "sessionUnavailable": "Session unavailable", "messages": "{{count}} messages", "severalMessages": "{{count}} messages in this chat start with {{prefix}}. Pick one"},
+  "linkPill": {"unavailable": "Unavailable: removed, or you cannot see it", "message": "{{sender}}: {{words}}", "noSuchMessage": "No message in this chat starts with {{prefix}}", "messageUnavailable": "Message unavailable", "chatUnavailable": "Chat unavailable", "sessionUnavailable": "Session unavailable", "messages": "{{count}} messages", "severalMessages": "{{count}} messages in this chat start with {{prefix}}. Pick one", "sessions": "{{count}} sessions", "severalSessions": "{{count}} of your sessions start with {{prefix}}. Pick one"},
   "attachmentView": {
     "types": {"pdf": "PDF document", "word": "Word document", "excel": "Excel spreadsheet", "presentation": "Presentation", "text": "Text", "markdown": "Markdown document", "csv": "CSV spreadsheet", "html": "Web page", "json": "JSON document", "archive": "Archive", "image": "Image", "audio": "Audio", "video": "Video"},
     "fileGone": "File deleted",
@@ -833,7 +833,7 @@ export default {
   },
   "message": {
     "myAgentTag": "my agent",
-    "removedIdentityTag": "removed",
+    "removedMemberName": "{{name}} (removed)",
     "agentOwnerUnavailableTag": "owner unavailable",
     "agentOwnerTag": "{{owner}}'s agent",
     "agentOwnerSuffix": " ({{owner}}'s agent)",
@@ -845,7 +845,8 @@ export default {
       "keepFailed": "Could not change",
       "copy": "Copy",
       "copyLink": "Copy link",
-      "openLink": "Open link",
+      "openLink": "Open in Gugu browser",
+      "openLinkSystem": "Open in system browser",
       "selectText": "Select text",
       "delete": "Delete",
       "deleteConfirm": "Delete this message? It cannot be restored.",
@@ -869,6 +870,7 @@ export default {
     "copyFailed": "Could not copy. Select the text and copy it manually.",
     "forwarded": "↪ Forwarded",
     "forwardedFrom": "↪ From {{line}}",
+    "targetingSeparator": ", ",
     "me": "Me",
     "read": "Read",
     "readCount": "Read by {{read}}",
@@ -905,6 +907,11 @@ export default {
       }
     },
     "showQuoted": "Go to the quoted message",
+    "htmlRender": {
+      "close": "Close",
+      "expand": "Expand",
+      "title": "Rendered page"
+    },
     "svgFigure": {
       "invalid": "This SVG could not be drawn: it is not a well-formed SVG document",
       "noViewbox": "This SVG could not be drawn: its root needs a viewBox",

@@ -92,17 +92,29 @@ describe('markdown dialect', () => {
     expect(urls('gugu://session/ and guguX://session/x')).toEqual([]);
   });
 
-  // Owner 2026-11-16: `msg:<first 8+ characters>` in a message links to that message in the message's own chat.
-  it('links msg:<prefix> in a message to its own chat, and only there', () => {
-    const chat = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  // Owner 2026-11-16 / 2026-11-27: `msg:` / `session:` and the first 8+ characters (or the whole id) in a message is a link.
+  it('links msg: and session: short ids in a message, as written, and only there', () => {
+    const chat = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', message = '11111111-2222-4333-8444-555555555555';
     const links = (text: string, messageChat?: string) => collect(run(text, { trust: 'chat', messageChat }), 'link')
       .map((node) => [('url' in node ? node.url : ''), textOf(node)]);
     expect(links('看 msg:1A2B3C4D，还有 msg:1a2b3c4d-5e.', chat)).toEqual([
-      [`gugu-chat://${chat}/1a2b3c4d`, 'msg:1A2B3C4D'], [`gugu-chat://${chat}/1a2b3c4d-5e`, 'msg:1a2b3c4d-5e'],
+      ['msg:1a2b3c4d', 'msg:1A2B3C4D'], ['msg:1a2b3c4d-5e', 'msg:1a2b3c4d-5e'],
     ]);
-    // Too short, not hex, inside a word or code, or no chat to resolve in: text as written.
-    expect(links('msg:1a2b3c4 msg:zzzzzzzz xmsg:1a2b3c4d `msg:1a2b3c4d`', chat)).toEqual([]);
-    expect(links('msg:1a2b3c4d')).toEqual([]);
+    expect(links('车道是 session:4df04861。', chat)).toEqual([['session:4df04861', 'session:4df04861']]);
+    // A whole message id is that message's link; a whole session id stays the short id, resolved like a prefix.
+    expect(links(`msg:${message} session:${message}`, chat)).toEqual([
+      [`gugu-chat://${chat}/${message}`, `msg:${message}`], [`session:${message}`, `session:${message}`],
+    ]);
+    // Too short, not hex, inside a word, a path or code, or no chat to resolve in: text as written.
+    expect(links('msg:1a2b3c4 msg:zzzzzzzz xmsg:1a2b3c4d `msg:1a2b3c4d` a/session:4df04861', chat)).toEqual([]);
+    expect(links('msg:1a2b3c4d session:4df04861')).toEqual([]);
+  });
+
+  // Owner 2026-11-27: a whole link with a short id in it is no link — a reference is whole, or short.
+  it('leaves a conversation link holding a short message id as text', () => {
+    const chat = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const urls = (text: string) => collect(run(text, { trust: 'chat' }), 'link').map((node) => ('url' in node ? node.url : ''));
+    expect(urls(`see gugu-chat://${chat}/1a2b3c4d.`)).toEqual([]);
   });
 
   it('keeps raw HTML and images literal for chat trust, and parses them for documents', () => {

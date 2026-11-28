@@ -13,15 +13,7 @@
  * ⇒ 这里读的不是"红色出现了几次"。**只数颜色的判据会被"把其中一个删掉"满足，而删掉不是修好。**
  * 读的是：两个作用域各自的记号仍然在（阳性对照），而它们的**字形集合互不相交**（目标项）。
  *
- * # ⚠️ 一个会满足 DOM 判据却仍然分不清的实现长什么样
- *
- * 把两枚 `⊗` 换成两枚**不同但都很像叉**的字形 —— DOM 上可分，屏幕上仍然分不清。
- * 所以这里还有一条**形状**判据：tool 级的记号必须是**点**（近似方、≤ 24px），
- * turn 级的记号必须是**跨度**（发丝高、宽高比 ≥ 8）。一枚换过的字形仍然是点，过不了它。
- * ⚠️ 这条契约跑在 480px 的裸 host 上，那里余量足够，跨度线一定画得出来；产品最窄那一档
- * （transcript 只剩约 474px）线会按设计归零，那一档由 e2e 自己判 —— 见
- * `e2e/electron/task-failure-scope-3568.spec.ts`(#6270 已删) 里 trail 的「真跨度 / 整条归零」两态判据。
- * 而人能不能真的一眼分开，只有真渲染截图能答 —— 那半在 `e2e/electron/task-failure-scope-3568.spec.ts`(#6270 已删)。
+ * The turn marker is a two-pixel vertical rule. The failed tool keeps its status icon.
  *
  * # 变异对照
  *
@@ -35,7 +27,7 @@ import { ROW_H } from '@session-chat/components/engine/row-metrics'
 import { IconError } from '@session-chat/components/primitives/icons'
 import { toolUnitDef } from '@session-chat/components/rows/tools/tool/tool.def'
 import { turnOutcomeUnitDef } from '@session-chat/components/rows/turn-outcome/turn-outcome.def'
-import { outcomeRow, outcomeRuleTrail } from '@session-chat/components/rows/turn-outcome/turn-outcome.css'
+import { outcomeRow, failureRule } from '@session-chat/components/rows/turn-outcome/turn-outcome.css'
 import { defineUnit } from '@session-chat/core/units'
 import type { ChatToolCall, TurnOutcomeItem } from '@session-chat/model'
 import { vars } from '@session-chat/styles/theme.css'
@@ -221,12 +213,8 @@ describe('failure marks say which scope they answer for (#3568)', () => {
     }
 
     const rule = widestRule(turn.ruleBoxes)
-    expect(rule.h, `the turn-scope mark is ${rule.h}px tall — a hairline, not a box`).toBeLessThanOrEqual(2)
-    expect(
-      rule.w / rule.h,
-      `the turn-scope mark measured ${rule.w}×${rule.h} (ratio ${(rule.w / rule.h).toFixed(1)}) — ` +
-        'it has to read as a span, which is the whole difference from a point'
-    ).toBeGreaterThanOrEqual(8)
+    expect(rule.w).toBe(2)
+    expect(rule.h).toBeGreaterThanOrEqual(20)
   })
 
   it('两个作用域用的是同一个红 —— 修可分性不许顺手把调色板变宽', async () => {
@@ -242,7 +230,7 @@ describe('failure marks say which scope they answer for (#3568)', () => {
     ).toBe(tool.markColor)
   })
 
-  it('边界线用的是分隔线颜色，不是失败色', async () => {
+  it('paints the leading marker in the same danger color as the label', async () => {
     let ruleColor = ''
     let labelColor = ''
     await renderAndMeasureUnit(
@@ -260,11 +248,7 @@ describe('failure marks say which scope they answer for (#3568)', () => {
       HOST_COMMANDS
     )
     expect(ruleColor, 'the rule colour did not resolve').toMatch(/^rgba?\(/)
-    expect(
-      ruleColor,
-      'the boundary rule is painted in the failure colour — that stacks a fourth red into the very ' +
-        'spot this ticket is about. The span says scope; the wording says severity.'
-    ).not.toBe(labelColor)
+    expect(ruleColor).toBe(labelColor)
   })
 
   it('收尾提示有自己的不透明 surface，不透出正文', async () => {
@@ -341,13 +325,13 @@ const collidingTurnOutcomeDef = defineUnit<TurnOutcomeItem, { rowH: number }>({
         data-outcome="error"
         role="alert"
         class={outcomeRow}
-        style={{ height: `${props.vars.rowH}px`, color: vars.fgError }}
+        style={{ position: 'relative', height: `${props.vars.rowH}px`, color: vars.fgError }}
       >
         <span data-slot="turn-outcome-icon" aria-hidden="true" style={{ display: 'inline-flex' }}>
           <IconError />
         </span>
         <span data-slot="turn-outcome-label">这一轮失败了</span>
-        <span data-slot="turn-outcome-rule" data-rule="trail" aria-hidden="true" class={outcomeRuleTrail} />
+        <span data-slot="turn-outcome-rule" data-rule="leading" aria-hidden="true" class={failureRule} />
       </div>
     )
   }
@@ -377,8 +361,8 @@ describe('变异对照：把同一枚字形放回 turn 级，探测器必须红�
       expect(box.w / box.h).toBeLessThan(2)
     }
     const rule = widestRule(turn.ruleBoxes)
-    expect(rule.h).toBeLessThanOrEqual(2)
-    expect(rule.w / rule.h).toBeGreaterThanOrEqual(8)
+    expect(rule.w).toBe(2)
+    expect(rule.h).toBeGreaterThanOrEqual(20)
     // 同一个红。
     expect(turn.markColor).toBe(tool.markColor)
   })

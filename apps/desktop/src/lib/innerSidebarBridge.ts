@@ -2,7 +2,7 @@
 // 智能体行是会话页的(任务区那一行)。两棵树之间剩下的几样东西各一个 window 对象 + 一个 window 事件
 // (谁先起来都接得上,形制同 sidebarChatsBridge):
 //   · 「全部话题」:哪个对话的话题此刻全部摊开。会话页的分区头「全部 › / ‹ 返回」写,壳那一格读。
-//   · 话题读数:壳 → 会话页。分区头上的总数,以及第一级收起了几条(决定要不要给「全部 ›」)。
+//   · 话题读数:壳 → 会话页。分区头上的总数,以及收起时显示的提醒数。
 //   · 我的智能体读数:会话页 → 壳。每个项目群 / 用户群里住着的我的智能体有几个、几个在跑 —— 项目行、群行头像角上那个数(#2599)。
 //   · 这一列在不在:会话页 → 壳。在的话群页头上与它重复的话题钮收起来 —— 按到哪一块,这一列就挂到哪一块,不聚焦那块的钮按下去只会换焦点。
 //   · 一个列表画成自己一行的我的智能体(#2574):壳 → 会话页。有子智能体的独立智能体那一列只开在这几行上 —— 「有自己一行」只有列表这一份判法。
@@ -17,8 +17,6 @@ export type InnerSidebarTopicsView = {
   readonly chatId: string
   /** 这个对话的话题总数。 */
   readonly total: number
-  /** 第一级收起来的条数(0 = 第一级已经是全部)。 */
-  readonly hidden: number
   /** 叫到我的(@ 我)合计:分区收起时标题旁那个红数。 */
   readonly calling: number
 }
@@ -72,7 +70,6 @@ export function publishInnerSidebarTopicsView(next: InnerSidebarTopicsView): voi
     current &&
     current.chatId === next.chatId &&
     current.total === next.total &&
-    current.hidden === next.hidden &&
     current.calling === next.calling
   ) return
   write(TOPICS_VIEW_KEY, TOPICS_VIEW_EVENT, next)

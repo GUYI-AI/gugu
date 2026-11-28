@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppDb } from '@main/db/client';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
 import type { RemovedSessionIdentity } from '@gugu/core/shared/sessionArchival';
+import type { SessionLife } from './session-life';
 import { setTaskNamer } from './task-name';
 
 // Sessions are named at creation by the host's namer (task-name.ts); number defaults per provider.
@@ -27,10 +28,11 @@ const mocks = vi.hoisted(() => ({
   mounted: new Set<string>(),
   userData: '',
   getProject: vi.fn(),
+  owner: null as SessionLife | null,
   // session-life owner of ACP sessions: archive/restore are asked of it, not of the ACP runtime client.
   life: {
     interrupt: vi.fn(async (_sessionId: string, _event: { k: 'interrupt'; reason: string }) => undefined),
-    restore: vi.fn((_sessionId: string) => undefined),
+    restore: vi.fn(async (_sessionId: string, commit: (commitLife: () => void) => void) => commit(() => {})),
   },
 }));
 
@@ -39,7 +41,10 @@ vi.mock('electron', () => ({ app: { getPath: () => mocks.userData }, clipboard: 
 vi.mock('@/lib/myAssistant', () => ({ myAssistant: { peek: () => ({ state: 'unknown' }), fetch: async () => ({ agentId: null, provisionDeviceId: null }), refresh: async () => undefined } }));
 
 vi.mock('./sendMessage', () => ({ drainSessionMessageOutbox: vi.fn(async () => undefined) }));
-vi.mock('./session-life', () => ({ sessionLife: () => mocks.life }));
+vi.mock('./session-life', async importOriginal => ({
+  ...await importOriginal<typeof import('./session-life')>(),
+  sessionLife: () => mocks.owner ?? mocks.life,
+}));
 vi.mock('@main/db/client', () => ({
   get db() {
     if (!mocks.db) throw new Error('Test database not initialized');
@@ -102,6 +107,8 @@ beforeEach(async () => {
   mocks.life.interrupt.mockReset();
   mocks.life.interrupt.mockResolvedValue(undefined);
   mocks.life.restore.mockReset();
+  mocks.life.restore.mockImplementation(async (_id, commit) => commit(() => {}));
+  mocks.owner = null;
   identityHost.archive.mockReset(); identityHost.archive.mockImplementation(async (_id, receipt) => receipt ?? null);
   identityHost.release.mockReset(); identityHost.restore.mockReset();
   setSessionIdentityHost(identityHost);
@@ -634,6 +641,80 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
       archived_at: string | null
     }).archived_at;
 
+  async function realLifecycle() {
+    const { SessionLife } = await import('./session-life');
+    const { lifeStore } = await import('./session-pending');
+    const store = { ...lifeStore, commit: vi.fn(lifeStore.commit) };
+    const publish = vi.fn();
+    const adapter = vi.fn(() => { throw new Error('Restore must not start a provider'); });
+    const owner = new SessionLife({
+      sessions: () => ['restore-real'], store: () => store, adapter,
+      forks: () => [], allForks: () => [], parentOf: () => null,
+      ownedBy: async () => true, markRead: async () => {}, reportFailure: async () => {},
+      publish, removed: () => {}, failed: (_id, error) => { throw error; },
+      logger: { info: () => {} }, now: Date.now,
+    });
+    mocks.owner = owner;
+    return { owner, store, publish, adapter };
+  }
+
+  it.each([false, true])('restores with the real lifecycle and retained history, hydrated=%s', async hydrated => {
+    insert('restore-real');
+    fixture.sqlite.prepare("INSERT INTO messages (id,session_id,content,sender) VALUES ('retained','restore-real','Complete original history','user')").run();
+    await archiveSession('p1', 'restore-real', { removeSocialIdentity: false });
+    const r = await realLifecycle();
+    if (hydrated) await r.owner.signIn('owner');
+    r.publish.mockClear();
+    vi.mocked(events.emit).mockClear();
+
+    await expect(restoreSession('p1', 'restore-real')).resolves.toMatchObject({ id: 'restore-real', archivedAt: null });
+
+    expect(r.owner.status('restore-real').kind).toBe('dormant');
+    expect(r.publish).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ kind: 'dormant' }));
+    expect(r.adapter).not.toHaveBeenCalled();
+    expect(fixture.sqlite.prepare('SELECT content FROM messages').all()).toEqual([{ content: 'Complete original history' }]);
+    expect(events.emit).toHaveBeenCalledWith(sessionCreatedChannel, { session: expect.objectContaining({ id: 'restore-real', archivedAt: null }) });
+    // A repeated restore does not feed a second restore event into dormant.
+    await expect(restoreSession('p1', 'restore-real')).resolves.toMatchObject({ archivedAt: null });
+    expect(r.publish).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['lifecycle commit', 'project write'])('rolls back every archival write on %s failure and permits a later restore', async failure => {
+    insert('restore-real');
+    await archiveSession('p1', 'restore-real', { removeSocialIdentity: false });
+    fixture.sqlite.prepare("UPDATE projects SET archived_at='2026-11-25T00:00:00Z' WHERE id='p1'").run();
+    const r = await realLifecycle();
+    const before = fixture.sqlite.prepare("SELECT value FROM kv WHERE key='session-archival:restore-real'").get();
+    const originalAt = archivedAt('restore-real');
+    if (failure === 'lifecycle commit') r.store.commit.mockImplementationOnce(() => { throw new Error('restore write failed'); });
+    else fixture.sqlite.exec("CREATE TRIGGER fail_restore BEFORE UPDATE OF archived_at ON projects WHEN NEW.archived_at IS NULL BEGIN SELECT RAISE(ABORT, 'restore write failed'); END");
+    vi.mocked(events.emit).mockClear();
+
+    await expect(restoreSession('p1', 'restore-real')).rejects.toThrow('restore write failed');
+
+    expect(archivedAt('restore-real')).toBe(originalAt);
+    expect(fixture.sqlite.prepare("SELECT archived_at FROM projects WHERE id='p1'").get()).toEqual({ archived_at: '2026-11-25T00:00:00Z' });
+    expect(fixture.sqlite.prepare("SELECT value FROM kv WHERE key='session-archival:restore-real'").get()).toEqual(before);
+    expect(r.owner.status('restore-real').kind).toBe('archived');
+    expect(r.publish).not.toHaveBeenCalled();
+    expect(events.emit).not.toHaveBeenCalled();
+    if (failure === 'project write') fixture.sqlite.exec('DROP TRIGGER fail_restore');
+    await expect(restoreSession('p1', 'restore-real')).resolves.toMatchObject({ archivedAt: null });
+    expect(r.owner.status('restore-real').kind).toBe('dormant');
+  });
+
+  it('surfaces an invalid lifecycle transition without clearing the archive', async () => {
+    insert('restore-real');
+    const r = await realLifecycle();
+    await r.owner.signIn('owner');
+    const { setSessionArchival } = await import('./session-archival');
+    setSessionArchival('restore-real', true);
+    vi.mocked(events.emit).mockClear();
+    await expect(restoreSession('p1', 'restore-real')).rejects.toThrow('dormant × restore');
+    expect(archivedAt('restore-real')).not.toBeNull();
+    expect(events.emit).not.toHaveBeenCalled();
+  });
+
   it('commits refusal before teardown finishes and serializes a concurrent restore', async () => {
     insert('concurrent');
     mocks.mounted.add('concurrent');
@@ -867,7 +948,7 @@ describe('restoreSession(内部接口,UI 上没有入口)', () => {
 
     await expect(restoreSession('p1', 'acp-restore')).resolves.toMatchObject({ id: 'acp-restore', archivedAt: null });
 
-    expect(mocks.life.restore).toHaveBeenCalledExactlyOnceWith('acp-restore');
+    expect(mocks.life.restore).toHaveBeenCalledExactlyOnceWith('acp-restore', expect.any(Function));
     expect(drainSessionMessageOutbox).not.toHaveBeenCalled();
   });
 

@@ -5,10 +5,11 @@
 import type { SessionInput } from '../sessionInput'
 import { outbox } from '.'
 import { SESSION_INPUT, type SessionSend } from './kinds/sessionInput'
-import { enqueueAssistantNotice } from './kinds/assistantNotice'
 
 const SESSION_INPUT_DB = 'gugu.session-input-outbox.v1'
 const NOTICE_PREFIX = 'gugu.assistant-panel.notices.v1:'
+// Notices to the assistant panel are no longer sent (nothing reads them): what an older build queued is dropped.
+const RETIRED_NOTICE_KIND = 'assistantNotice'
 
 async function existingDatabase(name: string): Promise<IDBDatabase | null> {
   if (typeof indexedDB === 'undefined' || !indexedDB.databases) return null
@@ -46,12 +47,6 @@ export async function importLegacyWrites(accountId: string): Promise<void> {
       if (mine.length === all.length) { db.close(); indexedDB.deleteDatabase(SESSION_INPUT_DB) }
     } finally { db.close() }
   }
-  const key = NOTICE_PREFIX + accountId
-  const raw = typeof localStorage === 'undefined' ? null : localStorage.getItem(key)
-  if (raw) {
-    for (const entry of JSON.parse(raw) as { notice: Parameters<typeof enqueueAssistantNotice>[0]; assistantId?: string }[]) {
-      if (!outbox().get(`assistant:${entry.notice.operationId}`)) await enqueueAssistantNotice(entry.notice, entry.assistantId)
-    }
-    localStorage.removeItem(key)
-  }
+  if (typeof localStorage !== 'undefined') localStorage.removeItem(NOTICE_PREFIX + accountId)
+  for (const item of outbox().items()) if (item.kind === RETIRED_NOTICE_KIND) await outbox().discard(item.id)
 }

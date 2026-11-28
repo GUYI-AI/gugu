@@ -9,6 +9,7 @@
 //   ⑤ Agent owners and source-group managers may edit listen mode; role/removal protection stays separate.
 import { act, Fragment, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setAgentModelNameOverride, clearAgentModelNameOverrides } from '../../support/agentModelNameTestDouble'
 // Destructive actions ask first (lib/confirmDanger); here the person confirms.
 const confirmDangerMock = vi.hoisted(() => vi.fn(async (_args: unknown) => true))
 vi.mock('../../../apps/desktop/src/lib/confirmDanger', () => ({ confirmDanger: confirmDangerMock, confirmConversationAction: vi.fn(async () => true) }))
@@ -46,6 +47,7 @@ vi.mock('../../../apps/desktop/src/lib/chat', () => ({
 const transferGroupOwnerMock = vi.hoisted(() => vi.fn(async (_chatId: string, _userId: string) => {}))
 vi.mock('../../../apps/desktop/src/lib/groupAdmin', () => ({ transferGroupOwner: transferGroupOwnerMock }))
 vi.mock('../../../apps/desktop/src/hooks/useAgentDisplayStatus', () => import('../../support/agentDisplayStatusTestDouble'))
+vi.mock('../../../apps/desktop/src/hooks/useAgentModelName', () => import('../../support/agentModelNameTestDouble'))
 vi.mock('../../../apps/desktop/src/lib/identityReadAdapter', () => ({
   readRequiredDisplayIdentities: vi.fn(async (ids: string[]) => ids.map((id) => ({ id, type: 'human', display_name: `申请人-${id}` }))),
 }))
@@ -80,7 +82,7 @@ function collab(agents: GroupAgentItem[], humans: GroupMemberItem[]): GroupColla
   }
 }
 const SNAPSHOT = collab(
-  [agentItem('codex', { client: 'Codex', model_source: 'gpt-5.4' }), agentItem('claude', { client: 'Claude' })],
+  [agentItem('codex', { client: 'Codex' }), agentItem('claude', { client: 'Claude' })],
   [humanItem('owner-1', 'owner'), humanItem('member-1'), humanItem('member-2')],
 )
 const IDENTITIES: DisplayIdentity[] = [
@@ -94,6 +96,7 @@ const IDENTITIES: DisplayIdentity[] = [
 let harness: ReturnType<typeof createReactHarness>
 let viewAccount = 0
 beforeEach(() => {
+  setAgentModelNameOverride('codex', 'gpt-5.4')
   viewStateCache.forget('view:')
   harness = createReactHarness()
   // The view-state table is keyed by the signed-in account: a fresh one per case keeps one case's search words out of the next.
@@ -103,6 +106,7 @@ beforeEach(() => {
   listJoinRequests.mockResolvedValue([])
 })
 afterEach(() => {
+  clearAgentModelNameOverrides()
   harness.cleanup()
   vi.clearAllMocks()
   shell.mobile = false

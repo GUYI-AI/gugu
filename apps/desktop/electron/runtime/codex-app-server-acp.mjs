@@ -29,7 +29,10 @@ import { codexReasoningText } from '../../../../packages/core/src/shared/reasoni
 import { isRenderableImage, mimeTypeFromName } from '../../../../packages/core/src/shared/imageMime.mjs'
 import { codexFilePatches } from '../../../../packages/session-core/src/acp/transport/codex-file-patches.ts'
 import { codexMcpCall } from '../../../../packages/session-core/src/acp/transport/codex-mcp-call.ts'
+import { isCodexKeyRefusal, withCodexHttpStatus } from '../../../../packages/session-core/src/acp/transport/codex-http-status.ts'
 import { createCodexSubagents } from './codex-subagents.mjs'
+import { GOAL_TOKENS_FLAG, parseGoalCommand } from '../../../../packages/session-core/src/acp/commands.ts'
+import { UNRECORDED_PROMPT } from '../../../../packages/session-core/src/acp/native-prompt-key.ts'
 import { CODEX_AUTONOMY_BY_MODE, CODEX_PERMISSION_MODES } from '../../../../packages/session-plugins/src/agents/impl/codex/permission-modes.ts'
 import { redactAll } from '../../../../packages/session-shared/src/logger/redact.ts'
 
@@ -947,11 +950,12 @@ function insertedUserMessage(item) {
  * point, so the prompt is marked from the start of the turn, as the record's leading input is (`task_started.turn_id`),
  * not only when the turn ends (`turnOutcome`, same point).
  */
-async function receipt(id, entry, turnId = '') {
+async function receipt(id, entry, turnId = '', meta = null) {
   const result = await entry.promise
   promptInsertions.delete(entry.clientId)
   if (result.error) throw Object.assign(new Error(result.error), { code: result.code })
-  respond(id, historyCanRevert && turnId ? { ...result, _meta: { guguRevert: { before: turnId } } } : result)
+  const revert = historyCanRevert && turnId ? { guguRevert: { before: turnId } } : null
+  respond(id, revert || meta ? { ...result, _meta: { ...revert, ...meta } } : result)
 }
 function throwIfInsertionCancelled(entry) {
   if (entry.cancelled) throw Object.assign(new Error('Request cancelled before insertion'), { code: -32800 })
@@ -963,6 +967,73 @@ function sessionUpdate(update, targetSessionId = sessionId) {
 }
 
 const subagents = createCodexSubagents({ rootId: () => sessionId, emit: sessionUpdate, request: appRequest, itemTool, reasoningText: codexReasoningText })
+
+/**
+ * behavior `/goal 透传给 codex` —— 目标、续跑、token 预算全是 codex 自己的(`thread/goal/set`
+ * 的 `tokenBudget`;到了预算 codex 把状态置成 `budgetLimited` 并停下)。这一层只做两件事:
+ * 把用户那一行翻成 `thread/goal/*`,把状态的**变化**落成一行 notice。❌ 不数 token、不起 turn ——
+ * 目标是 active 时 codex 自己注入目标、空闲时自己开一轮(app-server `thread_goal_processor.rs`)。
+ */
+let lastGoalLine = null
+// Codex's goal notifications, counted. A response to our own request is older than any notification that reached us
+// while it was in flight (the response and the notifications after it can be read in one batch, before the request's
+// continuation runs), so such a response must not show its state after the newer one.
+let goalNotices = 0
+let latestGoal = null
+const GOAL_STATUS_TEXT = {
+  active: 'Goal active', paused: 'Goal paused', blocked: 'Goal blocked',
+  usageLimited: 'Goal stopped, usage limit reached', budgetLimited: 'Goal stopped, token budget reached',
+  complete: 'Goal complete',
+}
+function goalLine(goal) {
+  const used = Number(goal.tokensUsed ?? 0).toLocaleString('en-US')
+  const tokens = goal.tokenBudget == null ? `${used} tokens used`
+    : `${used} / ${Number(goal.tokenBudget).toLocaleString('en-US')} tokens`
+  return `${GOAL_STATUS_TEXT[goal.status] ?? `Goal ${goal.status}`}: ${tokens}`
+}
+// The set response and the `thread/goal/updated` that follows carry the same goal: one line for it. Token counts move
+// on every turn, so they are not part of what makes a line new.
+function noticeGoalStatus(goal, force = false) {
+  const key = goal && JSON.stringify([goal.status, goal.objective, goal.tokenBudget ?? null])
+  if (!goal || (!force && key === lastGoalLine)) return
+  lastGoalLine = key
+  sessionUpdate({ sessionUpdate: 'notice', severity: goal.status === 'active' || goal.status === 'complete' ? 'info' : 'warning',
+    title: goalLine(goal), description: goal.objective })
+}
+async function goalRequest(method, params) {
+  try {
+    return await appRequest(method, { threadId: sessionId, ...params })
+  } catch (error) {
+    if (error?.code === -32601) throw new Error('This Codex version has no /goal; update Codex to use it')
+    throw error
+  }
+}
+async function runGoalCommand(command, insertion) {
+  if (command.kind === 'invalid') throw new Error(command.reason)
+  // The line is the person's own input: record it, as Codex records the goal change in its thread.
+  insertedUserMessage({ id: `goal:${insertion.clientId}`, clientId: insertion.clientId })
+  if (command.kind === 'show') {
+    const seen = goalNotices
+    const { goal: answered } = await goalRequest('thread/goal/get', {})
+    const goal = goalNotices === seen ? answered : latestGoal
+    if (goal) noticeGoalStatus(goal, true)
+    else sessionUpdate({ sessionUpdate: 'notice', severity: 'info', title: 'No goal set' })
+    return null
+  }
+  if (command.kind === 'clear') {
+    const { cleared } = await goalRequest('thread/goal/clear', { origin: 'user' })
+    lastGoalLine = null
+    sessionUpdate({ sessionUpdate: 'notice', severity: 'info', title: cleared ? 'Goal cleared' : 'No goal set' })
+    return null
+  }
+  const params = command.kind === 'set'
+    ? { origin: 'user', objective: command.objective, status: 'active', ...(command.tokenBudget === null ? {} : { tokenBudget: command.tokenBudget }) }
+    : { origin: 'user', status: command.kind === 'pause' ? 'paused' : 'active' }
+  const seen = goalNotices
+  const { goal } = await goalRequest('thread/goal/set', params)
+  if (goalNotices === seen) noticeGoalStatus(goal)
+  return goal
+}
 
 /**
  * behavior `codex 的 skill 进 / 面板` —— 把用户自己放的 skill 报成 ACP slash 命令。
@@ -986,6 +1057,20 @@ const subagents = createCodexSubagents({ rootId: () => sessionId, emit: sessionU
  *
  * `enabled === false` 的不报:那是用户自己关掉的。
  */
+/**
+ * The commands this leg implements itself, the same in every session: `/compact` (handed to `thread/compact/start`, see
+ * session/prompt) and `/goal` (codex's own `thread/goal/*`, see runGoalCommand). They also ride the `session/new` answer,
+ * so a reader that keeps a session only for a moment (the host's harness probe, which offers them before an agent has a
+ * session) has them without waiting for the skills.
+ * ACP v2 keeps an input only with its `type`; without it the hint is dropped on the client and the host cannot see that
+ * this /goal takes `--tokens`.
+ */
+const CODEX_OWN_COMMANDS = [
+  { name: 'compact', description: 'Compact the conversation context' },
+  { name: 'goal', description: 'Set a goal Codex keeps working toward until it is done',
+    input: { type: 'text', hint: `[${GOAL_TOKENS_FLAG} N] <goal> | clear | pause | resume` } },
+]
+
 async function publishAvailableCommands(cwd, extraRoots) {
   // ⚠️ 这个函数是被 `void` 调起来的,而进程没装 `unhandledRejection` —— 里面**任何**没接住的
   // 抛出都会带走整条 adapter,那与它自己声明的「报不出命令不该弄死会话」正好相反。
@@ -1021,8 +1106,7 @@ async function publishAvailableCommandsInner(cwd, extraRoots) {
     return
   }
   const seen = new Set()
-  // `/compact` 是这条腿自己实现的那一条(session/prompt 里交给 `thread/compact/start`)。
-  const availableCommands = [{ name: 'compact', description: 'Compact the conversation context' }]
+  const availableCommands = [...CODEX_OWN_COMMANDS]
   for (const entry of Array.isArray(response?.data) ? response.data : []) {
     for (const skill of Array.isArray(entry?.skills) ? entry.skills : []) {
       const raw = typeof skill?.name === 'string' ? skill.name.trim() : ''
@@ -1404,6 +1488,19 @@ function onAppNotification(message) {
   // app-server also publishes spawned agents' events. Only this thread owns the ACP session;
   // mixing child deltas here fragments messages/thinking and can overwrite the parent's state.
   if (params.threadId && params.threadId !== sessionId) return
+  if (method === 'error' && params.willRetry === true && isCodexKeyRefusal(params.error)
+    && activeCycle && (!params.turnId || String(params.turnId) === activeCycle.turnId)) {
+    // #3939 The address refused the key: another attempt sends the same key there again. End the turn on the first refusal;
+    // it settles as this refusal, not as a stop (see turnOutcome).
+    if (!activeCycle.keyRefusal) {
+      activeCycle.keyRefusal = params.error
+      const turnId = activeCycle.turnId
+      void cancelTurn(turnId).catch((error) => {
+        process.stderr.write(`gugu codex-acp: could not stop turn ${turnId} after its key was refused: ${redactAll(String(error?.message ?? error))}\n`)
+      })
+    }
+    return
+  }
   if (method === 'error' && params.willRetry === true) {
     // Codex owns both the retry count and cause. Preserve its warning through the existing
     // ACP notice path; final errors still settle the prompt via turn/completed below.
@@ -1424,6 +1521,18 @@ function onAppNotification(message) {
     const action = params.action ?? {}
     const subject = action.command ?? action.toolName ?? action.host ?? action.reason ?? action.type ?? 'Action'
     sessionUpdate({ sessionUpdate: 'notice', severity: 'warning', title: redactAll(`${subject}: ${params.review.rationale ?? 'Permission denied by the AI reviewer'}`) })
+    return
+  }
+  if (method === 'thread/goal/updated') {
+    goalNotices += 1
+    latestGoal = params.goal ?? null
+    noticeGoalStatus(params.goal)
+    return
+  }
+  if (method === 'thread/goal/cleared') {
+    goalNotices += 1
+    latestGoal = null
+    lastGoalLine = null
     return
   }
   if (method === 'thread/tokenUsage/updated') {
@@ -1656,6 +1765,15 @@ function turnOutcome(turn) {
   const status = String(turn?.status ?? 'completed')
   const failure = toolOutcomesByTurn.get(String(turn?.id ?? ''))?.failure
   const _meta = historyCanRevert ? { guguRevert: { before: String(turn.id) } } : undefined
+  // The bridge stopped this turn because the address refused the key (#3939): it failed, nobody cancelled it.
+  const keyRefusal = activeCycle?.turnId === String(turn?.id ?? '') ? activeCycle.keyRefusal : undefined
+  if (status === 'interrupted' && keyRefusal) {
+    // A retry notice's `message` is Codex's own "Reconnecting... 1/5"; the refusal itself is in `additionalDetails`.
+    const said = typeof keyRefusal.additionalDetails === 'string' && keyRefusal.additionalDetails.trim()
+      ? keyRefusal.additionalDetails : String(keyRefusal.message ?? 'local Codex turn failed')
+    return { stopReason: 'error', ...(_meta ? { _meta } : {}), error: { code: -32603, message: said,
+      data: withCodexHttpStatus({ message: said, codexErrorInfo: keyRefusal.codexErrorInfo }) } }
+  }
   if (status === 'interrupted') return { stopReason: 'cancelled', ...(_meta ? { _meta } : {}) }
   if (status === 'completed' && !failure) return { stopReason: 'end_turn', ...(_meta ? { _meta } : {}) }
   // A failed turn is the one a person most needs to step back from: a refused turn stays in the context and
@@ -1664,7 +1782,7 @@ function turnOutcome(turn) {
     message: status === 'failed' ? String(turn?.error?.message ?? 'local Codex turn failed')
       : failure ? `local Codex turn had a failed Gugu tool call: ${failure.tool} (${failure.itemId}): ${failure.details}`
       : `unexpected local Codex turn status: ${status}`,
-    data: turn?.error ?? failure ?? null } }
+    data: turn?.error ? withCodexHttpStatus(turn.error) : failure ?? null } }
 }
 
 function activeTurnIdFromThread(value) {
@@ -2421,6 +2539,7 @@ async function handleAcpRequest(message) {
     const models = await modelCatalogOnce()
     respond(id, {
       sessionId,
+      availableCommands: CODEX_OWN_COMMANDS,
             configOptions: withModelConfigOptions(
         withPermissionModeConfigOptions(started?.configOptions, responseModes),
         selectedModel,
@@ -2557,6 +2676,20 @@ async function handleAcpRequest(message) {
     const insertion = expectPromptInsertion(id, params.prompt)
     await nativeAuthSession?.ensure()
     throwIfInsertionCancelled(insertion)
+    // The host puts a command in the first block and any context after it (cell `leadsWithCommand`): the goal is that block.
+    const lead = params.prompt?.[0]
+    const goalCommand = lead?.type === 'text' ? parseGoalCommand(String(lead.text ?? '')) : null
+    if (goalCommand) {
+      const goal = await runGoalCommand(goalCommand, insertion)
+      // Codex keeps the goal, not the line the person typed: the host journals that line (`UNRECORDED_PROMPT`).
+      await receipt(id, insertion, '', { [UNRECORDED_PROMPT]: true })
+      // @@@goal-command-ends - a goal command is not a turn. The host holds this input's work open until the agent
+      // reports idle; Codex opens a turn of its own only for a goal left active (set, resume), and a running turn reports
+      // its own idle. Anything else (show, clear, pause) ends here as a finished turn does, or the session stays working
+      // with nothing for Stop to cancel and every later message waits behind it.
+      if (!activeCycle && goal?.status !== 'active') sessionUpdate({ sessionUpdate: 'state_update', state: 'idle', stopReason: 'end_turn' })
+      return
+    }
     if (joinPromptText(params.prompt).trim() === '/compact') {
       if (activeCycle || compactInsertion) throw new Error('local Codex cannot compact while foreground work is active')
       compactInsertion = insertion
@@ -2735,6 +2868,10 @@ function handleAcpNotification(message) {
     void cancelTurn(activeCycle.turnId).catch((error) => {
       process.stderr.write(`[codex-app-server-acp] cancel failed: ${error.message}\n`)
     })
+  } else if (message.method === 'session/cancel') {
+    // No native turn to interrupt, so none will report the end the host's Stop waits for: report it here (a host that
+    // is not working ignores it). Without this a session held working by input that started no turn never comes back.
+    sessionUpdate({ sessionUpdate: 'state_update', state: 'idle', stopReason: 'cancelled' })
   }
 }
 

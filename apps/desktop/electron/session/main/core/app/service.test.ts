@@ -2,6 +2,8 @@ import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import type { ContentMenuEntry } from '@shared/content-context-menu';
+import { setSessionHostCopy } from '@main/core/host-copy';
+import { hostCatalog } from '../../../../../shared/host-localization';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -292,16 +294,20 @@ describe('AppService.showTerminalContextMenu', () => {
     expect(mocks.clipboardWriteText).toHaveBeenCalledWith('  indented value\n');
   });
 
-  it('preserves link copying, terminal actions and host menu coordinates', () => {
+  it('offers the one link menu, terminal actions and host menu coordinates', () => {
+    setSessionHostCopy(hostCatalog('en-US').sessionHost);
     appService.showTerminalContextMenu({ requestId: 'terminal', selectionText: '', linkText: ' https://example.com/ ', x: 10.2, y: 20.8 });
     const template = mocks.showMenu.mock.calls[0]![0];
-    expect(template.map(item => item.type === 'separator' ? item.type : item.label)).toEqual(['Copy', 'Copy Link', 'Paste', 'separator', 'Select All', 'Clear']);
+    expect(template.map(item => item.type === 'separator' ? item.type : item.label)).toEqual([
+      'Copy', 'Paste', 'separator', 'Select All', 'Clear', 'separator', 'Open in Gugu Browser', 'Open in System Browser', 'Copy Link',
+    ]);
     expect((template[0]!.type !== 'separator' && template[0]!.enabled)).toBe(false);
-    template[1]!.click?.();
+    template[8]!.click?.();
     expect(mocks.clipboardWriteText).toHaveBeenCalledWith('https://example.com/');
-    for (const index of [2, 4, 5]) template[index]!.click?.();
+    for (const index of [1, 3, 4, 6]) template[index]!.click?.();
     expect(mocks.eventEmit.mock.calls.map(call => call[1])).toEqual([
       { requestId: 'terminal', action: 'paste' }, { requestId: 'terminal', action: 'select-all' }, { requestId: 'terminal', action: 'clear' },
+      { requestId: 'terminal', action: 'open-link' },
     ]);
     expect(mocks.showMenu.mock.calls[0]![1]).toEqual({ window: undefined, x: 10, y: 21 });
   });

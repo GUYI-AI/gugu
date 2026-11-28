@@ -21,8 +21,11 @@ import type { RuntimeFork } from '../sessions/session-life-forks';
 import { localAgentForSession } from '@main/core/sessionpage/sessionpage-session-agent';
 import { acpAgentStatusBridge } from './agent-status-bridge';
 import type { EmdashSessionIdentity } from './emdash-mcp-injector';
+import type { ClaudeReviewRunContext } from '../agents/claude-reviewer';
 import { prepareEmdashPlatformSession, releaseEmdashPlatformSession, releaseEmdashPlatformSessionForClosure } from './emdash-platform-injector';
 import { injectEmdashPromptDetached } from './inject-prompt';
+import { invokesCommand } from '@gugu/session-core/acp/commands';
+import { lookupHarnessModelCatalog } from '../agents/harness-model-catalog';
 import {
   acpWorkerLease, callSessionStart, persistProviderSessionMissing, persistReturnedProviderSessionId,
   persistSessionMcpServers, provisionStartIdentity, readSessionInjectionFacts, stopAcpSessionAndSettle, withEmdashMcpInjection,
@@ -63,7 +66,7 @@ type Worker = Awaited<ReturnType<typeof acpWorkerLease>>;
 // Branded leases: the reducer only carries them; their content belongs to this adapter.
 type Workspace = { workspaceId: string; path: string };
 type Capabilities = { injection: Awaited<ReturnType<typeof withEmdashMcpInjection<StartInput>>>; facts: Facts };
-type Platform = { command: StartInput; injected: boolean };
+type Platform = { command: StartInput; injected: boolean; autoReview?: ClaudeReviewRunContext };
 type Cli = { command: Parameters<Worker['client']['startSession']>[0] };
 const lease = <T>(value: T) => value as unknown;
 const read = <T>(value: object): T => value as T;
@@ -238,11 +241,12 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
         injection.capabilitySpawnEnv, injection.capabilitySpawnArgs, injection.platformConfigured,
         injection.platformAccessSessionId, injection.platformModel,
       );
-      return lease<Platform>({ command: platform.command, injected: platform.injected }) as PlatformTicket;
+      return lease<Platform>({ command: platform.command, injected: platform.injected,
+        ...(platform.autoReview ? { autoReview: platform.autoReview } : {}) }) as PlatformTicket;
     },
     async cli(have): Promise<ResolvedCli> {
       const platform = read<Platform>(have.platform);
-      const resolved = await withHostResolvedCli(platform.command);
+      const resolved = await withHostResolvedCli(platform.command, platform.autoReview);
       const history = await resumeHistoryFacts(resolved.input, {});
       return lease<Cli>({ command: { ...resolved, input: { ...resolved.input, ...history } } }) as ResolvedCli;
     },
@@ -286,9 +290,23 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
     const nativeSession = previous === null ? null
       : command.input.forkKeepsAgent ? 'route-switched'
         : result.data.providerSessionId === previous ? 'preserved' : 'replaced';
+    // Gugu's tools arrive only once this engine has connected and listed them (Antigravity): nothing is sent into the
+    // channel before that. A stop ends the wait at once.
+    if (injection.awaitToolsListed && !signal.aborted) {
+      await Promise.race([injection.awaitToolsListed(),
+        new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }))]);
+    }
     const waiting = (fork ? forkStore : lifeStore).pending(sessionId);
     backlogThrough = Math.max(-1, ...waiting.queued, ...waiting.dispatching);
     return lease({ gen, timing: 'next-tool-call', nativeSession }) as AdmittedChannel;
+  }
+
+  /** Whether `text` opens with a command this harness advertises (its probed catalog: what the composer offered). */
+  async function leadsWithHarnessCommand(providerId: string, text: string): Promise<boolean> {
+    const { state } = await lookupHarnessModelCatalog(providerId, { leg: 'acp' });
+    const commands = state.kind === 'ready' || state.kind === 'auth-required' ? state.commands ?? [] : [];
+    // An empty list would fall back to "starts with a sigil", and a sentence that opens with a path is not a command.
+    return commands.length > 0 && invokesCommand(text, commands);
   }
 
   async function admit(have: StageOut, pending: PendingRow, signal: AbortSignal): ReturnType<LegAdapter['dispatch']> {
@@ -331,6 +349,15 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
       case 'chat-page-first-turn': {
         const render = read<Capabilities>(have.capabilities).injection.firstTurn;
         if (!render) throw new Error(`Session ${sessionId}: the first turn's gugu message did not land in this attempt`);
+        // gugu-dev#1644: a task card's first sentence that is one of the harness's commands (`/goal …`) runs as that
+        // command. Inside the card's delivery envelope it would only be words to the agent, so the command goes first on
+        // its own, and the envelope (the card, and where to answer) follows it as the next input. The card itself and
+        // the delivery contract are unchanged.
+        if (render.kind === 'envelope' && await leadsWithHarnessCommand(known().providerId, pending.message.text)) {
+          const command = await injectEmdashPromptDetached(sessionId, pending.message.text, {
+            clientMessageId: `${pending.message.id}:command`, origin: 'manual', sentAt: pending.sentAt });
+          if (command.outcome === 'declined' || command.outcome === 'missing') { sent = command; break; }
+        }
         const turn = renderFirstTurn(pending.message.text, render);
         sent = await injectEmdashPromptDetached(sessionId, turn.text, { clientMessageId: pending.message.id, origin: turn.origin, sentAt: pending.sentAt, ...attachments });
         break;

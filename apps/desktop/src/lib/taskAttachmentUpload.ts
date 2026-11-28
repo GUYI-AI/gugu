@@ -42,6 +42,7 @@ export async function resumeTaskAttachment(input: {
   const validate = (state: AttachmentUploadState) => {
     if (!state || !['uploading', 'committed'].includes(state.state) || state.total !== spec.size
       || !Number.isSafeInteger(state.received) || state.received < 0 || state.received > spec.size
+      || (state.state === 'committed' && state.received !== spec.size)
       || !Number.isSafeInteger(state.chunkBytes) || state.chunkBytes <= 0 || state.chunkBytes > ATTACHMENT_UPLOAD_CHUNK_BYTES
       || state.workspacePath !== `.gugu/attachments/${spec.itemId}/${spec.name}`) throw new Error('Invalid attachment upload acknowledgement');
     return state;
@@ -62,24 +63,30 @@ export async function resumeTaskAttachment(input: {
     let offset = confirmed;
     while (offset < spec.size) {
       signal?.throwIfAborted();
-      const batch: Promise<void>[] = [];
-      // Two ordered requests can cross one RTT together; the receiver serializes each upload.
-      for (let count = 0; count < 2 && offset < spec.size; count++) {
-        const start = offset, end = Math.min(spec.size, start + state.chunkBytes);
-        const bytes = await source.slice(start, end).arrayBuffer();
-        signal?.throwIfAborted();
-        const chunkSha256 = await attachmentSha256(bytes);
-        let binary = '';
-        for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);
-        batch.push(transport.write({ ...spec, offset: start, data: btoa(binary), chunkSha256 }).then(reply => {
-          const ack = validate(reply);
-          if (ack.received < end) throw new Error('The remote host did not acknowledge the attachment block');
-          confirmed = Math.max(confirmed, ack.received);
-          if (!signal?.aborted) input.onProgress?.(confirmed, spec.size);
-        }));
-        offset = end;
-      }
-      const settled = await Promise.allSettled(batch);
+      const batch: Promise<PromiseSettledResult<void>>[] = [];
+      let preparationFailure: { error: unknown } | undefined;
+      try {
+        // Two ordered requests can cross one RTT together; the receiver serializes each upload.
+        for (let count = 0; count < 2 && offset < spec.size; count++) {
+          const start = offset, end = Math.min(spec.size, start + state.chunkBytes);
+          const bytes = await source.slice(start, end).arrayBuffer();
+          signal?.throwIfAborted();
+          const chunkSha256 = await attachmentSha256(bytes);
+          let binary = '';
+          for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);
+          const request = transport.write({ ...spec, offset: start, data: btoa(binary), chunkSha256 }).then(reply => {
+            const ack = validate(reply);
+            if (ack.received < end) throw new Error('The remote host did not acknowledge the attachment block');
+            confirmed = Math.max(confirmed, ack.received);
+            if (!signal?.aborted) input.onProgress?.(confirmed, spec.size);
+          });
+          // 请求一发出就接住拒绝；下一段准备失败也必须等待已有请求收口。
+          batch.push(request.then(() => ({ status: 'fulfilled', value: undefined } as const), reason => ({ status: 'rejected', reason } as const)));
+          offset = end;
+        }
+      } catch (error) { preparationFailure = { error }; }
+      const settled = await Promise.all(batch);
+      if (preparationFailure) throw preparationFailure.error;
       const failed = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
       if (failed) throw failed.reason;
     }
@@ -90,7 +97,7 @@ export async function resumeTaskAttachment(input: {
     if (committed.state !== 'committed' || committed.received !== spec.size) throw new Error('The attachment was not committed');
     return committed.workspacePath;
   } catch (error) {
-    if (signal?.aborted) { abort(); await aborting; }
+    if (signal?.aborted) { context.restartRequired = true; abort(); await aborting; }
     if (['upload_lost', 'upload_expired'].includes((error as { code?: string })?.code ?? '')) context.restartRequired = true;
     throw error;
   } finally { signal?.removeEventListener('abort', abort); }

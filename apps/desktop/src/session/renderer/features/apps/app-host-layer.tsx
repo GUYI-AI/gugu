@@ -16,7 +16,8 @@ import { createPortal } from 'react-dom';
 import { AgentAvatar } from '@/components/agentAvatar/AgentAvatar';
 import { DEFAULT_ASSISTANT_LOOK } from '@/components/agentAvatar/look';
 import { useTranslation } from 'react-i18next';
-import { ChevronLeft, PanelRight } from '@/lib/icons';
+import { PanelToggleIcon } from '@/components/PanelToggleIcon';
+import { ChevronLeft } from '@/lib/icons';
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge';
 import { useAssistantPanelPage } from '@/lib/assistantPanelPage';
 import { appHostLayerSlotKey, readAppHostLayerBridge, type AppHostLayer } from '@/lib/appHostLayerBridge';
@@ -217,7 +218,7 @@ function HostTaskLayer({ extensionId, onCollapse }: { extensionId: string; onCol
       <AppHostLayerSlot extensionId={extensionId} className="ta-task-chat-slot" testId="app-work-chat" />
       {onCollapse ? (
         <button type="button" className="ta-circle ta-task-panel-collapse" aria-label={t('panel.collapse')} title={t('panel.collapse')} onClick={onCollapse} data-testid="app-work-panel-collapse">
-          <PanelRight />
+          <PanelToggleIcon side="right" open />
         </button>
       ) : null}
     </>
@@ -241,7 +242,7 @@ function HostPageLayer({ extensionId, kind, onCollapse }: { extensionId: string;
         </button>
         {onCollapse ? (
           <button type="button" className="ta-circle ta-panel-collapse" aria-label={t('panel.collapse')} title={t('panel.collapse')} onClick={onCollapse} data-testid="app-host-layer-collapse">
-            <PanelRight />
+            <PanelToggleIcon side="right" open />
           </button>
         ) : null}
       </div>

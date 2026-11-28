@@ -281,3 +281,16 @@ it('recognizes a dedicated Coding Plan endpoint and leaves a shared endpoint unc
   expect(found.connections.find(connection => connection.name === 'dedicated')?.preset).toBe('kimi-coding');
   expect(found.connections.find(connection => connection.name === 'shared')?.preset).toBeNull();
 });
+
+it('carries Codex model_context_window as the model window, a profile value over the top-level one', async () => {
+  await config([
+    'model_provider = "acme"', 'model = "acme-large"', 'model_context_window = 400000', '',
+    '[model_providers.acme]', 'name = "Acme Gateway"', 'base_url = "https://acme.example.test/v1"', 'env_key = "ACME_API_KEY"', '',
+    '[profiles.small]', 'model_provider = "acme"', 'model = "acme-small"', 'model_context_window = 128000', '',
+    '[profiles.plain]', 'model_provider = "acme"', 'model = "acme-plain"', '',
+  ].join('\n'));
+  const found = await scan({ ACME_API_KEY: KEY });
+  expect(byName(found, 'Acme Gateway')?.models).toEqual([
+    { id: 'acme-large', contextWindow: 400_000 }, { id: 'acme-small', contextWindow: 128_000 }, { id: 'acme-plain', contextWindow: 400_000 },
+  ]);
+});

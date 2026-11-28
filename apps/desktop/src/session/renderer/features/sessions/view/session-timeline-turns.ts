@@ -5,6 +5,7 @@ import { timelineRailAdmits, timelineRailMessages, timelineRailPreviewText, type
 import { shownSender, type SelfIdentity, type TranscriptTurn } from '@gugu/session-chat-ui';
 import { parseConversationLink } from '@gugu/core/shared/ui/guguLink';
 import type { SessionOutlineTurn } from '@shared/core/sessions/session-outline';
+import { freezeInDev } from '@/lib/freeze-in-dev';
 
 /**
  * Who a delivered turn came from. The rail paints these ticks differently from
@@ -22,7 +23,10 @@ export type TimelineSender =
   /** 咕咕 itself (a `system` notice), or a legacy / batched envelope that names nobody. */
   | { kind: 'gugu' };
 
-/** One navigable input and the first reply before the next input. */
+/**
+ * One navigable input and the first reply before the next input. Never changed once made (frozen in development): the
+ * rail redraws a tick only for a new turn object, so new content must come as a new turn.
+ */
 export interface TimelineTurn {
   id: string;
   /** Additional inputs can share a provider turn with the first input. */
@@ -103,7 +107,7 @@ export function timelineTurnsFromTranscript(
       }
     }
   }
-  return turns;
+  return freezeInDev(turns);
 }
 
 /**
@@ -136,7 +140,7 @@ export function timelineTurnsFromOutline(
       });
     }
   }
-  return turns;
+  return freezeInDev(turns);
 }
 
 /**

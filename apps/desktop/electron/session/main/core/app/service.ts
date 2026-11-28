@@ -7,6 +7,8 @@ import { app, clipboard, dialog, shell } from 'electron';
 import { getMainWindow } from '@main/app/window';
 import { showContentContextMenu } from '../../../../content-context-menu';
 import { textContextMenuItems } from '@shared/text-context-menu';
+import { isWebLink, linkMenuEntries } from '@shared/link-menu';
+import { sessionHostCopy } from '@main/core/host-copy';
 import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
 import { buildExternalToolEnv } from '@main/utils/childProcessEnv';
@@ -343,7 +345,6 @@ class AppService implements IInitializable, IDisposable {
     }
     const selectionText = args.selectionText ?? '';
     const linkText = args.linkText?.trim() ?? '';
-    const hasLink = linkText.length > 0;
     const emitAction = (action: TerminalContextMenuAction) => {
       events.emit(terminalContextMenuActionChannel, { requestId: args.requestId, action });
     };
@@ -351,12 +352,16 @@ class AppService implements IInitializable, IDisposable {
       selectionText,
       actions: {
         copy: () => copyTextFireAndForget(selectionText),
-        ...(hasLink ? { copyLink: () => copyTextFireAndForget(linkText) } : {}),
         paste: () => emitAction('paste'),
         selectAll: () => emitAction('select-all'),
         clear: () => emitAction('clear'),
       },
-    }), {
+    }, isWebLink(linkText) ? linkMenuEntries(sessionHostCopy().linkMenu, (action) => {
+      if (action === 'copy-link') copyTextFireAndForget(linkText);
+      else if (action === 'open-link-system') return this.openExternal(linkText);
+      // Gugu's browser opens beside the terminal: the renderer that asked knows its pane.
+      else emitAction('open-link');
+    }) : []), {
       window: getMainWindow() ?? undefined,
       x: Math.round(args.x),
       y: Math.round(args.y),
@@ -537,11 +542,6 @@ class AppService implements IInitializable, IDisposable {
     if (result.canceled || !result.filePath) return undefined;
     await writeFile(result.filePath, args.content, 'utf8');
     return result.filePath;
-  }
-
-  async showDownloadSaveDialog(defaultPath: string): Promise<string | undefined> {
-    const result = await dialog.showSaveDialog(getMainWindow()!, { defaultPath });
-    return result.canceled || !result.filePath ? undefined : result.filePath;
   }
 
 }

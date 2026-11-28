@@ -88,3 +88,17 @@ it.each([{ value: null, label: null }, { value: 128_000, label: '128K' }])(
     await expect.element(page.getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-pressed', 'true');
   }
 );
+
+it.each([
+  { surface: 'a new task (no session yet)', contextUsage: undefined, ring: false },
+  { surface: 'a session with no usage yet', contextUsage: null, ring: true },
+])('shows the context ring beside the model only on a session: $surface', async ({ contextUsage, ring }) => {
+  render(<MessageProvider locale="en-US" translate={translate}>
+    <ChatComposer onSubmit={() => {}} selectedModel="luna"
+      contextThresholds={() => ({ minimum: 8_000, maximum: 1_100_000, value: null, set: vi.fn().mockResolvedValue(undefined) })}
+      {...(contextUsage === undefined ? {} : { contextUsage })} />
+  </MessageProvider>);
+  await expect.poll(() => !!document.querySelector('[data-slot="composer-toolbar"]')).toBe(true);
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  expect(!!document.querySelector('[data-testid="context-usage-trigger"]')).toBe(ring);
+});

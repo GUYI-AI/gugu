@@ -133,6 +133,8 @@ jobs:
           # Match the emulator job's app scope. The unqualified task also builds
           # instrumentation APKs for generated Capacitor plugin modules.
           bash scripts/build/android-gradle-build.sh :app:assembleDebugAndroidTest
+          # connectedDebugAndroidTest needs a device; this resolves the test platform it runs on.
+          bash scripts/build/android-gradle-build.sh :app:resolveUnifiedTestPlatform
           bash scripts/build/android-gradle-build.sh --stop
       - if: github.event_name == 'push' && github.ref == 'refs/heads/dev' && steps.gradle.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4

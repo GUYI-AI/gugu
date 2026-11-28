@@ -707,7 +707,8 @@ export type UnreachedMachine = { deviceId: string | null; label: string | null; 
  * 界面上**不摆不存在的档**（@@@permission-three-modes 那条规矩）：摆一个按下去必失败的
  * 选择器，比不摆更糟。
  */
-export type SessionOptionChoice = { id: string; name: string; description?: string; disabled?: boolean; reviewByHaiku?: boolean };
+export type SessionOptionChoice = { id: string; name: string; description?: string; disabled?: boolean; reviewByHaiku?: boolean;
+  reviewer?: { label: string; kind: 'platform' | 'connection' } };
 
 export type SessionOptionGroup = {
   selected: string | null;
@@ -870,7 +871,10 @@ export type SessionpageScheduleDigest = {
   nextAt: string | null;
   /** 下一个要回来的那条的标题;只剩没送到的就是那一条的。 */
   title: string;
-  /** 有一条最近一次没送到:失败,或错过(机器关着过了点 / 上一次还没跑完);带它自己的标题(未必是下一个那条)。 */
+  /**
+   * 有一条最近一次没送到:失败,或错过(机器关着过了点 / 上一次还没跑完);带它自己的标题(未必是下一个那条)。
+   * 只给手机在只剩它时写一句中性的「未送达」;❌ 拿它在行上画 ⚠ —— 行上的标志只说 agent 此刻怎样。
+   */
   attention: { kind: 'failed' | 'missed'; title: string } | null;
 };
 
@@ -974,7 +978,8 @@ export type SessionpageSessionCreateModels = {
   /** Canonical native permission choices for this exact connection and model. */
   permissionOptions?: SessionOptionGroup | null;
   /** Verified on this model and selected host executable; absent on old/unknown hosts. */
-  autoReview?: { model: string; disabled?: boolean; reviewByHaiku?: boolean };
+  /** `reason`: a message key saying why Auto mode is off, when `disabled`. */
+  autoReview?: { model: string; disabled?: boolean; reason?: string; reviewByHaiku?: boolean; reviewer?: { label: string; kind: 'platform' | 'connection' } };
   customModels?: CustomModelConnection[];
   modelProtocols?: readonly ModelProtocol[];
   customModel?: { modelOptional?: true; convertFrom?: readonly ModelProtocol[] };
@@ -1055,6 +1060,8 @@ export type GuguCatalogReason =
   | 'model-unavailable'
   | 'team-monthly-cap-reached'
   | 'team-credits-exhausted'
+  /** #3939 The address of a custom model refused the key the person typed (401/403): change the key in Settings → Models. */
+  | 'key-rejected'
   /** 认不出的串(老版本宿主送来的原文):与 `service-unavailable` 同一句,❌ 原样显示。 */
   | 'unknown';
 
@@ -1078,7 +1085,7 @@ const GUGU_CATALOG_REASONS = new Set<GuguCatalogReason>([
   'not-routable', 'no-identity-chat', 'no-identity-terminal', 'runtime-not-connected', 'host-not-ready',
   'none-for-agent', 'signed-out', 'service-unavailable', 'unreachable', 'membership-required', 'model-unavailable',
   'conversion-add-provider-timeout', 'conversion-switch-provider-timeout', 'conversion-listen-timeout', 'conversion-start-failed',
-  'team-monthly-cap-reached', 'team-credits-exhausted',
+  'team-monthly-cap-reached', 'team-credits-exhausted', 'key-rejected',
 ]);
 
 /** 读一格 `catalogError` / `guguReason`:null = 没有要说的;其余一定落在某个码上。 */

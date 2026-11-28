@@ -1,6 +1,8 @@
+import type { ArchivedSessionRef } from '@shared/core/sessions/sessions';
 import { openRuntimeFork, runtimeFork, type RuntimeFork } from './session-life-forks';
 import { createRPCController } from '@shared/lib/ipc/rpc';
 import { archiveSession, restoreSession } from './archiveSession';
+import { permanentlyDeleteSessions } from './permanently-delete-session';
 import { dehydrateSession } from './dehydrateSession';
 import { getSessions } from './getSessions';
 import { getSessionsForProject } from './getSessionsForProject';
@@ -47,6 +49,9 @@ export const sessionController = createRPCController({
   // spec session-graph:UI 上没有恢复入口(owner 2026-09-11),但接口在 —— 归档不是删除,
   // 「数据回得来」这件事必须有代码作证。摆不摆入口是另一个决定。
   restoreSession,
+  // owner 2026-11-26:「已归档」里的永久删除,只删已归档的行;一条失败不拦别的,回执里逐条说清。
+  permanentlyDeleteSessions: (targets: ArchivedSessionRef[], options?: { withChildren?: boolean }) =>
+    permanentlyDeleteSessions(targets, options),
   // #7103 起任务失败到界面之前按层分:咕咕这一侧的只交原因码,harness 自己说的照原话(startupFailureForUser)。
   hydrateSession: (projectId: string, sessionId: string) =>
     hydrateSession(projectId, sessionId).catch((error: unknown) => {

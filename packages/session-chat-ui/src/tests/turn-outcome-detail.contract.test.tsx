@@ -128,39 +128,6 @@ describe('失败回合的原文详情上得了屏幕(#5858)', () => {
     expect(reading.dom).toBe(reading.computed)
   })
 
-  /**
-   * ⭐ **这条判据是被我自己的两次失败逼出来的,留着它。**
-   *
-   * 「详情」开关先后被做成 ① lane 上一颗独立按钮、② 徽章里多一截字。两次都在 480px 下
-   * 把 `outcomeRuleTrail`(#3568 的**失败作用域记号**,`flex: 1 1 0`,只吃剩余空间)挤成
-   * **0×1** —— 而这件事在 640px 上看不出来,只有窄档才露头。
-   * ⇒ 判据直接读那条线的宽高比:它必须仍然是**跨度**。
-   *   谁哪天想在这条 lane 上再加一个控件,会先在这里红。
-   */
-  it('开关一分宽度都不许从失败作用域那条记号线上拿(窄档 480px)', async () => {
-    let ratio = -1
-    let ruleW = -1
-    await renderAndMeasureUnit(
-      turnOutcomeUnitDef,
-      failedWithDetail,
-      makeContractCtx({ width: 480 }),
-      (host) => {
-        const rule = host.querySelector('[data-slot="turn-outcome-rule"]')
-        if (!rule) throw new Error('那条作用域记号线不在 DOM 里 —— 这次读数是空的,不是阴性')
-        const r = rule.getBoundingClientRect()
-        ruleW = Math.round(r.width * 100) / 100
-        ratio = r.height > 0 ? r.width / r.height : 0
-        return { ruleW, ratio }
-      },
-      { onRestorePrompt: () => {} }
-    )
-    expect(
-      ratio,
-      `那条线量出来 ${ruleW}px 宽(宽高比 ${ratio.toFixed(1)})—— 开关把它的剩余空间吃掉了,`
-        + ' #3568 要的「跨度」变成了一个点'
-    ).toBeGreaterThanOrEqual(8)
-  })
-
   it('进程死亡与 prompt 被拒在屏幕上不是同一句话(#4875 ②)', async () => {
     const a = await read(turnOutcomeUnitDef, failedWithDetail, false)
     const b = await read(turnOutcomeUnitDef, processClosed, false)
@@ -216,24 +183,26 @@ describe('上游说了什么,那一行就说什么(#7103)', () => {
     expect(clipped, `原因那一截被截掉了 ${clipped}px`).toBeLessThanOrEqual(0)
   })
 
-  it('窄档 480px:一整句上游的话也给失败作用域记号线留出跨度(线留最小跨度,让路的是徽章的省略号)', async () => {
-    let ratio = -1
-    let ruleW = -1
-    await renderAndMeasureUnit(
-      turnOutcomeUnitDef,
-      { ...failedWithSaid, outcome: { ...failedWithSaid.outcome, said: SAID.repeat(4) } } as TurnOutcomeItem,
-      makeContractCtx({ width: 480 }),
-      (host) => {
-        const rule = host.querySelector('[data-slot="turn-outcome-rule"]')
-        if (!rule) throw new Error('那条作用域记号线不在 DOM 里 —— 这次读数是空的,不是阴性')
-        const r = rule.getBoundingClientRect()
-        ruleW = Math.round(r.width * 100) / 100
-        ratio = r.height > 0 ? r.width / r.height : 0
-        return { ruleW, ratio }
-      },
-      { onRestorePrompt: () => {} }
-    )
-    expect(ratio, `那条线量出来 ${ruleW}px 宽 —— 长句把它的剩余空间吃掉了`).toBeGreaterThanOrEqual(8)
+  it.each([296, 480])('limits a long preview to two lines at %ipx and keeps the full raw detail on expansion', async width => {
+    const said = SAID.repeat(20)
+    const item: TurnOutcomeItem = { ...failedWithSaid, outcome: { kind: 'error', said, detail: said } }
+    for (const open of [false, true]) {
+      const ctx = makeContractCtx({ width, isCollapsed: () => open })
+      const reading = await renderAndMeasureUnit(turnOutcomeUnitDef, item, ctx, host => {
+        const badge = host.querySelector<HTMLElement>('[data-slot="turn-outcome-badge"]')!
+        expect(badge.getAttribute('aria-expanded')).toBe(String(open))
+        expect(badge.textContent?.split(said).length).toBe(2)
+        expect(!!badge.querySelector('pre')).toBe(open)
+        expect(!!badge.querySelector('[data-slot="turn-outcome-label"]')).toBe(!open)
+        if (!open) {
+          expect(badge.getBoundingClientRect().height).toBe(40)
+          expect(getComputedStyle(badge.firstElementChild!).webkitLineClamp).toBe('2')
+        }
+        return {}
+      }, { onRestorePrompt: () => {} })
+      expect(reading.computed).toBe(reading.dom)
+      expect(reading.spill).toBeLessThanOrEqual(0.5)
+    }
   })
 })
 

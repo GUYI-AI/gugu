@@ -12,6 +12,19 @@ export function contextThresholdMinimum(harness: string): number {
   return harness === 'claude' ? 100_000 : 8_000;
 }
 
+/** The context lengths a model menu offers below a model's maximum (owner 11-27 02:38). */
+export const CONTEXT_TIERS = [300_000, 600_000, 900_000] as const;
+export const DEFAULT_CONTEXT_TIER = CONTEXT_TIERS[0];
+
+/**
+ * What one "max context" stands for: every tier that fits under it plus the maximum itself, and 300K by default (the
+ * maximum when it is smaller). Stored as the existing `contextLengths` / `defaultContextLength` pair.
+ */
+export function contextTierChoice(maximum: number): { contextLengths: number[]; defaultContextLength: number } {
+  const contextLengths = [...new Set([...CONTEXT_TIERS.filter(value => value <= maximum), maximum])];
+  return { contextLengths, defaultContextLength: Math.min(DEFAULT_CONTEXT_TIER, maximum) };
+}
+
 export function modelContextLengths(lengths: unknown, defaultLength: unknown, maximum?: number | null) {
   if (!Array.isArray(lengths) || !lengths.length || typeof defaultLength !== 'number' || !lengths.includes(defaultLength)) return null;
   if (lengths.some(value => !Number.isSafeInteger(value) || value <= 0 || (maximum != null && value > maximum))) return null;

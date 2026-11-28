@@ -82,6 +82,8 @@ function channelProbeBundle(
             name: 'gugu',
             url: 'http://127.0.0.1:44100/native-channel-probe',
             authorizationEnv: probeAuthorizationEnv,
+            // The host tags Gugu's own server, and `antigravity` picks its chat-leg channel by that tag.
+            owner: 'gugu',
           },
         ]
       : [],

@@ -5,7 +5,7 @@ import type { WebLinksAddon } from '@xterm/addon-web-links';
 import type { WebglAddon } from '@xterm/addon-webgl';
 import type { ITerminalOptions, Terminal } from '@xterm/xterm';
 import { events, rpc } from '@renderer/lib/ipc';
-import { confirmOpenExternalLink } from '@renderer/lib/open-external-link';
+import { openWebLink, webLinkTarget } from '@renderer/lib/open-web-link';
 import { cssColorToHex, cssVar } from '@renderer/utils/cssVars';
 import { log } from '@renderer/utils/logger';
 import { ptyDataChannel } from '@shared/core/pty/ptyEvents';
@@ -274,11 +274,9 @@ export class FrontendPty {
       allowProposedApi: true,
       scrollOnUserInput: false,
       linkHandler: {
-        activate: (_event: MouseEvent, text: string) => {
-          if (!isPrimaryMouseButton(_event)) return;
-          confirmOpenExternalLink(text, (error) => {
-            log.warn('FrontendPty: failed to open external link', { text, error });
-          });
+        activate: (event: MouseEvent, text: string) => {
+          if (!isPrimaryMouseButton(event)) return;
+          openWebLink(text, webLinkTarget(event));
         },
       },
       theme: buildTheme(theme),
@@ -288,7 +286,7 @@ export class FrontendPty {
     const webLinksAddon = new lib.WebLinksAddon((event, uri) => {
       if (!isPrimaryMouseButton(event)) return;
       event.preventDefault();
-      confirmOpenExternalLink(uri);
+      openWebLink(uri, webLinkTarget(event));
     });
 
     this.terminal.loadAddon(webLinksAddon);

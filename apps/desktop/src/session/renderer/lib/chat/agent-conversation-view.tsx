@@ -1,4 +1,4 @@
-import { connectDeliveredMessagePresentation, resolveDeliveredAttachment } from './delivered-message-presentation';
+import { connectDeliveredMessagePresentation, openTranscriptImage, resolveDeliveredAttachment } from './delivered-message-presentation';
 import { rendererLogger } from '@/lib/log';
 import { nativeChatAppearance } from './native-chat-appearance.css';
 import { ChatComposer } from '@gugu/session-ui/react/components';
@@ -48,9 +48,15 @@ export function AgentConversationView({ layout, composerContent, shown = true, o
   }, [props.state, props.commands]);
   const hostCommands = props.commands;
   // Composer-only renders must not republish commands and remeasure history.
-  const commands = useMemo<NonNullable<ChatTranscriptProps['commands']>>(() => ({ ...hostCommands,
-    resolveAttachment: attachment => /^gugu-(message-)?file:\/\//.test(attachment.id) ? resolveDeliveredAttachment(attachment.id) : hostCommands?.resolveAttachment?.(attachment) ?? Promise.resolve(null),
-  }), [hostCommands]);
+  const commands = useMemo<NonNullable<ChatTranscriptProps['commands']>>(() => {
+    const resolveAttachment: NonNullable<ChatTranscriptProps['commands']>['resolveAttachment'] = attachment =>
+      /^gugu-(message-)?file:\/\//.test(attachment.id) ? resolveDeliveredAttachment(attachment.id) : hostCommands?.resolveAttachment?.(attachment) ?? Promise.resolve(null);
+    return { ...hostCommands, resolveAttachment,
+      // A picture opens in the shared viewer here, for every host; a file goes to its host.
+      onViewAttachment: arg => arg.attachment.kind === 'file' || arg.attachment.kind === 'annotation' ? hostCommands?.onViewAttachment?.(arg)
+        : openTranscriptImage(arg.attachment, arg.thumb, resolveAttachment),
+    };
+  }, [hostCommands]);
   useEffect(() => {
     if (!props.state?.session?.setDeliveredMessages) return;
     return connectDeliveredMessagePresentation(props.state, async id => {

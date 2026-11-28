@@ -159,6 +159,9 @@ function harness(members: string[] = [], groupPrompt: string | null = null) {
   // 回答丢了(服务端已经发出去,回答没到):前 n 次 commit 照样记下那条消息,再抛网络错。
   let lostAnswers = 0
   const commitBodies: Array<Record<string, unknown>> = []
+  // attachments/place: the folder's own write (file_put, an App's upload) — what was asked, and the row the server answers.
+  const placeBodies: Array<Record<string, unknown>> = []
+  let placeError: { status: number; error: string; message: string } | null = null
   let staged = 0
   const stagedBytes = new Map<string, Uint8Array>()
   const attachmentRequests: string[] = []
@@ -195,6 +198,17 @@ function harness(members: string[] = [], groupPrompt: string | null = null) {
       if (!calls.inserts.some(([, existing]) => (existing as Record<string, unknown>).id === row.id)) calls.inserts.push(['messages', row])
       if (lostAnswers > 0) { lostAnswers -= 1; throw new TypeError('fetch failed') }
       return new Response(JSON.stringify({ message: row }))
+    }
+    if (url.endsWith('/functions/v1/attachments/place')) {
+      const args = JSON.parse(String(init?.body)) as Record<string, unknown>
+      placeBodies.push(args)
+      if (placeError) return new Response(JSON.stringify({ error: placeError.error, message: placeError.message }), { status: placeError.status })
+      const name = String(args.file_name ?? 'brief.md')
+      return new Response(JSON.stringify({ item: {
+        id: args.item_id ?? W_NEW, chat_id: args.chat_id ?? '00000000-0000-4000-8000-000000000001', filename: name, path: name,
+        kind: /\.(md|json|txt)$/i.test(name) ? 'document' : 'file', content_type: args.content_type,
+        version: typeof args.expected_version === 'number' ? args.expected_version + 1 : 1, created_by: args.as_user_id,
+      } }))
     }
     return new Response(JSON.stringify({ error: 'invalid', message: `no fake for ${url}` }), { status: 404 })
   }) as typeof fetch
@@ -281,7 +295,7 @@ function harness(members: string[] = [], groupPrompt: string | null = null) {
   const attachments = testAttachmentUploads(deps.attachmentsEndpoint)
   Object.assign(deps, { attachments })
   return {
-    attachments, setGroupPrompt: (v: string | null) => { currentGroupPrompt = v }, failCommit: (error: Error) => { commitError = error }, loseCommitAnswers: (n: number) => { lostAnswers = n }, commitBodies, attachmentRequests, deps, calls }
+    attachments, setGroupPrompt: (v: string | null) => { currentGroupPrompt = v }, failCommit: (error: Error) => { commitError = error }, loseCommitAnswers: (n: number) => { lostAnswers = n }, commitBodies, placeBodies, failPlace: (error: { status: number; error: string; message: string }) => { placeError = error }, attachmentRequests, deps, calls }
 }
 async function connect(deps: Record<string, unknown>): Promise<Client> {
   const server = createGuguImServer(deps)
@@ -618,7 +632,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     const client = await connect(harness().deps)
     const { tools } = await client.listTools()
     expect(tools.map((t) => t.name).sort()).toEqual([
-      'activity_chat_list', 'contact_friend', 'group_add_agent', 'group_announcement_delete', 'group_announcement_post', 'group_announcement_update', 'group_avatar_set', 'group_create', 'group_info', 'group_join_decide', 'group_join_requests', 'group_leave', 'group_list', 'group_remove_member', 'group_set_role', 'group_update', 'message_conversations', 'message_download_file', 'message_history', 'message_invitations', 'message_invite', 'message_members',
+      'activity_chat_list', 'contact_friend', 'file_put', 'group_add_agent', 'group_announcement_delete', 'group_announcement_post', 'group_announcement_update', 'group_avatar_set', 'group_create', 'group_info', 'group_join_decide', 'group_join_requests', 'group_leave', 'group_list', 'group_remove_member', 'group_set_role', 'group_update', 'message_conversations', 'message_download_file', 'message_history', 'message_invitations', 'message_invite', 'message_members',
       'message_rules', 'message_search', 'message_send', 'message_send_as_owner',
       'owner_friends_list', 'profile_lookup', 'profile_update', 'profile_whoami', 'session_peers',
       'topic_delete', 'topic_invite', 'topic_list', 'topic_members', 'topic_open',
@@ -759,6 +773,45 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect((h.calls.inserts[0][1] as Record<string, unknown>).to_user_ids).toEqual([CHILD_USER_ID])
     await client.close()
   })
+  // Owner 2026-11-27: an address written as its first 8+ characters is matched as every short id is (idPrefix.ts).
+  test.each(['user:33333333', 'aid:33333333-33'])('message_send resolves %s among the chat\'s members', async (address) => {
+    const h = peersHarness()
+    const client = await connect({ ...h.deps, callSessionHost: async () => [childPeer] })
+    const result = await client.callTool({
+      name: 'message_send',
+      arguments: { chat_id: '00000000-0000-4000-8000-000000000001', text: '行动开始', to_user_ids: [address] },
+    })
+    expect(text(result)).toMatch(/^sent/)
+    expect((h.calls.inserts[0][1] as Record<string, unknown>).to_user_ids).toEqual([CHILD_USER_ID])
+    await client.close()
+  })
+  // @all is "*" in to_user_ids, as the composer's @all writes it; the text says it, and a text @all without it is refused.
+  test('message_send addresses everyone with "*" and writes @all; a text @all without "*" is refused', async () => {
+    const h = peersHarness()
+    const client = await connect({ ...h.deps, callSessionHost: async () => [childPeer] })
+    const sent = await client.callTool({ name: 'message_send', arguments: { chat_id: '00000000-0000-4000-8000-000000000001', text: '开会了', to_user_ids: ['*'] } })
+    expect(text(sent)).toMatch(/^sent/)
+    const row = h.calls.inserts[0][1] as Record<string, unknown>
+    expect(row.to_user_ids).toEqual(['*'])
+    expect(row.content).toBe('@all 开会了')
+    const refused = await client.callTool({ name: 'message_send', arguments: { chat_id: '00000000-0000-4000-8000-000000000001', text: '@all 开会了', to_user_ids: [] } })
+    expect(refused.isError).toBe(true)
+    expect(text(refused)).toContain('@all ("*")')
+    expect(h.calls.inserts).toHaveLength(1)
+    await client.close()
+  })
+  test('message_send says which chat a short address matched no member of, and sends nothing', async () => {
+    const h = peersHarness()
+    const client = await connect({ ...h.deps, callSessionHost: async () => [childPeer] })
+    const result = await client.callTool({
+      name: 'message_send',
+      arguments: { chat_id: '00000000-0000-4000-8000-000000000001', text: '行动开始', to_user_ids: ['user:44444444'] },
+    })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toMatch(/no member of chat 00000000-0000-4000-8000-000000000001 matches user:44444444/)
+    expect(h.calls.inserts).toHaveLength(0)
+    await client.close()
+  })
   test('message_send fails loud when a session: recipient is not addressable on this machine', async () => {
     const h = peersHarness()
     const client = await connect({ ...h.deps, callSessionHost: async () => [] })
@@ -776,6 +829,12 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     test('session: resolves to the bare identity UUID', async () => {
       await expect(resolveRecipientAddresses(['session:child-conversation'], hostWith([childPeer])))
         .resolves.toEqual([CHILD_USER_ID])
+    })
+    test('session: written as a prefix resolves among the addressable sessions; several are refused with the candidates', async () => {
+      await expect(resolveRecipientAddresses(['session:child-co'], hostWith([childPeer]))).resolves.toEqual([CHILD_USER_ID])
+      const twin = { ...childPeer, sessionId: 'child-copy' }
+      await expect(resolveRecipientAddresses(['session:child-co'], hostWith([childPeer, twin])))
+        .rejects.toThrow(/session:child-co matches 2 sessions: session:child-conversation, session:child-copy/)
     })
     test('a non-UUID identity from the host fails loud instead of reaching the column', async () => {
       const typedFromHost = [{ ...childPeer, identity: { users: { ...childPeer.identity.users, id: `user:${CHILD_USER_ID}` } } }]
@@ -1451,7 +1510,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(r.isError).toBe(true)
     // The refusal names who can be addressed instead, so a made-up recipient is corrected from the refusal itself.
     expect(text(r)).toContain('Recipients are not members of chat 00000000-0000-4000-8000-000000000001: ghost. Members you can address: ')
-    expect(text(r)).toMatch(/aid:alice\)?\. Send again to one of these addresses\./)
+    expect(text(r)).toMatch(/user:alice\)?\. Send again to one of these addresses\./)
     expect(h.calls.inserts).toHaveLength(0)
     await client.close()
   })
@@ -1587,7 +1646,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
       })
       expect(result.isError).toBe(true)
       expect(text(result)).toContain('the text calls on Ada, 分析甲')
-      expect(text(result)).toContain('agent-ascii, agent-long')
+      expect(text(result)).toContain('user:agent-ascii, user:agent-long')
       expect(h.calls.inserts).toHaveLength(0)
       expect(writeRpcs(h.calls.rpcs)).toEqual([])
       await client.close()
@@ -2004,26 +2063,73 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(h.calls.rpcs).toHaveLength(0)
     await client.close()
   })
-  // 摩擦单 F40:app_install { chat_id, data } 建群里的数据文件 —— 以 agent 本人建,判据和上传同一个;同名已有就留着用。
-  test('groupDataFileOf: makes the data file as the agent, keeps one already there, refuses a .json that is not an object', async () => {
+  // 摩擦单 F40:app_install { chat_id, data } 建群里的数据文件 —— 本机的一个文件,和 file_put 同一条路放进群(attachments/place),
+  // 以 agent 本人;判据和上传同一个,放之前就判;同名已有就留着用。
+  test('groupDataFileOf: puts the file from this computer as file_put does, keeps one already there, refuses a .json that is not an object', async () => {
     const h = harness()
-    const made = await groupDataFileOf(TEST_CONTEXT, { chatId: '00000000-0000-4000-8000-000000000001', name: 'friday.vote.json', content: { question: 'Friday?', votes: {} } }, h.deps)
-    const body = h.calls.rpcs.find(([name]) => name === 'workspace_create_document_as')?.[1] as Record<string, unknown>
-    expect(body).toMatchObject({ p_chat_id: '00000000-0000-4000-8000-000000000001', p_title: 'friday.vote.json', p_content_type: 'application/json', p_as_user_id: 'agent-1' })
-    expect(JSON.parse(String(body.p_content))).toEqual({ question: 'Friday?', votes: {} })
+    const dir = mkdtempSync(join(tmpdir(), 'gugu-data-file-'))
+    const vote = join(dir, 'friday.vote.json')
+    writeFileSync(vote, JSON.stringify({ question: 'Friday?', votes: {} }))
+    const made = await groupDataFileOf(TEST_CONTEXT, { chatId: '00000000-0000-4000-8000-000000000001', filePath: vote }, h.deps)
+    expect(h.placeBodies).toEqual([expect.objectContaining({ chat_id: '00000000-0000-4000-8000-000000000001', file_name: 'friday.vote.json', as_user_id: 'agent-1', content_type: 'application/json' })])
+    expect(JSON.parse(String(h.calls.uploads.at(-1)?.[3]))).toEqual({ question: 'Friday?', votes: {} })
     expect(made).toMatchObject({ item: { id: W_NEW }, link: `[friday.vote.json](gugu-file://${W_NEW})`, reused: false })
-    // A reinstall after a fix: brief.md is already there under that name — kept, nothing made.
-    const creates = h.calls.rpcs.filter(([name]) => name === 'workspace_create_document_as').length
-    const kept = await groupDataFileOf(TEST_CONTEXT, { chatId: '00000000-0000-4000-8000-000000000001', name: 'brief.md', content: 'new text' }, h.deps)
-    expect(kept).toMatchObject({ item: { id: W_DOC }, reused: true })
-    expect(h.calls.rpcs.filter(([name]) => name === 'workspace_create_document_as')).toHaveLength(creates)
+    expect(h.calls.rpcs.filter(([name]) => name === 'workspace_create_document_as')).toHaveLength(0)
+    // A reinstall after a fix: brief.md is already there under that name — kept, nothing put.
+    const brief = join(dir, 'brief.md')
+    writeFileSync(brief, 'new text')
+    expect(await groupDataFileOf(TEST_CONTEXT, { chatId: '00000000-0000-4000-8000-000000000001', filePath: brief }, h.deps)).toMatchObject({ item: { id: W_DOC }, reused: true })
     // An App's data file is at the top (子文件夹): looked for there only, by its name as the database keeps names (p_exact).
     expect(h.calls.rpcs.filter(([name]) => name === 'workspace_list_as').at(-1)?.[1]).toMatchObject({ p_folder: '', p_name: 'brief.md', p_exact: true })
-    expect(await groupDataFileOf(TEST_CONTEXT, { chatId: '00000000-0000-4000-8000-000000000001', name: 'Brief.MD', content: 'new text' }, h.deps)).toMatchObject({ item: { id: W_DOC }, reused: true })
-    expect(h.calls.rpcs.filter(([name]) => name === 'workspace_create_document_as')).toHaveLength(creates)
-    await expect(groupDataFileOf(TEST_CONTEXT, { chatId: '00000000-0000-4000-8000-000000000001', name: 'list.vote.json', content: [1, 2] }, h.deps))
+    expect(await groupDataFileOf(TEST_CONTEXT, { chatId: '00000000-0000-4000-8000-000000000001', filePath: brief, fileName: 'Brief.MD' }, h.deps)).toMatchObject({ item: { id: W_DOC }, reused: true })
+    expect(h.placeBodies).toHaveLength(1)
+    const list = join(dir, 'list.vote.json')
+    writeFileSync(list, '[1, 2]')
+    await expect(groupDataFileOf(TEST_CONTEXT, { chatId: '00000000-0000-4000-8000-000000000001', filePath: list }, h.deps))
       .rejects.toThrow('the data file list.vote.json was not made: a JSON file lives as an object at the top ({...}); this one is not')
+    expect(h.placeBodies).toHaveLength(1)
   })
+
+  // owner 11-26:agent 对群文件只有「拿下来」(message_download_file)和「按路径传上去」(file_put)。file_put 和 message_send 的
+  // file_path 是同一条路(localFileIntoFolder),只是不发消息:落进文件夹走 attachments/place。
+  test('file_put: a new file from this computer goes in the folder by its own name, no message; with file, its next version from that version', async () => {
+    const h = harness()
+    const dir = mkdtempSync(join(tmpdir(), 'gugu-file-put-'))
+    const plan = join(dir, '周报.md')
+    writeFileSync(plan, '# 周报')
+    const put = JSON.parse(await callTool('file_put', { chat_id: '00000000-0000-4000-8000-000000000001', file_path: plan, folder: '周报/2026' }, h.deps))
+    expect(put).toEqual({ status: 'put', file: `gugu-file://${W_NEW}?v=1`, name: '周报.md', path: '周报.md', version: 1, type: 'document' })
+    expect(h.placeBodies.at(-1)).toMatchObject({ chat_id: '00000000-0000-4000-8000-000000000001', file_name: '周报.md', folder: '周报/2026', as_user_id: 'agent-1', content_type: 'text/markdown' })
+    expect(Buffer.from(h.calls.uploads.at(-1)![3] as Buffer).toString()).toBe('# 周报')
+    expect(h.commitBodies).toEqual([])
+    expect(h.calls.inserts).toEqual([])
+    // Changed on this computer, put back as that file's next version — from the version it was downloaded at.
+    writeFileSync(plan, '# 周报\n\n加了一段')
+    const next = JSON.parse(await callTool('file_put', { chat_id: '00000000-0000-4000-8000-000000000001', file_path: plan, file: `gugu-file://${W_DOC}?v=1` }, h.deps))
+    expect(h.placeBodies.at(-1)).toEqual(expect.objectContaining({ item_id: W_DOC, expected_version: 1, as_user_id: 'agent-1' }))
+    expect(h.placeBodies.at(-1)).not.toHaveProperty('chat_id')
+    expect(next).toMatchObject({ file: `gugu-file://${W_DOC}?v=2`, version: 2 })
+    expect(h.commitBodies).toEqual([])
+  })
+
+  test('file_put refuses before a byte goes: a next version without the version it started from, one the file is past, a folder with file', async () => {
+    const h = harness()
+    const dir = mkdtempSync(join(tmpdir(), 'gugu-file-put-'))
+    const plan = join(dir, 'brief.md')
+    writeFileSync(plan, '# brief')
+    const chat_id = '00000000-0000-4000-8000-000000000001'
+    await expect(callTool('file_put', { chat_id, file_path: plan, file: `gugu-file://${W_DOC}` }, h.deps)).rejects.toThrow(/^file_put: file_path as the next version of .* needs the version you started from/)
+    // A file is named by its link, the one form list and history give: a bare id is refused with that form.
+    await expect(callTool('file_put', { chat_id, file_path: plan, file: W_DOC }, h.deps)).rejects.toThrow(/file is a gugu-file:\/\/<item_id>\?v=<n> link/)
+    await expect(callTool('file_put', { chat_id, file_path: plan, file: `gugu-file://${W_DOC}?v=1`, folder: 'x' }, h.deps)).rejects.toThrow(/^file_put: folder places a new file/)
+    // Someone stored a newer one since: said as the next step, nothing written.
+    h.deps.restRpc = (async (name: string, body: Record<string, unknown>) => name === 'workspace_get_as'
+      ? [{ id: body.p_item_id, chat_id, kind: 'document', filename: 'brief.md', version: 3 }] : []) as typeof h.deps.restRpc
+    await expect(callTool('file_put', { chat_id, file_path: plan, file: `gugu-file://${W_DOC}?v=1` }, h.deps)).rejects.toThrow(/^file_put: someone stored a newer version of .* since version 1, and nothing was written/)
+    expect(h.placeBodies).toEqual([])
+    expect(h.calls.uploads).toEqual([])
+  })
+
   // 摩擦单 F102(S20):数据已经在群里(B 上传的 catalog.json)—— 用那个文件本身,以 agent 本人读;❌ 另建一份、❌ 抄进包。
   test('groupDataFileOf { itemId }: the file already in the group, read as the agent, nothing made — another chat\'s or a stored file refused', async () => {
     const h = harness()
@@ -2668,10 +2774,10 @@ describe('MCP 工具对外声明的入参 schema', () => {
     const recipientSchema = properties.to_user_ids as Record<string, unknown>
     const recipientItems = recipientSchema.items as Record<string, unknown>
     expect(recipientSchema.type).toBe('array')
-    expect(String(recipientSchema.description)).toContain('multiple recipients')
+    expect(String(recipientSchema.description)).toContain('"*" is @all')
     expect(recipientItems).toMatchObject({ type: 'string' })
     // 上下文工程第一批 P5:地址三种写法在数组外层说一次,元素上不再重复。
-    expect(String(recipientSchema.description)).toContain('user:<uuid>')
+    expect(String(recipientSchema.description)).toContain('user:<id>')
     expect(String(recipientSchema.description)).toContain('session:<id>')
     expect(String(recipientSchema.description)).toContain('gugu:<number>')
     expect(recipientItems.description).toBeUndefined()
@@ -2993,7 +3099,7 @@ describe('message_send whisper (#6835)', () => {
     const h = harness(['agent-1', 'alice'])
     const r = await send(h, { whisper: true, to_user_ids: ['user:alice'] }, { ...TEST_CONTEXT, threadRootId: 'thread-1' })
     expect(r.isError).toBe(true)
-    expect(text(r)).toMatch(/whisper can only go to the main timeline.*thread=thread-1/)
+    expect(text(r)).toMatch(/whisper can only go to the main timeline.*thread=msg:thread-1/)
     expect(h.calls.inserts).toHaveLength(0)
   })
 })
@@ -3022,8 +3128,9 @@ describe('write tools refuse unknown keys (#6840)', () => {
     const client = await connect(h.deps)
     const { tools } = await client.listTools()
     const writers = (TOOL_DEFS as Array<{ name: string; writer?: boolean }>).filter((def) => def.writer).map((def) => def.name)
-    // One writer for text and files (message_send, message_send_as_owner; MCP surface review 11-16); workspace writers live in the folder App.
-    expect(writers).toHaveLength(19)
+    // One writer for text and files (message_send, message_send_as_owner; MCP surface review 11-16), and file_put for a chat
+    // folder's file by path (owner 11-26); renaming and moving live in the folder App.
+    expect(writers).toHaveLength(20)
     for (const name of writers) {
       expect(tools.find((tool) => tool.name === name)?.inputSchema, name).toMatchObject({ additionalProperties: false })
     }

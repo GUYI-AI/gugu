@@ -5,6 +5,8 @@
 export const desktopWorkers = {
   'database-maintenance': { entry: 'main/db/maintenance-worker.ts', file: 'database-maintenance.js' },
   'codex-task-scan': { entry: 'main/core/session-import/codex-task-worker.ts', file: 'codex-task-scan.js' },
+  // Claude Code's managed model policy, read once per app run (#4019): the Agent SDK it loads is too big to keep in the app.
+  'claude-managed-settings': { entry: 'main/core/agents/claude-managed-settings-worker.ts', file: 'claude-managed-settings.js' },
   'cursor-import': { entry: 'main/core/session-import/cursor-worker.ts', file: 'cursor-import.js' },
   'local-session-preview': { entry: '../sessionpage/local-session-preview-worker.ts', file: 'local-session-preview.js' },
   'session-timeline-fold': { entry: 'main/core/session-timeline/fold-worker.ts', file: 'session-timeline-fold.js' },

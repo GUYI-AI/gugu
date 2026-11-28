@@ -12,7 +12,6 @@ import type { Automation } from '@shared/core/automations/automation';
 import type { AutomationRun } from '@shared/core/automations/automation-run';
 import { markRunDone, markRunFailed, updateRunOrThrow, type OnStepCompleted } from '../run-transitions';
 import { describeScheduleTime } from '../schedule-time';
-import { sessionUsesAssistantPanel } from '../../sessions/session-admission-preparation';
 import type { HostSessionDeliveryReceipt } from '../../sessions/session-orchestration';
 
 /** Additional startup reservations for one stable input; busy/dispatching waits do not spend this budget. */
@@ -83,8 +82,7 @@ export async function executeAgentDelivery(
     return err('agent_gone');
   }
 
-  const text = sessionUsesAssistantPanel(sessionId) ? automation.agentConfig?.prompt?.trim() ?? ''
-    : run.agentConfigSnapshot.prompt.trim() || automation.agentConfig?.prompt?.trim() || '';
+  const text = run.agentConfigSnapshot.prompt.trim() || automation.agentConfig?.prompt?.trim() || '';
   if (!text) {
     const failed = await markRunFailed(run.id, { step: 'deliver', code: 'no_prompt' });
     onStepCompleted(failed);

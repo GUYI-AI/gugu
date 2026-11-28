@@ -17,6 +17,9 @@ import { openForward } from '@/components/chat/forwardToChats';
 import type { TranscriptTurn } from '@gugu/session-chat-ui';
 import { bindMessageQuoteTouchMenu } from './message-quote-touch-menu';
 import { openCommentLine } from '../annotations/selection-line';
+import { selectLinkForMenu } from '@/lib/selectLinkForMenu';
+import { isWebLink } from '@shared/link-menu';
+import { openWebLink } from '@renderer/lib/open-web-link';
 
 type Target = Parameters<NonNullable<ChatCommands['onMessageTextMount']>>[0];
 const log = rendererLogger('session/message-actions');
@@ -58,15 +61,18 @@ export function useSessionMessageQuotes(store: (Pick<AcpChatStore, 'sessionId' |
       });
     };
     // A right press selects the word under it (macOS) before the menu event: only what was selected before it counts.
-    let pressed: { selection: string | null | undefined; at: DOMRect | null } | null = null;
-    const selectionAt = () => { const current = target.root.ownerDocument.getSelection(); return current?.rangeCount ? current.getRangeAt(0).getBoundingClientRect() : null; };
+    let pressed: { selection: string | null | undefined; at: Range | null } | null = null;
+    const selectionAt = () => { const current = target.root.ownerDocument.getSelection(); return current?.rangeCount ? current.getRangeAt(0).cloneRange() : null; };
     const press = (event: PointerEvent) => {
       if (event.button === 2) pressed = { selection: selectedMessageText(target.root, target.root.ownerDocument.getSelection()), at: selectionAt() };
     };
     const open = (event: MouseEvent) => {
       const current = latest.current.store;
       if (!current) return;
-      const before = pressed;
+      // A link right-clicked with nothing selected before the press is selected first (@@@link-menu).
+      const linkSelected = !latest.current.actions.phone && pressed?.selection === undefined
+        && selectLinkForMenu(event.target instanceof Element ? event.target.closest('a[href]') : null);
+      const before = linkSelected ? null : pressed;
       pressed = null;
       const selection = before ? before.selection : selectedMessageText(target.root, target.root.ownerDocument.getSelection());
       const at = before ? before.at : selectionAt();
@@ -107,13 +113,15 @@ export function useSessionMessageQuotes(store: (Pick<AcpChatStore, 'sessionId' |
         x: event.clientX, y: event.clientY, isRetracted: false, content: text, hasSelection: selection !== undefined,
         ...(acts.phone ? { lift: { bubble: menuRoot, touchY: event.clientY, mine: message.role === 'user' } } : {}),
         onCopy: usable(() => copy(text)),
-        // The whole message is quoted into the composer; a selection is commented on, at the selection, into the draft.
-        ...(selection === undefined ? { onQuoteToComposer: usable(() => {
+        // Quoted into the composer: the whole message, or on a computer the selection, which is also commented on, at the
+        // selection, into the draft: 复制 · 引用 · 评论. A phone's selection is copied only.
+        ...(selection === undefined || !acts.phone ? { onQuoteToComposer: usable(() => {
           const quoted = quotedIntoDraft(editor.current?.getText() ?? '', text);
           current.setDraftText(quoted);
           editor.current?.setText(quoted);
           editor.current?.focus('end');
-        }) } : at && !acts.phone ? { onCommentSelection: usable(() => openCommentLine({ kind: 'session', sessionId: current.sessionId }, at,
+        }) } : {}),
+        ...(selection !== undefined && at && !acts.phone ? { onCommentSelection: usable(() => openCommentLine({ kind: 'session', sessionId: current.sessionId }, at,
           target.root.closest<HTMLElement>('[data-chat-scroll]') ?? target.root, {
             kind: 'message', messageId: target.itemId, authorId: null, text: selection,
             authorName: target.sender?.() ?? latest.current.translate(message.role === 'user' ? 'globalSearch.you' : 'globalSearch.agent'),
@@ -122,6 +130,7 @@ export function useSessionMessageQuotes(store: (Pick<AcpChatStore, 'sessionId' |
           onCopyLink: usable(() => copy(link)),
           // The link's own click: a reference, a group file, a working-folder file and a web link each open their own way.
           onOpenLink: usable(() => anchor?.click()),
+          ...(isWebLink(link) ? { onOpenLinkSystem: usable(() => { openWebLink(link, 'system'); }) } : {}),
         } : {}),
         ...(file && carried && !unavailable ? { onOpenFile: usable(() => openSentFile(file, carried, commands)) } : {}),
         ...(message.role === 'user' && !message.guguDelivery && acts.canEdit?.(target.itemId) ? { onEditMessage: usable(() => acts.onEdit?.(target.itemId)) } : {}),

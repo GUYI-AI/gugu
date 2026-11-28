@@ -258,6 +258,11 @@ export interface AgentRuntimeBridge {
   agentStatus?(agentUserId: string): AgentStatusReading | null
   /** 这个 agent 绑的会话最后一次有动静(开工、停下、等人、出错)的时刻,ISO;null = 说不出。与读数同一个流。 */
   lastInteractedAt?(agentUserId: string): string | null
+  /**
+   * #3938 这个 agent 此刻跑的模型,按本机模型清单的叫法(占位档已换成具体名字);'' = 本机知道它说不出具体模型;
+   * null = 本机说不出(会话没在跑、终端会话)。与读数同一个流,变了经 onAgentStatusChanged 宣告。
+   */
+  modelName?(agentUserId: string): string | null
   /** Recent provider tool actions owned by the session-page session, if available. */
   recentActionsForAgent?(agentUserId: string): {
     actions: string[]

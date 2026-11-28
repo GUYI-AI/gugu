@@ -34,7 +34,7 @@ import { inlineImageOrder, inlineImageTurnText } from './inline-image-turn';
 import { continueSessionTurn } from './continue-session-turn';
 import { reloadWorkingModel } from './reload-working-model';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
-import { followConversationLink, noteDrawnPictureLink } from '@/lib/followConversationLink';
+import { followConversationLink } from '@/lib/followConversationLink';
 import { useOpenWebLink } from '@/hooks/useOpenWebLink';
 import { openMessageSender } from '@/lib/openMessageSender';
 import { classifyFileLink } from '@gugu/core/shared/ui/guguLink';
@@ -79,6 +79,7 @@ import { AgentConversationView as ChatTranscript, AgentConversationComposer as C
 import { useSessionChatLayout } from '@renderer/lib/chat/use-session-chat-layout';
 import type { ChatCommands, ChatView } from '@renderer/lib/chat/chat-transcript';
 import { AgentIcon } from '@renderer/lib/components/agent-icon';
+import { openShellSettings } from '@renderer/lib/open-shell-settings';
 import {
   agentGroupLabel,
   sortAgentsByAvailability,
@@ -99,7 +100,7 @@ import { machineRegistry } from '@renderer/lib/machine-routing';
 import { readConversationFile } from '@/components/assistant/assistantTimelineClient';
 import { isEmbedVisible } from '@renderer/lib/portal-container';
 import { platformModelIdFromRuntimeOption, platformOptionId } from '@/session/shared/platform-model-id';
-import { openComposerImage, openDiagramViewer, openImageViewer } from '@/lib/imageViewer';
+import { openComposerImage, openDiagramViewer } from '@/lib/imageViewer';
 import { resolveSignInTarget } from '@renderer/features/settings/agents-page/agent-account';
 import { pathAttachmentTarget } from '@gugu/session-chat-ui/markdown-attachment-mentions';
 import { resolveAttachmentDataUrl } from './acp-attachment-image';
@@ -132,7 +133,9 @@ import {
 import { useOpenedOutputMenu } from './opened-output-menu';
 import { liveSettingOptions } from '../session-config/live-setting-options';
 import type { AcpChatTabResource } from './acp-chat-tab-resource';
-import { chatViewCommandForShortcut, executeChatViewCommand } from './acp-chat-view-commands';
+import { executeChatViewCommand, isEditableElement } from './acp-chat-view-commands';
+import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
+import { deepActiveElement } from '@renderer/features/sidebar/session-navigation-focus';
 import {
   effortSourceFor,
   localizeEffortOptions,
@@ -162,6 +165,7 @@ import { sessionBillingRoute, runningPlatformModelId, unavailablePlatformModelId
 import { planModelSwitch } from '@renderer/features/sessions/session-config/model-switch-plan';
 import { findSessionHostBridge } from '@renderer/lib/electron-api';
 import { SessionReloadConfirm } from '@renderer/features/sessions/session-reload-confirm';
+import { lastLiveEffort, pickedEffort, rememberLiveEffort, rememberPickedEffort } from '@renderer/features/sessions/session-config/last-live-effort';
 import { requestSendQueuedPromptNow } from './send-queued-prompt-now-flow';
 import { requestSessionReload } from '@renderer/features/sessions/request-session-reload';
 import {
@@ -847,12 +851,24 @@ const ComposerForStore = observer(function ComposerForStore({
         writingModel.current = false;
       }
     });
+  // #3992 owner 2026-11-26「直接省事不问就好了……切模型后可以程序化让他续跑」: a model switch that needs a restart restarts
+  // right away, with no confirm. A reply running by then is interrupted and continued on the new model, the same path as
+  // a switch made while replying (`applyReload` with its id, 1b361b96). The MCP, permission and manual restarts still ask.
+  const restartOntoModel = useCallback((target: RestartTarget) => {
+    const reply = !store.isTransient && store.session?.sessionState.current().lifecycle === 'working'
+      ? store.session.activeTurn.current() : null;
+    if (reply) toast({ tier: 'info', title: translate('chat.modelSwitchContinuing', { model: target.label }), position: 'bottom-right' });
+    return applyReload(target, reply?.id);
+  }, [store, translate, applyReload]);
+
   const handleModelChange = useCallback(
-    (optionId: string, effort?: string) => {
+    (optionId: string, effort?: string, effortPicked?: boolean) => {
       if (writingModel.current) {
         toast({ title: translate('composer.modelBusy') });
         return;
       }
+      // gugu-dev#1579 A level picked on the model being switched to is the person's: it follows later switches.
+      if (effortPicked && effort) rememberPickedEffort(store.sessionId, effort);
       // 与 `sessionModelOptions` 同一个前提:能力声明没到,菜单本来就没摆出来。
       if (!providerCapabilities) return;
       if (
@@ -894,7 +910,7 @@ const ComposerForStore = observer(function ComposerForStore({
         // 两个 id 的分工见 `ModelSwitchPlan` 的 `wireValue` 注释。
         //
         // ⚠️ 即使 `planModelSwitch` 判了「热」,运行时仍可能回 `restart_required`
-        //    (声明与实际不一致时)。那时**不能只吞掉** —— 走同一个确认+重启动作。
+        //    (声明与实际不一致时)。那时**不能只吞掉** —— 走同一个重启动作(#3992 不再先问)。
         // `hot` 那一支**没有** displayName / source(它们只在 `reload` 上)—— 这是 typecheck
         // 抓到的:热切根本不需要它们,而这条防线需要。⇒ 从这里现有的两份真值取:
         // 显示名取目录(取不到就用 id,❌ 不猜一个好看的),计费路取用户点中那一条自己的来源。
@@ -905,7 +921,7 @@ const ComposerForStore = observer(function ComposerForStore({
         writingModel.current = true;
         void store.setModel(plan.wireValue).then(async (outcome) => {
           if (outcome?.kind === 'restart-required') {
-            setPendingReload({
+            await restartOntoModel({
               dimension: 'model',
               value: plan.modelId,
               label: catalogName ?? runtimeModelId(plan.modelId) ?? '',
@@ -963,15 +979,16 @@ const ComposerForStore = observer(function ComposerForStore({
       }
       // `source` 与模型一起送到宿主 —— 少了它重开会带着**旧的**那条计费路重来
       //(spawn 读的是每会话那份平台记录,不是 config.model)。见 session-reload.ts 的 modelSource。
-      setPendingReload({
+      writingModel.current = true;
+      void restartOntoModel({
         dimension: 'model',
         value: plan.modelId,
         label: plan.displayName,
         source: plan.source === 'platform' ? 'platform' : 'own',
         effort,
-      });
+      }).finally(() => { writingModel.current = false; });
     },
-    [store, planForOption, platformCatalog, sessionModelOptions, providerCapabilities, reportInputFailure, translate, providerId, switchBeforeFirstStart, handleEffortChange, applyReload]
+    [store, planForOption, platformCatalog, sessionModelOptions, providerCapabilities, reportInputFailure, translate, providerId, switchBeforeFirstStart, handleEffortChange, applyReload, restartOntoModel]
   );
 
   const confirmReload = useCallback(async () => {
@@ -1071,11 +1088,23 @@ const ComposerForStore = observer(function ComposerForStore({
   }, [runningCustomModel, customFeatures, store.effort, store.effortOptions, store.starting, declaredEffortOptions, providerCapabilities, runningPlatformModel, platformCatalog.models, translate]);
   // #7342 停下了、记录里也没记档位(= harness 自己那一档默认):用探针目录报的那一档当默认档画(触发器压一档不透明度),
   // 与新建页同一个来源(`harnessCatalogToModelsCapability` 的 defaultEffortId)。活会话报的就是已生效那一档,用不着它。
-  const detachedDefaultEffort = detached && !runningPlatformModel && harnessCatalog.state.kind === 'ready'
+  const probedDefaultEffort = detached && !runningPlatformModel && harnessCatalog.state.kind === 'ready'
     ? (harnessCatalog.state.selectedEffort ?? undefined)
     : undefined;
-  const querySlashItems = useComposerSlashItems({ store, promptLibrary, promptOverrides, translate, providerId });
+  // #3973 Not live (stopped, reopened, restarting after a switch) and no level on the record: the level this session last
+  // ran at, which its thread comes back with (`last-live-effort.ts`); else the harness's probed default.
+  const detachedDefaultEffort = detached
+    ? lastLiveEffort(store.sessionId, sessionEffortOptions) ?? probedDefaultEffort
+    : undefined;
+  const liveUnrecordedEffort = store.session && !store.isTransient && !sessionRecord?.effort ? store.effort : null;
+  useEffect(() => {
+    if (liveUnrecordedEffort) rememberLiveEffort(store.sessionId, liveUnrecordedEffort);
+  }, [liveUnrecordedEffort, store.sessionId]);
+  const querySlashItems = useComposerSlashItems({ store, promptLibrary, promptOverrides, translate, providerId, harnessCatalog: harnessCatalog.state });
 
+  const selectedModelOption = composerSelectedOptionId({ platformModel: runningPlatformModel, model: store.model, customModel: runningCustomModel });
+  // 换了模型、新模型还没报读数:记录里那份已用量,分母换成此刻模型的窗口(recordedContextUsage)。
+  const usage = store.usageIn(selectedModelOption ? sessionModelOptions?.[selectedModelOption]?.modelFeatures?.contextWindowSize : undefined);
   const a = store.affordances;
   const agentUserId = sessionAgentBindings.bindingFor(store.sessionId)?.agentUserId ?? null;
 
@@ -1181,11 +1210,7 @@ const ComposerForStore = observer(function ComposerForStore({
         // 「哪几条现在切不了」由 sessionModelOptions 判,见 @@@session-options-disabled。
         modelOptions={sessionModelOptions}
         modelUnknown={merged === undefined || !platformCatalog.known}
-        selectedModel={composerSelectedOptionId({
-          platformModel: runningPlatformModel,
-          model: store.model,
-          customModel: runningCustomModel,
-        })}
+        selectedModel={selectedModelOption}
         onModelChange={handleModelChange}
         effortOptionsForModel={effortOptionsForModel}
         modelMenuOpenRequest={modelMenuRequest}
@@ -1199,11 +1224,14 @@ const ComposerForStore = observer(function ComposerForStore({
         effortOptions={localizeEffortOptions(sessionEffortOptions, translate)}
         selectedEffort={store.effort ?? undefined}
         defaultEffort={detachedDefaultEffort}
+        pickedEffort={pickedEffort(store.sessionId)}
         onEffortChange={effortId => {
           if (writingModel.current) {
             toast({ title: translate('composer.modelBusy') });
             return;
           }
+          // gugu-dev#1579 Picked by hand: this level follows a model switch ('' = reset to the app's level).
+          rememberPickedEffort(store.sessionId, effortId || null);
           void handleEffortChange(effortId);
         }}
         fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup,
@@ -1228,17 +1256,7 @@ const ComposerForStore = observer(function ComposerForStore({
         agentLocked
         onAgentChange={() => {}}
         contextThresholds={contextThresholds}
-        contextUsage={
-          store.usage
-            ? {
-                used: store.usage.contextUsed,
-                size: store.usage.contextSize,
-                autoCompact: store.usage.autoCompact,
-                cost: store.usage.cost,
-                costSource,
-              }
-            : null
-        }
+        contextUsage={usage ? { used: usage.contextUsed, size: usage.contextSize, autoCompact: usage.autoCompact, cost: usage.cost, costSource } : null}
         mentionProvider={mentionProvider}
         renderMentionIcon={renderMentionIcon}
         queryCommands={querySlashItems}
@@ -1722,29 +1740,16 @@ export const AcpChatPanel = observer(function AcpChatPanel({
 
   useMarkSeenWhenShown(sessionStore, visibility.shown && !store?.isTransient, store?.sessionId);
 
-  useEffect(() => {
-    if (!store) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const root = rootRef.current;
-      if (!root || !eventComposedPathContains(event, root)) return;
-
-      const commandId = chatViewCommandForShortcut(event);
-      if (!commandId) return;
-      if (!executeChatViewCommand(viewRef.current, commandId)) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-    };
-
-    window.addEventListener('keydown', handleKeyDown, { capture: true });
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown, { capture: true });
-    };
-  }, [store]);
-
-  const handleViewerOpen = useCallback((src?: string, alt?: string) => {
-    setViewer({ src, alt });
-  }, []);
+  // ⌘↑ / ⌘↓ in a focused transcript scroll it to the top / the latest message. From a text field the key is not the
+  // transcript's: the command declines and the same chord walks the conversation list (session.previous / next).
+  useCommandProvider({
+    scopeId: 'session-sub',
+    isActive: (element) => !!store && !!element && !!rootRef.current?.contains(element),
+    getCommands: () => (['chat.scrollToTop', 'chat.scrollToBottom'] as const).map((id) => ({
+      id,
+      execute: () => !isEditableElement(deepActiveElement()) && executeChatViewCommand(viewRef.current, id),
+    })),
+  });
 
   /** Text attachments open in the panel preview. */
   const handleAttachmentView = useCallback((att: ComposerAttachment) => {
@@ -1805,7 +1810,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       classifyLink: classifyFileLink,
       onOpenLink: followConversationLink,
       onOpenWebLink: openWebLink,
-      onDrawnPictureLink: noteDrawnPictureLink,
       // transcript 自己那颗停止按钮（用户消息卡右下角）一直**没有**接过宿主 ——
       // `commands().onStop?.()` 在 `?.` 上整条短路，按下去一个字节都不发（#3498 查出来的，
       // 与 #3500 同形）。composer 上那颗是另一条路，它一直是通的，于是这颗死按钮
@@ -1854,38 +1858,25 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         const [action] = reasonActions(reason, {
           switchModel: () => setModelMenuRequest((value) => value + 1),
           joinMembership: openMembershipPage,
+          openModelSettings: () => openShellSettings('model'),
         }, translate);
         const modelName = guguReasonCopy(reason).action === 'join-membership' ? membershipLock?.modelName : null;
         return { text: guguReasonText(reason, translate, modelName), ...(action ? { action } : {}) };
       },
-      // 图片与文件是同一个回调,宿主按 kind 分岔(#5269)。文件走的是与从前那枚正文 pill
-      // **一模一样**的打开路径 —— 它已经会先问一句「这条路径有没有副本」(见
-      // `openExternalFilePath`),❌ 别在这儿另写一套解析。
+      // 文件走的是与从前那枚正文 pill **一模一样**的打开路径 —— 它已经会先问一句「这条路径有没有副本」(见
+      // `openExternalFilePath`),❌ 别在这儿另写一套解析。图片由会话视图统一打开(`openTranscriptImage`)。
       onViewAttachment: (arg: {
         attachment: { id: string; name: string; kind?: 'image' | 'file' | 'annotation'; dataUrl?: string };
         itemId: string;
         source: 'user-message';
         thumb?: HTMLElement;
       }) => {
-        if (arg.attachment.kind === 'file') {
-          const path = pathAttachmentTarget(arg.attachment.id);
-          if (!path || !store) return;
-          // ⚠️ 走 `onOpenExternal`,❌ 不是 `onOpenFile`:后者先要一个**工作区**
-          // (`workspaceRegistry.get` 空就静默 return),而「未选择项目」建出来的任务根本没有
-          // ——`path:` 附件不是工作区文件,它自己就带着一条绝对路径。
-          makeFileLinkHandlers(store.projectId, store.sessionId, { beside: true }).onOpenExternal(path);
-          return;
-        }
-        // 字节读不回来时由附件对话框如实说「没有可预览的内容」
-        const viewImage = (src: string | null | undefined) =>
-          src
-            ? openImageViewer([{ url: src, alt: arg.attachment.name, file: { name: arg.attachment.name }, thumb: arg.thumb }])
-            : handleViewerOpen(undefined, arg.attachment.name);
-        if (arg.attachment.dataUrl || !store) {
-          viewImage(arg.attachment.dataUrl);
-          return;
-        }
-        void resolveAttachmentDataUrl(store, arg.attachment.id).then(viewImage);
+        const path = pathAttachmentTarget(arg.attachment.id);
+        if (arg.attachment.kind !== 'file' || !path || !store) return;
+        // ⚠️ 走 `onOpenExternal`,❌ 不是 `onOpenFile`:后者先要一个**工作区**
+        // (`workspaceRegistry.get` 空就静默 return),而「未选择项目」建出来的任务根本没有
+        // ——`path:` 附件不是工作区文件,它自己就带着一条绝对路径。
+        makeFileLinkHandlers(store.projectId, store.sessionId, { beside: true }).onOpenExternal(path);
       },
       resolveAttachment: (attachment) =>
         store ? resolveAttachmentDataUrl(store, attachment.id) : Promise.resolve(null),
@@ -1955,7 +1946,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         if (store) dismissSubagent(store.sessionId, entryId);
       },
     }),
-    [store, translate, quotes.onMessageTextMount, quotes.restorePrompt, sourceMessage.reveal, sourceMessage.flashMessageId, conversationAgentName, historyActionsEnabled, messageEdit, messageEditPending, handleViewerOpen, translate, membershipLock?.modelName, outputMenu.commands, openWebLink]
+    [store, translate, quotes.onMessageTextMount, quotes.restorePrompt, sourceMessage.reveal, sourceMessage.flashMessageId, conversationAgentName, historyActionsEnabled, messageEdit, messageEditPending, translate, membershipLock?.modelName, outputMenu.commands, openWebLink]
   );
 
   // A freshly-created task can publish its tab before the resource manager has finished attaching
@@ -1964,7 +1955,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   if (!store) {
     return (
       <div
-        className="relative h-full w-full bg-background-secondary-1"
+        className="relative h-full w-full bg-[var(--chat-bg)]"
         data-session-chat-surface={tabKind === 'side-chat' ? 'side-chat' : 'source'}
       />
     );
@@ -1994,7 +1985,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       data-session-chat-composer-slot={composerSlot ? 'present' : 'absent'}
       // Focusable (outside the Tab order) so ⌘F pressed after clicking the transcript lands in this panel.
       tabIndex={-1}
-      className={`relative h-full overflow-hidden bg-background-secondary-1 outline-none ${nativeChatAppearance}`}
+      className={`relative h-full overflow-hidden bg-[var(--chat-bg)] outline-none ${nativeChatAppearance}`}
     >
       <div className="flex h-full min-h-0 flex-col">
         <div className="relative min-h-0 flex-1">
@@ -2065,8 +2056,3 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     </div>
   );
 });
-
-function eventComposedPathContains(event: Event, element: HTMLElement): boolean {
-  if (event.composedPath().includes(element)) return true;
-  return event.target instanceof Node && element.contains(event.target);
-}

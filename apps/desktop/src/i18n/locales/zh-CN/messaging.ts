@@ -381,7 +381,7 @@ export default {
     "send": "发送",
     "settings": "设置"
   },
-  "linkPill": {"unavailable": "不可用：已删除，或你无权查看", "message": "{{sender}}：{{words}}", "noSuchMessage": "这个会话里没有以 {{prefix}} 开头的消息", "messageUnavailable": "消息不可用", "chatUnavailable": "聊天不可用", "sessionUnavailable": "任务不可用", "messages": "{{count}} 条消息", "severalMessages": "此会话中有 {{count}} 条消息以 {{prefix}} 开头，请选择一条"},
+  "linkPill": {"unavailable": "不可用：已删除，或你无权查看", "message": "{{sender}}：{{words}}", "noSuchMessage": "这个会话里没有以 {{prefix}} 开头的消息", "messageUnavailable": "消息不可用", "chatUnavailable": "聊天不可用", "sessionUnavailable": "任务不可用", "messages": "{{count}} 条消息", "severalMessages": "此会话中有 {{count}} 条消息以 {{prefix}} 开头，请选择一条", "sessions": "{{count}} 个任务", "severalSessions": "你有 {{count}} 个任务以 {{prefix}} 开头，请选择一个"},
   "attachmentView": {
     "types": {"pdf": "PDF 文档", "word": "Word 文档", "excel": "Excel 表格", "presentation": "演示文稿", "text": "文本", "markdown": "Markdown 文档", "csv": "CSV 表格", "html": "网页", "json": "JSON 文档", "archive": "压缩文件", "image": "图片", "audio": "音频", "video": "视频"},
     "fileGone": "文件已删除",
@@ -830,7 +830,7 @@ export default {
   },
   "message": {
     "myAgentTag": "我的智能体",
-    "removedIdentityTag": "已移除",
+    "removedMemberName": "{{name}}（已移除）",
     "agentOwnerUnavailableTag": "主人信息不可用",
     "agentOwnerTag": "{{owner}} 的 agent",
     "agentOwnerSuffix": "（{{owner}} 的智能体）",
@@ -842,7 +842,8 @@ export default {
       "keepFailed": "更改失败",
       "copy": "复制",
       "copyLink": "复制链接",
-      "openLink": "打开链接",
+      "openLink": "在咕咕浏览器中打开",
+      "openLinkSystem": "在系统浏览器中打开",
       "selectText": "选择文本",
       "delete": "删除",
       "deleteConfirm": "删除这条消息？删除后无法恢复。",
@@ -866,6 +867,7 @@ export default {
     "copyFailed": "复制失败，请手动选择文本复制",
     "forwarded": "↪ 转发",
     "forwardedFrom": "↪ 引自：{{line}}",
+    "targetingSeparator": "、",
     "me": "我",
     "read": "已读",
     "readCount": "已读 {{read}}",
@@ -902,6 +904,11 @@ export default {
       }
     },
     "showQuoted": "跳到被引用的消息",
+    "htmlRender": {
+      "close": "关闭",
+      "expand": "展开",
+      "title": "渲染的页面"
+    },
     "svgFigure": {
       "invalid": "这段 SVG 无法显示：不是格式正确的 SVG 文档",
       "noViewbox": "这段 SVG 无法显示：根元素缺少 viewBox",

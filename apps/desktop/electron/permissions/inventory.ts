@@ -15,13 +15,16 @@ export const CORE_TOOL_RISKS: Readonly<Record<string, ToolRisk>> = {
   ...entries('write', 'medium', `profile_update project_create schedule_cancel schedule_create
     session_close_tab session_open_in_tab session_set_parent session_stop group_avatar_set group_leave
     group_announcement_delete group_announcement_post group_announcement_update topic_delete`),
-  ...entries('send', 'medium', `message_send session_message widget_send session_ask_user`),
+  ...entries('send', 'medium', `message_send file_put session_message widget_send session_ask_user`),
   ...entries('execute', 'high', `app_check app_create app_pack session_spawn`),
   ...entries('owner', 'high', `message_send_as_owner`),
   ...entries('social', 'high', `contact_friend message_invite topic_invite topic_open group_create group_add_agent group_join_decide project_get`),
   ...entries('permission', 'high', `app_install app_manage group_remove_member group_set_role group_update
     project_add_folder project_remove_folder project_add_device project_remove_device project_restore_device session_archive`),
   ...entries('send', 'medium', 'web_search'),
+  // html_preview runs the agent's own page in a sandboxed, storage-less window; like a fence in chat, that page may
+  // reach any https host, so it can send what the agent put in it.
+  ...entries('send', 'medium', 'html_preview'),
   // The password tools carry no value to the agent: listing reads names only, and fill/save file a request the vault puts
   // to the person (its own card, its own grants), so no second confirmation is stacked here.
   ...entries('read', 'medium', 'password_credentials'),

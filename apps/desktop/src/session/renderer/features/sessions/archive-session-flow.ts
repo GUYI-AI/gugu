@@ -146,6 +146,12 @@ export function requestArchiveSession(args: { projectId: string; sessionId: stri
  */
 export function confirmArchive(args: {
   childCount: number;
+  /**
+   * 标题与确认钮;缺省是「归档会话」。会话历史一次归档几条时带条数 / 范围(「归档 gugu 项目里的 12 条会话」,
+   * 设计稿第 2 稿),框还是这一个 —— 勾选、不再询问、默认值一样不少。
+   */
+  title?: string;
+  confirmLabel?: string;
   /** 说的是谁;缺省是通用的那一句。 */
   description?: string;
   /** `'choice'`(默认):用户勾选;`'only'`:没有会话,只剩身份可归档 —— 勾选摆着、勾上、不可改。 */
@@ -153,16 +159,16 @@ export function confirmArchive(args: {
   proceed: (withChildren: boolean, removeSocialIdentity: boolean) => void;
   onCancel?: () => void;
 }): void {
-  const { childCount, description, identity = 'choice', proceed, onCancel } = args;
+  const { childCount, title, confirmLabel, description, identity = 'choice', proceed, onCancel } = args;
   if (identity === 'choice' && !shouldConfirm()) {
     proceed(false, true);
     return;
   }
 
   showModal('confirmActionModal', {
-    title: translateSessionMessage('task.archiveTaskTitle'),
+    title: title ?? translateSessionMessage('task.archiveTaskTitle'),
     description: description ?? translateSessionMessage('task.archiveSessionDescription'),
-    confirmLabel: translateSessionMessage('task.archiveTaskConfirm'),
+    confirmLabel: confirmLabel ?? translateSessionMessage('task.archiveTaskConfirm'),
     variant: 'default',
     option: { label: translateSessionMessage('task.archiveRemoveSocialIdentity'), defaultChecked: true, disabled: identity === 'only' },
     // 名下没有子会话时不摆这个勾选 —— 勾了也不改变结果的开关比没有更坏。

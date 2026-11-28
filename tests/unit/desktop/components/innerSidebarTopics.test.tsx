@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatItem, GroupChatSettings } from '@gugu/core/shared/types/chat'
 import { compareChatsByActivityDesc } from '@gugu/core/shared/ui/chatModels'
 import { ChatListSlotHost } from '../../../../apps/desktop/src/components/ChatListSlotHost'
-import { INNER_SIDEBAR_TOPIC_LIMIT, innerSidebarTopicRows, topicsOfChat } from '../../../../apps/desktop/src/components/chat/innerSidebarTopicsModel'
+import { topicsOfChat } from '../../../../apps/desktop/src/components/chat/innerSidebarTopicsModel'
 import { i18n } from '../../../../apps/desktop/src/i18n'
 import { chatService } from '../../../../apps/desktop/src/lib/chat'
 import { confirmConversationAction } from '../../../../apps/desktop/src/lib/confirmDanger'
@@ -49,40 +49,16 @@ describe('which topics the inner sidebar shows', () => {
     expect(ids(topicsOfChat(topics, 'group'))).toEqual(['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10', 't11', 't12', 'news', 'calls-me'])
   })
 
-  it('level one: the first 6 of the chat-list order; unread does not lift an old topic (yangchichi msg:616413ff; owner msg:247795d5)', () => {
-    const level = innerSidebarTopicRows(topicsOfChat(topics, 'group'), { all: false })
-    expect(INNER_SIDEBAR_TOPIC_LIMIT).toBe(6)
-    expect(ids(level.shown)).toEqual(['t0', 't1', 't2', 't3', 't4', 't5'])
-    expect(level).toMatchObject({ hidden: 9, calling: 1 })
-  })
-
-  it('unread topics never break the limit (a project whose topics were never opened showed them all)', () => {
-    const many = Array.from({ length: 14 }, (_, index) => topic(`call-${index}`, index, unread(1, 1)))
-    const level = innerSidebarTopicRows([...many, topic('quiet', 8)], { all: false })
-    expect(ids(level.shown)).toEqual(ids(many.slice(0, INNER_SIDEBAR_TOPIC_LIMIT)))
-    expect(level).toMatchObject({ hidden: 9, calling: 14 })
-  })
-
-  it('All = every topic, newest activity first, the same order as the chat list', () => {
-    const all = innerSidebarTopicRows(topicsOfChat(topics, 'group'), { all: true })
-    expect(ids(all.shown)).toEqual(['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10', 't11', 't12', 'news', 'calls-me'])
-    expect(all.hidden).toBe(0)
-  })
-
-  it.each([false, true])('reading an unread topic does not move it: unread only wears the badge (all: %s)', (all) => {
-    const recent = topics.map((row) => (row.id === 'news' ? { ...row, last_message_at: at(4.5) } : row))
-    const before = innerSidebarTopicRows(topicsOfChat(recent, 'group'), { all })
-    const read = recent.map((row) => (row.id === 'news' || row.id === 'calls-me' ? { ...row, unread_count: 0, unread_locator: null } : row))
-    const after = innerSidebarTopicRows(topicsOfChat(read, 'group'), { all })
-    expect(ids(before.shown)).toContain('news')
-    expect(ids(after.shown)).toEqual(ids(before.shown))
-    expect(ids(before.shown), 'the chat list order: activity only').toEqual(ids([...before.shown].sort(compareChatsByActivityDesc)))
+  it('reading an unread topic does not move it', () => {
+    const sorted = topicsOfChat(topics, 'group')
+    const read = topics.map(row => ({ ...row, unread_count: 0, unread_locator: null }))
+    expect(ids(topicsOfChat(read, 'group'))).toEqual(ids(sorted))
+    expect(ids(sorted)).toEqual(ids([...sorted].sort(compareChatsByActivityDesc)))
   })
 
   it('a pinned topic goes above every unpinned one, however old, and back to its place when unpinned', () => {
     const pinned = topics.map((row) => (row.id === 't6' || row.id === 'calls-me' ? { ...row, is_pinned: true } : row))
     expect(ids(topicsOfChat(pinned, 'group'))).toEqual(['t6', 'calls-me', 't0', 't1', 't2', 't3', 't4', 't5', 't7', 't8', 't9', 't10', 't11', 't12', 'news'])
-    expect(ids(innerSidebarTopicRows(topicsOfChat(pinned, 'group'), { all: false }).shown)).toEqual(['t6', 'calls-me', 't0', 't1', 't2', 't3'])
     const unpinned = pinned.map((row) => ({ ...row, is_pinned: false }))
     expect(ids(topicsOfChat(unpinned, 'group'))).toEqual(['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10', 't11', 't12', 'news', 'calls-me'])
   })
@@ -115,7 +91,7 @@ describe('the inner sidebar topics slot', () => {
     await renderWithAppProviders(harness, createNode(ChatListSlotHost, {}), { chat: { chats: [source, ...recent] }, contacts: {} })
     const slot = document.body.appendChild(document.createElement('div'))
     await act(async () => readShellSlots()!.setSlot(innerSidebarTopicsSlotKey('group'), slot))
-    expect(rows()).toEqual(['t0', 'news', 'calls-me', 't1', 't2', 't3'])
+    expect(rows()).toEqual(ids(topicsOfChat(recent, 'group')))
     // #2548 a topic that calls me (3 unread, 1 addressed) says 「@1」 in red; one with news that does not call me (2 unread,
     // 0 addressed) only wears the grey dot, without a number; one with nothing new wears nothing.
     const mark = (id: string) => {
@@ -130,7 +106,7 @@ describe('the inner sidebar topics slot', () => {
     expect(rows(), 'All expands every topic in the column itself').toHaveLength(topicsOfChat(topics, 'group').length)
     expect(slot.querySelector('[data-slot="search-field"]'), 'with a search box over the names').not.toBeNull()
     await act(async () => setInnerSidebarTopicsAll(null))
-    expect(rows()).toHaveLength(INNER_SIDEBAR_TOPIC_LIMIT)
+    expect(rows()).toEqual(ids(topicsOfChat(recent, 'group')))
     expect(slot.querySelector('[data-slot="search-field"]')).toBeNull()
 
     await clickElement(slot.querySelector('[data-topic-row="t1"]') as HTMLElement)

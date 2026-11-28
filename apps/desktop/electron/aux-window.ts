@@ -7,6 +7,16 @@ import { openBuildTagLayer } from './build-tag-window'
 import { openHostLayer } from './host-layer'
 import { serveWindowLayers, windowLayerOptions, windowLayerResponse } from './window-layers'
 import { attachTabHistorySwipe } from './tab-history-swipe'
+import { createLogger } from './lib/logger'
+
+/**
+ * A link that leaves the app from any of these windows (a new window asked for, or a page change) goes to the system
+ * only if it is a web, mail or phone link; anything else is refused and logged. A settings deep link has its own IPC.
+ */
+export function openOutside(url: string): void {
+  if (/^(https?|mailto|tel):/i.test(url)) void shell.openExternal(url)
+  else createLogger('aux-window').warn({ scheme: url.split(':', 1)[0] }, 'Refused to open a link outside the app')
+}
 
 /**
  * 咕咕的子窗口(一整块会话、一个 App 单独成窗,照 VS Code 的浮动编辑器窗口):渲染层 `window.open` 一扇同源空白窗,
@@ -90,7 +100,7 @@ export function attachAuxWindows(main: BrowserWindow, backgroundColor: () => str
       const own = ownWindows.find((entry) => entry.name === frameName)
       return { action: 'allow', overrideBrowserWindowOptions: own ? own.options(backgroundColor()) : auxWindowOptions(backgroundColor()) }
     }
-    void shell.openExternal(url)
+    openOutside(url)
     return { action: 'deny' }
   })
   // 主窗自己也只在应用的页面里换页：拖进来的图(blob:,和应用同源;SVG 带着 image/svg+xml 时会在应用的源里跑脚本)、
@@ -98,7 +108,7 @@ export function attachAuxWindows(main: BrowserWindow, backgroundColor: () => str
   main.webContents.on('will-navigate', (event, url) => {
     if (isOwnPage(url, main.webContents.getURL())) return
     event.preventDefault()
-    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
+    openOutside(url)
   })
   main.webContents.on('did-create-window', (child, { frameName }) => {
     if (!frameName || !isAuxWindowRequest('about:blank', frameName)) return
@@ -117,14 +127,14 @@ export function attachAuxWindows(main: BrowserWindow, backgroundColor: () => str
     child.webContents.setWindowOpenHandler(({ url, frameName }) => {
       const layer = windowLayerResponse(child, url, frameName)
       if (layer) return layer
-      void shell.openExternal(url)
+      openOutside(url)
       return { action: 'deny' }
     })
     // 这扇窗只装主窗画进来的界面,自己哪也不去:往里拖进一个文件、点到一条没开新窗的链接,❌ 让它整扇换成那一页
     // (换了页,画在里面的那块就没了,窗也跟着关);网页链接照样交给系统浏览器。
     child.webContents.on('will-navigate', (event, url) => {
       event.preventDefault()
-      if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
+      openOutside(url)
     })
   })
   const closeAll = (): void => {

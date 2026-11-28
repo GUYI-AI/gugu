@@ -9,6 +9,7 @@ import {
   type SessionHistoryDirectoryRow,
   type SessionHistoryRow,
   type SessionHistorySort,
+  type SessionHistoryStatus,
 } from '@shared/core/session-history/session-history';
 
 // 任务历史跨机器合并(项目与机器解耦 §5):项目是账号级的,机器只是每一行的属性。
@@ -25,6 +26,8 @@ export type SectionRef = { key: string; label: string; path: string | null; mach
 export type HistorySection = SectionRef & {
   /** 在线那几台在这一节里一共几条(主进程数的,可能多于 preview)。 */
   onlineCount: number;
+  /** 这一节里各状态几条(在线那几台主进程数的 + 离线机器的摘要行):节头「活跃 8 条，已归档 128 条」。 */
+  statusCounts: Record<SessionHistoryStatus, number>;
   providers: string[];
   /** 在线那几台上归进这一节的目录:「显示更多」按它们逐台要。 */
   members: Array<{ machine: string; directory: string | null }>;
@@ -59,9 +62,22 @@ export function mergeSorted<T>(lists: ReadonlyArray<readonly T[]>, compare: (a: 
   }
 }
 
+/** 读来的每一行(主进程那一页里的同一个对象)记住它的那一条:整页重画时没变的行拿到的还是同一个对象,行组件(memo)就不重画。 */
+const entriesByMachine = new Map<string, WeakMap<SessionHistoryRow, HistoryEntry>>();
+
 /** 在线机器读来的一行。别的机器的行 key 带上机器:本机行按文件路径认,两台上可以撞。 */
 export function entryOf(machine: string, row: SessionHistoryRow): HistoryEntry {
-  return { ...row, key: machine === LOCAL_IMPORT_DEVICE ? row.key : `${machine}/${row.key}`, machine, offline: false, opens: true };
+  let entries = entriesByMachine.get(machine);
+  if (!entries) {
+    entries = new WeakMap();
+    entriesByMachine.set(machine, entries);
+  }
+  let entry = entries.get(row);
+  if (!entry) {
+    entry = { ...row, key: machine === LOCAL_IMPORT_DEVICE ? row.key : `${machine}/${row.key}`, machine, offline: false, opens: true };
+    entries.set(row, entry);
+  }
+  return entry;
 }
 
 /** 离线机器心跳摘要里的一条:咕咕自己的活跃会话(摘要里没有归档的、也没有原件)。 */
@@ -131,7 +147,17 @@ export function buildSections({
   for (const item of mergeSorted(lists, compareItems)) {
     let section = sections.get(item.ref.key);
     if (!section) {
-      section = { ...item.ref, onlineCount: 0, providers: [], members: [], preview: [], offline: [], offlineMachines: [], previews: [] };
+      section = {
+        ...item.ref,
+        onlineCount: 0,
+        statusCounts: { active: 0, archived: 0, 'not-imported': 0 },
+        providers: [],
+        members: [],
+        preview: [],
+        offline: [],
+        offlineMachines: [],
+        previews: [],
+      };
       sections.set(item.ref.key, section);
     }
     const providers = item.online ? item.online.row.providers : item.offline?.providerId ? [item.offline.providerId] : [];
@@ -139,10 +165,14 @@ export function buildSections({
     if (item.online) {
       const { machine, row } = item.online;
       section.onlineCount += row.sessionCount;
+      for (const status of Object.keys(section.statusCounts) as SessionHistoryStatus[]) {
+        section.statusCounts[status] += row.countsByStatus?.[status] ?? 0;
+      }
       section.members.push({ machine, directory: row.directory });
       section.previews.push(row.sessions.map((session) => entryOf(machine, session)));
     } else if (item.offline) {
       section.offline.push(item.offline);
+      section.statusCounts[item.offline.status] += 1;
       if (!section.offlineMachines.includes(item.offline.machine)) section.offlineMachines.push(item.offline.machine);
     }
   }

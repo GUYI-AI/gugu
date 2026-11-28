@@ -141,6 +141,7 @@ jobs:
         run: |
           # Read exact callee objects without moving the original PR base.
           git fetch --no-tags --no-write-fetch-head --depth=1 origin b97314c509105b6b16bf2e3d98e738200f6103b5
+          git fetch --no-tags --no-write-fetch-head --depth=1 origin f97750b20dfad4d2503bfc0e896cdd16a7e344db
           args=()
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
@@ -223,7 +224,7 @@ jobs:
   desktop-build-mac:
     name: Desktop app build (macos-15)
     needs: changes
-    uses: GUYI-AI/gugu/.github/workflows/ci-mac-build.yml@b97314c509105b6b16bf2e3d98e738200f6103b5
+    uses: GUYI-AI/gugu/.github/workflows/ci-mac-build.yml@f97750b20dfad4d2503bfc0e896cdd16a7e344db
     with:
       build-required: ${{ needs.changes.outputs.desktop-mac }}
   android-build:

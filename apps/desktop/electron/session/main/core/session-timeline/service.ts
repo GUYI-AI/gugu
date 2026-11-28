@@ -1,4 +1,4 @@
-import { buildSessionPermissionOptions } from '@shared/session-permission-options';
+import { buildSessionPermissionOptions, PERMISSION_OPTIONS_UNREADABLE } from '@shared/session-permission-options';
 import { nativeConversationHistoryFloor } from '../sessions/native-publication-host';
 import { clearedHistoryResult, historyClearEpoch } from '@gugu/session-core/session-record/conversation-history-clear';
 import { runtimeModelId } from '@gugu/session-core/models/custom-model';
@@ -405,7 +405,8 @@ async function withModelMenu(
     const platform = await (await import('@main/core/sessions/platform-model-selection')).sessionPlatformModel(row.id);
     const read = platform === undefined ? null : await (await import('./create-session')).createModels({ harness: row.provider, sessionView: 'general',
       model: platform ? 'platform:' + platform.modelId : row.config?.model });
-    const group = (read?.ok ? read.value.permissionOptions : null) ?? buildSessionPermissionOptions({ modeMap: declared });
+    const group = (read?.ok ? read.value.permissionOptions : null) ?? buildSessionPermissionOptions({ modeMap: declared,
+      ...(read && !read.ok ? { review: { allowed: false, reason: PERMISSION_OPTIONS_UNREADABLE } } : {}) });
     options = { ...options, mode: group ? { ...group, selected: options.mode?.selected ?? (row.config?.permissionMode ? declared[row.config.permissionMode]?.id ?? null : null) } : null };
   }
   const modeMap = options.mode ? declared : undefined;

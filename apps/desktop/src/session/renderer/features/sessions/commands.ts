@@ -14,7 +14,7 @@ import {
   getSessionView,
 } from '@renderer/features/sessions/stores/session-selectors';
 import type { CommandProvider } from '@renderer/lib/commands/types';
-import { copyExternalLink } from '@renderer/lib/open-external-link';
+import { copyExternalLink } from '@renderer/lib/open-web-link';
 import { rpc } from '@renderer/lib/ipc';
 import { normalizeBrowserUrl } from '@shared/browser';
 import { COMMANDS, type CommandId } from '@shared/commands';

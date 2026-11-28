@@ -1,27 +1,36 @@
-import { customClaudeReviewSource, type ClaudeReviewSource } from '@gugu/session-core/models/auto-review-source';
-import { appSettingsService } from '@main/core/settings/settings-service';
+import type { ClaudeReviewResolution } from '@gugu/session-core/models/auto-review-source';
 import type { AgentRunContext } from '@gugu/session-core/agents/agent-run-context';
 import { antigravityCustomModelLaunch, claudeAcpPlatformSessionMeta, codexPlatformModelFacts, GUGU_PLATFORM_MODELS_ENV, OPENCODE_FAMILY_CONNECTION_PROVIDER_ID, pluginRegistry } from '@gugu/session-plugins/agents';
 import { chatModel, customModelEfforts } from '@gugu/session-core/models/custom-model';
 import { writeSessionSettingsFile } from '../../../../sessionpage/session-settings-file';
+import { resolveAgentHomeEnv } from './agent-home';
+import { armReviewer, claudeReviewRunContext, resolveHostClaudeReviewer } from './claude-reviewer';
 import { resolveCustomModel, type ResolvedCustomModel } from './custom-models';
 import { CLAUDE_CONNECTION_UNSET_ENV, CODEX_CONNECTION_UNSET_ENV, claudeApiKeyEnv, codexApiKeyConnectionArgs } from './harness-connection-launch';
 
-async function reviewSource(custom: ResolvedCustomModel): Promise<ClaudeReviewSource> {
-  return customClaudeReviewSource({
-    connectionId: custom.connectionId, endpoint: custom.upstreamEndpoint,
-    selectedModel: custom.models[0], models: custom.entries, removed: custom.removed,
-    preference: await appSettingsService.get('autoReviewModel'),
+/** Where the session's Claude reads its settings: its env (the config root) and its folder (project and local files). */
+export type ClaudeSettingsScope = { env?: NodeJS.ProcessEnv; cwd?: string };
+
+/** Who reviews this connection session: the user's pick on any connection that can be reached, else its own default. */
+async function reviewResolution(custom: ResolvedCustomModel, scope: ClaudeSettingsScope): Promise<ClaudeReviewResolution> {
+  return resolveHostClaudeReviewer({
+    route: 'custom', mainModel: custom.models[0], platformModels: [],
+    session: { connectionId: custom.connectionId, endpoint: custom.upstreamEndpoint, models: custom.entries,
+      ...(custom.removed ? { removed: true } : {}), ...(custom.converted ? { converted: true } : {}) },
+    // The run context passes the env its CLI runs with; the ACP envelope resolves the same config root here.
+    env: scope.env ?? { ...process.env, ...await resolveAgentHomeEnv('claude').catch(() => ({})) },
+    ...(scope.cwd ? { cwd: scope.cwd } : {}),
   });
 }
 
-async function claudeModelEnv(custom: ResolvedCustomModel, selected?: ClaudeReviewSource): Promise<Record<string, string>> {
-  const reviewer = selected ?? await reviewSource(custom);
+function claudeModelEnv(custom: ResolvedCustomModel, reviewer: string | undefined): Record<string, string> {
   return {
     ...claudeApiKeyEnv(custom.apiKey, custom.endpoint, custom.models[0]),
-    // The cross-connection fallback is reserved, not connected in the first release.
-    // With no explicit main model the permission gate hides Auto mode before launch.
-    ...(reviewer.kind === 'own' ? { CLAUDE_CODE_AUTO_MODE_MODEL: reviewer.modelId, CLAUDE_CODE_AUTO_MODE_SERVER: '0' } : {}),
+    // Claude Code sees a gateway (our loopback forwarder) and defers MCP tools by default. Only an upstream
+    // that declares tool search can accept those blocks. Otherwise declare the tools upfront.
+    ...(custom.supportsToolSearch ? {} : { ENABLE_TOOL_SEARCH: 'false' }),
+    // No reviewer = Auto mode is off for this session (the menu says why); nothing else is named in its place.
+    ...(reviewer ? { CLAUDE_CODE_AUTO_MODE_MODEL: reviewer, CLAUDE_CODE_AUTO_MODE_SERVER: '0' } : {}),
     ...(custom.capabilities?.contextWindow ? { CLAUDE_CODE_MAX_CONTEXT_TOKENS: String(custom.capabilities.contextWindow) } : {}),
   };
 }
@@ -29,10 +38,12 @@ async function claudeModelEnv(custom: ResolvedCustomModel, selected?: ClaudeRevi
 // Stable loopback credentials let both Claude surfaces reuse this protected file until the host exits.
 const claudeSettingsFiles = new Map<string, Promise<string>>();
 
-async function claudeModelSettings(custom: ResolvedCustomModel, selected?: ClaudeReviewSource): Promise<string> {
+async function claudeModelSettings(custom: ResolvedCustomModel, reviewer: string | undefined): Promise<string> {
   const document = {
     apiKeyHelper: `echo ${custom.apiKey}`,
-    env: { ...await claudeModelEnv(custom, selected), ANTHROPIC_API_KEY: '' },
+    env: { ...claudeModelEnv(custom, reviewer), ANTHROPIC_API_KEY: '' },
+    // No reviewer: remove Auto mode, so the CLI's own mode switch cannot start it with a swapped-in reviewer.
+    ...(reviewer ? {} : { permissions: { disableAutoMode: 'disable' } }),
   };
   const key = JSON.stringify(document);
   const existing = claudeSettingsFiles.get(key);
@@ -45,26 +56,27 @@ async function claudeModelSettings(custom: ResolvedCustomModel, selected?: Claud
   return write;
 }
 
-export async function claudeCustomModelSessionMeta(sessionId: string, sourceSessionId?: string) {
+export async function claudeCustomModelSessionMeta(sessionId: string, sourceSessionId?: string, scope: ClaudeSettingsScope = {}) {
   const custom = await resolveCustomModel('claude', sessionId, sourceSessionId);
   if (!custom) return null;
-  return claudeAcpPlatformSessionMeta({ settingsDocumentPath: await claudeModelSettings(custom), env: {}, model: custom.models[0] });
+  const reviewer = armReviewer(sessionId, await reviewResolution(custom, scope));
+  return claudeAcpPlatformSessionMeta({ settingsDocumentPath: await claudeModelSettings(custom, reviewer), env: {}, model: custom.models[0] });
 }
 
 /** The three native credential carriers retained by the custom-model contract. */
-export async function resolveCustomModelRunContext(providerId: string, sessionId: string, sourceSessionId?: string, acp = false): Promise<Partial<AgentRunContext>> {
+export async function resolveCustomModelRunContext(providerId: string, sessionId: string, sourceSessionId?: string, acp = false, scope: ClaudeSettingsScope = {}): Promise<Partial<AgentRunContext>> {
   const custom = await resolveCustomModel(providerId, sessionId, sourceSessionId);
   if (!custom) return {};
   const model = custom.models[0];
   const marker = { connectionId: custom.connectionId, customModel: { endpoint: custom.endpoint, ...(model ? { model } : {}) } };
   if (providerId === 'claude') {
-    const reviewer = await reviewSource(custom);
+    const resolution = await reviewResolution(custom, scope);
+    const reviewer = armReviewer(sessionId, resolution);
     return {
       ...marker,
-      autoReviewAllowed: Boolean(model?.trim()) && reviewer.kind === 'own',
-      ...(model?.trim() && reviewer.kind !== 'own' ? { autoReviewUnavailable: true } : {}),
-      ...(reviewer.kind === 'own' && reviewer.byHaiku ? { autoReviewByHaiku: true } : {}),
-      credentialEnv: await claudeModelEnv(custom, reviewer),
+      // No main model = the adapter's own default: the permission gate hides Auto mode before launch.
+      ...(model?.trim() ? claudeReviewRunContext(resolution) : { autoReviewAllowed: false }),
+      credentialEnv: claudeModelEnv(custom, reviewer),
       ...(acp ? {} : { extraArgs: ['--settings', await claudeModelSettings(custom, reviewer)] }),
       unsetEnv: [...CLAUDE_CONNECTION_UNSET_ENV, 'ANTHROPIC_MODEL'],
     };

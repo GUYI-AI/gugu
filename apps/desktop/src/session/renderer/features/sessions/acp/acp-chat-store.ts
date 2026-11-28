@@ -33,7 +33,7 @@ import type {
   ComposerQueuedPrompt,
 } from '@gugu/session-ui/react/components';
 import type { TurnAnnotation } from '@gugu/session-core/acp/client';
-import { commandToken } from '@gugu/session-core/acp/commands';
+import { advertisedCommandItems } from './slash-command-matching';
 import { permissionWaitKind } from '@gugu/session-core/acp/models/permissions';
 import type { AgentState, HistoryPage, LiveSettingResult, PermissionWaitKind } from '@gugu/session-core/acp';
 import { errorDetail, isDeepEqual } from '@gugu/session-shared';
@@ -393,7 +393,6 @@ export class AcpChatStore {
       commands: computed,
       permissionQueue: computed,
       queuedPrompts: computed,
-      usage: computed,
       affordances: computed,
       bootstrap: action,
       releaseTranscript: action,
@@ -512,6 +511,7 @@ export class AcpChatStore {
           description: option.description,
           disabled: option.disabled,
           reviewByHaiku: option.reviewByHaiku,
+          reviewer: option.reviewer,
           destructive: isDestructivePermissionMode(option.id),
         },
       ])
@@ -540,18 +540,7 @@ export class AcpChatStore {
   }
 
   get commands(): CommandItem[] {
-    return (this.session?.config.current().availableCommands ?? []).map((command) => ({
-      id: command.name,
-      name: command.name,
-      // 发出去的原文由 ACP 领域规则算:裸名配 `/`,自带 sigil 的(codex 的 `$skill`)原样。
-      // 编辑器只负责把这个字符串插进去,❌ 它不许自己拼前缀。
-      token: commandToken(command.name),
-      description: command.description,
-      behavior: 'insert' as const,
-      // reducer 早就把 `input.hint` 采下来了(acp/reducer/reducer.ts),这里从前把它丢掉,
-      // 于是 `/review-branch` 摆在面板上却不说要跟一个分支名。缺席就是「不吃参数」。
-      ...(command.inputHint ? { inputHint: command.inputHint } : {}),
-    }));
+    return advertisedCommandItems(this.session?.config.current().availableCommands ?? []);
   }
 
   get permissionQueue(): PermissionQueueItem[] {
@@ -636,7 +625,8 @@ export class AcpChatStore {
     return prompts;
   }
 
-  get usage(): {
+  /** `currentWindow`:此刻模型的上下文窗口(选项里的 `contextWindowSize`),给换了模型之后的记录读数当分母。 */
+  usageIn(currentWindow?: number): {
     contextUsed: number;
     contextSize: number;
     autoCompact?: { defaultTokens: number; ceiling: number };
@@ -647,11 +637,11 @@ export class AcpChatStore {
     // 分叉的侧边聊天借的是来源会话的 id:记录里那份是来源的读数,❌ 拿来当它自己的。
     if (live || this.isTransient) return live;
     // #7342 活会话没有读数(停下了 / 还在起 / 重开后还没跑完一轮):画记录里那份最后读数,归属判据见 recordedContextUsage。
-    // 停下时 ❌ 拿记录里的模型去比:那是另一套 id(平台模型不在那一格),作废归写者(换模型时它清掉)。
+    // 停下时 ❌ 拿记录里的模型去比:那是另一套 id(平台模型不在那一格)。
     const currentModelId = session
       ? (session.config.current().modelOptions?.selected ?? null)
       : (this.startupChoice.model ?? null);
-    return recordedContextUsage(this._sessionRecord(), currentModelId);
+    return recordedContextUsage(this._sessionRecord(), currentModelId, currentWindow);
   }
 
   /**

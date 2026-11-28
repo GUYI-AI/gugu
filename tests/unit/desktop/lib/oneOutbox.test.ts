@@ -29,7 +29,6 @@ const WRITES: { what: string; pattern: RegExp; allowed: string[] }[] = [
   { what: 'a reaction write', pattern: /from\(\s*'message_reactions'\s*\)\s*\.(insert|upsert|delete|update)\(/, allowed: ['apps/desktop/src/lib/outbox/kinds/reaction.ts'] },
   { what: 'a session input handed to its host', pattern: /sessionTimeline\.sessionSend\(\{[^}]*clientMessageId/, allowed: ['apps/desktop/src/hooks/useOutboxHost.tsx', 'apps/desktop/src/components/session-watch/sessionpage-rpc.ts' /* the phone's transport the kind uses */] },
   { what: 'a new topic', pattern: /topicService\.createTopic\(/, allowed: ['apps/desktop/src/store/chatOutboxWiring.ts'] },
-  { what: 'an assistant App change notice', pattern: /assistantPanelCloud\.notice\(/, allowed: ['apps/desktop/src/lib/outbox/kinds/assistantNotice.ts'] },
   { what: 'an outbox instance', pattern: /(?<![.\w])createOutbox\(/, allowed: ['apps/desktop/src/lib/outbox/index.ts', 'apps/desktop/src/lib/outbox/core.ts'] },
   { what: 'a durable write queue database', pattern: /open\(\s*'gugu\.[\w.-]*(outbox|queue)[\w.-]*'/i, allowed: ['apps/desktop/src/lib/outbox/storage.ts'] },
 ]

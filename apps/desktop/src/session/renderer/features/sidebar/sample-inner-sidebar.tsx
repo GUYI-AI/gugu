@@ -7,6 +7,7 @@ import { sampleProjectContent } from '@renderer/features/sample-project/use-samp
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import {
   InnerHeadRowLayout,
+  InnerModuleStack,
   InnerSidebarFoldButton,
   innerSectionEmptyClass,
 } from './inner-sidebar-parts';
@@ -51,10 +52,10 @@ export const SampleInnerSidebar = observer(function SampleInnerSidebar() {
       >
         <InnerSidebarFoldButton />
       </InnerHeadRowLayout>
-      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto" data-region="inner-sidebar-scroll">
-        <SampleTopicsSection />
-        <SampleAgentsSection agent={content.agent} active={taskOpen} />
-      </div>
+      <InnerModuleStack modules={[
+        { id: 'topics', node: <SampleTopicsSection /> },
+        { id: 'agents', node: <SampleAgentsSection agent={content.agent} active={taskOpen} /> },
+      ]} />
     </>
   );
 });

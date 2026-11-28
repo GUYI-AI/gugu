@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { act } from 'react'
+import { act, Fragment } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ContactsPanel } from '../../../../apps/desktop/src/components/ContactsPanel'
+import { KeyboardDispatcher } from '../../../../apps/desktop/src/session/renderer/lib/commands/keyboard-dispatcher'
 import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automationDom'
 import { contactsService } from '../../../../apps/desktop/src/lib/contacts'
 import { clickElement, contact, contactsStore, createNode, createReactHarness, renderWithAppProviders, typeInto } from '../../../support/testHarness'
@@ -35,7 +36,7 @@ const groups = [
 
 async function render(options: { mobile?: boolean; contacts?: Parameters<typeof contactsStore>[0] } = {}) {
   const onOpenGroupChat = vi.fn()
-  await renderWithAppProviders(harness, createNode(ContactsPanel, { mobile: options.mobile ?? false, onOpenGroupChat }), { shellTab: 'contacts',
+  await renderWithAppProviders(harness, createNode(Fragment, null, createNode(KeyboardDispatcher, null), createNode(ContactsPanel, { mobile: options.mobile ?? false, onOpenGroupChat })), { shellTab: 'contacts',
     auth: { id: 'owner-1', email: 'owner@example.com', nickname: 'Owner' },
     contacts: { contacts: people, groupChats: groups, ...options.contacts },
     chat: { chats: [] },
@@ -156,7 +157,7 @@ describe('contacts search (desktop: box in the left column, results in the right
   it('⌘F on the contacts page focuses this box, and finds people in other groups than the one open', async () => {
     await render()
     expect($('[data-testid="contacts-section-nav"][data-selected]')?.dataset.sectionKey).toBe('unknown')
-    // 真按键(不是直接派发命令):通讯录 tab 上会话页的快捷键绑定器是卸掉的,当年就是派发命令能过、真按不行。
+    // 真按键(不是直接派发命令):外壳常驻的分发器接住它,通讯录这一面在会话页隐藏时也要答。
     // Mod = 平台的命令键,jsdom 里平台不定,两种都按一次。
     for (const mod of [{ ctrlKey: true }, { metaKey: true }]) {
       await act(async () => { document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', bubbles: true, ...mod })) })

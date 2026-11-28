@@ -832,7 +832,7 @@ export function buildAgentDeliveryEnvelope(
     // 会话直发那条本地合成行的 is_whisper 是传输细节，不是人说的悄悄话。
     whisperTo: isSessionDirect || !input.whisperTo?.length ? null : input.whisperTo.map((id) => encodeTypedId('user', id)).join(' '),
     viaApp: isSessionDirect ? null : input.viaApp ?? null,
-    thread: isSessionDirect ? null : input.threadRootId,
+    thread: isSessionDirect || !input.threadRootId ? null : encodeTypedId('msg', input.threadRootId),
     listenMode: context.listenMode ?? null,
     replyTo: input.replyTo
       ? {

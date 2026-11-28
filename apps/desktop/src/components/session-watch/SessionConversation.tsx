@@ -10,7 +10,6 @@ import { useConversationVisibility } from '@/components/chat/useConversationVisi
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { TurnAnnotation } from '@gugu/session-core/acp/client'
-import { openImageViewer } from '@/lib/imageViewer'
 import { PhoneTaskDraftRecovery } from '../../mobile/local-agent/PhoneTaskDraftRecovery'
 import { usePhoneInterruptedRetry } from './usePhoneInterruptedRetry'
 import { machineRpc } from './sessionpage-rpc'
@@ -47,7 +46,7 @@ import { useOpenedOutputOpener } from './opened-output-opener'
 import { sessionWorkingCopyReader } from '@/components/appSlot/phone-working-copy-file'
 import { dismissSubagent } from '@renderer/features/sessions/view/subagent-dismissals'
 import { usePhoneBackgroundTasks } from './background-tasks'
-import { followConversationLink, noteDrawnPictureLink } from '@/lib/followConversationLink'
+import { followConversationLink } from '@/lib/followConversationLink'
 import { openMessageSender } from '@/lib/openMessageSender'
 import { classifyFileLink } from '@gugu/core/shared/ui/guguLink'
 import { ComposerAttachButton } from '@/components/chat/ComposerAttachButton'
@@ -350,10 +349,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       if (!result.success) throw new Error(result.error)
       return result.dataUrl
     },
-    openImage: (url, name, thumb) => openImageViewer([{ url, alt: name, file: { name }, thumb }], 0),
     openFile: outputs.openFile,
-    unavailable: () => translateSessionMessage('attachmentViewer.unavailable'),
-    onError: error => setBackgroundError(messageForUser(error)),
   }), [deviceId, local, outputs.openFile])
   // Publishing new commands remeasures every Solid transcript row. Editing a
   // phone draft must not rebuild the history before its outbox commit can run.
@@ -372,7 +368,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       void runNativeInputAction(sessionId, id, local ? null : deviceId, () => machineRpc(deviceId, local).sessions.lifeDiscard(sessionId, id))
     },
     ...(nativeRecord && !phoneHost ? userAttachments : { onViewAttachment: userAttachments.onViewAttachment }),
-    classifyLink: classifyFileLink, onOpenLink: followConversationLink, onDrawnPictureLink: noteDrawnPictureLink, onOpenSender: openMessageSender,
+    classifyLink: classifyFileLink, onOpenLink: followConversationLink, onOpenSender: openMessageSender,
     onOpenFile: ({ path, source }) => openFile(path, source),
     conversationAgentSession: () => sessionId, conversationAgentUserId: () => agentUserId ?? null, readConversationFile: input => readConversationFile(local, deviceId, input),
     ...quotes.commands,

@@ -254,7 +254,6 @@ export default {
     "activityError": "无法读取用量记录：{{error}}",
     "balance": "积分余额",
     "balanceError": "无法读取积分余额：{{error}}",
-    "billingCopy": "每 {{periodLabel}}为一个周期，可用 {{periodCredits}} 积分（1 积分约合 1 美元的模型牌价用量，本周期约合 {{usd}} 美元）。周期内可自由安排用量，无额外时段限制；额度在 {{endDate}}重新计算。",
     "billingExplanation": "计费说明",
     "close": "关闭",
     "heldTitle": "已开出、尚未结算的额度",
@@ -1258,7 +1257,6 @@ export default {
     },
     "tiersError": "无法读取档位列表：{{error}}",
     "title": "会员与额度",
-    "topupRate": "每 ¥1 = {{credits}} 积分",
     "topupTitle": "加量包",
     "wechatPay": "微信支付",
     "periodCredits": "每周期 {{credits}} 积分"

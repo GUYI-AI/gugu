@@ -54,6 +54,12 @@ export interface Notice {
   onDismiss?: () => void
   /** The visible notice expired; callers may release state scoped to that notice. */
   onAutoClose?: () => void
+  /**
+   * Transient only. The pointer is on (or pressed on) the toast strip this notice is in — the same condition under which
+   * the strip pauses every toast's own timer. A caller that runs a clock alongside the notice (an undo window) pauses with
+   * it, so the two cannot drift apart. Reported by the host; called with `true` at once if the strip is already hovered.
+   */
+  onHoverChange?: (hovering: boolean) => void
 }
 
 /**
@@ -85,7 +91,7 @@ export function notify(notice: Notice): string | number {
   return showToast(notice)
 }
 
-function showToast({ key, title, description, tier, variant, waiting, action, icon, duration, position, onDismiss, onAutoClose }: Notice): string | number {
+function showToast({ key, title, description, tier, variant, waiting, action, icon, duration, position, onDismiss, onAutoClose, onHoverChange }: Notice): string | number {
   // 转瞬的确认(成功 / 提示、没有动作)点击穿透,别挡住下面的按钮一个停留周期。
   const passthrough = !action && (tier === 'success' || tier === 'info')
   // 每个字段都显式给(没有就是 undefined):sonner 更新同 id 的提示时是 `{...旧的, ...新的}`,省略的字段会沿用上一次。
@@ -95,8 +101,16 @@ function showToast({ key, title, description, tier, variant, waiting, action, ic
     id = liveIds.get(key) ?? `${key}#${++idSeq}`
     liveIds.set(key, id)
   }
+  // A hover listener needs an id to be found again (and dropped) even when the notice has no key.
+  if (id === undefined && onHoverChange) id = `hover#${++idSeq}`
   const retire = () => {
     if (key !== undefined && liveIds.get(key) === id) liveIds.delete(key)
+    if (id !== undefined) hoverListeners.delete(id)
+  }
+  const toasterId = live ? hoverListeners.get(id!)?.toasterId : requestToasterId()
+  if (id !== undefined) {
+    if (onHoverChange) watchStripHover(id, toasterId, onHoverChange)
+    else hoverListeners.delete(id)
   }
   const options = {
     ...(id !== undefined && { id }),
@@ -104,11 +118,13 @@ function showToast({ key, title, description, tier, variant, waiting, action, ic
     icon: waiting ? <LoadingIndicator size="inline" /> : icon,
     action: action ? { label: action.label, onClick: action.onClick } : undefined,
     onDismiss: () => {
+      if (id !== undefined) settleClosing(id)
       if (id !== undefined && dismissedByApp.delete(id)) return
       retire()
       onDismiss?.()
     },
     onAutoClose: () => {
+      if (id !== undefined) settleClosing(id)
       retire()
       onAutoClose?.()
     },
@@ -119,7 +135,7 @@ function showToast({ key, title, description, tier, variant, waiting, action, ic
     closeButton: duration === Infinity ? true : undefined as boolean | undefined,
     // A new toast shows in the window it was asked from (aux-layers; NoticeHost draws a strip in each pop-out). One
     // updated in place stays where it is: sonner keeps the field it is not given.
-    ...(!live && { toasterId: requestToasterId() }),
+    ...(!live && { toasterId }),
   }
 
   logIfRead({ key, title, description, tier, variant })
@@ -138,6 +154,75 @@ function showToast({ key, title, description, tier, variant, waiting, action, ic
   })
 }
 
+// ── Hover on a toast strip, and closing a toast all the way ───────────────────────────────────────────────────────
+
+/** Notices that asked for `onHoverChange`, by sonner id, with the strip (toasterId; undefined = the main one) they are in. */
+const hoverListeners = new Map<string, { toasterId: string | undefined; listener: (hovering: boolean) => void }>()
+const hoveredStrips = new Set<string | undefined>()
+
+function watchStripHover(id: string, toasterId: string | undefined, listener: (hovering: boolean) => void): void {
+  hoverListeners.set(id, { toasterId, listener })
+  if (hoveredStrips.has(toasterId)) listener(true)
+}
+
+/**
+ * The host (NoticeHost) reports the pointer on / off a toast strip — pressed counts as on, as sonner counts it when it
+ * pauses the strip's timers. Every notice on that strip that listens hears it.
+ */
+export function setNoticeStripHovered(toasterId: string | undefined, hovering: boolean): void {
+  if (hoveredStrips.has(toasterId) === hovering) return
+  if (hovering) hoveredStrips.add(toasterId)
+  else hoveredStrips.delete(toasterId)
+  for (const { toasterId: strip, listener } of [...hoverListeners.values()]) if (strip === toasterId) listener(hovering)
+}
+
+/** sonner keeps a dismissed toast on screen (fading, still clickable) this long before unmounting it (TIME_BEFORE_UNMOUNT). */
+const TOAST_EXIT_MS = 200
+/** No host answered the dismissal (nothing mounted the strip): a close does not wait longer than this. */
+const CLOSE_FALLBACK_MS = 1000
+type Closing = { promise: Promise<void>; resolve: () => void; leaving: boolean }
+/** Toasts on their way out, by sonner id: resolved once they are unmounted. */
+const closing = new Map<string, Closing>()
+
+function closingOf(id: string): Closing {
+  const known = closing.get(id)
+  if (known) return known
+  let done!: () => void
+  const entry: Closing = { promise: new Promise<void>((resolve) => (done = resolve)), resolve: () => { if (closing.get(id) === entry) closing.delete(id); done() }, leaving: false }
+  closing.set(id, entry)
+  return entry
+}
+
+/** Two frames: sonner unmounts with a state update, and React commits it on a later task — by the second frame it has. */
+function afterCommit(callback: () => void): void {
+  const frame = (next: () => void) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => next()) : setTimeout(next, 16))
+  frame(() => frame(callback))
+}
+
+/** sonner started taking the toast away (dismissed or expired): it is off the screen once its exit is over and committed. */
+function settleClosing(id: string): void {
+  const entry = closingOf(id)
+  entry.leaving = true
+  setTimeout(() => afterCommit(entry.resolve), TOAST_EXIT_MS)
+}
+
+/**
+ * Close a notice and resolve once it is off the screen — for a caller whose next step must not overlap it (a delete
+ * that starts only when its undo notice, with 撤销 on it, is gone). Already gone ⇒ resolves at once; leaving ⇒ when it has left.
+ */
+export function closeNotice(key: string): Promise<void> {
+  persistent().remove(key)
+  const id = liveIds.get(key)
+  if (id === undefined) {
+    const leaving = [...closing].filter(([known]) => known.startsWith(`${key}#`)).map(([, entry]) => entry.promise)
+    return Promise.all(leaving).then(() => undefined)
+  }
+  const entry = closingOf(id)
+  dismissToast(key)
+  setTimeout(() => { if (!entry.leaving) entry.resolve() }, CLOSE_FALLBACK_MS)
+  return entry.promise
+}
+
 /** 用户读到的失败 / 告警原样落盘(只是本机日志):日志里的错误行说不清用户当时看见了哪一句。 */
 function logIfRead({ key, title, description, tier, variant }: Pick<Notice, 'key' | 'title' | 'description' | 'tier' | 'variant'>): void {
   if (tier === 'error' || tier === 'warning' || (!tier && variant === 'destructive')) {
@@ -149,6 +234,7 @@ function dismissToast(key: string): void {
   const id = liveIds.get(key)
   if (id === undefined) return
   liveIds.delete(key)
+  hoverListeners.delete(id)
   dismissedByApp.add(id)
   sonner.dismiss(id)
 }

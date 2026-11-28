@@ -12,6 +12,11 @@ function mcpBehaviorOf(providerId: string): IMcpBehavior | null {
   return provider.behavior.mcp ?? null;
 }
 
+/** 咕咕写进那一家配置里的投递条目(随 app 发的 stdio 中继,Antigravity),不是这个人装的 server。 */
+function isGuguDelivery(args: readonly string[] | undefined): boolean {
+  return args?.some((arg) => /[\\/]gugu-mcp-stdio-relay\.mjs$/.test(arg)) ?? false;
+}
+
 /** 那一家按真实路径记目录(Claude 的 `projects[]` 键):`/tmp` 起的会话在 macOS 上是 `/private/tmp`。 */
 async function scopeDirs(dirs: readonly string[]): Promise<McpScopeDir[]> {
   const real = await Promise.all(dirs.map((dir) => realpath(dir).catch(() => dir)));
@@ -39,7 +44,7 @@ export class McpService {
       }
     }
     return [...byName.values()]
-      .filter((reg) => reg.enabled !== false)
+      .filter((reg) => reg.enabled !== false && !isGuguDelivery(reg.args))
       .map((r) => registrationToMcpServer(r, [agentId]));
   }
 }

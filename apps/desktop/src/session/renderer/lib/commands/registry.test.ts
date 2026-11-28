@@ -49,4 +49,17 @@ describe('live command dispatch', () => {
     expect(registry.dispatch('session.rename')).toBe(false);
   });
 
+  it('while the task page is hidden, the shell surface answers a command the hidden page also answers', () => {
+    // The phone shell's search sheet mounts after the task page's always-mounted app shortcuts; both answer app.globalSearch.
+    const registry = new CommandRegistry();
+    const pageSearch = vi.fn();
+    const phoneSearch = vi.fn();
+    registry.register({ scopeId: 'app', getCommands: () => [{ id: 'app.globalSearch', execute: pageSearch }] });
+    registry.register({ scopeId: 'app', surface: 'shell', getCommands: () => [{ id: 'app.globalSearch', execute: phoneSearch }] });
+    registry.setSessionPageVisible(false);
+    expect(registry.dispatch('app.globalSearch')).toBe(true);
+    expect(phoneSearch).toHaveBeenCalledTimes(1);
+    expect(pageSearch).not.toHaveBeenCalled();
+  });
+
 });

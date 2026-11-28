@@ -20,6 +20,9 @@ export type ComposerQueuedPrompt = {
   locked?: boolean;
 };
 
+type QueuedRowLabels = { queued: string; reorder: string; drag: string; edit: string; imageOnly: string; sendNowLabel: string;
+  sendNowTitle: string; sendNow: string; remove: string; actions: string };
+
 export interface QueuedPromptsBandProps {
   prompts: ComposerQueuedPrompt[];
   /**
@@ -49,7 +52,34 @@ export function QueuedPromptsBand({
   editingId,
   className,
 }: QueuedPromptsBandProps) {
-  const { translate } = useMessages();
+  const { locale, translate } = useMessages();
+  // @@@queued-labels — a row's labels are words of (language, its place, whether sending steers): put into words once per
+  // language, not on every draw. The composer redraws on every message of a running turn, and translating every row's
+  // labels each time cost N rows of i18n per message. Only the labels are kept: the row itself is drawn every time, so a
+  // mention's name that resolves later still shows (the text is not cached).
+  const labels = React.useMemo(() => {
+    const made = new Map<string, QueuedRowLabels>();
+    return (index: number, steers: boolean): QueuedRowLabels => {
+      const key = `${index}|${steers}`;
+      let row = made.get(key);
+      if (!row) {
+        const place = { index: index + 1 };
+        made.set(key, row = {
+          queued: translate('composer.queuedLabel'),
+          reorder: translate('composer.reorderQueuedPrompt', place),
+          drag: translate('composer.dragToReorder'),
+          edit: translate('composer.editQueuedPrompt', place),
+          imageOnly: translate('composer.imageOnlyPrompt'),
+          sendNowLabel: translate(steers ? 'composer.steerQueuedPromptNow' : 'composer.sendQueuedPromptNow', place),
+          sendNowTitle: translate(steers ? 'composer.sendNowSteersTurn' : 'composer.sendNowCancelsTurn'),
+          sendNow: translate(steers ? 'composer.steerQueuedPrompt' : 'composer.sendQueuedPrompt'),
+          remove: translate('composer.deleteQueuedPrompt'),
+          actions: translate('composer.queuedPromptActions', place),
+        });
+      }
+      return row;
+    };
+  }, [locale, translate]);
   const [draggingId, setDraggingId] = React.useState<string | null>(null);
   const [dragOverId, setDragOverId] = React.useState<string | null>(null);
   const ids = prompts.filter((prompt) => !prompt.locked).map((prompt) => prompt.id);
@@ -104,6 +134,7 @@ export function QueuedPromptsBand({
       <div className={styles.list} role="list">
         {prompts.map((prompt, index) => {
           const isEditing = editingId === prompt.id;
+          const label = labels(index, !!prompt.sendNowSteers);
           return (
             <div
               key={prompt.id}
@@ -120,16 +151,16 @@ export function QueuedPromptsBand({
               onDrop={(event) => handleDrop(event, prompt.id)}
             >
               {/* The row says it is waiting in words, not with a list glyph: read alone, 原文 + 现在插入 looks sent (UX 复审 B5-F05). */}
-              <span className={styles.leadingSlot} title={translate('composer.queuedLabel')}>
-                <span className={styles.queueLabel}>{translate('composer.queuedLabel')}</span>
+              <span className={styles.leadingSlot} title={label.queued}>
+                <span className={styles.queueLabel}>{label.queued}</span>
                 <ListTree className={styles.queueIcon} aria-hidden />
                 {!isEditing && !prompt.locked && ids.length > 1 && (
                   <button
                     type="button"
                     className={styles.dragHandle}
                     draggable
-                    aria-label={translate('composer.reorderQueuedPrompt', { index: index + 1 })}
-                    title={translate('composer.dragToReorder')}
+                    aria-label={label.reorder}
+                    title={label.drag}
                     onClick={(event) => event.stopPropagation()}
                     onDragStart={(event) => handleDragStart(event, prompt.id)}
                     onDragEnd={handleDragEnd}
@@ -148,7 +179,7 @@ export function QueuedPromptsBand({
 
               {prompt.locked ? (
                 <span className={cx(styles.promptText, !prompt.text.trim() && styles.emptyText)} data-locked="true">
-                  {prompt.text.trim() ? renderPromptText?.(prompt.text) ?? prompt.text.trim() : translate('composer.imageOnlyPrompt')}
+                  {prompt.text.trim() ? renderPromptText?.(prompt.text) ?? prompt.text.trim() : label.imageOnly}
                 </span>
               ) : (
                 <button
@@ -156,12 +187,12 @@ export function QueuedPromptsBand({
                   className={cx(styles.promptText, !prompt.text.trim() && styles.emptyText)}
                   onClick={() => onEdit(prompt.id, prompt.text)}
                   disabled={!!editingId}
-                  aria-label={translate('composer.editQueuedPrompt', { index: index + 1 })}
-                  title={translate('composer.editQueuedPrompt', { index: index + 1 })}
+                  aria-label={label.edit}
+                  title={label.edit}
                 >
                   {prompt.text.trim()
                     ? renderPromptText?.(prompt.text) ?? prompt.text.trim()
-                    : translate('composer.imageOnlyPrompt')}
+                    : label.imageOnly}
                 </button>
               )}
 
@@ -172,23 +203,23 @@ export function QueuedPromptsBand({
                     variant="ghost"
                     size="sm"
                     className={styles.sendNow}
-                    aria-label={translate(prompt.sendNowSteers ? 'composer.steerQueuedPromptNow' : 'composer.sendQueuedPromptNow', { index: index + 1 })}
-                    title={translate(prompt.sendNowSteers ? 'composer.sendNowSteersTurn' : 'composer.sendNowCancelsTurn')}
+                    aria-label={label.sendNowLabel}
+                    title={label.sendNowTitle}
                     onClick={(event) => {
                       event.stopPropagation();
                       onSendNow(prompt.id);
                     }}
                   >
                     <ArrowRight className={styles.actionIcon} />
-                    {translate(prompt.sendNowSteers ? 'composer.steerQueuedPrompt' : 'composer.sendQueuedPrompt')}
+                    {label.sendNow}
                   </Button>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     icon
-                    aria-label={translate('composer.deleteQueuedPrompt')}
-                    title={translate('composer.deleteQueuedPrompt')}
+                    aria-label={label.remove}
+                    title={label.remove}
                     onClick={(event) => {
                       event.stopPropagation();
                       onDelete(prompt.id);
@@ -199,8 +230,8 @@ export function QueuedPromptsBand({
                   <DropdownMenu.Root>
                     <DropdownMenu.Trigger
                       render={<Button type="button" variant="ghost" size="sm" icon />}
-                      aria-label={translate('composer.queuedPromptActions', { index: index + 1 })}
-                      title={translate('composer.queuedPromptActions', { index: index + 1 })}
+                      aria-label={label.actions}
+                      title={label.actions}
                       disabled={!!editingId}
                     >
                       <Ellipsis className={styles.actionIcon} />
@@ -208,7 +239,7 @@ export function QueuedPromptsBand({
                     <DropdownMenu.Content align="end" side="top" width="content">
                       <DropdownMenu.Item onClick={() => onEdit(prompt.id, prompt.text)}>
                         <Pencil className={styles.actionIcon} />
-                        {translate('composer.editQueuedPrompt', { index: index + 1 })}
+                        {label.edit}
                       </DropdownMenu.Item>
                     </DropdownMenu.Content>
                   </DropdownMenu.Root>

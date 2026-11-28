@@ -93,7 +93,7 @@ export const ContextBar = observer(function ContextBar({
   );
 
   // h-8 = 这一行只有芯片时也和带「添加上下文」时一样高。
-  const rowClassName = 'flex h-8 w-full items-center justify-center gap-2 bg-background-secondary-1 px-4 pb-2';
+  const rowClassName = 'flex h-8 w-full items-center justify-center gap-2 bg-[var(--chat-bg)] px-4 pb-2';
   const leadingRow = leading ? <div className={rowClassName}>{leading}</div> : null;
 
   if (hideTrigger === null) {

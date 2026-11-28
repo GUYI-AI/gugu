@@ -6,8 +6,9 @@ import { accountAttachmentsEndpoint, attachmentRequest, offerImagePreviewOf } fr
 import { getSupabaseAnonKey, getSupabaseUrl } from '@gugu/core/cloud/config'
 import { createFileMetadataLoader } from '@gugu/core/cloud/fileMetadata'
 import { cloudFileProviders } from '@gugu/core/cloud/fileProviders'
-import { createFileChunkCache, createFileSink, createFileSaver } from '@gugu/core/local/files/fileSnapshots'
-import { DEVICE_STORE, createFileResolver, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { createFileCache, createFileChunkCache, createFileSink, createFileSaver, fileCacheDirectory, localCopy, storeFileBytes, writeFileAt, writeFileBytes, writeFileHandle } from '@gugu/core/local/files/fileSnapshots'
+import { DEVICE_STORE, createFileResolver, type FileActor, type FileBytes, type FileContext, type FileMetadata, type FilePreview, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { coreLogger } from '@gugu/core/log'
 import { parseFileStorage } from '@gugu/core/shared/fileStorage'
 import { readUserSettingsConfig, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
 import { PROJECT_FILE_READ, createProjectFileReader, createProjectFileStreamer, heldFileBlob, localProjectFileProvider } from './projectFileHost'
@@ -16,6 +17,7 @@ import { createProjectTransferHost } from './projectFileTransferHost'
 import { findProjectFileByName, heldRevisionBySha, type ProjectFileVersionLookup } from './sessionpage/sessionpage-project-groups'
 import type { setAccountFileResolver } from './session/main/core/extensions/account-token'
 import { createProjectFilePublisher } from './projectFilePublication'
+import { copySnapshot } from './projectFileImport'
 import type { makeIdentityClient } from './supabase'
 
 /** One composition root for native IPC, Apps, MCP and inbox. Identity lookup here never registers or refreshes. */
@@ -47,6 +49,8 @@ export function createDesktopFileAccess(deps: {
   rpc(name: string, args: Record<string, unknown>): Promise<unknown>
   /** Where this device keeps what it sends into project chats it binds no project to (DEVICE_STORE). */
   deviceStore: string
+  /** This device's Gugu home: its file cache (`fileCacheDirectory`) keeps what the window read over the network. */
+  home: string
   /** The identity schema, as the signed-in account: its own settings and projects. */
   identityDb(accessToken: string): ReturnType<typeof makeIdentityClient>
 }) {
@@ -83,7 +87,89 @@ export function createDesktopFileAccess(deps: {
       const links = deps.links(); return links ? ownSshFileProvider(links, deps.tempRoot)(...args) : null
     },
   }
-  const resolve = createFileResolver({ ...providers, saveTo: createFileSaver(providers) })
+  const saveTo = createFileSaver(providers)
+  const resolve = createFileResolver({ ...providers, saveTo })
+  const cache = createFileCache(fileCacheDirectory(deps.home)), log = coreLogger('file-cache')
+  const blobBytes = (blob: Blob): FileBytes => ({
+    size: blob.size, here: true, dispose: async () => {},
+    read: async (offset, length) => new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()),
+  })
+  /**
+   * This machine's bytes of `sha256`, without the network: the file store's copy or an original this machine sent, a
+   * version it holds in a project, else what the window read before (the file cache).
+   */
+  const here = async (sha256: string): Promise<FileBytes & { path?: string } | null> => {
+    const kept = await localCopy(deps.home, sha256) ?? await held(sha256)
+    return kept ? blobBytes(kept) : cache.read(sha256)
+  }
+  /**
+   * A cloud file as this desktop's window reads it. What comes over the network is kept in this machine's file cache, so a
+   * later open or download reads it here: a managed object is read straight into the cache, and a copy another device
+   * relays, which may be shown before its read is acknowledged, is kept once it is. A historical object without a sha
+   * has no place in the cache and is only read.
+   */
+  const cachedRead = async (revision: FileRevision, context: FileContext): Promise<FileBytes> => {
+    if (revision.source !== 'managed-object') {
+      const file = await providers.temporary(revision, context)
+      // Keeping it only saves a later read: failing to never takes down what was read.
+      const { sha256, file_name: name, content_type: type } = revision
+      const keep = () => cache.read(sha256!, () => storeFileBytes(cache.directory, sha256!, name, type, file))
+        .then(kept => kept?.dispose(), (error: unknown) => log.warn({ error }, 'relayed copy not kept'))
+      const acknowledged = (file.acknowledged ?? Promise.resolve()).then(keep)
+      acknowledged.catch(() => undefined)
+      return { ...file, here: true, acknowledged }
+    }
+    if (!revision.sha256) return providers.managed(revision, context)
+    return (await cache.read(revision.sha256, () => saveTo(revision, context, cache.directory, revision.file_name, true)))!
+  }
+  /**
+   * The window's cloud reads (`nativeFileHost` op `cloud`…). A preview is a video's signed address, which Chromium's media
+   * loader reads itself, or an image's small copy as bytes; an image without one is shown from the file, read like any file.
+   */
+  const cloud = {
+    read: cachedRead,
+    async preview(revision: FileRevision, context: FileContext) {
+      const shown = await providers.preview!(revision, context, async () => { throw new Error('File preview is the file itself') })
+      return shown instanceof Blob ? new Uint8Array(await shown.arrayBuffer()) : shown
+    },
+    expiredPreview: async (preview: FilePreview, context: FileContext) => new Uint8Array(await (await providers.expiredPreview!(preview, context)).arrayBuffer()),
+  }
+  /**
+   * This machine's copy saved as the person's own file: a cached copy is cloned where the filesystem can, anything else
+   * written as bytes.
+   */
+  const save = (copy: FileBytes & { path?: string }, target: string) => copy.path
+    ? writeFileAt(target, 0o644, partial => copySnapshot(copy.path!, partial))
+    : writeFileBytes(copy, target, 0o644)
+  /**
+   * A file saved where the person says (`pick`: the save dialog; `null` saves nothing). The bytes are this machine's.
+   * `known`: its bytes of the version the window already knows, saved without asking the server (local-first, as an
+   * open is). Otherwise the server says which version it is: a file this machine keeps itself is written from where it
+   * is, anything else from this machine's copy of it, read into the file cache first when it has none. `revision`: the
+   * version saved, for the window to know next time.
+   */
+  const download = async (
+    ref: FileRef, actor: FileActor, pick: () => Promise<string | null>, known: FileBytes & { path?: string } | null, signal?: AbortSignal,
+  ): Promise<{ saved: boolean; revision?: FileRevision } | { status: Exclude<FileMetadata['status'], 'ready'> }> => {
+    if (known) {
+      try { const target = await pick(); if (target) await save(known, target); return { saved: !!target } }
+      finally { await known.dispose() }
+    }
+    const file = await resolve(ref, actor, signal ? { signal } : {})
+    if (file.status !== 'ready') return { status: file.status }
+    try {
+      const target = await pick()
+      if (!target) return { saved: false }
+      const context: FileContext = { ref, actor, ...(signal ? { signal } : {}) }, { revision } = file
+      if (!revision.sha256 || await providers.local(context)) await writeFileHandle(file, target, 0o644)
+      else {
+        const copy = await here(revision.sha256)
+          ?? (await cache.read(revision.sha256, () => saveTo(revision, context, cache.directory, revision.file_name, true)))!
+        try { await save(copy, target) } finally { await copy.dispose() }
+      }
+      return { saved: true, revision }
+    } finally { await file.dispose() }
+  }
   const drain = createProjectTransferHost({ identity, endpoint, read: async request => read(request, (await identity()).accountId), tempRoot: deps.tempRoot, env: deps.env, later })
   const resolveAccount: Parameters<typeof setAccountFileResolver>[0] = async (ref, actor, options) => {
     const { accountId, deviceId } = await identity()
@@ -116,7 +202,7 @@ export function createDesktopFileAccess(deps: {
     const projectRoot = revision ? await root(revision.host_project_id!) : null
     return revision && projectRoot ? heldFileBlob(revision, projectRoot).catch(() => null) : null
   }
-  return { providers, resolve, resolveAccount, read, stream, drain, publish, held,
+  return { providers, resolve, resolveAccount, read, stream, drain, publish, held, here, cloud, download,
     handlers: (transport: 'ssh' | 'realtime'): DeviceRpcHandlers => transport === 'ssh' ? sshHandlers : {},
   }
 }

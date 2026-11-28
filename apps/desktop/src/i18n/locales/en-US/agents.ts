@@ -208,6 +208,7 @@ export default {
       "thinking": "thinking"
     },
     "toolCallUnit": "tool calls",
+    "openSession": "Open task conversation",
     "viewDetails": "{{name}} is {{status}}; view runtime details",
     "viewMore": "View {{count}} more running Agents",
     "viewMore_one": "View {{count}} more running Agent",

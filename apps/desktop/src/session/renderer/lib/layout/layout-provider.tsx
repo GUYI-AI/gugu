@@ -201,7 +201,7 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   };
   const targets = () => ({ list: listTarget(), inner: innerTarget() });
 
-  const [track] = useState(() => new PanelTrack([{ id: 'list', at: listTarget() }, { id: 'inner', at: { size: 0 } }]));
+  const [track] = useState(() => new PanelTrack([{ id: 'list', at: listTarget() }, { id: 'inner', at: { size: 0 }, exit: 'clip' }]));
   const innerCrowded = useMotionValue(false);
   const crowded = () => {
     const card = innerCardWidth();
@@ -396,6 +396,17 @@ export function useInnerSidebarCrowded(): boolean {
   const [crowded, setCrowded] = useState(() => innerCrowded.get());
   useMotionValueEvent(innerCrowded, 'change', setCrowded);
   return crowded;
+}
+
+/** Whether the inner column is on its way open or folded (a move under way on the track). Re-renders only when it flips. */
+export function useInnerColumnMoving(): boolean {
+  const { track } = useWorkspaceLayoutContext();
+  const [moving, setMoving] = useState(false);
+  useLayoutEffect(
+    () => track.subscribe((drawn) => setMoving(Math.abs(drawn.get('inner')! - track.ends('inner').to) > PANEL_LANDED_PX)),
+    [track]
+  );
+  return moving;
 }
 
 /** #2548 whether the rows are laid out as the rail right now (leftRailLayout). Re-renders only when it flips. */

@@ -37,7 +37,7 @@ vi.mock('@renderer/lib/acp/auth-login-binding', () => ({
     },
   },
 }));
-vi.mock('@renderer/lib/open-external-link', () => ({
+vi.mock('@renderer/lib/open-web-link', () => ({
   openExternalLinkInBrowser: (url: string) => mocks.opened.push(url),
   copyExternalLink: async () => true,
 }));

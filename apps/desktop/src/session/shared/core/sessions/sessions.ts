@@ -309,6 +309,26 @@ export type ArchivedSessionRef = {
 export type ArchiveOutcome = { archived: ArchivedSessionRef[]; unreached: UnreachedMachine[] };
 
 /**
+ * 「已归档」里的永久删除的回执(owner 2026-11-26),`sessions.permanentlyDeleteSessions(targets ≤50, { withChildren })`。
+ * - 一台机器只报**它自己删掉的**行:`deleted` 是这台机器上删掉的(子会话在前、点名的在后);别的机器上的行(包括
+ *   子会话)由渲染侧直接问那台机器。`withChildren` 只带这台机器上已归档的子会话。
+ * - 幂等:已经被这条路删掉的行再请求一次,照样回在 `deleted` 里(云端那一半同样重放不变)。
+ * - `failed` 是这次没删成的行和原因(闭集 `PermanentDeleteFailure`),一条失败不拦别的。异常原文只进那台机器的主进程日志。
+ * - `unreached`:找子会话时没问到的机器。回执里没提到的行按失败算。
+ */
+export type PermanentDeleteOutcome = { deleted: ArchivedSessionRef[]; unreached: UnreachedMachine[]; failed: Array<ArchivedSessionRef & { reason: PermanentDeleteFailure }> };
+
+/**
+ * 一条没删成的原因,界面按它说话(❌ 回执里带异常原文):
+ * - `not_found`:这台机器上没有这一行(也不是这条路删掉的)。
+ * - `not_archived`:还没归档。
+ * - `cloud_unconfirmed`:云端那一半没确认(没联网或没登录、移出身份失败、删私聊历史失败或回执里没有它)。本机什么都没动,重试即可。
+ * - `restored`:云端删完之后、本机删之前被恢复了。
+ * - `failed`:云端已经删了,本机删这一行时出错。再请求一次能补上(云端重放结果不变)。
+ */
+export type PermanentDeleteFailure = 'not_found' | 'not_archived' | 'cloud_unconfirmed' | 'restored' | 'failed';
+
+/**
  * 改父会话被拒、因为挂上去会成环时,主进程报错原话的开头(agent 的 `session_set_parent` 读到的就是这句)。
  * 侧栏凭它把「成环」与「够不着」分开说:成环可能隔着侧栏看不见的已归档会话,侧栏自己挡不全。
  */

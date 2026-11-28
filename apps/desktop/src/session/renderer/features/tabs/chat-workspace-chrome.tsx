@@ -1,7 +1,8 @@
 import { useDndContext } from '@dnd-kit/core';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Maximize2, Minimize2, PanelRight } from '@/lib/icons';
+import { PanelToggleIcon } from '@/components/PanelToggleIcon';
+import { Maximize2, Minimize2 } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
 import { cn } from '@renderer/utils/utils';
 import { openPanelItem } from '../chats/chat-tabs/chat-layouts';
@@ -14,7 +15,7 @@ import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { PaneProvider } from './pane-context';
 import type { PaneLayoutStore } from './pane-layout-store';
-import { TabBar, TabStripShell } from './tab-bar';
+import { TAB_STRIP_NARROW_PX, TabBar, TabStripShell } from './tab-bar';
 import { CHAT_TOOL_COMPACT_HEADER_MAX_WIDTH_PX } from './chat-tool-geometry';
 import { ChatWorkspaceTabContext } from './chat-workspace-context';
 import type { CutEdge, CutEdgeRelay } from './chat-workspace-edge';
@@ -81,8 +82,10 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   }, [dragging, embedded, focused, layout, mode]);
   const chatColumn = useRef<HTMLDivElement>(null);
   const toolColumn = useRef<HTMLDivElement>(null);
-  // Divided, the conversation strip's width at rest: its look (narrow or not) follows it, ❌ the width drawn mid-move.
-  const [chatRest, setChatRest] = useState<number>();
+  // Divided, whether the conversation strip is narrow at rest: its look follows its width at rest, ❌ the width drawn mid-move.
+  // Only narrow or not is kept: a width would be a new value on every frame of a move or a drag, a render each, and each render
+  // reads the workspace's style again (the layout effect below).
+  const [chatRestNarrow, setChatRestNarrow] = useState<boolean>();
   const tools = panes?.tools;
   // The tools on their way off (hidden): their tabs leave with their page (@@@leaving-panes), ❌ before it.
   const leaving = mode === 'hidden' && !!tools && !layout.narrow && layout.isPaneShown(tools.paneId);
@@ -110,7 +113,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
         const open = Math.min(from, to) < PANEL_LANDED_PX ? Math.max(from, to) : drawn;
         if (toolNode) Object.assign(toolNode.style, { left: `${drawn - open}px`, width: `${open}px` });
         if (chatNode) chatNode.style.marginInlineStart = `${drawn}px`;
-        setChatRest(extent - open);
+        setChatRestNarrow(extent - open < TAB_STRIP_NARROW_PX);
       } else if (toolCard) {
         // @@@card-head-width - the cards' heads ride the same edge as their bodies, in the same frame (the edge is written as
         // the track draws the slots): the conversation's head ends where its card does (its slot less the divider's pixel —
@@ -124,11 +127,11 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
         for (const card of [chatNode, chatCard]) if (card) card.style.marginRight = `${gap}px`;
         if (chatNode) chatNode.style.flex = `0 0 ${drawn - divider - gap}px`;
         if (toolNode) Object.assign(toolNode.style, { left: `${drawn - 1}px`, width: `calc(100% - ${toolsStart}px - var(--chat-card-half-gap))` });
-        setChatRest(Math.min(from, to));
+        setChatRestNarrow(Math.min(from, to) < TAB_STRIP_NARROW_PX);
       } else {
         if (chatNode) chatNode.style.flex = `0 1 ${drawn}px`;
         if (toolNode) Object.assign(toolNode.style, { left: `${drawn}px`, width: `calc(100% - ${toolsStart}px)` });
-        setChatRest(Math.min(from, to));
+        setChatRestNarrow(Math.min(from, to) < TAB_STRIP_NARROW_PX);
       }
     };
     // The gap goes with this run (the next one writes its own): the card may have lost [data-chat-card] by then.
@@ -138,9 +141,11 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
     }
     if (chatNode) Object.assign(chatNode.style, { flex: '', marginInlineStart: '' });
     if (toolNode) Object.assign(toolNode.style, { left: '', width: '' });
-    setChatRest(undefined);
+    setChatRestNarrow(undefined);
     return undefined;
-  });
+    // Run again when what is placed changes (the columns, the card, the side the tools are on), ❌ on every render: each run
+    // reads the workspace's style, which mid-move or mid-drag restyled the page in the middle of the frame.
+  }, [edge, panes, tools, mode, layout.narrow, divided, toolsFirst, toolCard, leaving]);
   if (!panes || !mode) return null;
   const { chat } = panes;
   const tab = chat.pane.resolvedTabs.find(({ tabId }) => tabId === layout.primaryChatTabId);
@@ -166,7 +171,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       className={toolCard ? 'min-w-0 flex-none' : 'min-w-0 flex-1'} style={CAPSULE_BAR_STYLE}>
       <PaneProvider group={chat} passive isFocusedPane={layout.activePaneId === chat.paneId}>
         <ChatWorkspaceTabContext.Provider value={{ role: 'capsule', layout }}>
-          <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={floating ? undefined : actions} restWidth={divided ? chatRest : undefined}>
+          <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={floating ? undefined : actions} restNarrow={divided ? chatRestNarrow : undefined}>
             {tab && Title ? <Title tab={tab} host={chat.pane} ctx={chat.pane.ctx} /> : null}
           </TabStripShell>
         </ChatWorkspaceTabContext.Provider>
@@ -189,9 +194,8 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       )}
       {tools && (tabsVisible || mode === 'hidden') && (
         <Button size="icon-sm" variant="ghost" title={toggleLabel} aria-label={toggleLabel} aria-pressed={tabsVisible}
-          className="aria-pressed:bg-row-selected aria-pressed:text-foreground"
           onClick={() => layout.setChatToolLayout(tabsVisible ? 'hidden' : 'split')}>
-          <PanelRight className="size-3.5" />
+          <PanelToggleIcon side="right" open={tabsVisible} className="size-3.5" />
         </Button>
       )}
       {full && (

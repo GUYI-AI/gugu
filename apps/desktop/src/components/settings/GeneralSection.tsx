@@ -15,7 +15,6 @@ import { useSystemPermissionStates } from '../../lib/systemPermissions'
 import { platform } from '../../platform'
 import type { SystemPermission } from '../../platform/types'
 import { useDevicePreferences, writeDevicePreferences } from '../../lib/devicePreferences'
-import { SessionSettingsSection } from '../sessionpage/SessionSettingsSection'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow, Toggle } from './SettingsPrimitives'
 import { SettingsChoice } from './SettingsChoice'
 import { Unknown } from '../ui/Unknown'
@@ -75,11 +74,12 @@ const MOBILE_NOTIFICATION_HINT_KEYS: Record<keyof typeof NOTIFICATION_HINT_KEYS,
 const NOTIFICATION_PERMISSION: readonly SystemPermission[] = ['notifications']
 
 /**
- * 通用:语言 + 主题 + 通知 (+ 托盘角标)。通知是这一页的一个分组,不是顶层导航项。
+ * 通用:语言 + 外观(浅 / 深 / 跟随系统) + 通知 (+ 托盘角标)。通知是这一页的一个分组,不是顶层导航项。
+ * 配色「主题」不在这一页:owner 11-26 挪到「界面」最上面(会话页画的那一格)。
  * @@@sidebar-tint 侧栏渐进底色**不在这一页** —— 2026-09-18 owner 把它归到会话页的设置里
  * (设置合一后是会话页画的「界面」那一格,features/settings/components/SidebarTintRow.tsx),真值在这台设备的偏好里(lib/devicePreferences.ts)。
  */
-export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPermissions: () => void; showThemePacks?: boolean }) {
+export function GeneralSection({ onOpenPermissions }: { onOpenPermissions: () => void }) {
   const { t } = useTranslation('main')
   const { preference: themePreference, setTheme } = useTheme()
   const mobile = useMobileShell()
@@ -152,8 +152,6 @@ export function GeneralSection({ onOpenPermissions, showThemePacks }: { onOpenPe
           onChange={confirmBeforeCancelAndSend => writeDevicePreferences({ confirmBeforeCancelAndSend })}
         />} />
       </SettingsGroup>}
-
-      {showThemePacks && <SessionSettingsSection section="theme-packs" />}
 
       {/* @@@5301 通知。这一节**只管咕咕主界面这条链**(聊天新消息 + IM 侧 agent 会话的运行事件);
           会话页 agent 的通知是另一条独立的链、归任务设置面板。两个面板是既定结构,❌ 不要合并。 */}

@@ -13,6 +13,9 @@ const GROUP_PAGE = 7;
 const SESSION_TAB = 8;
 const DOCK_PAGE = 10;
 const CHECK_PAGE = 11;
+/** An App surface: the strip an App lays over another App's window, outside gugu's (Computer Use's 「正在操作」). */
+const SURFACE_PAGE = 12;
+const AGENT = '0a000000-0000-4000-8000-0000000000b7';
 const BACKGROUND = 9;
 const contentsOf = (id: number) => ({ id, isDestroyed: () => false, hostWebContents: { id: 42 }, session: {}, once: () => undefined, on: () => undefined, send: vi.fn() });
 
@@ -37,6 +40,9 @@ vi.mock('@main/core/extensions/extensions-root', () => ({
   }),
 }));
 vi.mock('@main/core/extensions/app-files', () => ({ resourceChatOf: async (id: string) => id }));
+// gugu's window brought forward, as a banner's click brings it (its own test is notification's).
+const focusApp = vi.hoisted(() => vi.fn());
+vi.mock('@main/core/agent-hooks/notification', () => ({ focusAppFromNotification: focusApp }));
 vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 // This computer has one session its task list shows (s-here) and one archived (s-archived: sessionHere answers null for it,
 // as for none — its own test reads the database).
@@ -81,7 +87,7 @@ vi.mock('@main/core/extensions/extension-send', () => ({
 }));
 
 const { bindExtensionSurface, registerExtensionBridge, setExtensionBridgeHost } = await import('./extension-bridge');
-const { listedSessionProject } = await import('@main/core/extensions/extension-bridge-relay');
+const { actInWindow, listedSessionProject } = await import('@main/core/extensions/extension-bridge-relay');
 const { events } = await import('@main/lib/events');
 const { notificationFocusSessionChannel } = await import('@shared/events/appEvents');
 const emitted = vi.spyOn(events, 'emit');
@@ -102,6 +108,8 @@ const deliver = vi.fn((_origin: unknown, _action: unknown) => Promise.resolve())
 beforeEach(async () => {
   emitted.mockClear();
   deliver.mockClear();
+  focusApp.mockClear();
+  vi.mocked(actInWindow).mockClear();
   vi.mocked(listedSessionProject).mockClear();
   theWindow.listed = new Map([['s-far', 'p-far']]);
   theWindow.cannot = null;
@@ -113,6 +121,7 @@ beforeEach(async () => {
   await bindExtensionSurface({ webContentsId: SESSION_TAB, extensionId: 'calendar', workspace: sessionWorkspace('s-here'), tabId: 'tab-1', tabKind: 'calendar.main' });
   await bindExtensionSurface({ webContentsId: DOCK_PAGE, extensionId: 'calendar', tabId: 'dock', tabKind: 'calendar.main' });
   await bindExtensionSurface({ webContentsId: CHECK_PAGE, extensionId: 'calendar', tabId: 'extension-check:11', tabKind: 'calendar.main', operator: { kind: 'agent', id: 'user:agent-f' } });
+  await bindExtensionSurface({ webContentsId: SURFACE_PAGE, extensionId: 'calendar', workspace: sessionWorkspace('s-here'), tabId: 'bar', tabKind: 'calendar.surface', surface: { id: 'bar' } });
 });
 
 describe('gugu.showSession: the session comes up as a click on its row in the task list brings it', () => {
@@ -208,5 +217,47 @@ describe('gugu.showSession: the session comes up as a click on its row in the ta
     expect(deliver.mock.calls.map(([, action]) => action)).toEqual([{ kind: 'compose', sessionId: 's-here', text: 'about this\n' }]);
     const focusAt = emitted.mock.calls.findIndex(([channel]) => channel === notificationFocusSessionChannel);
     expect(emitted.mock.invocationCallOrder[focusAt]).toBeLessThan(deliver.mock.invocationCallOrder[0]!);
+  });
+});
+
+/** Computer Use's strip names the agent operating a window; a click on the name opens where that agent works (owner 11-27). */
+describe('from an App surface: gugu comes forward first, and an agent with no session here opens its private chat', () => {
+  const openedInWindow = () => vi.mocked(actInWindow).mock.calls.map(([action]) => action);
+
+  it('a surface brings gugu forward before the session comes up; a page in gugu does not', async () => {
+    expect(await show(SURFACE_PAGE, 's-here')).toEqual({ ok: true, value: undefined });
+    expect(focusApp).toHaveBeenCalledTimes(1);
+    expect(broughtUp()).toEqual([{ projectId: 'p-here', sessionId: 's-here' }]);
+    const focusAt = emitted.mock.calls.findIndex(([channel]) => channel === notificationFocusSessionChannel);
+    expect(focusApp.mock.invocationCallOrder[0]).toBeLessThan(emitted.mock.invocationCallOrder[focusAt]!);
+    // Control: the same call from a page drawn in gugu's own window leaves the window where it is.
+    expect(await show(SESSION_TAB, 's-here')).toMatchObject({ ok: true });
+    expect(focusApp).toHaveBeenCalledTimes(1);
+  });
+
+  it('orChatWith: a session found is opened, the chat is not', async () => {
+    expect(await call(SURFACE_PAGE, 'showSession', { id: 's-here', orChatWith: `user:${AGENT}` })).toEqual({ ok: true, value: undefined });
+    expect(broughtUp()).toEqual([{ projectId: 'p-here', sessionId: 's-here' }]);
+    expect(openedInWindow()).not.toContainEqual(expect.objectContaining({ target: expect.objectContaining({ kind: 'sender' }) }));
+  });
+
+  it("orChatWith: a session not here opens that agent's private chat, the way a click on its name does", async () => {
+    for (const named of [`user:${AGENT}`, AGENT, AGENT.toUpperCase()]) {
+      vi.mocked(actInWindow).mockClear();
+      expect(await call(SURFACE_PAGE, 'showSession', { id: 's-gone', orChatWith: named })).toEqual({ ok: true, value: undefined });
+      expect(openedInWindow().at(-1)).toEqual({ kind: 'openLinkTarget', target: { kind: 'sender', userId: AGENT } });
+    }
+    expect(broughtUp()).toEqual([]);
+    // Control: without it, the same session is not-found as before.
+    expect(await show(SURFACE_PAGE, 's-gone')).toMatchObject({ ok: false, code: 'not-found' });
+  });
+
+  it('orChatWith that names no agent is invalid, before anything comes forward or opens', async () => {
+    for (const named of ['', 'agent-f', 'session:s-here', 42, null]) {
+      expect(await call(SURFACE_PAGE, 'showSession', { id: 's-gone', orChatWith: named })).toMatchObject({ ok: false, code: 'invalid' });
+    }
+    expect(focusApp).not.toHaveBeenCalled();
+    expect(openedInWindow()).toEqual([]);
+    expect(asked()).toEqual([]);
   });
 });

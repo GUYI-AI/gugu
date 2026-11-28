@@ -851,6 +851,22 @@ describe('text run type parity', () => {
  * that never reaches the run would otherwise pass).
  */
 describe('mixed-script inline roles at the 16/24 body (#7333)', () => {
+  it.each(['/goal', '@file.ts'])('aligns the label in %s with the surrounding text', async (token) => {
+    const fixture = run('inline baseline', 'md-chip-baseline', `Text ${token} 正文`)
+    const reading = await read(fixture, WIDE, (host) => {
+      const chip = host.querySelector<HTMLElement>('.gg-md-mention')!
+      const label = chip.querySelector<HTMLElement>('.gg-md-mention-label')!
+      // An empty inline block has its bottom edge on the surrounding text baseline.
+      const bodyMark = document.createElement('span')
+      bodyMark.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline'
+      const labelMark = bodyMark.cloneNode() as HTMLElement
+      chip.before(bodyMark)
+      label.append(labelMark)
+      return { baselineDelta: labelMark.getBoundingClientRect().bottom - bodyMark.getBoundingClientRect().bottom }
+    })
+    expect(reading.inspected.baselineDelta).toBe(0)
+  })
+
   const mixed = run(
     'text mixed cjk',
     'md-mixed-cjk',

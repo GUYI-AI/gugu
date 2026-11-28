@@ -5,6 +5,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { notifyManager as readModelNotify } from '@tanstack/react-query'
 import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { conversationLink, groupFileLink } from '@gugu/core/shared/ui/guguLink'
+import { pillCite } from '@gugu/session-shared/markdown'
 import { Markdown } from '../../../../apps/desktop/src/components/markdown/Markdown'
 import { AuthContext } from '../../../../apps/desktop/src/store/auth'
 import { ChatStoreProvider } from '../../../../apps/desktop/src/store/chatContext'
@@ -59,11 +60,11 @@ afterEach(async () => {
   vi.clearAllMocks()
 })
 
-async function render(content: string, trust: 'chat' | 'document' = 'chat', surface: 'chat' | 'bare' = 'chat', mentionMarker?: string) {
+async function render(content: string, trust: 'chat' | 'document' = 'chat', surface: 'chat' | 'bare' = 'chat', mentionMarker?: string, messageChat?: string) {
   const store = { chatsRead: true,
     chats: [{ id: CHAT, name: 'Design review', kind: 'group' }, { id: TOPIC, name: 'Launch', kind: 'topic' }, { id: AGENT_CHAT, name: '', kind: 'ai', peer_user_id: AGENT }],
     identitiesById: { [ALICE]: { id: ALICE, display_name: 'Alice', type: 'human' }, [AGENT]: { id: AGENT, display_name: 'Helper', type: 'agent' } } }
-  const markdown = createElement(Markdown, { trust, content, mentionMarker })
+  const markdown = createElement(Markdown, { trust, content, mentionMarker, messageChat })
   await act(async () => {
     root.render(surface === 'bare' ? markdown : createElement(AuthContext.Provider, { value: { user: { id: ME } } as never },
       createElement(ChatStoreProvider, { value: store as never }, markdown)))
@@ -72,6 +73,22 @@ async function render(content: string, trust: 'chat' | 'document' = 'chat', surf
 // Pills load lazily and then read: wait for both.
 const settle = (check: () => void) => vi.waitFor(async () => { await act(async () => { await vi.dynamicImportSettled() }); check() }, { timeout: 10000 })
 const pills = () => [...container.querySelectorAll<HTMLAnchorElement>('a.gg-md-mention')]
+
+describe('a message Cite composed reads as it was written', () => {
+  it("draws a chat folder file's cite as the pill to its lines, and a computer file's as its quote and its path", async () => {
+    mocks.fileMetadata.mockResolvedValue({ status: 'ready', revision: { source: 'managed-object', version: 2, file_name: 'pricing.txt', content_type: 'text/plain', size_bytes: 120 } })
+    const target = groupFileLink(DOC, { version: 2, at: { lines: '2' } })
+    // Word for word what Cite drafts (selectionCite): a pill per place, named by the file and its lines.
+    const folder = pillCite('', [{ label: 'pricing.txt (Line 2)', target }]).draft
+    const computer = '> Pro: 99 a month, 5 seats included\n\nnotes.txt (Line 2): /home/me/notes.txt'
+    await render(`${folder}\n\n${computer}`)
+    await settle(() => expect(pills()).toHaveLength(1))
+    expect(pills()[0]!.getAttribute('href')).toBe(target)
+    expect(pills()[0]!.textContent).toContain('pricing.txt')
+    expect(container.querySelector('blockquote')?.textContent).toContain('Pro: 99 a month, 5 seats included')
+    expect(container.textContent).toContain('notes.txt (Line 2): /home/me/notes.txt')
+  })
+})
 
 describe('chat link pills, drawn in place', () => {
   it('draws a file link as the file pill with the file name, in the sentence; it is not an @ mention', async () => {
@@ -100,6 +117,20 @@ describe('chat link pills, drawn in place', () => {
     await render(`ask [it](${conversationLink(AGENT_CHAT)}) about [the task](gugu://session/${TASK}) or [that one](gugu://session/cccccccc-cccc-4ccc-8ccc-cccccccccccc)`)
     await settle(() => expect(pills().map(pill => pill.textContent)).toEqual(['Helper', 'Fix the login', '任务不可用']))
     expect(pills().map(pill => !!pill.querySelector('.gg-md-mention-icon svg'))).toEqual([true, true, false])
+  })
+
+  // Owner 2026-11-27: `session:` and the first 8+ characters in a message is the same pill, matched among the reader's sessions.
+  it('draws session:<prefix> in a message as the task pill; several offer the candidates; a link names its task whole', async () => {
+    const TWIN = 'bbbbbbbb-0000-4bbb-8bbb-bbbbbbbbbbbb'
+    machines([{ id: HERE, sessions: [{ conversationId: TASK, title: 'Fix the login' }] }, { id: SERVER, sessions: [{ conversationId: REMOTE_TASK, title: 'Deploy docs' }] }])
+    await render('lane session:dddddddd, and gugu://session/dddddddd', 'chat', 'chat', undefined, CHAT)
+    await settle(() => expect(pills().map(pill => pill.textContent)).toEqual(['Deploy docs', '任务不可用']))
+    await act(async () => { pills()[0]!.click() })
+    await vi.waitFor(() => expect(openPhoneLink).toHaveBeenCalledTimes(1))
+    expect(openPhoneLink.mock.calls[0]![0]).toMatchObject({ kind: 'session', sessionId: REMOTE_TASK })
+    machines([{ id: HERE, sessions: [{ conversationId: TASK, title: 'Fix the login' }, { conversationId: TWIN, title: 'Fix the logout' }] }])
+    await render('lane session:bbbbbbbb', 'chat', 'chat', undefined, CHAT)
+    await settle(() => expect(pills().map(pill => pill.textContent)).toEqual(['2 个任务']))
   })
 
   // A task on another machine of the account is named the way a click finds it: by the session directory.

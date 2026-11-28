@@ -189,7 +189,10 @@ describe('platformRidesAdapterProcessEnv', () => {
       env?: Record<string, string>
     }
 
-    expect(settings.availableModels).toEqual(['gpt-5.6-sol', 'gpt-5.6-luna'])
+    // The reviewer the settings name is always on the allowlist: Claude Code ignores one that is not and reviews
+    // with the session's own model instead (#3940). The picker itself lists only the catalog.
+    expect(settings.availableModels).toEqual(['gpt-5.6-sol', 'gpt-5.6-luna', 'claude-haiku-5-5'])
+    expect(settings.env?.CLAUDE_CODE_AUTO_MODE_MODEL).toBe('claude-haiku-5-5')
     expect(settings.modelPicker?.options).toEqual([
       { model: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
       { model: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
@@ -222,7 +225,7 @@ describe('platformRidesAdapterProcessEnv', () => {
       env?: Record<string, string>
     }
 
-    expect(settings.availableModels).toEqual(['claude-opus-5[1m]', 'claude-opus-5-5[1m]', 'glm-5.3', 'claude-sonnet-x'])
+    expect(settings.availableModels).toEqual(['claude-opus-5[1m]', 'claude-opus-5-5[1m]', 'glm-5.3', 'claude-sonnet-x', 'claude-haiku-5-5'])
     expect(settings.modelPicker?.options).toEqual([
       { model: 'claude-opus-5[1m]', label: 'Claude Opus 5' },
       { model: 'claude-opus-5-5[1m]', label: 'Claude Opus 5.5' },

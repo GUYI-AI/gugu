@@ -60,7 +60,7 @@ export const ProviderSessionMissingView = observer(function ProviderSessionMissi
 
   return (
     <div
-      className="flex h-full min-h-0 flex-1 items-center justify-center bg-background-secondary-1 px-6"
+      className="flex h-full min-h-0 flex-1 items-center justify-center bg-[var(--chat-bg)] px-6"
       data-provider-session-state="missing"
     >
       <div className="flex max-w-md flex-col items-center gap-2 text-center">

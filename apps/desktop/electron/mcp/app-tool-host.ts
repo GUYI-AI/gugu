@@ -5,6 +5,7 @@ import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary
 import { parseGuguLink } from '@gugu/core/shared/ui/guguLink'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
+import { basename } from 'node:path'
 import { REMOTE_WORKSPACE_CHUNK_BYTES } from '@gugu/session-core/session-record/contract'
 import { decodeTypedId, readTypedIdLenient } from '@gugu/core/shared/typedId.mjs'
 import type { GuguMcpContext } from '../acp-engine-utils'
@@ -297,7 +298,7 @@ type InstallAnswer = {
 }
 
 /** F40 A new data file (`title`, `content`), or — 摩擦单 F102 — `item_id`, a file already in the chat. */
-type InstallData = { title: string; content: unknown } | { item_id: string }
+type InstallData = { file_path: string; file_name?: string } | { item_id: string }
 
 /**
  * F40 The chat's data file for a just-installed App — named after the file type it claims — and the App checked on
@@ -343,10 +344,16 @@ async function groupDataFile(
     }
     tab = claiming
   } else {
-    const suffix = tab.chat_files![0]!
-    const name = data.title.endsWith(suffix) ? data.title : `${data.title}${suffix}`
+    // Its name is its format, the App's claim included: the file on this computer is named for it (poll.vote.json).
+    const name = data.file_name?.trim() || basename(data.file_path)
+    const claiming = tabs.find((candidate) => candidate.chat_files!.some((claim) => claimTakes(claim, name)))
+    if (!claiming) {
+      const claims = tabs.flatMap((candidate) => candidate.chat_files!).join(', ')
+      return { answer: {}, note: `The data file was not made: this App opens ${claims} in a chat, and ${name} is none of them — name the file for it (file_name, or the file itself).` }
+    }
+    tab = claiming
     try {
-      file = await groupDataFileOf(context, { chatId, name, content: data.content })
+      file = await groupDataFileOf(context, { chatId, filePath: data.file_path, fileName: data.file_name })
     } catch (error) {
       return { answer: {}, note: `The data file was not made (${error instanceof Error ? error.message : String(error)}).` }
     }

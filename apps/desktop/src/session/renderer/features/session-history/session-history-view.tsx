@@ -40,9 +40,10 @@ import {
 } from '@renderer/lib/ui/dropdown-menu';
 import { SearchInput } from '@renderer/lib/ui/search-input';
 import { Spinner } from '@renderer/lib/ui/spinner';
-import type { SessionMessageKey } from '@renderer/localization/messages';
+import type { SessionMessageKey, SessionMessageLookupKey } from '@renderer/localization/messages';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { log } from '@renderer/utils/logger';
+import { cn } from '@renderer/utils/utils';
 import {
   SESSION_HISTORY_SOURCES,
   SESSION_HISTORY_STATUSES,
@@ -69,9 +70,24 @@ import {
 } from './history-sections';
 import { STATUS_MESSAGE_KEY, SessionHistoryRow, historyOptionId, sourceLabel } from './session-history-row';
 import { SessionHistorySectionBox } from './session-history-section-box';
+import { SessionHistoryBulkBar } from './session-history-bulk-bar';
+import { HistoryCheckbox } from './history-checkbox';
+import { HistoryTimeFilterButton, timeFilterLabel } from './history-time-filter';
+import {
+  cutoffClock,
+  sectionCheck,
+  selectedInSection,
+  timeCutoff,
+  toSelected,
+  selectableEntry,
+  type HistoryTimeFilter,
+  type SelectedSession,
+} from './history-selection';
+import { useHistoryBulk, useHistoryJobKind } from './use-history-bulk';
 import type { SessionHistorySourceFilter, SessionHistoryStatusFilter, SessionHistoryViewParams } from './session-history-import-part';
-import { useSessionHistoryDirectories } from './use-session-history';
+import { useSessionHistoryDirectories, useSessionHistorySelectableTotal } from './use-session-history';
 import { LegacyDmArchiveButton } from '@/components/legacy-dm-history/LegacyDmHistoryEntry';
+import { useStableHandler } from '@/hooks/useStableHandler';
 import { Illustration } from '@/components/ui/Illustration';
 import { PaneEmptyState } from '@/components/ui/PaneEmptyState';
 
@@ -100,12 +116,13 @@ type StatusFilter = SessionHistoryStatusFilter;
 /** 滚到底一次多要这么多目录(每台机器)。 */
 const BATCH_SIZE = 50;
 /**
- * 每节默认露出几条 —— 随目录页也只带回这么多。❌ 一次把每节上百条都拉进渲染进程、都画出来:
- * 50 节 × 100 条就是 5000 行,本机原件一多面板就卡(主人 2026-09-25)。
+ * 一节展开后先露几条、「再加载」每次多几条(owner 2026-11-27 00:59「几百条在这儿不成超长串了」:各节默认收起,
+ * 点节头才展开,先带回 20 条,节底「再加载 20 条（还有 N 条没展开）」)。随目录页每节也只带回这么多:
+ * 点开当场就有,❌ 一次把每节上百条都拉进渲染进程(主人 2026-09-25)。
  */
-const SECTION_PREVIEW = 5;
-/** 点开之后,小窗里每次多要这么多(当场一批,滚到窗底再一批)。 */
-const SECTION_BATCH = 50;
+const SECTION_PAGE = 20;
+/** 节头勾选 / 「选中筛选出的全部」要拿到范围里的每一行(含没展开的):一次要够。 */
+const ALL_ROWS = 100_000;
 /** 节头最多画几个 agent 图标:再多就成了一排噪音。 */
 const SECTION_AGENT_ICONS = 3;
 /** 搜索词像一个 session id 前缀时(不含空格、够长)才按「id 命中」高亮那一条;短词只是普通关键词。 */
@@ -135,6 +152,8 @@ function machineArg(machine: string): string | null {
   return machine === LOCAL_IMPORT_DEVICE ? null : machine;
 }
 
+function noop(): void {}
+
 function baseName(path: string): string {
   const segments = path.split(/[\\/]/).filter(Boolean);
   return segments[segments.length - 1] ?? path;
@@ -149,7 +168,7 @@ function matchesSessionId(row: HistoryEntry, query: string): boolean {
 
 // observer:名下机器上线 / 离线 / 改名、项目行变了时列表跟着变。
 export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel() {
-  const { translate } = useSessionMessages();
+  const { translate, locale } = useSessionMessages();
   useEffect(() => remoteHostsStore.start(), []);
   const choices = importDeviceChoices(
     translate('task.deviceLocal'),
@@ -183,17 +202,29 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
   const [sort, setSort] = useState<SessionHistorySort>('updated');
   const [rawQuery, setRawQuery] = useState('');
   const query = useDebounce(rawQuery, 200);
+  // 筛选栏「时间」:最后更新在那之前。截止时刻在选定那一刻定下(按分钟取整),同一套筛选一直是同一个请求。
+  const [timeFilter, setTimeFilter] = useState<HistoryTimeFilter>({ kind: 'any' });
+  const [before, setBefore] = useState<number | undefined>(undefined);
+  const changeTime = (next: HistoryTimeFilter) => {
+    setTimeFilter(next);
+    setBefore(timeCutoff(next, cutoffClock(Date.now())));
+  };
+  const timeLabel = timeFilterLabel(timeFilter, translate, locale);
   const [limit, setLimit] = useState(BATCH_SIZE);
+  /** 展开着的节各露几条(默认 SECTION_PAGE,「再加载」每次加一页)。 */
+  const [sectionLimits, setSectionLimits] = useState<Readonly<Record<string, number>>>({});
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [sectionPages, setSectionPages] = useState<Readonly<Record<string, SectionPage>>>({});
-  /** 点过「显示更多」的节:只有它们是限高小窗、会懒加载;其余节只露头几条。 */
+  /** 展开着的节(默认全部收起,点节头展开)。 */
   const [openSections, setOpenSections] = useState<ReadonlySet<string>>(() => new Set());
   const openSectionsRef = useRef(openSections);
   openSectionsRef.current = openSections;
   const [loadingSections, setLoadingSections] = useState<ReadonlySet<string>>(() => new Set());
   /** 换筛选 / 刷新就换一代:上一代还在路上的那批回来时直接丢掉,❌ 写进新筛选的节里。 */
   const sectionGeneration = useRef(0);
+  /** 这一代里要更多时出过错的节:不自动再要(否则每画一次重试一次);换筛选 / 刷新就放掉。 */
+  const failedSections = useRef(new Set<string>());
   const [isImporting, setIsImporting] = useState(false);
   const [importedCount, setImportedCount] = useState(0);
   const [outcomes, setOutcomes] = useState<ImportOutcome[] | null>(null);
@@ -223,19 +254,43 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
     setExpandedKey(null);
     sectionGeneration.current += 1;
     setSectionPages({});
-    setOpenSections(new Set());
+    // 展开着的节照旧展开(第 2 稿:换筛选不收起人点开的节);各节露的条数回到一页。
+    setSectionLimits({});
     setLoadingSections(new Set());
-  }, [source, status, sort, query, machineFilter]);
+    failedSections.current.clear();
+  }, [source, status, sort, query, machineFilter, before]);
 
   const filters = {
     source: source === 'all' ? undefined : source,
     status: status === 'all' ? undefined : status,
     query,
     sort,
+    before,
   };
+  // 批量操作(设计稿第 2 稿):选择、收起正在删的行、跑批量。它要的几样(节名、节里几条活跃、重读)在下面才算得出,经 viewRef 取。
+  const viewRef = useRef<{
+    sectionLabel: (key: string) => string;
+    sectionActive: (key: string) => number;
+    refresh: () => Promise<void> | void;
+    topUp: (gone: readonly SelectedSession[]) => void;
+  }>({ sectionLabel: (key) => key, sectionActive: () => 0, refresh: () => undefined, topUp: () => undefined });
+  const bulk = useHistoryBulk({
+    translate,
+    labelOf,
+    isOnline: (machine) => machine === LOCAL_IMPORT_DEVICE || (choices.find((choice) => choice.id === machine)?.isOnline ?? false),
+    refresh: () => viewRef.current.refresh(),
+    sectionLabel: (key) => viewRef.current.sectionLabel(key),
+    sectionActive: (key) => viewRef.current.sectionActive(key),
+    timeLabel,
+    onHidden: (gone) => viewRef.current.topUp(gone),
+  });
+  // 改筛选会清空选择(免得选着看不见的,第 2 稿「退出」)。
+  const clearSelection = bulk.clear;
+  useEffect(() => clearSelection(), [source, status, sort, query, machineFilter, before, clearSelection]);
+
   // 滚动加载 = 同一个请求把 limit 放大(主进程排好序再截,前面那截与上一批逐条相同),❌ 渲染侧拼多页。
   const { byMachine, refresh } = useSessionHistoryDirectories(
-    { ...filters, limit, sessionsPerDirectory: SECTION_PREVIEW },
+    { ...filters, limit, sessionsPerDirectory: SECTION_PAGE },
     reachable
   );
 
@@ -295,29 +350,58 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
     new Set(sections.flatMap((section) => [...section.members.map((member) => member.machine), ...section.offlineMachines])).size > 1;
 
   const compareRows = compareSessionHistoryRows(sort);
-  const isSectionOpen = (section: HistorySection) => openSections.has(section.key);
+  // 搜索词就是某条的 session id 前缀 → 那条就是用户要找的:它那一节自己展开,光标落在它身上并上色。
+  const idHit = query.trim()
+    ? (sections.flatMap((section) => [...section.preview, ...section.offline]).find((row) => matchesSessionId(row, query)) ?? null)
+    : null;
+  const idHitSection = idHit
+    ? (sections.find((section) => section.preview.includes(idHit) || section.offline.includes(idHit))?.key ?? null)
+    : null;
+  const isSectionOpen = (section: HistorySection) => openSections.has(section.key) || section.key === idHitSection;
   const sessionCount = (section: HistorySection) => section.onlineCount + section.offline.length;
-  // 一节眼下有哪些行:点开了、并且已经要来过更多的,就用那一批(它的头一截与目录页带回的逐条相同 —— 同一个排序,
-  // 主进程排好再截);没点开的只露头几条。离线那几台的行一直在(就那么些)。
+  // 收起的行(等着删、正在删)按节记数:节头的数照它减,节里不画它们。
+  const hiddenBySection = new Map<string, { active: number; archived: number }>();
+  for (const row of bulk.hidden.values()) {
+    const counts = hiddenBySection.get(row.sectionKey) ?? { active: 0, archived: 0 };
+    counts[row.status] += 1;
+    hiddenBySection.set(row.sectionKey, counts);
+  }
+  const hiddenIn = (section: HistorySection) => {
+    const counts = hiddenBySection.get(section.key);
+    return counts ? counts.active + counts.archived : 0;
+  };
+  const sectionLimit = (section: HistorySection) => sectionLimits[section.key] ?? SECTION_PAGE;
+  // 一节手上有的行:要来过更多的就用那一批(它的头一截与目录页带回的逐条相同 —— 同一个排序,主进程排好再截),
+  // 否则是随目录页带回的头一页。离线那几台的行一直在(就那么些)。
+  const loadedSessions = (section: HistorySection) =>
+    mergeSorted([sectionPages[section.key]?.rows ?? section.preview, section.offline], compareRows).filter((row) => !bulk.hidden.has(row.key));
+  // 收起的节不画行;展开的露 sectionLimit 条。
   const sectionSessions = (section: HistorySection) =>
-    isSectionOpen(section)
-      ? mergeSorted([sectionPages[section.key]?.rows ?? section.preview, section.offline], compareRows)
-      : mergeSorted([section.preview, section.offline], compareRows).slice(0, SECTION_PREVIEW);
-  const sectionTruncated = (section: HistorySection) =>
-    sessionCount(section) > Math.min(SECTION_PREVIEW, section.preview.length + section.offline.length);
+    isSectionOpen(section) ? loadedSessions(section).slice(0, sectionLimit(section)) : [];
   const sectionHasMore = (section: HistorySection) => {
     const page = sectionPages[section.key];
     return page ? page.rows.length < page.matched : section.preview.length < section.onlineCount;
   };
+  /** 这一节在当前筛选下能勾的有几条(离线机器的摘要行勾不了;收起的不算)。 */
+  const sectionSelectable = (section: HistorySection) =>
+    Math.max(0, section.statusCounts.active + section.statusCounts.archived - section.offline.length - hiddenIn(section));
   // 眼前的会话行(所有节拼起来):键盘光标与 session id 命中都对着它们。
-  const rows = sections.flatMap(sectionSessions);
+  // 整节的行都收起了(等着删、正在删)的节不画(第 2 稿:删掉的行当场离开列表);全收起了就是空态(「已归档里没有会话」)。
+  const shownSections = sections.filter((section) => !(hiddenIn(section) > 0 && sessionCount(section) - hiddenIn(section) <= 0));
+  const rows = shownSections.flatMap(sectionSessions);
+  const selecting = bulk.selection.rows.size > 0;
+  /** 眼前展开着、能勾的行(按画出来的先后):Shift 区间与 ⌘A 都对着它们。 */
+  const visibleSelectable: SelectedSession[] = sections.flatMap((section) =>
+    sectionSessions(section).flatMap((row) => {
+      const picked = bulk.busyKeys.has(row.key) ? null : toSelected(row, section.key);
+      return picked ? [picked] : [];
+    })
+  );
   const isLoading = states.some((state) => !state || state.isLoading);
   const isIndexing = states.some((state) => state?.isIndexing);
   const loaded = Math.max(0, ...states.map((state) => state?.page?.rows.length ?? 0));
   const hasMore = states.some((state) => !!state?.page && state.page.rows.length < state.page.matched);
   const failed = reachable.filter((machine) => byMachine[machine]?.error);
-  // 搜索词就是某条的 session id 前缀 → 那条就是用户要找的:光标落在它身上并上色。
-  const idHit = query.trim() ? (rows.find((row) => matchesSessionId(row, query)) ?? null) : null;
   // activeKey 只记「用户点过哪条」,真正生效的光标在渲染时算:列表一变(换筛选、翻页、索引补进来一批),
   // 原来那条可能已经不在列表里,直接回落到第一条。❌ 用 effect 纠正 —— 那多一帧,而那一帧里动作指着一条
   // 已经不在列表里的会话。
@@ -347,12 +431,24 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
       ?.scrollIntoView({ block: 'nearest' });
   }, [activeRowKey]);
 
+  // 重读:展开着的节照旧展开(❌ 每恢复一条就把人展开的节全收起);要来过更多的那几节按手上的条数原地重要一遍
+  // (删掉的那几条由下面的顶上),❌ 扔掉退回头一页。
+  const sectionPagesRef = useRef(sectionPages);
+  sectionPagesRef.current = sectionPages;
+  const inFlightSections = useRef(new Set<string>());
+  const sectionsRef = useRef<readonly HistorySection[]>([]);
+  const loadSectionRef = useRef<(section: HistorySection, want: number) => void>(() => undefined);
   const refreshAll = useCallback(() => {
-    refresh();
     sectionGeneration.current += 1;
-    setSectionPages({});
-    setOpenSections(new Set());
+    failedSections.current.clear();
+    inFlightSections.current.clear();
     setLoadingSections(new Set());
+    const reread = refresh();
+    for (const [key, page] of Object.entries(sectionPagesRef.current)) {
+      const section = sectionsRef.current.find((candidate) => candidate.key === key);
+      if (section) loadSectionRef.current(section, page.rows.length);
+    }
+    return reread;
   }, [refresh]);
 
   // 归档 / 恢复不只发生在这个面板里:侧栏、⋯ 菜单、键盘连按两次、手机、agent 的 session_archive 都走那台机器上
@@ -363,7 +459,8 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
   useEffect(() => {
     const offs = (reachableKey ? reachableKey.split('\n') : []).map((machine) =>
       onMachineEvent(machineArg(machine), sessionChangedChannel, ({ changes }) => {
-        if ('archivedAt' in changes) refreshAll();
+        // 批量在跑时每收一条都来一次:由批量自己每批重读一次,❌ 跟着事件重读几百次。
+        if ('archivedAt' in changes && !bulk.isBusy()) void refreshAll();
       })
     );
     return () => offs.forEach((off) => off());
@@ -372,12 +469,9 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
   // 小窗滚到底:按这一节再要一批 —— 这一节在每台在线机器上的每个目录各要一份(同一套筛选,limit 放大;走本机索引的
   // 缓存 —— 目录页那几轮已经把它补新了),归并后截到同一个长度。同一节同时只要一批;回来的比手上的还少(索引在两次
   // 之间变了)就按回来的为准,❌ 拼两份。
-  const inFlightSections = useRef(new Set<string>());
   const loadMoreInSection = useCallback(
-    (section: HistorySection) => {
+    (section: HistorySection, want: number) => {
       if (inFlightSections.current.has(section.key)) return;
-      const have = sectionPages[section.key]?.rows.length ?? section.preview.length;
-      const want = have + SECTION_BATCH;
       const generation = sectionGeneration.current;
       inFlightSections.current.add(section.key);
       setLoadingSections((current) => new Set(current).add(section.key));
@@ -397,6 +491,7 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
               status: status === 'all' ? undefined : status,
               query: query.trim() || undefined,
               sort,
+              before,
               directory,
               limit: want,
               mode: 'cached',
@@ -407,42 +502,153 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
         .then((pages) => {
           if (generation !== sectionGeneration.current) return;
           // 在路上时这一节被收起了:这批不要了,❌ 攥在内存里。
-          if (!openSectionsRef.current.has(section.key)) return;
+          if (!openSectionsRef.current.has(section.key) && section.key !== idHitSectionRef.current) return;
           const merged = mergeSorted(pages.map((page) => page.rows), compareSessionHistoryRows(sort)).slice(0, want);
-          // 回来的没有比手上多 ⇒ 这一节已经到底(以回来的条数为准),不再要。
+          // 回来的不够要的 ⇒ 这一节已经到底(以回来的条数为准,索引在两次之间变了也不会一直要)。
           const total = pages.reduce((sum, page) => sum + page.matched, 0);
-          const matched = merged.length > have ? total : merged.length;
+          const matched = merged.length < want ? merged.length : total;
           setSectionPages((current) => ({ ...current, [section.key]: { rows: merged, matched } }));
         })
         .catch((error: unknown) => {
           if (generation !== sectionGeneration.current) return;
           log.error('load more sessions in a section failed', { key: section.key, error: String(error) });
+          failedSections.current.add(section.key);
           setActionError(messageForUser(error));
         })
         .finally(settle);
     },
-    [sectionPages, source, status, query, sort]
+    [source, status, query, sort, before]
   );
+  loadSectionRef.current = loadMoreInSection;
 
-  // 「显示更多」= 这一节变成限高小窗并当场要下一批;「收起」= 回到只露头几条,多要来的那些行一并扔掉。
-  const openSection = (section: HistorySection) => {
-    const next = new Set(openSectionsRef.current).add(section.key);
-    openSectionsRef.current = next;
-    setOpenSections(next);
-    loadMoreInSection(section);
+  const idHitSectionRef = useRef<string | null>(null);
+  idHitSectionRef.current = idHitSection;
+  /**
+   * 一节要露 `show` 条:手上的(含收起着等删的那几条 —— 它们还在主进程那边)不够就按这一节再要。只在点的那一刻叫
+   * (「再加载」、删掉几条后补位、刷新后重要),❌ 每画一次检查一遍。
+   */
+  const ensureSectionRows = (section: HistorySection, show: number, extraHidden = 0) => {
+    if (failedSections.current.has(section.key)) return;
+    const have = (sectionPages[section.key]?.rows ?? section.preview).length;
+    const want = show + hiddenIn(section) + extraHidden;
+    if (have < want && sectionHasMore(section)) loadMoreInSection(section, want);
   };
-  const closeSection = (section: HistorySection) => {
+
+  // 点节头:展开 / 收起。收起时多要来的那些行与「再加载」的条数一并扔掉(再展开从头一页起)。
+  const toggleSection = (section: HistorySection) => {
     const next = new Set(openSectionsRef.current);
-    next.delete(section.key);
+    if (next.has(section.key)) {
+      next.delete(section.key);
+      setSectionPages((current) => {
+        const { [section.key]: _dropped, ...rest } = current;
+        return rest;
+      });
+      setSectionLimits((current) => {
+        const { [section.key]: _dropped, ...rest } = current;
+        return rest;
+      });
+    } else next.add(section.key);
     openSectionsRef.current = next;
     setOpenSections(next);
-    setSectionPages((current) => {
-      const { [section.key]: _dropped, ...rest } = current;
-      return rest;
+  };
+  const loadMoreRows = (section: HistorySection) => {
+    const next = sectionLimit(section) + SECTION_PAGE;
+    setSectionLimits((current) => ({ ...current, [section.key]: next }));
+    ensureSectionRows(section, next);
+  };
+  // 刚收起了几行(等着删):展开着的节由下面的顶上来,露的条数不变。
+  const topUpAfterHide = (gone: readonly SelectedSession[]) => {
+    const goneBySection = new Map<string, number>();
+    for (const row of gone) goneBySection.set(row.sectionKey, (goneBySection.get(row.sectionKey) ?? 0) + 1);
+    for (const section of sections) {
+      const count = goneBySection.get(section.key);
+      if (count && isSectionOpen(section)) ensureSectionRows(section, sectionLimit(section), count);
+    }
+  };
+
+  // ── 批量的范围:节头勾选(整节,含没展开的)、「选中筛选出的全部」都要拿到范围里的每一行 ──
+  const listFilters = {
+    source: source === 'all' ? undefined : source,
+    status: status === 'all' ? undefined : status,
+    query: query.trim() || undefined,
+    sort,
+    before,
+  };
+  // 旧版本的机器不认 `before`、照旧全给:要动手的这一刻按同一个判据再筛一遍,❌ 把一个月内的也选进去。
+  const keepForSelection = (entry: HistoryEntry) =>
+    matchesSessionHistoryFilters(entry, { before }) && !bulk.hidden.has(entry.key) && !bulk.busyKeys.has(entry.key);
+  const fetchSectionRows = async (section: HistorySection): Promise<SelectedSession[]> => {
+    const pages = await Promise.all(
+      section.members.map(({ machine, directory }) =>
+        rpcOn(machineArg(machine))
+          .sessionHistory.list({ ...listFilters, directory, limit: ALL_ROWS, mode: 'cached' })
+          .then((page) => page.rows.map((row) => entryOf(machine, row)))
+      )
+    );
+    return pages.flat().filter(keepForSelection).flatMap((entry) => {
+      const picked = toSelected(entry, section.key);
+      return picked ? [picked] : [];
     });
   };
+  const fetchAllRows = async (): Promise<SelectedSession[]> => {
+    const pages = await Promise.all(
+      reachable.map((machine) =>
+        rpcOn(machineArg(machine))
+          .sessionHistory.listDirectories({ ...listFilters, limit: ALL_ROWS, sessionsPerDirectory: ALL_ROWS, mode: 'cached' })
+          .then((page) =>
+            page.rows.flatMap((row) => {
+              const sectionKey = sectionOf(machine, row).key;
+              return row.sessions.map((session) => ({ entry: entryOf(machine, session), sectionKey }));
+            })
+          )
+      )
+    );
+    return pages.flat().flatMap(({ entry, sectionKey }) => {
+      const picked = keepForSelection(entry) ? toSelected(entry, sectionKey) : null;
+      return picked ? [picked] : [];
+    });
+  };
+  const toggleSectionSelection = (section: HistorySection) => {
+    const state = sectionCheck(selectedInSection(bulk.selection, section.key), sectionSelectable(section));
+    if (state === 'on') {
+      bulk.remove([...bulk.selection.rows.values()].filter((row) => row.sectionKey === section.key).map((row) => row.key));
+      return;
+    }
+    setExpandedKey(null);
+    fetchSectionRows(section).then(
+      (picked) => bulk.add(picked),
+      (error: unknown) => {
+        log.error('select a whole section failed', { key: section.key, error: String(error) });
+        setActionError(messageForUser(error));
+      }
+    );
+  };
+  const selectAllFiltered = () => {
+    fetchAllRows().then(
+      (picked) => {
+        bulk.add(picked, true);
+      },
+      (error: unknown) => {
+        log.error('select all matching sessions failed', { error: String(error) });
+        setActionError(messageForUser(error));
+      }
+    );
+  };
+  // 「选中筛选出的全部 N 条」的 N:选了东西才数(每台一次,不带行);收起着等删的那几条不算。
+  const selectableTotal = useSessionHistorySelectableTotal(listFilters, reachable, selecting);
+  const filteredTotal = selectableTotal.known ? Math.max(0, selectableTotal.total - bulk.hidden.size) : null;
 
-  const selectRow = (row: HistoryEntry) => {
+  const selectRow = (row: HistoryEntry, sectionKey: string, event?: React.MouseEvent<HTMLElement>) => {
+    const picked = bulk.busyKeys.has(row.key) ? null : toSelected(row, sectionKey);
+    // 在多选里、或按着 ⌘ / Ctrl / Shift 点:勾 / 取消这一行(第 2 稿「进多选」);勾不了的行在多选里点了不动。
+    if (selecting || (event && (event.shiftKey || event.metaKey || event.ctrlKey))) {
+      if (picked) {
+        setActiveKey(row.key);
+        setExpandedKey(null);
+        bulk.toggle(picked, visibleSelectable, !!event?.shiftKey);
+      }
+      return;
+    }
     setActiveKey(row.key);
     // 点一下展开详情,再点一下收起 —— 详情住在这条下面,❌ 常驻的右栏。
     setExpandedKey((currentKey) => (currentKey === row.key ? null : row.key));
@@ -540,10 +746,22 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
 
   // 键盘:上下移光标(跨节)、回车执行这一行的动作。焦点留在搜索框里也能用。
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    // Esc 退出多选(第 2 稿「退出」:Esc、底部条最左的 ×、做完任一批量动作)。
+    if (event.key === 'Escape' && selecting) {
+      event.preventDefault();
+      bulk.clear();
+      return;
+    }
     if (rows.length === 0) return;
     const target = event.target as Node | null;
     const fromSearch = target === searchRef.current;
     const fromList = !!target && !!listRef.current?.contains(target);
+    // ⌘A / Ctrl+A 勾这一屏展开着的(焦点在搜索框里时还是全选文字)。
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a' && fromList) {
+      event.preventDefault();
+      if (visibleSelectable.length > 0) bulk.add(visibleSelectable);
+      return;
+    }
     if (!fromSearch && !fromList) return;
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
@@ -556,7 +774,7 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
     }
   };
 
-  const filtered = Boolean(query.trim() || source !== DEFAULT_SOURCE || status !== 'all' || machineFilter !== null);
+  const filtered = Boolean(query.trim() || source !== DEFAULT_SOURCE || status !== 'all' || machineFilter !== null || before !== undefined);
   // 节头的名字 = 项目名;对不上项目的目录 = 目录末级名,完整路径悬停看。
   // 同一页里两节末级名撞了(一堆 …/task-home)才退回末两级,❌ 让两节长得一模一样。
   const labelCounts = new Map<string, number>();
@@ -579,6 +797,39 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
   // 只读了缓存的那台还没扫盘,手里的数不是进度:那就先不报数。
   const progress = indexing.every((state) => state?.progress) ? indexing.map((state) => state!.progress!) : null;
   const localPage = byMachine[LOCAL_IMPORT_DEVICE]?.page;
+  sectionsRef.current = sections;
+  viewRef.current = {
+    topUp: topUpAfterHide,
+    sectionLabel: (key) => {
+      const section = sections.find((candidate) => candidate.key === key);
+      return section ? sectionLabel(section) : key;
+    },
+    // 节里能勾的活跃会话(离线机器的摘要行勾不了):归档框标题「归档 gugu 项目里的 N 条」只在选中的就是整节时用。
+    sectionActive: (key) => {
+      const section = sections.find((candidate) => candidate.key === key);
+      return section ? Math.max(0, section.statusCounts.active - section.offline.length) : 0;
+    },
+    refresh: refreshAll,
+  };
+  // 同一时间只跑一个批量删除(第 2 稿「删除中再操作」):在删的时候行上不长垃圾桶。只订种类:进度每批变,面板不跟着重画。
+  const deleteAllowed = useHistoryJobKind(bulk.jobs) !== 'delete';
+  // 行上的动作:每行给同一个函数(行带着自己回来),行组件 memo 才挡得住整页重画。
+  const onRowSelect = useStableHandler((row: HistoryEntry, sectionKey: string, event: React.MouseEvent<HTMLElement>) =>
+    selectRow(row, sectionKey, event)
+  );
+  const onRowAction = useStableHandler((row: HistoryEntry) => runAction(row));
+  const describeRowPreviewError = useStableHandler((error: unknown, row: HistoryEntry) => describe(error, 'preview', row.machine));
+  const onRowToggle = useStableHandler((row: HistoryEntry, sectionKey: string, event: React.MouseEvent<HTMLElement>) => {
+    const one = bulk.busyKeys.has(row.key) ? null : toSelected(row, sectionKey);
+    if (!one) return;
+    setActiveKey(row.key);
+    setExpandedKey(null);
+    bulk.toggle(one, visibleSelectable, event.shiftKey);
+  });
+  const onRowDelete = useStableHandler((row: HistoryEntry, sectionKey: string) => {
+    const one = toSelected(row, sectionKey);
+    if (one) bulk.deleteOne(one);
+  });
 
   return (
     <PageLayout>
@@ -614,6 +865,7 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
               containerClassName="min-w-56 flex-1"
               data-testid="session-history-search"
             />
+            <HistoryTimeFilterButton value={timeFilter} onChange={changeTime} />
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
@@ -741,16 +993,22 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
             aria-label={translate('sessionHistory.title')}
             aria-busy={isLoading || isIndexing}
             data-testid="session-history-list"
-            className="mt-9 flex flex-col gap-12"
+            className="mt-9 flex flex-col gap-2"
           >
             {holdFirstDraw || (sections.length === 0 && isLoading) ? (
               <div className="flex items-center justify-center gap-2 p-8 text-sm text-foreground-muted">
                 <Spinner size="sm" />
                 {translate('sessionImport.loading')}
               </div>
-            ) : sections.length === 0 && failed.length === 0 ? (
+            ) : shownSections.length === 0 && failed.length === 0 ? (
               <div className={filtered ? 'p-8 text-center' : 'px-8 pb-8 pt-16 text-center'} data-testid="session-history-empty">
-                {filtered ? (
+                {status === 'archived' && !query.trim() ? (
+                  // 第 2 稿「已归档清空」:说清这里放的是什么、能做什么。
+                  <div className="py-10" data-testid="session-history-empty-archived">
+                    <p className="text-sm text-foreground">{translate('sessionHistory.emptyArchived')}</p>
+                    <p className="mt-1 text-xs text-foreground-muted">{translate('sessionHistory.emptyArchivedHint')}</p>
+                  </div>
+                ) : filtered ? (
                   <p className="text-sm text-foreground-muted">{translate('sessionImport.emptyNoMatch')}</p>
                 ) : (
                   <PaneEmptyState art={<Illustration name="no-tasks" className="w-[156px]" />}
@@ -763,22 +1021,80 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
                 )}
               </div>
             ) : (
-              sections.map((section) => {
+              shownSections.map((section) => {
+                const remainingInSection = sessionCount(section) - hiddenIn(section);
                 const sectionRows = sectionSessions(section);
                 const open = isSectionOpen(section);
+                const picked = selectedInSection(bulk.selection, section.key);
+                const selectableCount = sectionSelectable(section);
+                const hidden = hiddenBySection.get(section.key);
+                // 节头只占一行:项目名、「活跃 8 条，已归档 128 条」,选了这一节的再写「已选 12」(第 2 稿)。
+                const counts = (
+                  [
+                    ['sessionHistory.countActive', section.statusCounts.active - (hidden?.active ?? 0)],
+                    ['sessionHistory.countArchived', section.statusCounts.archived - (hidden?.archived ?? 0)],
+                    ['sessionHistory.countNotImported', section.statusCounts['not-imported']],
+                  ] as Array<[SessionMessageLookupKey, number]>
+                )
+                  .filter(([, count]) => count > 0)
+                  .map(([key, count]) => translate(key, { count }))
+                  .join(translate('sessionHistory.countSeparator'));
+                const notShown = Math.max(0, remainingInSection - sectionRows.length);
+                const loadingHere = loadingSections.has(section.key);
                 return (
-                  <section key={section.key} data-testid="session-history-section" data-section-key={section.key}>
-                    <div className="mb-3 flex h-7 items-center gap-2 px-2">
+                  <section
+                    key={section.key}
+                    data-testid="session-history-section"
+                    data-section-key={section.key}
+                    data-open={open || undefined}
+                    className={cn(open && 'mb-6')}
+                  >
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={open}
+                      aria-label={translate('sessionHistory.sectionToggle', { section: sectionLabel(section) })}
+                      data-testid="session-history-section-head"
+                      onClick={() => toggleSection(section)}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        toggleSection(section);
+                      }}
+                      className={cn(
+                        'group/head relative flex h-10 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm select-none hover:bg-row-hover',
+                        open && 'mb-2'
+                      )}
+                    >
+                      {selectableCount > 0 ? (
+                        // 节头左侧、行外那一格:收起时也能勾,连没展开的一起选;选了一部分显示横杠,再点一下 = 整节全选。
+                        <div className="absolute top-0 bottom-0 -left-11 flex w-11 items-center pl-3">
+                          <HistoryCheckbox
+                            state={sectionCheck(picked, selectableCount)}
+                            label={translate('sessionHistory.sectionCheckTip', { count: selectableCount })}
+                            onClick={() => toggleSectionSelection(section)}
+                            testId="session-history-section-check"
+                            className={cn(
+                              'transition-opacity duration-100',
+                              selecting || picked > 0 ? 'opacity-100' : 'opacity-0 group-hover/head:opacity-100 focus-visible:opacity-100'
+                            )}
+                          />
+                        </div>
+                      ) : null}
+                      <ChevronDown
+                        className={cn('size-4 shrink-0 text-foreground-muted transition-transform duration-100', !open && '-rotate-90')}
+                      />
                       <Folder className="size-4 shrink-0 text-foreground-muted" />
                       <span
-                        className="truncate text-sm text-foreground"
+                        className="truncate font-medium text-foreground"
                         title={section.path ?? undefined}
                         data-testid="session-history-section-name"
                       >
                         {sectionLabel(section)}
                       </span>
                       {section.machine && spansMachines ? (
-                        <span className="shrink-0 text-sm text-foreground-muted" data-testid="session-history-section-machine">
+                        <span className="shrink-0 text-foreground-muted" data-testid="session-history-section-machine">
                           {labelOf(section.machine)}
                         </span>
                       ) : null}
@@ -790,54 +1106,77 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
                           ))}
                         </span>
                       ) : null}
-                      <span className="ml-auto shrink-0 text-sm text-foreground-muted tabular-nums">
-                        {translate('sessionHistory.sectionCount', { count: sessionCount(section) })}
+                      <span className="mr-auto ml-3 shrink-0 text-foreground-muted tabular-nums" data-testid="session-history-section-count">
+                        {counts}
                       </span>
-                      {/* ❌ 节头 ···(owner 2026-09-26):它里面的「查看全部」与小窗下的「显示更多」重复。 */}
+                      {picked > 0 ? (
+                        <span
+                          className="flex h-5 shrink-0 items-center rounded-md bg-row-selected px-2 text-xs text-foreground tabular-nums"
+                          data-testid="session-history-section-picked"
+                        >
+                          {translate('sessionHistory.sectionPicked', { count: picked })}
+                        </span>
+                      ) : null}
                     </div>
-                    <SessionHistorySectionBox
-                      capped={open}
-                      hasMore={open && sectionHasMore(section)}
-                      isLoadingMore={loadingSections.has(section.key)}
-                      onReachEnd={() => loadMoreInSection(section)}
-                    >
-                      {sectionRows.map((row) => (
-                        <SessionHistoryRow
-                          key={row.key}
-                          row={row}
-                          isSelected={row.key === active?.key}
-                          isHighlighted={row.key === highlightedKey}
-                          isExpanded={expandedKey === row.key}
-                          onSelect={() => selectRow(row)}
-                          onAction={() => runAction(row)}
-                          previewSource={importSourceOf(row.machine)}
-                          describePreviewError={(e) => describe(e, 'preview', row.machine)}
-                          machineLabel={spansMachines ? labelOf(row.machine) : null}
-                          offline={row.offline}
-                          actionDisabled={row.offline && !row.opens}
-                        />
-                      ))}
-                    </SessionHistorySectionBox>
-                    {sectionTruncated(section) || open ? (
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        className="mt-1 ml-2 text-foreground-muted"
-                        data-testid={open ? 'session-history-section-show-less' : 'session-history-section-show-more'}
-                        aria-expanded={open}
-                        onClick={() => (open ? closeSection(section) : openSection(section))}
-                      >
-                        {open
-                          ? translate('sessionHistory.showLess')
-                          : translate('sessionHistory.showMore', { count: sessionCount(section) })}
-                      </Button>
+                    {open ? (
+                      <>
+                        <SessionHistorySectionBox capped={false} hasMore={false} isLoadingMore={false} onReachEnd={noop}>
+                          {sectionRows.map((row) => {
+                            const rowBusy = bulk.busyKeys.has(row.key);
+                            const isExpanded = expandedKey === row.key;
+                            // 预览问哪台在这里读(那台的连法变了,展开着的这一行跟着变);没展开的行不要。
+                            return (
+                              <SessionHistoryRow
+                                key={row.key}
+                                row={row}
+                                sectionKey={section.key}
+                                isSelected={row.key === active?.key}
+                                isHighlighted={row.key === highlightedKey}
+                                isExpanded={isExpanded}
+                                onSelect={onRowSelect}
+                                onAction={onRowAction}
+                                previewSource={isExpanded ? importSourceOf(row.machine) : null}
+                                describePreviewError={describeRowPreviewError}
+                                machineLabel={spansMachines ? labelOf(row.machine) : null}
+                                offline={row.offline}
+                                actionDisabled={row.offline && !row.opens}
+                                selectable={selectableEntry(row)}
+                                picked={bulk.selection.rows.has(row.key)}
+                                busy={rowBusy}
+                                selecting={selecting}
+                                onToggle={onRowToggle}
+                                onDelete={deleteAllowed && !rowBusy ? onRowDelete : undefined}
+                              />
+                            );
+                          })}
+                          {sectionRows.length === 0 && loadingHere ? (
+                            <div className="flex h-15 items-center justify-center" data-testid="session-history-section-loading">
+                              <Spinner size="sm" />
+                            </div>
+                          ) : null}
+                        </SessionHistorySectionBox>
+                        {notShown > 0 ? (
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            className="mt-2 ml-2 text-foreground-muted"
+                            data-testid="session-history-section-load-more"
+                            disabled={loadingHere}
+                            onClick={() => loadMoreRows(section)}
+                          >
+                            {translate('sessionHistory.loadMoreRows', { count: Math.min(SECTION_PAGE, notShown), remaining: notShown })}
+                          </Button>
+                        ) : null}
+                      </>
                     ) : null}
                     {/* 这一节里有离线机器的行(心跳摘要,只有最近那些):节尾写明哪台离线。 */}
-                    {section.offlineMachines.map((machine) => (
-                      <p key={machine} className="mt-1 px-2 text-xs text-foreground-muted" data-testid="session-history-section-offline">
-                        {translate('sessionHistory.machineOffline', { device: labelOf(machine) })}
-                      </p>
-                    ))}
+                    {open
+                      ? section.offlineMachines.map((machine) => (
+                          <p key={machine} className="mt-1 px-2 text-xs text-foreground-muted" data-testid="session-history-section-offline">
+                            {translate('sessionHistory.machineOffline', { device: labelOf(machine) })}
+                          </p>
+                        ))
+                      : null}
                   </section>
                 );
               })
@@ -845,7 +1184,7 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
             {/* 等过了首帧那一会儿还没读到的机器:它的行到了并进上面的节、新节接在最后,这里先说一句在读哪台。 */}
             {!holdFirstDraw && sections.length > 0
               ? readingMachines.map((machine) => (
-                  <p key={machine} className="-mt-9 flex items-center gap-2 px-2 text-xs text-foreground-muted" data-testid="session-history-machine-reading">
+                  <p key={machine} className="flex items-center gap-2 px-2 text-xs text-foreground-muted" data-testid="session-history-machine-reading">
                     <Spinner size="sm" />
                     {translate('sessionHistory.machineReading', { device: labelOf(machine) })}
                   </p>
@@ -876,6 +1215,19 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
           {actionError ? (
             <p className="text-sm leading-relaxed text-foreground-destructive">{actionError}</p>
           ) : null}
+
+          {/* 底部操作条:选了东西才出现;批量在跑(超过一批)时变成进度 + 停止。 */}
+          <SessionHistoryBulkBar
+            selection={bulk.selection}
+            total={filteredTotal}
+            timeLabel={timeLabel}
+            jobs={bulk.jobs}
+            onClear={bulk.clear}
+            onSelectAll={selectAllFiltered}
+            onKeepOnly={bulk.keepOnly}
+            onAction={bulk.runAction}
+            onStop={bulk.stopJob}
+          />
         </div>
       </PageContent>
     </PageLayout>

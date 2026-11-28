@@ -75,6 +75,9 @@ const fallbackMessages = {
   'transcript.showFullText': 'Show all',
   'transcript.collapseFullText': 'Collapse',
   'transcript.copied': 'Copied',
+  'transcript.htmlRenderTitle': 'Rendered page',
+  'transcript.htmlRenderExpand': 'Expand',
+  'transcript.htmlRenderClose': 'Close',
   // 附件卡(#7193):agent 打开给人看的文件 / 网页。`{name}` 是文件名或网址,原样数据。
   'transcript.outputDocument': 'Document',
   'transcript.outputImage': 'Image',
@@ -278,7 +281,6 @@ const fallbackMessages = {
   'transcript.reasonSetConfigFailed': 'the configuration could not be applied',
   'transcript.reasonSetModeFailed': 'the mode could not be changed',
   'transcript.reasonCancelledByUser': 'Stopped',
-  'transcript.reasonInterruptedForMessage': 'paused to take a new message',
   'transcript.continueTurn': 'Continue',
   'transcript.continueTurnHint': 'Ask the agent to pick up where it stopped (sends a new prompt)',
   'transcript.discardTurn': 'Discard',

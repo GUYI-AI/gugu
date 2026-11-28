@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 
-// 咕咕 MCP 的 stdio ⇄ streamable-HTTP 中继(#6335 Antigravity 终端腿)。
+// 咕咕 MCP 的 stdio ⇄ streamable-HTTP 中继(#6335 Antigravity:终端腿与聊天面板腿的 `agy acp`)。
 //
 // ## 为什么要它
 //
-// Antigravity 两条腿共用咕咕托管的**一份** `.gemini`(owner 原则:一个 harness 一个配置根,❌ 每会话一份)。
-// 终端腿 `agy` 的 MCP 只有一个载体 —— 那份根里的全局 `config/mcp_config.json`,而咕咕 MCP 的地址与令牌
-// 是**每会话**的。把它们写进那份文件 = 并发的两条终端会话互相覆盖令牌,聊天面板腿的 `agy_acp_server`
-// 也会读到同一份、拿别人的令牌连上去。
+// Antigravity 的会话共用咕咕托管的**一份** `.gemini`(owner 原则:一个 harness 一个配置根,❌ 每会话一份)。
+// `agy` 只有从那份根里的全局 `config/mcp_config.json` 读到的 server 才按需加载(终端腿也只有这一个载体),
+// 而咕咕 MCP 的地址与令牌是**每会话**的。把它们写进那份文件 = 并发的两条会话互相覆盖令牌,
+// 读同一份文件的别的会话也会拿别人的令牌连上去。
 // ⇒ 文件里只写**与会话无关**的一条:`command` = 本中继(随咕咕发的程序,路径是应用级事实)。
-//   地址与令牌只在终端腿的 spawn 环境里(`GUGU_SESSION_MCP_URL_<后缀>` / `GUGU_SESSION_MCP_BEARER_<后缀>`,
+//   地址与令牌只在会话的 spawn 环境里(`GUGU_SESSION_MCP_URL_<后缀>` / `GUGU_SESSION_MCP_BEARER_<后缀>`,
 //   与 codex 那条腿同一套命名),`agy` 起 stdio server 时子进程继承它的环境,中继从那里读。
 //
 // ## 形态
@@ -24,7 +24,7 @@
 //
 // ## 静默退化(⚠️ 必须)
 //
-// 聊天面板腿的服务读的是**同一份** `mcp_config.json`,它起本中继时环境里没有这两个变量。那时本中继
+// 读同一份 `mcp_config.json` 的别的会话(没挂这一台的、旧服务 `agy_acp_server`)起本中继时环境里没有这两个变量。那时本中继
 // 不连任何上游,只在本地答:initialize → 空能力、tools/list → 空表、ping → {},其余请求回「方法不存在」,
 // 通知一律吞掉。❌ 不退出、❌ 不报错 —— 起不来的 MCP server 会被那边记成「MCP server failed to initialize」,
 // 而咕咕的 turnFailure 把那句话当成回合失败。上游在会话中途断了(咕咕重启、授权被收回)同样只回错误、不退出。

@@ -1,7 +1,7 @@
 import type { WorkingCopyPart } from '@shared/extensions/working-copy-upload';
 import type { TabOpenIntent } from '@shared/view-state';
 import { fileRefOf, type AppFileChunk, type AppFileEntry, type AppFileOpened, type AppFileSearch, type AppFileRef,
-  type AppFileText, type AppFileUpload, type AppFileVersion, type AppFileVersionContent, type AppPlace } from '@shared/extensions/app-runtime-protocol';
+  type AppFileText, type AppFileUpload, type AppFileVersion, type AppFileVersionContent, type AppPlace, type ChatListOptions } from '@shared/extensions/app-runtime-protocol';
 import type { BridgeErrorCode, ErrorDetail, ExtensionFileChangeBatch, PageCounts } from '@shared/extensions/bridge-protocol';
 import type { AppSessionIndexOptions, AppSessionIndex, AppSessionReadOptions, AppSessionRead } from '@shared/extensions/app-sessions';
 import type { ProjectionHost } from './projection-source';
@@ -110,13 +110,13 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     close(args: { docName?: string; ref?: AppFileRef & { version?: number } }): Promise<void>;
     /** A pinned chat file or working copy, up to 512 KB at an offset, in the shared range packet. */
     read(args: { ref: AppFileRef & { version?: number }; offset: number; length: number }): Promise<AppFileChunk>;
-    /** `folder` (子文件夹): only what is directly in that folder; not given, every file of the place. */
-    list(args: { place: AppPlace; folder?: string }): Promise<AppFileEntry[]>;
+    /** `folder` (子文件夹): only what is directly in that folder; not given, every file of the place. A chat's: `ChatListOptions`. */
+    list(args: { place: AppPlace } & ChatListOptions): Promise<AppFileEntry[]>;
     /** Across every chat the reader is in: by a piece of the path, newest first; the ones this person opened last. */
     search(args: AppFileSearch): Promise<AppFileEntry[]>;
     recent(args: { limit?: number }): Promise<AppFileEntry[]>;
     viewPreferences(args: { place: AppPlace; showAppData?: boolean }): Promise<{ showAppData: boolean }>;
-    create(args: { place: AppPlace; name: string; content: string; contentType?: string; sourceMessageIds?: string[]; folder?: string; ifExists?: 'use' }): Promise<AppFileEntry>;
+    create(args: { place: AppPlace; name: string; content: string; sourceMessageIds?: string[]; folder?: string; ifExists?: 'use' }): Promise<AppFileEntry>;
     /** 子文件夹: a chat's folder at `path`, made all the way down; one already there is answered as it is. */
     mkdir(args: { place: AppPlace; path: string }): Promise<AppFileEntry>;
     /** 子文件夹: into another folder (`folder`, '' the top; not given, where it is), renamed too when `name` is given. */
