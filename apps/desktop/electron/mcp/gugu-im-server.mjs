@@ -5,7 +5,7 @@ import { conversationLink, groupFileLink, parseGroupFileLink } from '@gugu/core/
 import { compareByName } from '@gugu/core/shared/ui/chatModels'
 import { resolveReplyDelivery } from '@gugu/core/shared/replyDelivery'
 import { markdownLiteral } from '@gugu/core/shared/markdownLiteral'
-import { archivedDeliveryReceipt, deliveryRefusalNotes, messageDeliveryBlocks } from './message-delivery-blocks.mjs'
+import { readSendReceipt } from './message-delivery-blocks.mjs'
 
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
 import { createHash, randomUUID } from 'node:crypto'
@@ -1723,36 +1723,34 @@ async function handleMessage(args, deps) {
       }
       sentKind = kind
     }
-    const okMsg = () => socialGroup
-      ? JSON.stringify({ ...socialGroup, message_id: row.id })
-      : requestedAction === 'topic-invite'
-        ? `invited into the topic (id=${row.id}); the people named are participants now — keep talking with message_send and this topic's chat_id`
-        : (isReply ? `replied (id=${row.id})` : `sent (id=${row.id})`)
-    // 群和话题里发得太密:回执后面提醒一句,不拦(gugu-dev#181 防刷屏)。contact_friend 的回执是 JSON,不往后接字。
-    // A file's receipt is JSON (the task timeline draws its card from it), so nothing is written after it.
-    const receipt = async () => fileReceipt ?? okMsg() + await archivedDeliveryReceipt(deps, row.id)
-      + (!socialGroup && (sentKind === 'group' || sentKind === 'topic') ? await floodNotice(deps, chatId, sentKind) : '')
     try {
       await attemptSend()
-      return await receipt()
     } catch (err) {
-      // 业务校验错原样抛给模型。鉴权失效只允许读取 host 新 token 后原样重试一次；command lease
-      // 不能进入 outbox，延后直插也不能越过数据库 fence。
+      // 旧的命令租约只在当前 turn 有效，不能存入 outbox：租约过期后延迟直插会绕过数据库围栏。
+      // 现在用稳定的消息 ID 直写，业务错误原样返回，只有鉴权失效才在当前调用内重试一次。
       if (!isRefreshableAuthError(err)) throw err
-      // @@@2083 切片2(option B)— 先从 host 每 tick resync 的 session 文件拉更新的 token,拿到就整条重发一次
-      // (Desktop 开着时 token 已被刷新 → 秒级恢复)。renderer/main 唯一刷新,子进程只读。
+      // @@@2083 renderer/main 负责刷新 token，子进程只读 host 每 tick 同步的 session 文件。
+      // 取到新 token 才重试写入；仍然失败就把错误返回给当前 turn。
       const fresh = await deps.context.getAccessToken()
-      if (fresh && fresh !== err.accessToken) {
-        try {
-          await attemptSend()
-          return await receipt()
-        } catch (err2) {
-          if (!isRefreshableAuthError(err2)) throw err2
-          // 新鲜 token 仍投不出时由当前 turn fail loud。
-        }
+      if (!fresh || fresh === err.accessToken) throw err
+      try {
+        await attemptSend()
+      } catch (retryError) {
+        throw isRefreshableAuthError(retryError) ? err : retryError
       }
-      throw err
     }
+
+    // Once the write has committed, a failed receipt must never replay it through the auth retry above.
+    if (fileReceipt) return fileReceipt
+    const [delivery, flood] = await Promise.all([
+      readSendReceipt(deps, chatId, row.id, requestedAction === 'send'),
+      !socialGroup && (sentKind === 'group' || sentKind === 'topic') ? floodNotice(deps, chatId, sentKind) : '',
+    ])
+    if (socialGroup) return JSON.stringify({ ...socialGroup, message_id: row.id, ...delivery })
+    const success = requestedAction === 'topic-invite'
+      ? `invited into the topic (id=${row.id}); the people named are participants now — keep talking with message_send and this topic's chat_id`
+      : `${isReply ? 'replied' : 'sent'} (id=${row.id})`
+    return success + (delivery.delivery_note ? `; ${delivery.delivery_note}` : '') + (delivery.recipient_note ? `. ${delivery.recipient_note}` : '') + flood
   }
   // 读历史 / 搜索按 **agent 自己**的可见域:MCP 拿的是主人的 JWT,直读 messages_view 判的是主人的
   // 入群时间界 ⇒ 群开了「隐藏聊天记录」,后进群的 agent 照样读到入群前的消息。
@@ -2758,13 +2756,8 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
   // Size and type let the task timeline draw the same file card as the chat (sentMessageOf), without reading the row back.
   const sent = parseAttachmentContent(String(message.content ?? ''), message)
   const card = sent ? { size_bytes: sent.sizeBytes, mime_type: sent.mimeType, ...(typeof message.file_blob_id === 'string' ? { file_blob_id: message.file_blob_id } : {}) } : {}
-  let blocks
-  try { blocks = await messageDeliveryBlocks(deps, message.id) } catch {
-    return JSON.stringify({ status: 'sent', message_id: message.id, file_name: fileName, ...card, ...pinned, ...uploadReceipt,
-      delivery_status: 'unverified', delivery_note: 'The message was sent, but recipient delivery could not be verified. Do not send it again.',
-      source_link: conversationLink(chatId, String(message.id).replace(/^msg:/, '')) })
-  }
-  return JSON.stringify({ status: 'sent', message_id: message.id, file_name: fileName, ...card, ...pinned, ...uploadReceipt, ...(blocks.length ? { not_delivered_to: blocks, delivery_note: deliveryRefusalNotes(blocks).join('; ') } : {}),
+  const delivery = await readSendReceipt(deps, chatId, message.id, true)
+  return JSON.stringify({ status: 'sent', message_id: message.id, file_name: fileName, ...card, ...pinned, ...uploadReceipt, ...delivery,
     source_link: conversationLink(chatId, String(message.id).replace(/^msg:/, '')) })
 }
 
@@ -2850,7 +2843,7 @@ function peerRow(row, agentId) {
 
 export const TOOL_DEFS = [
   chatActivityTool(resolveChatIdInput),
-  // ── message_ ── 聊天消息:写入走 command lease/群规闸/表达一致性,读走 messages_view;附件 = 消息的一种
+  // ── message_ ── 聊天消息:按稳定消息 ID 写入，群发送校验群规和寻址表达，读走 messages_view;附件 = 消息的一种
   {
     name: 'message_send',
     writer: true,

@@ -1,3 +1,4 @@
+import { agentReceiptNote } from '../../../packages/core/src/shared/agentReceiptNote.ts'
 import { createPhoneConversationHistory } from './phone-conversation-history.mjs'
 import { archiveIdentity } from '../../../packages/core/src/cloud/agentIdentityRemoval.ts'
 import { SessionInputAdmissionError, sessionInputAdmission } from '../../../packages/core/src/shared/sessionInputAdmission.ts'
@@ -383,8 +384,9 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
         const messageId = stableId(sendId, id)
         const inputDataProof = delegationProof(agent, activeJob?.agentUserId === agent.agentUserId ? activeJob : null)
         await authorizeReply(inputDataProof.groups, { sessionId: agent.sessionId, permissionRequirements: inputDataProof.permissionRequirements })
+        const note = agentReceiptNote(local.status)
         await admit({ id: messageId, agentUserId: local.agentUserId, inputDataProof, prompt: buildSessionDirectEnvelope({ senderSessionId: agent.sessionId, senderTitle: agent.displayName, messageId, content, at: formatDeliveryTimestamp(said.delivery_at ?? new Date().toISOString()), then: said.then, inReplyTo: said.reply_to_message_id }), route: { kind: 'session-direct', caller: ownCaller(agent), sourceMessageId: messageId } })
-        recipients.push({ to: `session:${id}`, status: 'delivered', message_id: messageId })
+        recipients.push({ to: `session:${id}`, status: 'delivered', message_id: messageId, ...(note ? { recipient_note: note } : {}) })
         continue
       }
       const remoteDevice = agent.knownSessions?.[id] ?? (agent.caller?.sessionId === id ? agent.caller.deviceId : null)
@@ -706,8 +708,9 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
         for (const agent of targets) {
           const id = action.client_message_id ? uuid(action.client_message_id,'client_message_id') : stableId('phone-session-message', requestId, agent.sessionId)
           agent.knownSessions ??= {}; agent.knownSessions[caller.sessionId] = caller.deviceId
+          const note = agentReceiptNote(agent.status)
           await admit({ id, agentUserId: agent.agentUserId, ...(inputDataProof ? { inputDataProof } : {}), prompt: buildSessionDirectEnvelope({ senderSessionId: caller.sessionId, senderTitle: caller.name, messageId: id, content, at: formatDeliveryTimestamp(action.client_message_at ?? new Date().toISOString()), then: action.then, inReplyTo: action.reply_to_message_id }), route: { kind: 'session-direct', caller, sourceMessageId: id } },source.signal)
-          recipients.push({ to: `session:${agent.sessionId}`, status: 'delivered', message_id: id })
+          recipients.push({ to: `session:${agent.sessionId}`, status: 'delivered', message_id: id, ...(note ? { recipient_note: note } : {}) })
         }
         return { recipients }
       }

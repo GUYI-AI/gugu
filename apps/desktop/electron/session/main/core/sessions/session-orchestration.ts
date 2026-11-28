@@ -1,3 +1,4 @@
+import { agentReceiptNote } from '@gugu/core/shared/agentReceiptNote';
 import { customModelRefFromOption } from '@gugu/session-core/models/custom-model';
 import { activityMs, compareByRecentActivity } from '@gugu/core/shared/ui/chatModels';
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary';
@@ -1854,6 +1855,7 @@ export type SessionDirectRecipientResult = {
    * `queued`: durably in the target's queue (its session takes it when it runs); it is not resent, so do not resend it.
    */
   status: 'delivered' | 'queued' | 'deferred' | 'failed';
+  recipient_note?: string;
   message_id?: string;
   error?: { code: string; message: string };
 };
@@ -1951,13 +1953,14 @@ async function sendSessionMessage(
       if (action.source_link) await rememberActivitySource(target.id, action.source_link);
       // Another recipient or source bookkeeping may have yielded since preflight.
       // Check the committed row immediately before storing even a deferred message.
-      const current = db.select({ archivedAt: sessions.archivedAt }).from(sessions).where(eq(sessions.id, target.id)).get();
+      const current = db.select({ archivedAt: sessions.archivedAt, agentStatus: sessions.agentStatus }).from(sessions).where(eq(sessions.id, target.id)).get();
       if (!current) throw new Error(`Session not found: ${target.id}`);
       if (current.archivedAt) throw new SessionArchivedError();
+      const note = agentReceiptNote(sessionStatus({ ...target, ...current }));
       // 附带:目标已经在运行中就当场按普通发送投出;否则存下来(不叫醒),等它进入运行中那一刻再投(session-deferred-messages.ts)。
       if (plan && 'defer' in plan && !sessionIsWorking(target.id)) {
         storeDeferredMessage({ sessionId: target.id, id: messageId, text: envelope(messageId, text), ...plan.defer });
-        recipients.push({ to: encodeTypedId('session', target.id), status: 'deferred', message_id: messageId });
+        recipients.push({ to: encodeTypedId('session', target.id), status: 'deferred', message_id: messageId, ...(note ? { recipient_note: note } : {}) });
         // 存下之前那一瞬刚进入运行中的,边沿已经过去了:再看一次,在跑就当场冲。
         if (sessionIsWorking(target.id)) void flushDeferredMessages(target.id);
         continue;
@@ -1981,7 +1984,7 @@ async function sendSessionMessage(
         status: admitted ? 'delivered' : queued ? 'queued' : 'failed',
         message_id: result.id,
         ...(admitted || queued
-          ? {}
+          ? (note ? { recipient_note: note } : {})
           : {
               error: result.status === 'outcome-unknown'
                 // 耐久收据停在 dispatching = **仍在飞**,不是失败。塌成 failed 会诱发重发,

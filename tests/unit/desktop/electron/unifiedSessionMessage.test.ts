@@ -256,16 +256,26 @@ describe('session_message reaches your sessions on your other machines', () => {
     expect(deliver).not.toHaveBeenCalled()
   })
 
-  it('keeps what was delivered when the other machine fails afterwards, and marks its recipients failed with its code', async () => {
+  it.each(['delivered', 'accepted', 'queued', 'deferred'] as const)('keeps a %s receipt when the other machine fails afterwards', async (status) => {
     const failure = Object.assign(new Error('no answer'), { code: 'SESSION_DEVICE_NO_ANSWER' })
     const { deps } = withRemote({ deliver: async () => { throw failure } })
 
+    const local = { to: `session:${OTHER_SESSION}`, status, message_id: 'stable-id', recipient_note: 'Agent reported an error' }
+    deps.graphMessage = async () => ({ recipients: [local] })
     const result = await handleUnifiedSessionMessage({ to: [`session:${OTHER_SESSION}`, `session:${REMOTE_SESSION}`], text: 'x' }, deps)
 
     expect(result.recipients).toEqual([
-      expect.objectContaining({ to: `session:${OTHER_SESSION}`, status: 'delivered' }),
+      local,
       { to: `session:${REMOTE_SESSION}`, status: 'failed', error: { code: 'SESSION_DEVICE_NO_ANSWER', message: 'no answer' } },
     ])
+  })
+
+  it('surfaces the original remote error when no earlier recipient accepted the message', async () => {
+    const failure = new Error('remote delivery failed')
+    const { deps } = withRemote({ deliver: async () => { throw failure } })
+    deps.graphMessage = async () => ({ recipients: [{ to: `session:${OTHER_SESSION}`, status: 'failed' }] })
+    await expect(handleUnifiedSessionMessage({ to: [`session:${OTHER_SESSION}`, `session:${REMOTE_SESSION}`], text: 'x' }, deps))
+      .rejects.toBe(failure)
   })
 
   it('an agent that runs on this machine but is not on its roster is still "not here", not a remote hop', async () => {

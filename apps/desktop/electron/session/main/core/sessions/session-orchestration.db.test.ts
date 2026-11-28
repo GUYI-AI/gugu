@@ -302,6 +302,7 @@ describe('session orchestration', () => {
     mocks.summaries = {};
     mocks.ptyStartSession.mockReset();
     mocks.ptyStopSession.mockReset();
+    mocks.lifeKinds = {};
     mocks.sendMessage.mockReset();
     mocks.localAgentForSession.mockReset();
     mocks.localAgentForSession.mockResolvedValue(null);
@@ -1270,6 +1271,16 @@ describe('session orchestration', () => {
       const result = (await runRemoteSessionAction(remoteCaller, { action: 'message', session_ids: ['caller'], text: 'the run finished' })) as
         { recipients: Array<{ to: string; status: string; message_id?: string; error?: unknown }> };
       expect(result.recipients).toEqual([{ to: 'session:caller', status: 'queued', message_id: expect.any(String) }]);
+    });
+
+    it('reports a confirmed startup failure only in the sender’s queued receipt', async () => {
+      mocks.lifeKinds.caller = 'failed';
+      mocks.sendMessage.mockResolvedValue({ id: 'm1', status: 'queued' });
+      const receipt = await runRemoteSessionAction(remoteCaller, { action: 'message', session_ids: ['caller'], text: 'hello' });
+      expect(receipt).toEqual({ recipients: [{
+        to: 'session:caller', status: 'queued', message_id: 'm1', recipient_note: 'Agent reported an error',
+      }] });
+      expect(mocks.sendMessage.mock.calls.at(-1)![0].text).not.toContain('Agent reported an error');
     });
 
     it('keeps the cloud message pending until native acceptance and formats its original time locally', async () => {
