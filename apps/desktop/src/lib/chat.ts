@@ -1,4 +1,5 @@
 import { ingestMessages } from './messageIngest'
+import { isMessageHidden } from './localMessageHides'
 import { ingestFetchedMessagePage } from './chatMessagePages'
 import { dbPayload } from '@gugu/core/cloud/supabase'
 import { createGroupWithInvitations, groupInvitationNote } from '@gugu/core/cloud/groupChat'
@@ -448,30 +449,6 @@ export const chatService = {
     })
   },
 
-  async deleteMessage(messageId: string): Promise<{ chatId: string; globallyDeleted: boolean }> {
-    const { data, error } = await chatDb.rpc('delete_message', {
-      p_message_id: messageId
-    })
-    if (error) throw new Error(error.message)
-
-    const row = Array.isArray(data) ? data[0] : data
-    if (!row || typeof row.chat_id !== 'string') {
-      throw new Error(`delete_message returned no chat_id for ${messageId}`)
-    }
-
-    return {
-      chatId: row.chat_id,
-      globallyDeleted: Boolean(row.globally_deleted)
-    }
-  },
-
-  async clearMessagesForMe(chatId: string): Promise<void> {
-    const { error } = await chatDb.rpc('clear_messages_for_me', {
-      p_chat_id: chatId
-    })
-    if (error) throw new Error(error.message)
-  },
-
   async setChatPinned(chatId: string, userId: string, pinned: boolean): Promise<void> {
     const { error } = await chatDb
       .from('chat_members')
@@ -501,7 +478,9 @@ export const chatService = {
     if (error) throw new Error(error.message)
     if (!msg) return null
     const item = messageItemFromRow(msg as RawMessageRow, userId)
-    if (item) await ingestMessages(userId, { writes: [{ type: 'put', message: item }], revisions: [] })
+    // A message hidden on this device reads as one this reader cannot see (@@@local-hide).
+    if (!item || isMessageHidden(userId, item)) return null
+    await ingestMessages(userId, { writes: [{ type: 'put', message: item }], revisions: [] })
     return item
   },
 

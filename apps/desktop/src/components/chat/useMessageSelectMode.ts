@@ -45,7 +45,7 @@ export function useMessageSelectMode({ activeChatId, mobile, messages, deleteMes
     setForwardMessages(selected)
   }, [messages, selectedIds, setForwardMessages])
 
-  // 批量删除：循环复用单条 deleteMessage（无批量 RPC），与单条删除同语义（不加额外确认）。
+  // 批量删除：循环复用单条 deleteMessage（只在本机隐藏），与单条删除同语义（不加额外确认）。
   const handleBatchDelete = useCallback(() => {
     const ids = Array.from(selectedIds)
     if (ids.length === 0) return

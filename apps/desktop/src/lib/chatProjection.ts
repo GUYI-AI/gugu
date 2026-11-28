@@ -68,6 +68,7 @@ import { messageAccessWrites } from './messageRevisionWrites'
 import { forgetArchivedGroups, noteGroupArchived } from './archivedGroupsRead'
 import { messagePreviewLines } from './messagePreviews'
 import { sendGroupPreview } from './sendGroupPreview'
+import { localHidesOf } from './localMessageHides'
 
 const log = rendererLogger('chat/projection')
 /** A stored value adopted at warm start: known, freshness unknown — older than any revision, so an operation naming it reads it. */
@@ -102,6 +103,8 @@ export type ChatProjectionLedgerEntry = {
 export type ChatProjection = {
   /** Versioned list maintenance; a newer cleared membership supersedes a delayed hide receipt. */
   confirmPersonalHiding: (receipt: import('./hideListedConversation').PersonalConversationStateReceipt, signal?: AbortSignal) => Promise<ChatItem[]>
+  /** A hide on this device changed what the conversation's row shows (@@@local-hide). */
+  republishLocalHide: (chatId: string) => ChatItem[]
   /** RPC receipt has no revision stamp; retain this monotonic list fact until account reset. */
   confirmPersonalDeletion: (receipt: import('./deleteListedConversation').PersonalConversationDeletion) => void
   /**
@@ -252,6 +255,7 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
     value: <T extends EntityValue>(family: EntityFamily, id: string) => (cache.get(entityKey(family, id))?.value ?? undefined) as T | undefined,
     members: chatId => sortMembers([...(membersByChat.get(chatId)?.values() ?? [])]),
     stamp: (family, id) => cache.get(entityKey(family, id))?.stamp,
+    local: localHidesOf(viewerId),
   }
   const confirmedDeletions = new Map<string, string>()
   const restoredMembershipReads = new Set<string>()
@@ -387,6 +391,7 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       for (const [index, row] of selected.entries()) {
         byChat.set(row.chat_id, {
           chat_id: row.chat_id,
+          id: typeof row.id === 'string' ? row.id : null,
           created_at: String(row.created_at),
           // 只有带引用的行才有原文:先按同一份 AST 把引用块换成摘要再截;其它行照用库里截好的 preview。
           preview: sendGroupPreview(row.send_group_size) ?? (previews[index] == null ? null : composerCardLine(previews[index])),
@@ -546,7 +551,7 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
   /** Settled cells remain pending across superseded/failed batches until a successful publication. */
   const republish = (snapshot = false): ChatItem[] => {
     const next = snapshot
-      ? assemble(cache, viewerId).filter(row => !confirmedDeletions.has(row.id))
+      ? assemble(cache, viewerId, source.local).filter(row => !confirmedDeletions.has(row.id))
       : reassemble(rows, touchedChats(unpublished, userId => chatsByUser.get(userId) ?? []), source, viewerId, chatId => !confirmedDeletions.has(chatId))
     rows = snapshot ? shareRows(held?.rows() ?? rows, next) : next
     unpublished.clear()
@@ -663,6 +668,10 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       }
       return await owner.advance([{ revision: receipt.account_revision, event: 'chat_members_changed',
         chatId: receipt.chat_id, entityId: viewerId, own: true }], receipt.account_revision, signal) ?? rows
+    },
+    republishLocalHide(chatId) {
+      unpublished.add(entityKey('chat', chatId))
+      return republish()
     },
     confirmPersonalDeletion({ chat_id, deleted_at }) {
       confirmedDeletions.set(chat_id, deleted_at)

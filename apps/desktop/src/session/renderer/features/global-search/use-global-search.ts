@@ -17,6 +17,7 @@ import { renderMentionTokens } from '@renderer/lib/chat/render-mention-tokens'
 import { rankPaletteMatches } from '../command-palette/palette-rank'
 import type { SearchChip, SearchFacet, SearchKind } from './search-session'
 import { localMessageQueries } from '@/lib/messageIngest'
+import { isMessageHidden } from '@/lib/localMessageHides'
 import { useNetworkOnline } from '@/hooks/useNetworkOnline'
 
 /** One page per source: the counts beside the filters are these rows, shown as "100+" when a source returns a full page. */
@@ -191,7 +192,8 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
     const ids = [...new Set(storedRows.flatMap(row => row.sender_user_id && !identities[row.sender_user_id] ? [row.sender_user_id] : []))]
     if (ids.length) readIdentityDirectoryBridge()?.ensure(ids)
   }, [identities, storedRows])
-  const shownRow = (row: MessageRow) => row.content_type !== 'system' && (!from || row.sender_user_id === from.userId)
+  // The cloud does not know what this device hides (@@@local-hide).
+  const shownRow = (row: MessageRow) => row.content_type !== 'system' && (!me || !isMessageHidden(me, row)) && (!from || row.sender_user_id === from.userId)
     && (kinds.length === 0 || kinds.every((kind) => messageKinds(row, me).has(kind)))
 
   // Messages that cannot be asked now are said (❌ placeholders for ever): no account to search for, or the cloud offline.

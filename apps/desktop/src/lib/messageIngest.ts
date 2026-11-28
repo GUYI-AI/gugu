@@ -6,6 +6,7 @@ import { desktopIpc } from '../platform/desktopIpc'
 import { createLocalMessageStore } from './localMessageStore'
 import { acceptMessageWrites, clearMessageWindows, initializeMessageWindows, messageAccountClosed, messageWindow, messageWindowGeneration, setMessageWindow } from './messageWindows'
 import { MAX_WINDOW } from '../store/chatMessageWindow'
+import { localHideWrites } from './localMessageHides'
 const commits = new Map<string, Promise<unknown>>()
 /** One store per IndexedDB factory: the page has exactly one (unit tests hand each case a fresh one). */
 let phoneStore: { factory: IDBFactory; store: ReturnType<typeof createLocalMessageStore> } | undefined
@@ -42,6 +43,9 @@ export function localMessageQueries(): Omit<MessageStore, 'ingest' | 'clearAccou
 
 export function initializeMessages(accountId: string): void {
   initializeMessageWindows(accountId)
+  // Logout emptied the store; what this device hides did not leave with it (@@@local-hide).
+  const hides = localHideWrites(accountId)
+  if (hides.length) void ingestMessages(accountId, { writes: hides, revisions: [] })
 }
 
 /** All renderer writes to the local store, including clears, enter here. */
