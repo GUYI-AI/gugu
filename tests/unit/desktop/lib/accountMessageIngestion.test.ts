@@ -33,8 +33,7 @@ async function rig(initial: AccountRevisionOperation[] = [], recover = vi.fn(asy
   let wake!: (head?: string | null) => void
   const notify = vi.fn(async (_item: ReturnType<typeof message>) => {})
   const coordinator: AccountRevisionCoordinator = createAccountRevisionCoordinator('viewer', repository, {
-    syncSince: async () => { throw new Error('the drain reads through catchUp') },
-    catchUp: async cursor => ({ operations: operations.filter(op => BigInt(op.revision) > BigInt(cursor)), hasMore: false }),
+    syncSince: async cursor => ({ operations: operations.filter(op => BigInt(op.revision) > BigInt(cursor)), hasMore: false }),
     subscribeWake: (_account, onWake) => { wake = onWake; return () => undefined },
   }, { recover, notify })
   stops.push(() => { coordinator.stop(); repository.close() })
@@ -239,8 +238,7 @@ it('answers behind as soon as a page shows a longer backlog, and not behind once
   const pages = [deferred<void>(), deferred<void>()]
   let asked = 0
   const coordinator = createAccountRevisionCoordinator('viewer', repository, {
-    syncSince: async () => { throw new Error('the drain reads through catchUp') },
-    catchUp: async (cursor) => {
+    syncSince: async (cursor) => {
       const page = asked++
       await pages[page]!.promise
       return { operations: [arrival(String(BigInt(cursor) + 1n), `backlog-${page}`, row(`backlog-${page}`, page + 1))], hasMore: page === 0 }
@@ -266,8 +264,7 @@ it('keeps a backoff through news and starts it over when conditions change', asy
   let reachable = false, asked = 0
   let wake!: (head?: string | null) => void
   const coordinator = createAccountRevisionCoordinator('viewer', repository, {
-    syncSince: async () => { throw new Error('the drain reads through catchUp') },
-    catchUp: async (cursor) => {
+    syncSince: async (cursor) => {
       asked += 1
       if (!reachable) throw new TypeError('Network request failed')
       return { operations: [arrival(String(BigInt(cursor) + 1n), `row-${asked}`, row(`row-${asked}`, asked))], hasMore: false }
@@ -309,8 +306,7 @@ it('accepts a compacted page: its window is the cursor, a gap voids the stream a
     900: { operations: [arrival('901', 'after-gap', row('after-gap', 480))], hasMore: false },
   }
   const coordinator = createAccountRevisionCoordinator('viewer', repository, {
-    syncSince: async () => { throw new Error('the drain reads through catchUp') },
-    catchUp: async cursor => pages[cursor] ?? { operations: [], hasMore: false },
+    syncSince: async cursor => pages[cursor] ?? { operations: [], hasMore: false },
     subscribeWake: (_account, onWake) => { wake = onWake; return () => undefined },
   }, { recover, notify: vi.fn(async () => {}) })
   stops.push(() => { coordinator.stop(); repository.close() })

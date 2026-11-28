@@ -37,10 +37,12 @@ type RawRevisionPage = {
 }
 
 export type AccountRevisionSource = {
-  /** Every revision after the cursor, a page at a time: for a replay up to a revision the caller already holds. */
-  syncSince: (cursor: string, limit: number, signal: AbortSignal) => Promise<AccountRevisionPage>
-  /** The journal after the cursor for an account catching up: a long backlog comes compacted (chat.sync_since_compact). */
-  catchUp: (cursor: string, limit: number, signal: AbortSignal) => Promise<AccountRevisionPage>
+  /**
+   * The journal after the cursor, a page at a time. `compact`: the reader is catching up to the head, and a backlog
+   * longer than the page may come compacted (chat.sync_since_compact). Without it every revision is replayed, for a
+   * replay up to a revision the caller already holds.
+   */
+  syncSince: (cursor: string, limit: number, signal: AbortSignal, compact?: boolean) => Promise<AccountRevisionPage>
   /**
    * `onWake` 收到的是广播里**服务端此刻的 head revision**(十进制字符串),
    * 拿不到时为 `null` = head 未知。head 是这条通知的全部信息量,也是它的用途:
@@ -252,7 +254,7 @@ export function createAccountRevisionRuntime(
         if (!signal) return
         if (scheduling) await scheduling.beforeRequest(signal)
         if (!active || generation !== runGeneration) return
-        const page = await source.catchUp(cursor, pageSize, signal)
+        const page = await source.syncSince(cursor, pageSize, signal, true)
         if (!active || generation !== runGeneration) return
         if (scheduling) await scheduling.beforeApply(signal)
         if (!active || generation !== runGeneration) return

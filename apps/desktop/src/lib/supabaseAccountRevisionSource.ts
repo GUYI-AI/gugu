@@ -24,8 +24,7 @@ export function createSupabaseAccountRevisionSource(): AccountRevisionSource {
     return parseRevisionPage(data)
   }
   return {
-    syncSince: (cursor, limit, signal) => read('sync_since', cursor, limit, signal),
-    catchUp: (cursor, limit, signal) => read('sync_since_compact', cursor, limit, signal),
+    syncSince: (cursor, limit, signal, compact) => read(compact ? 'sync_since_compact' : 'sync_since', cursor, limit, signal),
     subscribeWake(accountId, onWake, onSubscribed) {
       const handle: PrivateUserEventBusHandle = subscribePrivateUserEventBus(
         accountId,
