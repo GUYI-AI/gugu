@@ -6,7 +6,7 @@
 import { afterEach, expect, it } from 'vitest';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { PanelSlot } from '@renderer/lib/layout/panel-slot';
-import { MOVE, PanelTrack } from '@renderer/lib/layout/panel-track';
+import { MOVE, PanelTrack, panelRest } from '@renderer/lib/layout/panel-track';
 import '@renderer/index.css';
 
 let harness: ReturnType<typeof createReactHarness>;
@@ -97,9 +97,9 @@ it('the fill going to nothing is a sheet too: its open size kept, fading, laid o
   expect(fill.content.style.width).toBe('');
 });
 
-it('a jump is there in the same frame, at nothing too, and a move taken over starts where it is drawn', async () => {
+it('a jump is there in the same frame, at nothing too, and a move taken over starts where it is drawn, resting where it is told from where it last rested', async () => {
   const track = new PanelTrack([{ id: 'a', at: { size: 300 } }], 'x', 900);
-  const { slot } = await mount(track);
+  const { slot, fill } = await mount(track);
   let landed = 0;
   track.onLanded(() => { landed += 1; });
   track.jump({ a: { size: 0 } });
@@ -110,14 +110,19 @@ it('a jump is there in the same frame, at nothing too, and a move taken over sta
   expect(landed).toBe(0);
 
   track.to({ a: { size: 100 } });
+  expect(panelRest.get(fill.place)).toEqual({ rest: 800, grow: 200 });
   let mid = 300;
   while (mid > 200) { await frame(); mid = width(slot.place); }
+  expect(track.drawn('a')).toBeCloseTo(mid, 0); // told from the move's two ends, the box not measured
   track.to({ a: { size: 300 } });
+  // Turned round, the fill rests where it last rested: no wider, ❌ 100 narrower than where it was turned.
+  expect(panelRest.get(fill.place)).toEqual({ rest: 600, grow: 0 });
   await frame();
   // One frame on, it has moved less than a frame's worth from where it was taken over, ❌ jumped to an end.
   expect(Math.abs(width(slot.place) - mid)).toBeLessThan(40);
   await frames(track, () => null);
   expect(width(slot.place)).toBe(300);
+  expect(panelRest.get(fill.place)).toBeUndefined();
   expect(landed).toBe(1);
 });
 
