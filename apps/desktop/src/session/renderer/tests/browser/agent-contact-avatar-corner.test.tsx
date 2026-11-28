@@ -39,7 +39,7 @@ it('paints the Partners status corner outside the 40px portrait', async () => {
   const row = (status: string) => harness.container.querySelector(`[data-contact-id="${status}"]`)!
   expect(row('idle').querySelector('.av-status')).toBeNull()
   for (const status of ['working', 'offline']) {
-    const portrait = row(status).querySelector('[data-agent-avatar-boring]')!.getBoundingClientRect()
+    const portrait = row(status).querySelector('img[data-face="agent"]')!.getBoundingClientRect()
     const mark = row(status).querySelector<HTMLElement>(`.av-status--${status}`)!
     const badge = mark.getBoundingClientRect()
     expect(portrait.width).toBe(40)

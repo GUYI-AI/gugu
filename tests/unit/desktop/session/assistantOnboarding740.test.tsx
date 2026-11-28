@@ -14,7 +14,7 @@ const f = vi.hoisted(() => ({
   },
 }))
 vi.mock('react-i18next', async importOriginal => ({ ...(await importOriginal<typeof import('react-i18next')>()), useTranslation: () => ({ t: (key: string) => key }) }))
-vi.mock('@/components/agentAvatar/AgentAvatar', () => ({ AgentAvatar: () => null }))
+vi.mock('@/components/assistantFigure/AssistantFigure', () => ({ AssistantFigure: () => null }))
 vi.mock('@/components/assistant/AssistantSetupIdentity', () => ({ AssistantSetupIdentity: ({ onContinue }: { onContinue: () => void }) => createElement('button', { onClick: onContinue }, 'continue') }))
 vi.mock('@/components/assistant/AssistantIntro', () => ({ AssistantIntro: () => null }))
 vi.mock('@/components/assistant/AssistantServerSetup', () => ({ AssistantServerSetup: () => null }))

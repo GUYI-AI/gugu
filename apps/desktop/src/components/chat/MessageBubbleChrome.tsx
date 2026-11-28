@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { Chip } from '../ui/Chip'
 import { Button } from '../ui/Button'
 import { useAuth } from '../../store/auth'
-import { useAgentLook } from '../agentAvatar/useAgentLook'
+import { useAssistantLook } from '../assistantFigure/useAssistantLook'
 import { useIsAssistantAvatar } from '../../lib/avatarIdentity'
 import { memberNameHue } from '../../lib/memberNameHue'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
@@ -57,7 +57,7 @@ export function BubbleSender({ member, displayName, senderId, replyMark, profile
   const hasReply = Boolean(replyMark)
   const name = shownMemberName(displayName ?? member?.displayName ?? '', member?.removedAt)
   const assistant = useIsAssistantAvatar(senderId ?? '')
-  const assistantLook = useAgentLook(assistant ? senderId ?? '' : '', undefined, member?.avatar)
+  const assistantLook = useAssistantLook(assistant ? senderId ?? '' : '', undefined, member?.avatar)
   const hue = webhook ? WEBHOOK_NAME_HUE : memberNameHue({ id: senderId, avatar: member?.avatar, isAgent: member?.type === 'agent', assistantLook: assistant ? assistantLook : undefined })
   const tag = webhook || member?.removedAt || member?.type !== 'agent' ? null
     : member.ownerUserId && member.ownerUserId === user?.id ? t('message.myAgentTag')

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { GuguGL } from '../../../../apps/desktop/src/components/agentAvatar/engine/gl'
+import { GuguGL } from '../../../../apps/desktop/src/components/assistantFigure/engine/gl'
 
 /** 一个什么都不做、什么都答「成了」的 WebGL2 上下文:只为让建管线、载图那几步走得通 */
 function fakeContext(lost = false, draws: unknown[] = []): WebGL2RenderingContext {

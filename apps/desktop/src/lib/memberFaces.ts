@@ -1,13 +1,11 @@
 // An App page's member faces (画廊车道 §6): `getContext().chat.members[].avatar` is the face this host already draws for
-// someone (`displayAvatarUrl`: their upload, else their default face), made small — 128px, twice the largest App avatar
+// someone (`faceImageUrl` of their `identityFace`: their upload, else their default face), made small — 128px, twice the largest App avatar
 // (`--em-avatar-lg` 64), WebP for images and the original SVG for Boring defaults — as a `data:` URL, which the App's CSP already lets in (`app-csp.ts` img-src). Drawn
 // here, in a renderer: the phone's host calls it, and the desktop's main process asks the window for it.
-import { normalizeAvatarUrl } from '@gugu/core/shared/ui/avatarUrl'
-import { displayAvatarUrl } from './dicebearAvatar'
-import { isBuiltinAgentAvatarUrl, parseAgentLook } from '../components/agentAvatar/look'
-import { settledAgentLookPoster } from '../components/agentAvatar/posters'
+import { faceImageUrl, identityFace } from './identityFace'
+import { resolveAssistantLook } from '../components/assistantFigure/look'
+import { settledAssistantPoster } from '../components/assistantFigure/posters'
 import { readIdentityDirectoryBridge } from './identityDirectoryBridge'
-import { isAssistantAvatar } from './avatarIdentity'
 import { redrawImage } from './redrawImage'
 import { readAvatarTheme } from './avatarTheme'
 
@@ -25,24 +23,22 @@ const drawn = new Map<string, Promise<string | null>>()
 /**
  * Someone's face for an App page: their upload, else their default face from their id (seeded by the id, as every
  * surface seeds it — never the name). Null when it cannot be drawn — an upload that does not load stays a failure, not
- * a default face over it (`displayAvatarUrl`) — and drawn again the next time it is asked.
+ * a default face over it (`identityFace`) — and drawn again the next time it is asked.
  */
 export function memberFace(id: string, avatar: string | null): Promise<string | null> {
   const directory = readIdentityDirectoryBridge()
   const identity = directory?.getSnapshot()?.[id]
   if (!identity) { directory?.ensure([id]); return Promise.resolve(null) }
-  const assistant = isAssistantAvatar(id)
-  const key = `${id} ${avatar ?? ''} ${identity.type} ${assistant} ${readAvatarTheme()}`
-  if (identity.type === 'agent' && !assistant && (avatar == null || isBuiltinAgentAvatarUrl(avatar))) {
-    return Promise.resolve(displayAvatarUrl(avatar, id, 'App member face', 'agent'))
-  }
+  const who = identityFace({ id, avatar, type: identity.type })
+  // The agent default is a few-KB SVG already: nothing to redraw.
+  if (who.kind === 'agent') return Promise.resolve(faceImageUrl(who, 'App member face'))
+  const key = `${id} ${avatar ?? ''} ${who.kind} ${readAvatarTheme()}`
   const known = drawn.get(key)
   if (known) return known
-  // 形象地址:等引擎把这个形象的定格画好再缩(❌ 缩那张还没画好时顶着的同色图,这里画一次就缓存住了)
-  const look = parseAgentLook(normalizeAvatarUrl(avatar))
-  const face = withDeadline(look
-    ? settledAgentLookPoster(look, { retryFailed: true }).then(draw, () => null)
-    : draw(displayAvatarUrl(avatar, id, 'App member face', identity.type)))
+  // 助理:等引擎把它的定格画好再缩(❌ 缩那张还没画好时顶着的同色图,这里画一次就缓存住了)
+  const face = withDeadline(who.kind === 'assistant'
+    ? settledAssistantPoster(resolveAssistantLook(who.id, who.avatar), { retryFailed: true }).then(draw, () => null)
+    : draw(faceImageUrl(who, 'App member face')))
   drawn.set(key, face)
   // Only this draw's own entry goes: a newer one under the same key stays.
   void face.then((url) => { if (url === null && drawn.get(key) === face) drawn.delete(key) })

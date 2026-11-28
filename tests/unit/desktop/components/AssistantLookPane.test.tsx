@@ -2,9 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { clickElement, contact, createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
-import { AgentLookPane } from '../../../../apps/desktop/src/components/agentsettings/AgentLookPane'
-import { BODY_COLORS, REST_FACES } from '../../../../apps/desktop/src/components/agentAvatar/engine/identity'
-import { colorSlug, parseAgentLook } from '../../../../apps/desktop/src/components/agentAvatar/look'
+import { AssistantLookPane } from '../../../../apps/desktop/src/components/agentsettings/AssistantLookPane'
+import { BODY_COLORS, REST_FACES } from '../../../../apps/desktop/src/components/assistantFigure/engine/identity'
+import { colorSlug, parseAssistantLook } from '../../../../apps/desktop/src/components/assistantFigure/look'
 import type { ContactsContextValue } from '../../../../apps/desktop/src/store/contactsContext'
 import type { ToastContextValue } from '../../../../apps/desktop/src/components/toastContext'
 
@@ -24,14 +24,14 @@ afterEach(() => {
 })
 
 async function open(options: { owner?: string } = {}) {
-  const setAgentLook = vi.fn<ContactsContextValue['setAgentLook']>(async () => {})
+  const setAssistantLook = vi.fn<ContactsContextValue['setAssistantLook']>(async () => {})
   const toast = vi.fn<ToastContextValue['toast']>()
-  await renderWithAppProviders(harness, createNode(AgentLookPane, { agent }), {
+  await renderWithAppProviders(harness, createNode(AssistantLookPane, { agent }), {
     auth: { id: options.owner ?? OWNER },
-    contacts: { contacts: [agent], setAgentLook },
+    contacts: { contacts: [agent], setAssistantLook },
     toast,
   })
-  return { setAgentLook, toast }
+  return { setAssistantLook, toast }
 }
 
 const q = <T extends Element = HTMLElement>(sel: string) => harness.container.querySelector<T>(sel)
@@ -46,23 +46,23 @@ describe('形象工坊', () => {
     const taken = qa('[data-color]').filter((el) => el.querySelector('.gg-look-taken')).map((el) => el.getAttribute('data-color'))
     expect(taken).toEqual([])
     // 舞台上就是这只、这个样子
-    const stage = q('canvas[data-agent-avatar]')
-    expect(stage?.getAttribute('data-agent-avatar-color')).toBe('lagoon')
-    expect(stage?.getAttribute('data-agent-avatar-rest')).toBe('surprised')
+    const stage = q('canvas[data-assistant-figure]')
+    expect(stage?.getAttribute('data-assistant-figure-color')).toBe('lagoon')
+    expect(stage?.getAttribute('data-assistant-figure-rest')).toBe('surprised')
   })
 
   it('点一颗色球:舞台当场换色、标「未保存」;「就它了」才写库,写的是选中的颜色 + 原来的表情', async () => {
-    const { setAgentLook, toast } = await open()
+    const { setAssistantLook, toast } = await open()
     expect(q('.gg-look-tag--draft')).toBeNull()
     await clickElement(q('[data-color="haze"]')!)
     expect(checkedColor()).toBe('haze')
-    expect(q('canvas[data-agent-avatar]')?.getAttribute('data-agent-avatar-color')).toBe('haze')
+    expect(q('canvas[data-assistant-figure]')?.getAttribute('data-assistant-figure-color')).toBe('haze')
     expect(q('.gg-look-tag--draft')).not.toBeNull()
-    expect(setAgentLook).not.toHaveBeenCalled()
+    expect(setAssistantLook).not.toHaveBeenCalled()
 
     await clickElement(q('.gg-look-save')!)
-    expect(setAgentLook).toHaveBeenCalledTimes(1)
-    expect(setAgentLook).toHaveBeenCalledWith('agent-1', { color: BODY_COLORS.findIndex((c) => c.en === 'Haze'), rest: 'surprised' })
+    expect(setAssistantLook).toHaveBeenCalledTimes(1)
+    expect(setAssistantLook).toHaveBeenCalledWith('agent-1', { color: BODY_COLORS.findIndex((c) => c.en === 'Haze'), rest: 'surprised' })
     expect(toast).toHaveBeenCalledWith(expect.any(String), 'success')
   })
 
@@ -73,12 +73,12 @@ describe('形象工坊', () => {
     expect(qa('.gg-look-face-group')[0].querySelectorAll('[data-face]')).toHaveLength(REST_FACES.length)
     await clickElement(q('[data-face="laughing"]')!)
     expect(q('[data-face="laughing"]')?.getAttribute('aria-checked')).toBe('true')
-    expect(q('canvas[data-agent-avatar]')?.getAttribute('data-agent-avatar-rest')).toBe('laughing')
+    expect(q('canvas[data-assistant-figure]')?.getAttribute('data-assistant-figure-rest')).toBe('laughing')
   })
 
   it('assistant dice changes the look without writing until saved', async () => {
     vi.useFakeTimers()
-    const { setAgentLook } = await open()
+    const { setAssistantLook } = await open()
     let prev = checkedColor()
     for (let i = 0; i < 20; i++) {
       await clickElement(q('.gg-look-dice')!)
@@ -91,7 +91,7 @@ describe('形象工坊', () => {
       expect(now).not.toBe(prev)
       prev = now
     }
-    expect(setAgentLook).not.toHaveBeenCalled()
+    expect(setAssistantLook).not.toHaveBeenCalled()
   })
 
   it('撤销:回到存着的样子', async () => {
@@ -104,21 +104,21 @@ describe('形象工坊', () => {
   })
 
   it('不是主人:只能看 —— 色球不可点、没有骰子和保存', async () => {
-    const { setAgentLook } = await open({ owner: 'someone-else' })
+    const { setAssistantLook } = await open({ owner: 'someone-else' })
     expect(q('.gg-look-foot')).toBeNull()
     const ball = q('[data-color="cream"]')!
     expect(ball.hasAttribute('disabled') || ball.getAttribute('aria-disabled') === 'true' || ball.hasAttribute('data-disabled')).toBe(true)
     await clickElement(ball)
     expect(checkedColor()).toBe('lagoon')
-    expect(setAgentLook).not.toHaveBeenCalled()
+    expect(setAssistantLook).not.toHaveBeenCalled()
   })
 
   it('[对照] 形象地址确实写成了这只 agent 的颜色 + 表情', () => {
-    expect(parseAgentLook(agent.avatar)).toEqual({ color: BODY_COLORS.findIndex((c) => colorSlug(BODY_COLORS.indexOf(c)) === 'lagoon'), rest: 'surprised' })
+    expect(parseAssistantLook(agent.avatar)).toEqual({ color: BODY_COLORS.findIndex((c) => colorSlug(BODY_COLORS.indexOf(c)) === 'lagoon'), rest: 'surprised' })
   })
 
   describe('装扮页签(DIY)', () => {
-    const stageWear = () => q('canvas[data-agent-avatar]')?.getAttribute('data-agent-avatar-wear') ?? ''
+    const stageWear = () => q('canvas[data-assistant-figure]')?.getAttribute('data-assistant-figure-wear') ?? ''
     const openOutfits = async () => {
       const r = await open()
       await clickElement(qa('[role="tab"]')[2])
@@ -133,7 +133,7 @@ describe('形象工坊', () => {
     })
 
     it('穿一件、换配色、和它打架的自动摘掉并说一声;「就它了」写进去的是这一身', async () => {
-      const { setAgentLook } = await openOutfits()
+      const { setAssistantLook } = await openOutfits()
       expect(stageWear()).toBe('')
       await clickElement(q('[data-outfit="crown"]')!)
       expect(stageWear()).toBe('crown.0')
@@ -146,11 +146,11 @@ describe('形象工坊', () => {
       expect(q('.gg-look-outfit-note')?.textContent).toMatch(/摘下与之冲突的|removed the conflicting/)
       expect(q('.gg-look-tag--draft')).not.toBeNull()
       await clickElement(q('.gg-look-save')!)
-      expect(setAgentLook).toHaveBeenCalledWith('agent-1', { color: BODY_COLORS.findIndex((c) => c.en === 'Lagoon'), rest: 'surprised', wear: [{ id: 'glasses', cw: 0 }, { id: 'headphones', cw: 0 }] })
+      expect(setAssistantLook).toHaveBeenCalledWith('agent-1', { color: BODY_COLORS.findIndex((c) => c.en === 'Lagoon'), rest: 'surprised', wear: [{ id: 'glasses', cw: 0 }, { id: 'headphones', cw: 0 }] })
     })
 
     it('「全部摘掉」= 明确不戴(存成 wear=);「恢复默认」= 去掉 wear、回到素装', async () => {
-      const { setAgentLook } = await openOutfits()
+      const { setAssistantLook } = await openOutfits()
       expect(stageWear()).toBe('')
       await clickElement(q('[data-outfit="crown"]')!)
       expect(stageWear()).toBe('crown.0')
@@ -158,7 +158,7 @@ describe('形象工坊', () => {
       await clickElement(clear)
       expect(stageWear()).toBe('')
       await clickElement(q('.gg-look-save')!)
-      expect(setAgentLook).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ wear: [] }))
+      expect(setAssistantLook).toHaveBeenLastCalledWith('agent-1', expect.objectContaining({ wear: [] }))
       await clickElement(q('[data-outfit="crown"]')!)
       await clickElement(qa('.gg-look-outfit-actions button')[1])
       expect(stageWear()).toBe('')
@@ -166,15 +166,15 @@ describe('形象工坊', () => {
 
     it('装扮页签里的骰子只换装扮:颜色、表情不动', async () => {
       await openOutfits()
-      const before = q('canvas[data-agent-avatar]')!
-      const color = before.getAttribute('data-agent-avatar-color')
-      const rest = before.getAttribute('data-agent-avatar-rest')
+      const before = q('canvas[data-assistant-figure]')!
+      const color = before.getAttribute('data-assistant-figure-color')
+      const rest = before.getAttribute('data-assistant-figure-rest')
       const seen = new Set<string>()
       for (let i = 0; i < 8; i++) {
         await clickElement(q('.gg-look-dice')!)
-        const c = q('canvas[data-agent-avatar]')!
-        expect(c.getAttribute('data-agent-avatar-color')).toBe(color)
-        expect(c.getAttribute('data-agent-avatar-rest')).toBe(rest)
+        const c = q('canvas[data-assistant-figure]')!
+        expect(c.getAttribute('data-assistant-figure-color')).toBe(color)
+        expect(c.getAttribute('data-assistant-figure-rest')).toBe(rest)
         seen.add(stageWear())
       }
       expect(seen.size).toBeGreaterThan(1)

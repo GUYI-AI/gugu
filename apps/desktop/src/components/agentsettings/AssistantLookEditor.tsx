@@ -7,11 +7,11 @@ import { rendererLogger } from '../../lib/log'
 import { agentStatusText } from '../../lib/agentStatusText'
 import { useToast } from '../toastContext'
 import { Button } from '../ui/Button'
-import { AgentAvatar } from '../agentAvatar/AgentAvatar'
-import { useAgentLookPostersVersion } from '../agentAvatar/posters'
-import { wearKey } from '../agentAvatar/engine/outfitCatalog'
-import { BODY_CHROMA, BODY_COLORS, BODY_LIGHTNESS, REST_FACES } from '../agentAvatar/engine/identity'
-import type { ExpressionId } from '../agentAvatar/engine/spec'
+import { AssistantFigure } from '../assistantFigure/AssistantFigure'
+import { useAssistantPostersVersion } from '../assistantFigure/posters'
+import { wearKey } from '../assistantFigure/engine/outfitCatalog'
+import { BODY_CHROMA, BODY_COLORS, BODY_LIGHTNESS, REST_FACES } from '../assistantFigure/engine/identity'
+import type { ExpressionId } from '../assistantFigure/engine/spec'
 import {
   BOLD_REST_FACES,
   colorSlug,
@@ -19,11 +19,11 @@ import {
   rollWear,
   sameLook,
   wornOf,
-  type AgentLook,
-} from '../agentAvatar/look'
-import { AgentLookOutfits } from './AgentLookOutfits'
-import { OUTFIT_DEFS } from '../agentAvatar/engine/outfitCatalog'
-import './AgentLookPane.css'
+  type AssistantLook,
+} from '../assistantFigure/look'
+import { AssistantLookOutfits } from './AssistantLookOutfits'
+import { OUTFIT_DEFS } from '../assistantFigure/engine/outfitCatalog'
+import './AssistantLookPane.css'
 import '../../i18n/registerAgentsCatalog'
 
 const log = rendererLogger('agents/look')
@@ -49,7 +49,7 @@ function prefersReducedMotion(): boolean {
 }
 
 /** 骰子转动时的一跳:颜色、表情都换一个,和上一跳不同(装扮不动)。 */
-function randomStep(prev: AgentLook): AgentLook {
+function randomStep(prev: AssistantLook): AssistantLook {
   const colors = BODY_COLORS.map((_, i) => i).filter((i) => i !== prev.color)
   const faces = REST_FACES.filter((f) => f !== prev.rest)
   return {
@@ -73,9 +73,9 @@ function moveInGrid<T>(event: KeyboardEvent<HTMLElement>, items: readonly T[], i
 /**
  * 「形象」:给 agent 捏个样子 —— 身体颜色、休息表情、装扮三格。像游戏里的捏人:左边舞台上一只会动的小鸟,
  * 点哪格它就当场换上;骰子随机一只(颜色、表情、装扮,尽量不和主人的其它 agent 撞色、撞主件);「就它了」才写进库(形象地址存在头像字段,
- * 见 agentAvatar/look.ts),各端随之一起换。不是主人只能看。
+ * 见 assistantFigure/look.ts),各端随之一起换。不是主人只能看。
  */
-export function AgentLookEditor({
+export function AssistantLookEditor({
   id,
   name,
   number,
@@ -88,16 +88,16 @@ export function AgentLookEditor({
   id: string
   name: string
   number?: number | null
-  current: AgentLook
+  current: AssistantLook
   hasSavedLook?: boolean
   usesPhoto?: boolean
   isOwned?: boolean
-  onSave: (look: AgentLook) => Promise<void>
+  onSave: (look: AssistantLook) => Promise<void>
 }) {
   const { t } = useTranslation('agents')
   const { toast } = useToast()
 
-  const [draft, setDraft] = useState<AgentLook>(current)
+  const [draft, setDraft] = useState<AssistantLook>(current)
   const [tab, setTab] = useState<'color' | 'face' | 'outfit'>('color')
   const [tryIndex, setTryIndex] = useState(0)
   const [saving, setSaving] = useState(false)
@@ -107,7 +107,7 @@ export function AgentLookEditor({
   const [burst, setBurst] = useState(0)
   const [facePulse, setFacePulse] = useState<{ face: ExpressionId; n: number } | null>(null)
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
-  useAgentLookPostersVersion() // 色球上「谁在用」那只小鸟的定格画好了就换上
+  useAssistantPostersVersion() // 色球上「谁在用」那只小鸟的定格画好了就换上
 
   // 库里的形象变了(这里刚保存 / 别的设备改了 / 出生时定下来了):草稿没动过就跟着换,动过就留着。
   // 默认装扮(没有 wear)和明确不戴(wear=[])是两种存法,写法都是空串:分开记
@@ -134,7 +134,7 @@ export function AgentLookEditor({
     timers.current.push(setTimeout(fn, ms))
   }
 
-  function pick(next: AgentLook) {
+  function pick(next: AssistantLook) {
     if (!editable) return
     setDraft(next)
     setPulse((n) => n + 1)
@@ -156,7 +156,7 @@ export function AgentLookEditor({
     setRolling(true)
     let at = 0
     // 转动的那几跳只换颜色、表情,装扮固定成此刻穿的那身
-    let prev: AgentLook = { ...draft, wear: wornOf(draft) }
+    let prev: AssistantLook = { ...draft, wear: wornOf(draft) }
     ROLL_STEPS.forEach((step, i) => {
       at += step
       const last = i === ROLL_STEPS.length - 1
@@ -212,7 +212,7 @@ export function AgentLookEditor({
             <span className="gg-look-twinkle gg-look-twinkle--c" aria-hidden="true"><SparkStar /></span>
             <div className="gg-look-podium" aria-hidden="true" />
             <div className="gg-look-hero">
-              <AgentAvatar
+              <AssistantFigure
                 id={id}
                 look={draft}
                 holdExpression
@@ -357,7 +357,7 @@ export function AgentLookEditor({
                 />
               </>
             ) : (
-              <AgentLookOutfits
+              <AssistantLookOutfits
                 worn={wornOf(draft)}
                 isDefault={draft.wear === undefined}
                 editable={editable}
@@ -410,9 +410,9 @@ function FaceGroup({
 }: {
   title: string
   faces: readonly ExpressionId[]
-  draft: AgentLook
+  draft: AssistantLook
   /** 舞台上那只此刻穿的那一身:样片穿同一身,只换脸 */
-  worn: AgentLook['wear']
+  worn: AssistantLook['wear']
   isOwned: boolean
   faceName: (face: ExpressionId) => string
   pulse: { face: ExpressionId; n: number } | null
@@ -447,7 +447,7 @@ function FaceGroup({
               onMouseEnter={() => onHover(face)}
             >
               <span className="gg-look-face">
-                <AgentAvatar
+                <AssistantFigure
                   id={`look-face-${face}`}
                   look={{ color: draft.color, rest: face, wear: worn }}
                   holdExpression

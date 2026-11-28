@@ -288,7 +288,7 @@ describe('ProjectsPage — 所有机器一页、个人助理一组', () => {
     expect(metaOf('phone-task').toLowerCase()).not.toContain('pi')
     expect(metaOf('desktop-task')).toContain('codex')
     // A directory's working flag cannot replace this identified agent's unobserved presence.
-    expect(phoneRow.querySelector('[data-agent-avatar-boring]')?.getAttribute('aria-label')).toMatch(/确认中|Checking/)
+    expect(phoneRow.querySelector('img[data-face="agent"]')?.getAttribute('alt')).toMatch(/确认中|Checking/)
     await act(async () => phoneRow.click())
     expect(onOpenSession).toHaveBeenCalledWith('phone', expect.objectContaining({ conversationId: 'phone-task' }))
     expect(harness.container.querySelector('[data-session-id="desktop-task"]')).not.toBeNull()
@@ -322,7 +322,7 @@ describe('ProjectsPage — 所有机器一页、个人助理一组', () => {
     await renderPage([], { onOpenSession })
     const phoneRow = harness.container.querySelector<HTMLButtonElement>('[data-session-id="phone-task"]')!
     expect(phoneRow.disabled).toBe(false)
-    expect(phoneRow.querySelector('[data-agent-avatar-boring]')?.getAttribute('aria-label')).not.toMatch(/运行中|Working/)
+    expect(phoneRow.querySelector('img[data-face="agent"]')?.getAttribute('alt')).not.toMatch(/运行中|Working/)
     expect(phoneRow.closest('.gg-aw-item-wrap')?.querySelector('[data-testid="agent-watch-session-menu"]')).toBeNull()
     await act(async () => phoneRow.click())
     expect(onOpenSession).toHaveBeenCalledWith('phone', expect.objectContaining({ conversationId: 'phone-task' }))

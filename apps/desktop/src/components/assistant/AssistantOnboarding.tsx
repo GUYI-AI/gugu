@@ -6,10 +6,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cloudComputerFailureKind, type CloudComputerSnapshot } from '@gugu/core/cloud/cloudComputer'
 import type { Device } from '@gugu/core/shared/types/chat'
-import { AgentAvatar } from '../agentAvatar/AgentAvatar'
+import { AssistantFigure } from '../assistantFigure/AssistantFigure'
 import { Button } from '../ui/Button'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
-import { BODY_COLORS } from '../agentAvatar/engine/identity'
+import { BODY_COLORS } from '../assistantFigure/engine/identity'
 import {
   claimCloudAssistant,
   draftAvatarUrl,
@@ -30,7 +30,7 @@ import { AssistantServerSetup } from './AssistantServerSetup'
 import { pendingServerAssistant } from '../../lib/assistantServerSetup'
 import { clearAssistantOnboardingNavigation, readAssistantOnboardingNavigation, saveAssistantOnboardingNavigation } from '../../lib/assistantOnboardingNavigation'
 import { AssistantSetupIdentity } from './AssistantSetupIdentity'
-import { DEFAULT_ASSISTANT_LOOK } from '../agentAvatar/look'
+import { DEFAULT_ASSISTANT_LOOK } from '../assistantFigure/look'
 import { myAssistant } from '../../lib/myAssistant'
 import { rendererLogger } from '../../lib/log'
 import { isMember, membershipFailure, refreshSpendingPower, useSpendingPower } from '../../lib/billing/useSpendingPower'
@@ -213,7 +213,7 @@ export function AssistantOnboarding({
     return (
       <div className="ta-onb-slot" data-ta-scope style={tintStyle(hue)}>
         <div className="ta-onb" data-testid="assistant-setup-cloud-progress">
-          <AgentAvatar name={displayName} look={draft} id="assistant-draft" size={96} />
+          <AssistantFigure name={displayName} look={draft} id="assistant-draft" size={96} />
           {/* 标题由开通面板自己说(「正在准备你的助理」+ 三步),这里只放它的样子 */}
           <CloudComputerProvisionPanel
             snapshot={snapshot}
@@ -234,7 +234,7 @@ export function AssistantOnboarding({
       <div className={`ta-onb${choosingEngine ? ' ta-onb-engine' : ''}`} data-testid={`assistant-setup-${step}`}>
         {working ? (
           <>
-            <AgentAvatar name={displayName} look={draft} id="assistant-draft" size={96} />
+            <AssistantFigure name={displayName} look={draft} id="assistant-draft" size={96} />
             <h1 className="ta-onb-title">
               {busy === 'resume' ? t('setup.resuming', { name: displayName }) : t('setup.installing', { name: displayName })}
             </h1>

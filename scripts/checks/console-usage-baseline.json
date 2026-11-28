@@ -126,7 +126,7 @@
   },
   {
     "rule": "console-member",
-    "file": "apps/desktop/src/lib/dicebearAvatar.ts",
+    "file": "apps/desktop/src/lib/identityFace.ts",
     "count": 1
   },
   {

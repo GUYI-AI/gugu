@@ -369,7 +369,7 @@ export function contactsStore(overrides: Partial<ContactsContextValue> = {}): Co
     setAgentDesiredStatus: vi.fn(async () => {}),
     updateAgentProfile: vi.fn(async () => {}),
     uploadAgentAvatar: vi.fn(async () => {}),
-    setAgentLook: vi.fn(async () => {}),
+    setAssistantLook: vi.fn(async () => {}),
     removeOwnedAgent: vi.fn(async () => {}),
     removeContact: vi.fn(async () => {}),
     ...overrides,

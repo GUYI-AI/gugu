@@ -5,7 +5,7 @@ import { deviceMachineFor, deviceMachines } from '@gugu/core/shared/deviceMachin
 import { AssistantSettingsPage } from '@/components/assistant/AssistantSettingsPage'
 import type { ComponentType } from 'react'
 import { AgentAiModelPane } from '@/components/agentsettings/AgentAiModelPane'
-import { AgentLookPane } from '@/components/agentsettings/AgentLookPane'
+import { AssistantLookPane } from '@/components/agentsettings/AssistantLookPane'
 import type { AgentSettingsPaneProps } from '@/components/agentsettings/types'
 import { useAssistantHome } from '@/lib/useAssistantHome'
 import { AssistantDevicesPage } from '@/components/devices/AssistantDevicesPage'
@@ -39,9 +39,9 @@ export function PhoneProfile(input: PhonePageProps) {
   </div></div>
 
   // API 49 `gugu.assistant.open(…, "model" | "look")`: the model page its settings open (AssistantSettingsPage `aimodel`) and the
-  // look workshop 自定义's 换形象 opens (AgentLookPane), each as a page of its own — never 自定义 again over the App's own.
+  // look workshop 自定义's 换形象 opens (AssistantLookPane), each as a page of its own — never 自定义 again over the App's own.
   if (sub === 'aimodel') return <PhoneAssistantPane title={t('settingsPage.model')} testId="assistant-model-page" Pane={AgentAiModelPane} />
-  if (sub === 'look') return <PhoneAssistantPane title={t('customize.look')} testId="assistant-look-page" Pane={AgentLookPane} />
+  if (sub === 'look') return <PhoneAssistantPane title={t('customize.look')} testId="assistant-look-page" Pane={AssistantLookPane} />
 
   if (sub === 'devices' || sub?.startsWith('devices:')) {
     const openedDeviceId = sub.startsWith('devices:') ? sub.slice('devices:'.length) : null

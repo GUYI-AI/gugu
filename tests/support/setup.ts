@@ -23,8 +23,8 @@ vi.mock('lottie-web/build/player/lottie_light', async () => ({
 }))
 
 // agent 头像的动效运行时同理不进单测进程:它的 rAF 循环在 jsdom 的残缺画布上会抛未捕获异常。机制见替身模块抬头。
-vi.mock('../../apps/desktop/src/components/agentAvatar/engine/runtime', async () => ({
-  runtime: (await import('./agent-avatar-runtime-stub')).agentAvatarRuntimeStub,
+vi.mock('../../apps/desktop/src/components/assistantFigure/engine/runtime', async () => ({
+  runtime: (await import('./assistant-figure-runtime-stub')).assistantFigureRuntimeStub,
 }))
 
 // 这个 setup 同时服务两种环境:`gugu` project 的默认环境是 node(实测 463 个文件里 72% 从不碰 DOM,

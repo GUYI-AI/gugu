@@ -72,9 +72,9 @@
     { "file": "apps/desktop/src/session/app-runtime/files-entry.ts", "class": "D", "reason": "API error for App code; the Chinese is an example folder path." },
     { "file": "apps/desktop/src/session/shared/core/sessions/session-title-namer.ts", "class": "D", "reason": "Prompt for the title-naming model; lists Chinese request verbs to leave out." },
 
-    { "file": "apps/desktop/src/components/agentAvatar/engine/spec.ts", "class": "E", "reason": "Avatar design spec: zh names and design hints for expressions and states, not rendered in the product." },
-    { "file": "apps/desktop/src/components/agentAvatar/engine/characters.ts", "class": "E", "reason": "Avatar design spec name, not rendered in the product." },
-    { "file": "apps/desktop/src/components/agentAvatar/engine/gl.ts", "class": "E", "reason": "Shader source; the Chinese is GLSL comments." },
+    { "file": "apps/desktop/src/components/assistantFigure/engine/spec.ts", "class": "E", "reason": "Avatar design spec: zh names and design hints for expressions and states, not rendered in the product." },
+    { "file": "apps/desktop/src/components/assistantFigure/engine/characters.ts", "class": "E", "reason": "Avatar design spec name, not rendered in the product." },
+    { "file": "apps/desktop/src/components/assistantFigure/engine/gl.ts", "class": "E", "reason": "Shader source; the Chinese is GLSL comments." },
     { "file": "apps/desktop/src/session/shared/preview/preview-link-script.ts", "class": "E", "reason": "Injected script source; the Chinese is script comments." },
     { "file": "apps/desktop/src/session/renderer/features/sample-project/content/zh-CN.ts", "class": "E", "reason": "Chinese sample project content, chosen for the zh-CN locale." },
     { "file": "apps/desktop/src/session/renderer/features/sample-project/content/en-US.ts", "class": "E", "reason": "Sample project content: the agent's recorded Chinese search queries." },

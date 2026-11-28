@@ -5,9 +5,9 @@ import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
 import { platform } from '@/platform'
 import { Link, QrCode } from '@/lib/icons'
 import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
-import { displayAvatarUrl } from '../../lib/dicebearAvatar'
+import { faceImageUrl, identityFace } from '../../lib/identityFace'
 import { useChatStore } from '../../store/chatContext'
-import { useAgentLookPostersVersion } from '../agentAvatar/posters'
+import { useAssistantPostersVersion } from '../assistantFigure/posters'
 import { QrImage } from '../QrImage'
 import { SharePosterDialog } from '../SharePosterDialog'
 import { useToast } from '../toastContext'
@@ -81,7 +81,7 @@ function useGroupInviteShare({ inviteLink, groupName, snapshot }: GroupInviteSha
   const [showPoster, setShowPoster] = useState(false)
   const unifiedMembers = useUnifiedMembers(snapshot)
   // @@@445/#2470 海报 canvas 不走 React Avatar → 按同一口径预解析成员头像;小鸟的定格画好了会重渲染,这里跟着重读。
-  useAgentLookPostersVersion()
+  useAssistantPostersVersion()
   const copy = () => {
     void platform.writeClipboardText(inviteLink).then(
       () => toast(t('group.settings.inviteCopied'), 'success'),
@@ -96,7 +96,7 @@ function useGroupInviteShare({ inviteLink, groupName, snapshot }: GroupInviteSha
       qrValue={inviteLink}
       memberAvatarUrls={unifiedMembers.slice(0, GROUP_FACES).map((m) => {
         const identity = identitiesById[m.id]
-        return identity ? displayAvatarUrl(identity.avatar ?? null, m.id, `poster member "${identity.display_name || m.id}"`, identity.type) : null
+        return identity ? faceImageUrl(identityFace({ id: m.id, avatar: identity.avatar ?? null, type: identity.type }), `poster member "${identity.display_name || m.id}"`) : null
       })}
       totalMemberCount={totalMembers}
       qrCaption={t('group.settings.posterQrCaption')}

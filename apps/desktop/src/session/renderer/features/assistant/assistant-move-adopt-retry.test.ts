@@ -83,7 +83,7 @@ vi.mock('../../../../platform', () => ({ platform: { getLocalDeviceSelfSnapshot:
 vi.mock('@/lib/listDevicesOnceIdentified', () => ({ listDevicesOnceIdentified: async () => [] }));
 vi.mock('@/lib/sshLinkChannel', () => ({ ensureSshMachineUsable: async () => false }));
 vi.mock('@/platform/desktopIpc', () => ({ desktopIpc: () => ({ invoke: async () => ({ workdir: '/assistant' }) }) }));
-vi.mock('@/lib/contacts', () => ({ contactsService: { agentLookAvatarUrl: () => 'avatar' } }));
+vi.mock('@/lib/contacts', () => ({ contactsService: { assistantLookAvatarUrl: () => 'avatar' } }));
 vi.mock('@/lib/identityReadAdapter', () => ({ readDisplayIdentities: vi.fn() }));
 vi.mock('@/lib/agentModelSelection', () => ({ readAgentModelSelection: vi.fn(), setAgentModelSelection: vi.fn(), platformProtocolForAgentType: vi.fn() }));
 vi.mock('@/lib/cloudComputer', () => ({ knownCloudDeviceId: () => 'cloud', provisionCloudComputer: server.provisionCloud, readCloudSnapshotNow: vi.fn(), wakeCloudComputer: vi.fn() }));

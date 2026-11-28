@@ -2,18 +2,15 @@ import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { labelOfDisplayStatus } from '@gugu/core/shared/ui/agentConversationStatusModels'
 import type { AgentStatusLabel } from '@gugu/core/shared/agentStatusPresentation'
-import { normalizeAvatarUrl, reportInvalidAvatarUrl } from '@gugu/core/shared/ui/avatarUrl'
+import { reportInvalidAvatarUrl } from '@gugu/core/shared/ui/avatarUrl'
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
 import { groupAvatarColorIndex, groupAvatarDefaultText, groupAvatarSvg, groupAvatarThemeColors } from '@gugu/core/shared/ui/groupAvatar'
-import { dicebearAvatarDataUri } from '../lib/dicebearAvatar'
+import { faceImageUrl, identityFace } from '../lib/identityFace'
 import { useAvatarTheme } from '../lib/avatarTheme'
 import { AgentContactStatusMark } from './AgentContactStatusMark'
 import { agentStatusHasMark } from '@/lib/agentStatusMark'
-import { BoringAgentAvatar } from './BoringAgentAvatar'
 import { AssistantDefaultAvatar } from './assistant/AssistantDefaultAvatar'
 import { useAvatarIdentity, useIsAssistantAvatar } from '../lib/avatarIdentity'
-import { isBuiltinAgentAvatarUrl, parseAgentLook } from './agentAvatar/look'
-import { agentLookPoster } from './agentAvatar/posters'
 
 export interface AvatarProps {
   name: string
@@ -79,13 +76,9 @@ export function Avatar({
   const identity = useAvatarIdentity(isAgent === undefined && variant !== 'group' ? identityKey : '')
   const agent = isAgent ?? (identity ? identity.type === 'agent' : undefined)
   const assistant = useIsAssistantAvatar(identityKey)
-  // @@@1482 规范化：字符串 "undefined"/"null"/空 视作无头像；不渲染破图。
-  const normalized = normalizeAvatarUrl(avatarUrl)
-  // @@@agent-look 形象地址(agentAvatar/look.ts:颜色 + 休息表情)不是一张要去加载的图 —— agent 画会动的小鸟、
-  // 按它说的颜色与表情;真人的头像位上万一出现形象地址,画那个颜色的定格(人的头像不会变成会动的小鸟)。
-  const look = parseAgentLook(normalized)
-  const url = agent !== false && isBuiltinAgentAvatarUrl(normalized) ? null
-    : look ? (agent ? null : agentLookPoster(look)) : normalized
+  // Which face this is: lib/identityFace.ts decides it for every surface; this component only draws it.
+  const face = identityFace({ id: identityKey, avatar: avatarUrl, type: variant === 'group' ? 'group' : agent === undefined ? undefined : agent ? 'agent' : 'human', assistant })
+  const url = face.kind === 'picture' || face.kind === 'human' || face.kind === 'agent' ? faceImageUrl(face, 'avatar', theme) : null
   // @@@1482 url 变化时在 render 期重置加载失败态（React 官方「按 prop 变化调整 state」模式，非 useEffect）：
   // useEffect 在 render 之后才跑，下方 DEV throw 守卫会在同一帧用旧 imgFailed 对新有效 url 误抛。
   // render 期重置确保新 url 进来即 imgFailed=false，throw 守卫不会对有效新头像误触。
@@ -147,65 +140,42 @@ export function Avatar({
     userSelect: 'none',
   }
 
-  const hasInvalidExplicit = avatarUrl != null && normalized == null
   const showImg = !!url && !imgFailed
   // 自定义头像坏掉（加载失败 / 非法串）才是错误；没设置头像不是错误。
-  const avatarError = imgFailed || hasInvalidExplicit
-  const wantsGeneratedFace = !showImg && !avatarError
-  // The default group face stands for an unset group picture, never for one that failed to load.
-  const groupFace = variant === 'group' && wantsGeneratedFace && !!identityKey
+  const avatarError = imgFailed || (face.kind === 'unavailable' && face.reason === 'invalid')
   // One object per face: a new `__html` object makes React write the markup again, and a press that spans that write
   // loses its click.
+  const groupFace = face.kind === 'group'
   const groupFaceMarkup = useMemo(() => (groupFace ? { __html: groupAvatarSvg({ ...groupAvatarThemeColors(groupAvatarColorIndex(identityKey)), text: groupAvatarDefaultText(name), px, label: name }) } : undefined), [groupFace, identityKey, name, px])
-  const agentDefault = variant !== 'group' && agent === true && wantsGeneratedFace && !!identityKey
-  const animatedAssistant = agentDefault && assistant && !still
-  const generatedUrl = variant !== 'group' && wantsGeneratedFace && agent === false && identityKey ? dicebearAvatarDataUri(identityKey, theme) : null
-  const missingIdentityKey = wantsGeneratedFace && !identityKey
+  const animatedAssistant = face.kind === 'assistant' && !still
+  const missingIdentityKey = face.kind === 'unavailable' && face.reason === 'missing-id'
   useEffect(() => {
     if (!missingIdentityKey) return
     console.error(`[Avatar] missing identity key for "${name}" — a generated default face needs a stable id; display name must never seed it`)
   }, [missingIdentityKey, name])
 
   // 脸(上传图 / 默认脸 / 空态)一律不挂原生 title:头像常被放进别人的悬停浮层(账号 Hint、
-  // 运行中 agent 的预览卡),名字由外层自己说,挂了就是两个浮层叠在一起。读屏的名字在 alt / aria-label。
+  // 运行中 agent 的预览卡),名字由外层自己说,挂了就是两个浮层叠在一起。读屏的名字在 alt。
+  const img = showImg ? (
+    <img
+      src={url!}
+      alt={name}
+      draggable={face.kind === 'picture' ? undefined : false}
+      data-face={face.kind}
+      style={imgStyle}
+      onError={() => { console.error(`[Avatar] failed to load canonical avatar for "${name || 'unknown'}"`); setImgFailed(true) }}
+    />
+  ) : null
   return (
     <div style={frameStyle} data-agent={agent ? '' : undefined}>
-      {showImg ? (
-        imageMatteColor ? (
-          <span data-avatar-matte style={matteStyle}>
-            <img
-              src={url!}
-              alt={name}
-              style={imgStyle}
-              onError={() => { console.error(`[Avatar] failed to load canonical avatar for "${name || 'unknown'}"`); setImgFailed(true) }}
-            />
-          </span>
-        ) : (
-          <img
-            src={url!}
-            alt={name}
-            style={imgStyle}
-            onError={() => { console.error(`[Avatar] failed to load canonical avatar for "${name || 'unknown'}"`); setImgFailed(true) }}
-          />
-        )
+      {img ? (
+        imageMatteColor && face.kind === 'picture' ? <span data-avatar-matte style={matteStyle}>{img}</span> : img
       ) : groupFace ? (
         <span data-group-face style={{ width: px, height: px, flexShrink: 0, display: 'block' }}
           dangerouslySetInnerHTML={groupFaceMarkup} />
-      ) : agentDefault ? (
-        assistant ? (
-          <AssistantDefaultAvatar id={identityKey} avatar={normalized} name={name} size={px} still={still} hoverPoke={hoverPoke} canvasPaddingX={canvasPaddingX}
-            state={statusLabel ?? (agentStatus ? labelOfDisplayStatus(agentStatus) : null)} />
-        ) : <BoringAgentAvatar id={identityKey} name={name} size={px} />
-      ) : generatedUrl ? (
-        // @@@2470 生成默认脸（#961 Notionists，CC0/本地生成/离线）：这个身份还没设置头像。
-        // 它诚实表达「系统派生」而非冒充某人挑过的作品，且组合空间足够大 → 不同身份不撞脸。
-        <img
-          src={generatedUrl}
-          alt={name}
-          aria-label={name}
-          draggable={false}
-          style={imgStyle}
-        />
+      ) : face.kind === 'assistant' ? (
+        <AssistantDefaultAvatar id={face.id} avatar={face.avatar} name={name} size={px} still={still} hoverPoke={hoverPoke} canvasPaddingX={canvasPaddingX}
+          state={statusLabel ?? (agentStatus ? labelOfDisplayStatus(agentStatus) : null)} />
       ) : (
         <span
           data-avatar-empty

@@ -9,7 +9,7 @@ import { LocalizationProvider, setLocalePreference } from '@/i18n'
 import type { GroupRosterCandidate } from '@/lib/mention'
 import { installIdentityDirectoryBridge, publishIdentityDirectory } from '@/lib/identityDirectoryBridge'
 import { displayIdentity } from '../../../../../../../tests/support/testHarness'
-import { dicebearAvatarDataUri } from '@/lib/dicebearAvatar'
+import { faceImageUrl, identityFace } from '@/lib/identityFace'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/i18n/registerMessagingCatalog'
@@ -22,7 +22,7 @@ vi.mock('@renderer/lib/shell-port', async (importOriginal) => ({
   }] }),
 }))
 
-const customAvatar = dicebearAvatarDataUri('alice-uploaded-avatar')
+const customAvatar = faceImageUrl(identityFace({ id: 'alice-uploaded-avatar', avatar: null, type: 'human' }), 'test')!
 const members: GroupRosterCandidate[] = [
   { id: 'human-alice', name: 'Alice', type: 'human', avatar: customAvatar },
   { id: 'agent-claude', name: 'Claude', type: 'agent' },
@@ -101,7 +101,8 @@ describe('participant mention presentation', () => {
     await userEvent.keyboard('@Claude')
     const option = page.getByRole('option', { name: /Claude/ })
     await until('task peer is available', () => option.elements().length === 1)
-    expect(option.element().querySelector('[data-agent-avatar-boring="agent-claude"]')).not.toBeNull()
+    // The mention row draws the same face string an <img>-only surface gets.
+    expect(option.element().querySelector('img[data-face="agent"]')?.getAttribute('src')).toBe(faceImageUrl(identityFace({ id: 'agent-claude', avatar: null, type: 'agent' }), 'test'))
     await option.click()
     await until('task peer pill is inserted', () => input.element().querySelector('[data-mention-id="aid:agent-claude"]') !== null)
     const pill = input.element().querySelector('[data-mention-id="aid:agent-claude"]')!

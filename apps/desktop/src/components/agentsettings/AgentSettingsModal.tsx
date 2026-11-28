@@ -14,7 +14,7 @@ import { Avatar } from '../Avatar'
 import { useMobileShell } from '../../hooks/useMobileShell'
 import { AgentProfilePane } from './AgentProfilePane'
 import { useIsAssistantAvatar } from '../../lib/avatarIdentity'
-import { AgentLookPane } from './AgentLookPane'
+import { AssistantLookPane } from './AssistantLookPane'
 import { AgentSharePane } from './AgentSharePane'
 import { AgentTasksPane } from './AgentTasksPane'
 import { AgentAiModelPane } from './AgentAiModelPane'
@@ -253,7 +253,7 @@ export function AgentSettingsModal({ agent: openedAgent, onClose, initialTab = '
           >
             {assistant ? (
               <div className={agentSettingsPaneClass(true)} data-testid="agent-settings-figure-only">
-                <AgentLookPane {...paneProps} />
+                <AssistantLookPane {...paneProps} />
               </div>
             ) : <>
             <div className={cx(agentSettingsPaneClass(activeTab === 'profile'), 'gg-as-pane-profile')}>

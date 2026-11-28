@@ -5,8 +5,8 @@ import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import { RefreshFailed } from '@/components/ui/RefreshFailed'
 import { PaneHeader } from '@/components/ui/Pane'
-import { AgentAvatar } from '@/components/agentAvatar/AgentAvatar'
-import { DEFAULT_ASSISTANT_LOOK } from '@/components/agentAvatar/look'
+import { AssistantFigure } from '@/components/assistantFigure/AssistantFigure'
+import { DEFAULT_ASSISTANT_LOOK } from '@/components/assistantFigure/look'
 import { canSetUpCloudAssistant, useCloudComputer } from '@/lib/cloudComputer'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { myAssistant } from '@/lib/myAssistant'
@@ -50,7 +50,7 @@ export function MobileAssistantGate({ stage, name, ownerName, onExit }: { stage:
       case 'identity':
         return (
           <>
-            <AgentAvatar name={who} id="gugu-default" look={DEFAULT_ASSISTANT_LOOK} size={72} />
+            <AssistantFigure name={who} id="gugu-default" look={DEFAULT_ASSISTANT_LOOK} size={72} />
             <h1 className="ta-intro-title">{t('identity.title')}</h1>
             <p className="ta-intro-body" role={stage.state === 'unreadable' ? 'alert' : 'status'}>{t(`identity.${stage.state}`)}</p>
             {stage.state === 'unreadable' ? (

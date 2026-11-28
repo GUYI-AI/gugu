@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../ui/Button'
-import { OUTFIT_BY_ID, OUTFIT_DEFS, SLOT_ORDER, putOn, recolor, type Slot, type WearItem } from '../agentAvatar/engine/outfitCatalog'
+import { OUTFIT_BY_ID, OUTFIT_DEFS, SLOT_ORDER, putOn, recolor, type Slot, type WearItem } from '../assistantFigure/engine/outfitCatalog'
 
 /** 配色圆点自己的颜色(CSS 变量,圆点由样式表画) */
 function swatchVars(swatch: string): CSSProperties {
@@ -13,7 +13,7 @@ function swatchVars(swatch: string): CSSProperties {
  * 穿着的那件下面出它的配色圆点;「全部摘掉」= 明确不戴,「恢复默认」= 回到不戴装扮(形象地址里去掉 wear)。
  * 墨镜、披风、背包、滑板、雨伞这些不进随机的,只在这里能搭。
  */
-export function AgentLookOutfits({
+export function AssistantLookOutfits({
   worn,
   isDefault,
   editable,

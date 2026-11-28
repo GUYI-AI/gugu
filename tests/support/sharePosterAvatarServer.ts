@@ -9,7 +9,7 @@ declare module 'vitest' {
 
 // A genuine second HTTP origin: no remote service, DNS alias or shared fixed port.
 export default async function setup(project: TestProject) {
-  const image = await readFile(new URL('../../apps/desktop/src/components/agentAvatar/assets/faces/agent-face-00.webp', import.meta.url))
+  const image = await readFile(new URL('../../apps/desktop/src/components/assistantFigure/assets/faces/assistant-poster-00.webp', import.meta.url))
   const server = createServer((request, response) => {
     if (request.url !== '/avatar.webp' && request.url !== '/blocked.webp') {
       response.writeHead(404).end()

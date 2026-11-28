@@ -17,7 +17,7 @@ import type { DisplayIdentity } from '../lib/displayIdentity'
 import { managedGroupChats, type ManagedGroupJoinRequest } from '../lib/groupJoinRequests'
 import { useIdentityLifecycle } from '../hooks/useIdentityLifecycle'
 import { friendRequestEntries } from '../lib/requestHistory'
-import { type AgentLook } from '../components/agentAvatar/look'
+import { type AssistantLook } from '../components/assistantFigure/look'
 import { recordContactsRender } from '../lib/perfCounters'
 import { myAssistant } from '../lib/myAssistant'
 import { renameOwnedAgent } from '../lib/archiveOwnedAgent'
@@ -262,8 +262,8 @@ export function ContactsProvider({ children, active = true }: { children: React.
     await refreshChats()
   }, [applyAgentProfileUpdate, refreshChats, updateAgentProfile])
 
-  const setAgentLook = useCallback(async (agentId: string, look: AgentLook) => {
-    await updateAgentProfile(agentId, { avatar: contactsService.agentLookAvatarUrl(look) })
+  const setAssistantLook = useCallback(async (agentId: string, look: AssistantLook) => {
+    await updateAgentProfile(agentId, { avatar: contactsService.assistantLookAvatarUrl(look) })
   }, [updateAgentProfile])
 
   /** 删掉一个联系人 / 自家 agent:云端确认后,本地先拿掉它(落在发起删除的那个账号,❌ 换号后的下一个),再按权威数据重读。 */
@@ -345,7 +345,7 @@ export function ContactsProvider({ children, active = true }: { children: React.
       setAgentDesiredStatus,
       updateAgentProfile,
       uploadAgentAvatar,
-      setAgentLook,
+      setAssistantLook,
       removeOwnedAgent,
       removeContact,
     }
@@ -355,7 +355,7 @@ export function ContactsProvider({ children, active = true }: { children: React.
     loadingGroups, contactsStatus, groupChatsStatus, sendRequest, acceptRequest,
     rejectRequest, loadContacts, loadGroups, refreshAllRequests, loadGroupJoinRequests, createGroup, renameGroup,
     deleteGroup, updateContactAlias, setAgentPublic, setAgentDesiredStatus,
-    updateAgentProfile, uploadAgentAvatar, setAgentLook, removeOwnedAgent, removeContact,
+    updateAgentProfile, uploadAgentAvatar, setAssistantLook, removeOwnedAgent, removeContact,
   ])
   const [store] = useState(() => createSelectStore<ContactsContextValue>(value))
   store.publish(value)

@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Pencil, X } from '@/lib/icons'
 import { ASSISTANT_NAME_MAX, type AssistantSetupDraft } from '../../lib/assistantSetup'
-import { AgentAvatar } from '../agentAvatar/AgentAvatar'
-import { AgentLookEditor } from '../agentsettings/AgentLookEditor'
+import { AssistantFigure } from '../assistantFigure/AssistantFigure'
+import { AssistantLookEditor } from '../agentsettings/AssistantLookEditor'
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
 import { IconButton } from '../ui/IconButton'
@@ -24,7 +24,7 @@ export function AssistantSetupIdentity({ draft, onChange, onBack, onContinue }: 
     <>
       <h1 className="ta-onb-title">{t('setup.identityTitle')}</h1>
       <Button variant="ghost" className="ta-onb-look" onClick={() => setEditing(true)} aria-label={t('setup.customizeLook')}>
-        <AgentAvatar id="assistant-draft" name={name} look={draft} size={112} holdExpression />
+        <AssistantFigure id="assistant-draft" name={name} look={draft} size={112} holdExpression />
         <span className="ta-onb-look-label"><Pencil size={14} aria-hidden="true" />{t('setup.customizeLook')}</span>
       </Button>
       <label className="ta-onb-field">
@@ -48,7 +48,7 @@ export function AssistantSetupIdentity({ draft, onChange, onBack, onContinue }: 
             <h2>{t('setup.customizeLook')}</h2>
             <IconButton aria-label={tc('dialog.close')} onClick={() => setEditing(false)}><X size={18} aria-hidden="true" /></IconButton>
           </header>
-          {editing ? <AgentLookEditor
+          {editing ? <AssistantLookEditor
             id="assistant-draft"
             name={name}
             current={draft}
