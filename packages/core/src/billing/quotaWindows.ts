@@ -61,23 +61,6 @@ function requireInstant(value: string, what: string): Date {
   return at
 }
 
-/**
- * 这一档的周期额度合多少美元 = 周期积分 ÷ 刻度。**从不存储** —— 存下来就多出一个能和
- * pricing_settings 打架的地方,而那正是 reference_usd 那一列被删掉的原因。
- *
- * 刻度落到 1 之后这个数与积分数相等,但**不能因此省掉它**:刻度是运营参数,改回非 1 时
- * 省掉的那一步会变成一个静默错掉的金额。
- *
- * 刻度不可用时返回 null,不返回 0、不抛错 —— 调用方据此**不渲染那句文案**即可,
- * 进度条不需要这个值。把一句文案的缺失升级成整个额度面板报错是不划算的。
- */
-export function periodUsdFor(windows: Pick<QuotaWindows, 'period_credits' | 'credits_per_usd'>): number | null {
-  const scale = windows.credits_per_usd
-  // v2's compatibility field does not define a new USD conversion for displayed credits.
-  if (typeof scale !== 'number' || typeof windows.period_credits !== 'number' || !Number.isFinite(scale) || scale <= 0) return null
-  return windows.period_credits / scale
-}
-
 /** 窗口长度(小时)由服务端的起止时间算出,不写死。 */
 export function windowHours(startedAt: string, endsAt: string): number {
   const start = requireInstant(startedAt, '窗口起点')

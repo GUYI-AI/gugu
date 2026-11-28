@@ -254,7 +254,6 @@ export default {
     "activityError": "Could not load usage activity: {{error}}",
     "balance": "Credit balance",
     "balanceError": "Could not load the credit balance: {{error}}",
-    "billingCopy": "Each {{periodLabel}} period includes {{periodCredits}} credits (1 credit is about $1 of list-price model usage, so about ${{usd}} this period). Credits can be used at any pace within the period, with no separate time-window cap; the period resets on {{endDate}}.",
     "billingExplanation": "How billing works",
     "close": "Close",
     "heldTitle": "Credits reserved for running tasks and not yet settled",
@@ -1116,7 +1115,6 @@ export default {
     },
     "tiersError": "Could not load plans: {{error}}",
     "title": "Membership & credits",
-    "topupRate": "¥1 = {{credits}} credits",
     "topupTitle": "Top-up pack",
     "wechatPay": "WeChat Pay",
     "periodCredits": "{{credits}} credits per period"
