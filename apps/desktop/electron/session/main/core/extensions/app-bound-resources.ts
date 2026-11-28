@@ -1,9 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
-import { AssistantPanelError, createAssistantPanelClient, type AssistantPanelDomain } from '@gugu/core/cloud/assistantPanel';
-import { readAssistantPanelBody, uploadAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies';
-import { withAssistantPanelReadDeadline } from '@gugu/core/cloud/assistantPanelRead';
+import type { AssistantPanelDomain } from '@gugu/core/cloud/assistantPanel';
 import { splitInstructions } from '@gugu/core/shared/assistantInstructions';
 import { DEFAULT_TEXT_MAX_BYTES } from '@shared/extensions/app-runtime-protocol';
 import {
@@ -18,15 +15,17 @@ export { domainState, reasonOf, refusedOrUnavailable, savedData, unavailable };
 import { account, current, member } from './app-unread-bindings';
 import { assistantServingChat } from './app-assistant-serving';
 import { extensionsService } from './extensions-root';
-import { addResourceWatch, stopResourceWatch } from './app-resource-watches';
+import { type ResourceWatch, forgetResourceWatch, notifyResourceWatch, addResourceWatch, notifyAgentResourcesChanged, stopResourceWatch } from './app-resource-watches';
+import { assistantHomeHere, createAssistantHomeStore, type AssistantHomeStore } from './assistant-home-store';
 
 /**
  * #1927 (API 42): an App's window onto the panel resources of the signed-in person's personal assistant, when its private
  * conversation with them is the conversation the person chose for the App's binding. The App names the binding, a domain
  * and a key; the owner comes from the account's token, the conversation from the person's own selection for this installed
- * App, and the agent from the account's own assistant provision. Reads and changes go through the existing resource store (the
- * `assistant_panel_*` calls and its private-folder bodies) as the person, so its revision checks, tombstones, operation ids
- * and apply receipts hold as they do for the assistant's own pages. Everything is checked again after every wait.
+ * App, and the agent from the account's own assistant provision. Reads and changes are the assistant's own home's, on this
+ * computer (assistant-home-store.ts: its files, with the store's revisions, operation ids and receipts); an assistant
+ * living on another computer is `unavailable` (`elsewhere`) for both — nothing here shows or changes a copy that its home no
+ * longer keeps up to date. Everything is checked again after every wait.
  */
 
 const denied = (message: string) => Object.assign(new Error(message), { code: 'denied' });
@@ -50,7 +49,11 @@ async function personalAssistantOf(token: string, ownerId: string, chatId: strin
 }
 
 /** The authority of one call, and the assistant's home device (what its own pages name in a change, 50). */
-export type Bound = { ownerId: string; token: string; chatId: string; handle: string; agentId: string; deviceId: string; recheck(): Promise<void> };
+export type Bound = {
+  ownerId: string; token: string; chatId: string; handle: string; agentId: string; deviceId: string; recheck(): Promise<void>;
+  /** The assistant's home store on this computer; `elsewhere` (thrown) when its home is another computer. */
+  store(): Promise<AssistantHomeStore>;
+};
 /** The binding actions a call may need: any but `unread` (a domain where the action has them). */
 export type ResourceCallAction = Exclude<ConversationBindingAction, 'unread'>;
 
@@ -88,18 +91,12 @@ export async function boundAgent(
   if (refusal) throw refusal.reason;
   await recheck();
   const { agentId, deviceId } = (agent as PromiseFulfilledResult<{ agentId: string; deviceId: string }>).value;
-  return { ownerId, token, chatId: before.chatId, handle: before.handle, agentId, deviceId, recheck };
-}
-
-/** The store, as the signed-in person; a call made after the account changed is refused before it is sent. */
-export function storeOf(ownerId: string) {
-  return createAssistantPanelClient(async (rpc, args) => {
-    const { token, ownerId: now } = await account().catch(() => ({ token: '', ownerId: null }));
-    if (now !== ownerId) throw new AssistantPanelError('account-changed', 'Assistant panel account changed');
-    const client = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } });
-    const { data, error, status } = await client.rpc(rpc, args).abortSignal(AbortSignal.timeout(10_000));
-    return { data, error, status };
-  }, () => ownerId);
+  let store: Promise<AssistantHomeStore> | undefined;
+  const homeStore = () => store ??= assistantHomeHere(ownerId, agentId, deviceId).then((home) => {
+    if (!home) throw Object.assign(new Error('The personal assistant lives on another computer: its resources are read and changed there'), { code: 'elsewhere' });
+    return createAssistantHomeStore({ ownerId, assistantId: agentId, deviceId, home, changed: () => { void notifyAgentResourcesChanged([agentId]); } });
+  });
+  return { ownerId, token, chatId: before.chatId, handle: before.handle, agentId, deviceId, recheck, store: homeStore };
 }
 
 /** Runs `use` under the binding's authority; `unbound` or `unavailable` (checked again first) said apart from a refusal. */
@@ -134,7 +131,7 @@ export async function appResourceList(extensionId: string, input: unknown): Prom
   const domain = readableDomainOf(args.domain);
   const named = { name: args.name, domain };
   const answer = await withBound(extensionId, args.name, domain, async (bound): Promise<AppResourceList> => {
-    const snapshot = await withAssistantPanelReadDeadline(() => storeOf(bound.ownerId).snapshot(bound.agentId));
+    const snapshot = await (await bound.store()).client.snapshot(bound.agentId);
     const readable = domainState(snapshot, domain);
     if (readable.state !== 'ready') return { ...named, ...readable };
     return { ...named, state: 'ready', revision: snapshot.revision, resources: readable.items.map((item) => appResourceOf(domain, item)) };
@@ -149,12 +146,12 @@ export async function appResourceRead(extensionId: string, input: unknown): Prom
   const key = resourceKeyOf(domain, args.key);
   const named = { name: args.name, domain, key };
   const answer = await withBound(extensionId, args.name, domain, async (bound): Promise<AppResourceRead> => {
-    const store = storeOf(bound.ownerId);
+    const store = await bound.store();
     // One resource is read only from a domain that can be read (as the assistant's pages read one: `bytes` → `find` →
     // `collection`), voice notes excepted as there.
     const [snapshot, item] = await Promise.all([
-      domain === 'voice-notes' ? null : withAssistantPanelReadDeadline(() => store.snapshot(bound.agentId)),
-      withAssistantPanelReadDeadline(() => store.resource(bound.agentId, domain as AssistantPanelDomain, key)),
+      domain === 'voice-notes' ? null : store.client.snapshot(bound.agentId),
+      store.client.resource(bound.agentId, domain as AssistantPanelDomain, key),
     ]);
     await bound.recheck();
     const readable = snapshot ? domainState(snapshot, domain) : null;
@@ -176,10 +173,7 @@ export async function appResourceRead(extensionId: string, input: unknown): Prom
     if (domain === 'personality') return ready(new TextEncoder().encode(typeof item.data.text === 'string' ? item.data.text : ''));
     if (!item.body_item_id) return item.data.kind === 'directory' ? ready(new Uint8Array()) : { ...named, state: 'unprepared' };
     try {
-      return ready(await readAssistantPanelBody(item, {
-        token: bound.token, ownerId: bound.ownerId, chatId: bound.chatId, maxBytes: DEFAULT_TEXT_MAX_BYTES,
-        accountId: async () => (await account().catch(() => null))?.ownerId ?? null,
-      }));
+      return ready(await store.readBody(item, DEFAULT_TEXT_MAX_BYTES));
     } catch (error) {
       const code = codeOf(error);
       if (code === 'too-large') return { ...named, state: 'ready', resource, content: '', truncated: true, totalSize: Number((error as { size?: unknown }).size) || 0 };
@@ -193,12 +187,6 @@ export async function appResourceRead(extensionId: string, input: unknown): Prom
 }
 
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
-
-/** Removes a body this call uploaded that no change took. The store refuses removing one a change refers to. */
-export async function discard(bound: Bound, itemId: string): Promise<void> {
-  const client = createGuguSupabaseClient({ schema: 'chat', headers: { Authorization: `Bearer ${bound.token}` } });
-  await Promise.resolve(client.rpc('workspace_delete_as', { p_item_id: itemId, p_as_user_id: bound.ownerId })).catch(() => undefined);
-}
 
 /**
  * One change through the store under the binding's write grant: committed with the caller's `operationId` and expected
@@ -234,7 +222,7 @@ async function change(
     if (prepared !== 'conflict') uploaded = prepared.uploaded;
     await bound.recheck();
     if (prepared === 'conflict') return { ...named, state: 'conflict' };
-    const receipt = await storeOf(bound.ownerId).commit(bound.agentId, {
+    const receipt = await (await bound.store()).client.commit(bound.agentId, {
       operationId: args.operationId, domain, key, expectedRevision: args.expectedRevision, operation, data: prepared.data,
       ...(prepared.body ? { body: prepared.body } : {}), deviceId: null,
     });
@@ -247,11 +235,11 @@ async function change(
     try {
       outcome = writeOutcome(error);
     } catch (refusal) {
-      if (uploaded) await discard(bound, uploaded);
+      if (uploaded) await (await bound.store()).discard(uploaded);
       throw refusal;
     }
     // Whether an unanswered commit landed is unknown: its body stays, for the same call again to find.
-    if (uploaded && outcome.state !== 'unavailable') await discard(bound, uploaded);
+    if (uploaded && outcome.state !== 'unavailable') await (await bound.store()).discard(uploaded);
     await bound.recheck();
     return { ...named, ...outcome };
   }
@@ -266,7 +254,8 @@ export async function appResourceSave(extensionId: string, input: unknown): Prom
   return change(extensionId, input, 'save', async (bound, { domain, key, expectedRevision, content: text }) => {
     if (domain === 'personality') return { data: { text: splitInstructions(text).user } };
     const bytes = new TextEncoder().encode(text);
-    const existing = await withAssistantPanelReadDeadline(() => storeOf(bound.ownerId).resource(bound.agentId, domain, key));
+    const store = await bound.store();
+    const existing = await store.client.resource(bound.agentId, domain, key);
     await bound.recheck();
     if (existing && !existing.deleted_at && existing.data.kind === 'directory') throw invalid('A folder has no content to save');
     const digest = sha256(bytes);
@@ -278,10 +267,7 @@ export async function appResourceSave(extensionId: string, input: unknown): Prom
     if ((existing?.revision ?? '0') !== expectedRevision) return 'conflict';
     const data = savedData(domain, key, existing, text, new Date().toISOString());
     const label = domain === 'skills' ? 'SKILL.md' : key.split('/').pop()!;
-    const body = await uploadAssistantPanelBody({
-      token: bound.token, ownerId: bound.ownerId, chatId: bound.chatId, label, bytes,
-      accountId: async () => (await account().catch(() => null))?.ownerId ?? null,
-    });
+    const body = await store.upload(label, bytes);
     return { data, body, uploaded: body.itemId };
   });
 }
@@ -295,7 +281,7 @@ export async function appResourceRemove(extensionId: string, input: unknown): Pr
   return change(extensionId, input, 'remove', async (bound, { domain, key }) => {
     if (domain === 'personality') throw invalid('The personality is saved, never removed');
     if (domain === 'files') {
-      const existing = await withAssistantPanelReadDeadline(() => storeOf(bound.ownerId).resource(bound.agentId, domain, key));
+      const existing = await (await bound.store()).client.resource(bound.agentId, domain, key);
       if (existing && !existing.deleted_at && existing.data.kind === 'directory') throw invalid('Remove a folder\'s files one by one');
     }
     return { data: {} };
@@ -316,10 +302,19 @@ export async function appResourceWatch(
   }
   const bound = await boundAgent(extensionId, name, ['resources'], null);
   if (!bound) return { name, state: 'unbound' };
-  const held = addResourceWatch({
+  const watch: ResourceWatch = {
+    lifetime: new AbortController(),
     pageId, watchId, extensionId, name, ownerId: bound.ownerId, handle: bound.handle, agentId: bound.agentId,
     hear: (event) => hear(watchId, event),
-  });
-  if (!held) throw denied('Conversation binding changed');
+  };
+  if (!addResourceWatch(watch)) throw denied('Conversation binding changed');
+  try {
+    const store = await bound.store();
+    await store.watch(watch.lifetime.signal, () => { void notifyResourceWatch(watch); });
+    await bound.recheck();
+  } catch (error) {
+    // An away binding has no disk subscription here. Keep its existing grant/account lifetime.
+    if (codeOf(error) !== 'elsewhere') { forgetResourceWatch(watch); throw error; }
+  }
   return { name, state: 'watching' };
 }

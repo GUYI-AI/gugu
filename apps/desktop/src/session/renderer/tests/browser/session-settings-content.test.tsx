@@ -20,7 +20,6 @@ vi.mock('@/lib/billing', () => ({
   useSpendingPower: () => ({ membership: null, power: null, windows: null, balanceError: null, windowsError: null, activityRevision: 0 }),
   formatCredits: (value: number) => String(value),
   quotaWindowViews: vi.fn(),
-  periodUsdFor: vi.fn(),
   quotaWindowLabel: vi.fn(),
   refreshSpendingPower: vi.fn(),
 }));

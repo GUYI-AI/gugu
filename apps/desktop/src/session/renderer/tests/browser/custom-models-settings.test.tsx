@@ -311,7 +311,7 @@ it('edits an address and model name with the saved key without returning the key
   const closed = vi.fn(); render(<CustomModelDialog machine={null} connection={existing} modelId="model:a" onClose={closed} />);
   await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://edited.test/v1/responses');
   await userEvent.fill(page.getByTestId('custom-model-name'), 'provider/model:b');
-  await until('the address is probed with the saved key', () => state.probes.some(probe => JSON.stringify(probe) === JSON.stringify({ connectionId: existing.id, baseUrl: 'https://edited.test/v1' })));
+  await until('the address is probed with the saved key', () => state.probes.some(probe => JSON.stringify(probe) === JSON.stringify({ connectionId: existing.id, baseUrl: 'https://edited.test/v1', modelId: 'provider/model:b' })));
   await userEvent.click(page.getByTestId('custom-model-test'));
   await expect.element(page.getByTestId('custom-model-test-result')).toHaveTextContent('Connected');
   expect(state.probes).toContainEqual({ connectionId: existing.id, baseUrl: 'https://edited.test/v1', modelId: 'provider/model:b' });
@@ -431,7 +431,7 @@ it('a custom address shows no protocol and saves the addresses it recognized for
   await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test');
   await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-test');
   await userEvent.fill(page.getByTestId('custom-model-name'), 'model-b');
-  await until('the address is probed', () => state.probes.some(probe => JSON.stringify(probe) === JSON.stringify({ apiKey: 'sk-test', baseUrl: 'https://relay.test' })));
+  await until('the address is probed', () => state.probes.some(probe => JSON.stringify(probe) === JSON.stringify({ apiKey: 'sk-test', baseUrl: 'https://relay.test', modelId: 'model-b' })));
   expect(document.querySelector('[data-testid^=custom-model-protocol]')).toBeNull();
   await userEvent.click(page.getByTestId('custom-model-save'));
   await until('the form saved', () => state.saved !== null);
@@ -834,4 +834,57 @@ it('a save the settings process refuses is said beside Save, translated, with th
   const box = failure.element().getBoundingClientRect();
   expect(box.top >= 0 && box.bottom <= window.innerHeight).toBe(true);
   expect(state.saved).toBeNull();
+});
+
+// gugu-dev#1617: on real relays the line stayed empty, on the edit page too, and Test connection said Connected without it.
+it('the edit page says what the saved connection takes while the address is checked again', async () => {
+  const saved = { ...record(), keySaved: true, endpoints: [{ protocol: 'openai-chat-completions' as const, baseUrl: 'https://provider.test/v1' }], models: [{ id: 'm' }] };
+  state.probe = { endpoints: [], models: [], failures: (['models', 'openai-chat-completions', 'anthropic-messages', 'openai-responses', 'gemini-generate-content'] as const).map(step => ({ step, reason: 'timeout' as const })) };
+  render(<CustomModelDialog machine={null} connection={saved} modelId="m" onClose={() => {}} />);
+  await expect.element(page.getByTestId('custom-model-recognized')).toHaveTextContent('Recognized: takes OpenAI Chat');
+  await until('the address is checked again', () => state.probes.length > 0);
+  await expect.element(page.getByTestId('custom-model-recognized')).toHaveTextContent('Recognized: takes OpenAI Chat');
+});
+
+it('checks the address with the model the person named', async () => {
+  state.probe = { endpoints: [], models: ['a-first', 'mine'], failures: [] };
+  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+  await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test/v1');
+  await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-test');
+  await userEvent.fill(page.getByTestId('custom-model-name'), 'mine');
+  await until('the check names the model', () => state.probes.some(probe => (probe as { modelId?: string }).modelId === 'mine'));
+});
+
+it('Test connection fills the line with what it found, and says when the address did not answer in time', async () => {
+  state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason: 'no-list' }] };
+  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+  await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test/v1');
+  await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-test');
+  await userEvent.fill(page.getByTestId('custom-model-name'), 'mine');
+  await until('the background check ran with the model', () => state.probes.some(probe => (probe as { modelId?: string }).modelId === 'mine'));
+  expect(page.getByTestId('custom-model-recognized').query()).toBeNull();
+  state.probe = { endpoints: [], models: [], failures: (['models', 'openai-chat-completions', 'anthropic-messages', 'openai-responses', 'gemini-generate-content'] as const).map(step => ({ step, reason: 'timeout' as const })) };
+  await userEvent.click(page.getByTestId('custom-model-test'));
+  await expect.element(page.getByTestId('custom-model-test-result')).toHaveTextContent('The address did not answer within 25 seconds.');
+  state.probe = { endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://relay.test/v1' }], models: [], failures: [] };
+  await userEvent.click(page.getByTestId('custom-model-test'));
+  await expect.element(page.getByTestId('custom-model-test-result')).toHaveTextContent('Connected');
+  await expect.element(page.getByTestId('custom-model-recognized')).toHaveTextContent('Recognized: takes OpenAI Responses');
+});
+
+it('a check that ran out of time keeps the saved protocols it could not decide, and drops the ones it refused', async () => {
+  const saved = { ...record(), keySaved: true, models: [{ id: 'm' }], endpoints: [
+    { protocol: 'openai-responses' as const, baseUrl: 'https://provider.test/v1' }, { protocol: 'openai-chat-completions' as const, baseUrl: 'https://provider.test/v1' },
+    { protocol: 'gemini-generate-content' as const, baseUrl: 'https://provider.test' },
+  ] };
+  // Measured on a real relay: the re-check confirmed one protocol, timed out on one and was refused on another.
+  state.probe = { endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://provider.test' }], models: ['m'], failures: [
+    { step: 'openai-responses', reason: 'timeout' }, { step: 'openai-chat-completions', reason: 'refused' }, { step: 'gemini-generate-content', reason: 'timeout' },
+  ] };
+  render(<CustomModelDialog machine={null} connection={saved} modelId="m" onClose={() => {}} />);
+  await until('the address is checked again', () => state.probes.length > 0);
+  await expect.element(page.getByTestId('custom-model-recognized')).toHaveTextContent('Recognized: takes OpenAI Responses, Anthropic API, Gemini API');
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await until('the form saved', () => state.saved !== null);
+  expect(state.saved?.endpoints.map(({ protocol }) => protocol).sort()).toEqual(['anthropic-messages', 'gemini-generate-content', 'openai-responses']);
 });

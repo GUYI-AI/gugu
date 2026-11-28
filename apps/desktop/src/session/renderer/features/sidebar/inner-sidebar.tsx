@@ -25,7 +25,7 @@ import { prepareProjectTask } from '@renderer/features/projects/project-task-ent
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { sampleProjectInView } from '@renderer/features/sample-project/sample-project-view';
 import { useSampleProject } from '@renderer/features/sample-project/use-sample-project';
-import { useInnerSidebarCrowded, useInnerSidebarFrame } from '@renderer/lib/layout/layout-provider';
+import { useInnerColumnMoving, useInnerSidebarCrowded, useInnerSidebarFrame } from '@renderer/lib/layout/layout-provider';
 import { ShellRestoreLane } from '@renderer/lib/components/titlebar/shell-restore-lane';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { Button } from '@renderer/lib/ui/button';
@@ -48,11 +48,13 @@ import { chatScope, chatViewOf, roomOfEntry, sidebarFamilies } from './inner-sid
 import { setSidebarFold, sidebarFolds } from './sidebar-folds';
 import {
   InnerHeadRowLayout,
+  InnerModuleStack,
   InnerSidebarFoldButton,
   innerSectionEmptyClass,
 } from './inner-sidebar-parts';
 import { SidebarGroupToggle } from './sidebar-group-toggle';
 import { SidebarUnreadCount } from './sidebar-unread-count';
+import { DEFAULT_TOPIC_ROWS, TopicViewport } from './topic-viewport';
 import { SidebarMoreRow } from './sidebar-more-row';
 import {
   SidebarContainer,
@@ -67,7 +69,7 @@ import { moveSessionUnder } from '@renderer/features/sessions/set-session-parent
 import { SampleInnerSidebar } from './sample-inner-sidebar';
 import { SidebarSessionItem } from './sidebar-session-item';
 
-// #2548 内层侧栏:桌面上打开一个用户群或一个项目时,左边列表与对话之间多出来的一列(手机永不出现)。分区顺序:群里「话题」在上、「我的智能体」在下;项目里「智能体」在上、「话题」在下。
+// #2548 内层侧栏:桌面上打开一个用户群或一个项目时,左边列表与对话之间多出来的一列(手机永不出现)。分区顺序:群里「话题」在上、「我的智能体」在下;项目与群同序。
 // 私聊(连派过子会话的智能体)没有这一列(推翻 #2574):子会话从它的详情页进。
 // 手机永不出现是结构上的:这一列住在会话页的工作区里,手机壳不画工作区(check-ui-visual-spec 守着「任务渲染层只在桌面」)。
 // 这一列只重排现有的组件:头一行是侧栏顶上那几行动作行(SidebarMenuButton)画这个群 / 项目自己,分区头是侧栏分区头,
@@ -152,7 +154,10 @@ export const InnerSidebar = observer(function InnerSidebar() {
   useLayoutEffect(() => setInnerSidebarCrowded(crowded), [crowded]);
   const folded = innerSidebarFolded.get();
   const shownFor = folded ? null : attachedTo;
-  const foldedAway = folded && attachedTo !== null;
+  // The expand button stays through the whole move, folding or unfolding: it fades in over a fold's second half and out over an
+  // unfold's first half (desktop-shell.css @@@inner-fold-motion), so it is there until the column's edge has landed.
+  const moving = useInnerColumnMoving();
+  const foldedAway = (folded || moving) && attachedTo !== null;
   useEffect(() => {
     runInAction(() => innerSidebarShownFor.set(shownFor));
     return () => runInAction(() => innerSidebarShownFor.set(null));
@@ -215,17 +220,15 @@ const InnerSidebarColumn = observer(function InnerSidebarColumn({
 }) {
   const levelTwo = useInnerSidebarTopicsAll() === anchor.chatId;
   const topicsView = useInnerSidebarTopicsView(anchor.chatId);
-  const topics = <InnerTopicsSection chatId={anchor.chatId} levelTwo={levelTwo} view={topicsView} />;
-  const agentsSection = <InnerAgentsSection anchor={anchor} agents={agents} />;
   return (
     <InnerSidebarFrame kind={anchor.kind} chatId={anchor.chatId}>
       <InnerHeadRow anchor={anchor} summary={summary} active={headActive} />
-      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto" data-region="inner-sidebar-scroll">
-        {/* 群、项目同一个次序(第 16 版稿):「话题」在上、「智能体」在下。「全部 ›」在这一列里原地摊开全部话题(带搜索),
-            收走下面的「智能体」,「全部 › / ‹ 返回」因此永远在同一个位置;主区照旧是当前会话。 */}
-        {topics}
-        {levelTwo ? null : agentsSection}
-      </div>
+      {/* 群、项目同一个次序(第 16 版稿):「话题」在上、「智能体」在下。「全部 ›」在这一列里原地摊开全部话题(带搜索),
+          收走下面的「智能体」,「全部 › / ‹ 返回」因此永远在同一个位置;主区照旧是当前会话。 */}
+      <InnerModuleStack open={levelTwo ? 'topics' : null} modules={[
+        { id: 'topics', node: <InnerTopicsSection chatId={anchor.chatId} levelTwo={levelTwo} view={topicsView} /> },
+        { id: 'agents', node: <InnerAgentsSection anchor={anchor} agents={agents} /> },
+      ]} />
     </InnerSidebarFrame>
   );
 });
@@ -246,13 +249,14 @@ const InnerSidebarFrame = observer(function InnerSidebarFrame({
   useInnerSidebarFrame(innerSidebarFolded.get());
   return (
     // isolate:分区头、行里那几层 z 序关在这一列里,❌ 压过左边列表那根拖动分隔条。
-    // 底色是窗口底(同 left-sidebar,界面减法 #10):这一列归列表那一层,只有正文是叠在上面的卡片;左边一根细线和零级栏分开(#52)。
+    // 这一列是这个群 / 项目那张卡片的左半边(owner 11-26 方向 A,GUYI-AI/gugu-dev#1515,desktop-shell.css @@@inner-on-card):卡片的底、左缘圆角与细线,
+    // 和消息之间不画线;和零级栏之间的分界就是卡片边。收起时(布局摘掉正文上的 data-inner-column)卡片收回自己的左角。
     // 屏上一块的 ⋮⋮ 拖回这一列 = 那块从这屏拿走(取消并排,block-grip)。
     <div
       data-region="inner-sidebar"
       data-inner-sidebar-chat={chatId}
       data-inner-sidebar-kind={kind}
-      className="relative isolate flex h-full w-full flex-col border-l border-border text-foreground-tertiary-muted"
+      className="relative isolate flex h-full w-full flex-col text-foreground-tertiary-muted"
       {...blockReturnDropTarget()}
     >
       <SidebarContainer className="min-h-0 w-full flex-1">
@@ -310,7 +314,7 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
     (element: HTMLDivElement | null) => readShellSlots()?.setSlot(innerSidebarTopicsSlotKey(chatId), element),
     [chatId]
   );
-  const canDrill = levelTwo || (view?.hidden ?? 0) > 0;
+  const canDrill = levelTwo || (view?.total ?? 0) > DEFAULT_TOPIC_ROWS;
   return (
     <SidebarGroup className="mb-2 flex shrink-0 flex-col" data-inner-sidebar-section="topics">
       <div className={sidebarGroupHeaderClass}>
@@ -351,9 +355,9 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
       </div>
       {/* 话题行画进这一格(壳那棵树);格子里的东西归壳管,这一侧 ❌ 往里放子元素。左右留白归 list body(SidebarMenu)。 */}
       {collapsed ? null : (
-        <SidebarMenu data-inner-rows="">
+        <TopicViewport all={levelTwo} total={view?.total ?? 0} label={translate('sidebar.resizeTopics')}>
           <div ref={slot} data-region="inner-sidebar-topics" className="min-h-0" />
-        </SidebarMenu>
+        </TopicViewport>
       )}
       {!collapsed && view?.total === 0 ? (
         <div className={innerSectionEmptyClass}>{translate('sidebar.noTopics')}</div>

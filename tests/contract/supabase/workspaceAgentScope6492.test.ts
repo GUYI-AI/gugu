@@ -307,6 +307,21 @@ describe('#6492 an App acting for an agent, against the migrated database', () =
     expect(await files.versions(surface, { ref: { id: doc } })).toEqual([])
   })
 
+  it('a folder past 1,000 items reads whole when the database leaves total out (gugu-supabase workspace_list_recent_page): every row, once', async () => {
+    const w = await world()
+    await join(w)
+    const folder = (await db.query<{ id: string }>(
+      `INSERT INTO chat.workspace_items (chat_id, kind, filename, content_type, created_by) VALUES ($1,'folder','Many','inode/directory',$2) RETURNING id`,
+      [w.group, w.owner])).rows[0]!.id
+    await db.query(`INSERT INTO chat.workspace_items (chat_id, parent_id, kind, filename, inline_text, created_by)
+      SELECT $1, $2, 'document', 'n' || g || '.md', '', $3 FROM generate_series(1, 1201) g`, [w.group, folder, w.owner])
+    await db.query('RESET role')
+    const { files } = agentFiles(w)
+    const listed = await files.groupFiles(w.group, { asAgent: w.agent, folder })
+    expect(listed).toHaveLength(1201)
+    expect(new Set(listed.map((entry) => entry.id)).size).toBe(1201)
+  })
+
   it('*_as 按 uuid 查行:不是 uuid 的串与不存在同一句话;get_as 仍带正文给已发出的 MCP,其余只回元数据', async () => {
     const w = await world()
     await join(w)

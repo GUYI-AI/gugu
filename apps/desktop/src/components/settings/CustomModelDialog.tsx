@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CONTEXT_TIERS, contextTierChoice } from '@gugu/session-core/models/context-threshold';
 import {
-  CONVERSION_PREFERENCE, CUSTOM_MODEL_EFFORT_LEVELS, CUSTOM_MODEL_KEY_CHANNEL, FAST_PROTOCOLS, customModelAcceptsImages, customModelCatalogLevels, customModelRouteSchema,
+  CONVERSION_PREFERENCE, CUSTOM_MODEL_EFFORT_LEVELS, CUSTOM_MODEL_PROBE_DEADLINE_MS, CUSTOM_MODEL_KEY_CHANNEL, FAST_PROTOCOLS, customModelAcceptsImages, customModelCatalogLevels, customModelRouteSchema,
   customModelThinks, modelProtocolSchema, normalizeModelBaseUrl, proposedDefaultEffort,
   type CustomModelConnection, type CustomModelEffortLevel, type CustomModelEntry, type CustomModelMeta, type CustomModelRoute, type ModelProtocol,
 } from '@gugu/session-core/models/custom-model';
@@ -181,6 +181,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     contextWindow: formatTokenLimit(editedModel?.contextWindow), maxOutput: formatTokenLimit(editedModel?.maxOutput), maxContext: formatTokenLimit(savedMaxContext),
   });
   const [test, setTest] = useState<ConnectionTest>({ kind: 'idle' });
+  const [tested, setTested] = useState<{ source: string; reading: ModelList } | null>(null);
   const [busy, setBusy] = useState<'save' | null>(null);
   const [accountCreating, setAccountCreating] = useState(false);
   const [failure, setFailure] = useState('');
@@ -193,14 +194,26 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
   // speaks while it reads the models, and saving keeps what it found.
   const address = !preset && normalized?.[0] ? normalized[0].baseUrl : null;
   const keySource = typedKey ? { apiKey: typedKey } : connection?.keySaved ? { connectionId: connection.id } : null;
-  const source: ConnectionModelSource | null = !keySource || !normalized ? null : address ? { ...keySource, baseUrl: address } : { ...keySource, endpoints: normalized };
+  // The check asks about the model named here, once the person has named one (gugu-dev#1617).
+  const namedModel = modelName.trim();
+  const source: ConnectionModelSource | null = !keySource || !normalized ? null
+    : address ? { ...keySource, baseUrl: address, ...(namedModel ? { modelId: namedModel } : {}) } : { ...keySource, endpoints: normalized };
   const list = useConnectionModelList(machine, source);
   // What the background read found wrong with the key or address, until the person's own test replaces it. A preset has no
   // address field, so an address reason is said as what is known rather than "check this address" (B7-F03).
   const keyProblem = list.kind !== 'unlisted' || list.reason === 'no-list' ? ''
     : connection?.keySaved && !typedKey && list.reason === 'unauthorized' ? translate('customModels.heldKeyRefused')
       : translate(connectionProbeMessageKey(list.reason, Boolean(preset)));
-  const probed = address ? (list.kind === 'listed' || list.kind === 'unlisted' ? list.endpoints ?? [] : []) : normalized ?? [];
+  // What the address is known to take (gugu-dev#1617): the latest check of it, the person's own test or else the background
+  // one. A protocol the saved connection recorded stays while no check has decided it (none finished yet, or it ran out of
+  // time or could not reach the address), so a slow relay never makes the line, or a save, lose what the address takes.
+  const reading = tested?.source === JSON.stringify(source) ? tested.reading : list;
+  const fresh = reading.kind === 'listed' || reading.kind === 'unlisted' ? reading : null;
+  const confirmed = fresh?.endpoints ?? [];
+  const savedEndpoints = connection && address && normalizeModelBaseUrl(connection.endpoints[0]?.baseUrl ?? '') === address ? connection.endpoints : [];
+  const kept = savedEndpoints.filter(({ protocol }) => !confirmed.some(entry => entry.protocol === protocol) && (!fresh || fresh.undecided?.includes(protocol)));
+  const checked = fresh ? [...confirmed, ...kept] : [];
+  const probed = address ? [...confirmed, ...kept] : normalized ?? [];
   const routeEndpoints = probed.length ? probed : normalized ?? [];
   // The address column appears for a route that has its own upstream address or needs one: its outgoing protocol is not
   // one the main address answers.
@@ -274,6 +287,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     setTest({ kind: 'idle' });
     setEndpoints((current) => current.map((endpoint, i) => i === 0 ? { ...endpoint, baseUrl } : endpoint));
   };
+  const probeTimeout = translate('customModels.probeTimeout', { seconds: CUSTOM_MODEL_PROBE_DEADLINE_MS / 1000 });
   const testConnection = async () => {
     if (!normalized) { setTest({ kind: 'failed', message: addressProblem }); return; }
     if (!keySource) return;
@@ -282,13 +296,20 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
       const client = await getAgentConfigRuntimeClient(machine);
       const named = model ? { modelId: model } : {};
       if (address) {
-        const probe = await client.detectCustomModelProtocols({ ...keySource, baseUrl: address, ...named });
+        // The host ends its own check at the deadline; a host that does not answer at all is not waited for past it either.
+        const probe = await within(client.detectCustomModelProtocols({ ...keySource, baseUrl: address, ...named }), CUSTOM_MODEL_PROBE_DEADLINE_MS + 5_000);
+        if (probe === LATE) { setTest({ kind: 'failed', message: probeTimeout }); return; }
         if (!probe.success) throw new Error(errorText(probe.error));
+        // What this test found is what the line under the address says, the same as the background check (gugu-dev#1617).
         const reading = probeModelList(probe.data);
+        setTested({ source: JSON.stringify(source), reading });
         const reason = reading.kind === 'unlisted' ? reading.reason : 'unreachable';
+        const timedOut = !probe.data.endpoints.length && probe.data.failures.some(failure => failure.step !== 'models' && failure.reason === 'timeout');
         setTest(model && !probe.data.endpoints.length && probe.data.unserved?.length ? { kind: 'failed', message: translate('customModels.modelNotServed', { model }) }
-          : probe.data.models.length || probe.data.endpoints.length ? { kind: 'ok' }
-            : { kind: 'failed', message: translate(connectionProbeMessageKey(reason, Boolean(preset))) });
+          : probe.data.endpoints.length ? { kind: 'ok' }
+            : timedOut ? { kind: 'failed', message: probeTimeout }
+              : probe.data.models.length ? { kind: 'ok' }
+                : { kind: 'failed', message: translate(connectionProbeMessageKey(reason, Boolean(preset))) });
         return;
       }
       const result = await client.testCustomModel({ ...keySource, endpoints: normalized, ...named });
@@ -319,8 +340,8 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
       /** Why the connection is saved unverified: kept with it for diagnosis, never shown (owner 2026-11-27: a chat that fails says so). */
       let unverifiedReason: NonNullable<CustomModelMeta['unverifiedReason']> | undefined;
       if (address && keySource) {
-        // What the background check found; an address with no model list is checked again with the model named here.
-        saved = list.kind === 'listed' || list.kind === 'unlisted' ? list.endpoints ?? [] : [];
+        // What this test or the background check found; an address neither answered is checked again with the model named here.
+        saved = checked;
         if (!saved.length) {
           // Whatever this check finds, the connection is saved and the dialog closes as on any save, with nothing marked or prompted
           // (owner 2026-11-27: "an error means something is wrong, but it must not stop the person saving"; "can't it just not mark

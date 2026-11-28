@@ -34,7 +34,7 @@ import { inlineImageOrder, inlineImageTurnText } from './inline-image-turn';
 import { continueSessionTurn } from './continue-session-turn';
 import { reloadWorkingModel } from './reload-working-model';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
-import { followConversationLink, noteDrawnPictureLink } from '@/lib/followConversationLink';
+import { followConversationLink } from '@/lib/followConversationLink';
 import { useOpenWebLink } from '@/hooks/useOpenWebLink';
 import { openMessageSender } from '@/lib/openMessageSender';
 import { classifyFileLink } from '@gugu/core/shared/ui/guguLink';
@@ -100,7 +100,7 @@ import { machineRegistry } from '@renderer/lib/machine-routing';
 import { readConversationFile } from '@/components/assistant/assistantTimelineClient';
 import { isEmbedVisible } from '@renderer/lib/portal-container';
 import { platformModelIdFromRuntimeOption, platformOptionId } from '@/session/shared/platform-model-id';
-import { openComposerImage, openDiagramViewer, openImageViewer } from '@/lib/imageViewer';
+import { openComposerImage, openDiagramViewer } from '@/lib/imageViewer';
 import { resolveSignInTarget } from '@renderer/features/settings/agents-page/agent-account';
 import { pathAttachmentTarget } from '@gugu/session-chat-ui/markdown-attachment-mentions';
 import { resolveAttachmentDataUrl } from './acp-attachment-image';
@@ -1100,7 +1100,7 @@ const ComposerForStore = observer(function ComposerForStore({
   useEffect(() => {
     if (liveUnrecordedEffort) rememberLiveEffort(store.sessionId, liveUnrecordedEffort);
   }, [liveUnrecordedEffort, store.sessionId]);
-  const querySlashItems = useComposerSlashItems({ store, promptLibrary, promptOverrides, translate, providerId });
+  const querySlashItems = useComposerSlashItems({ store, promptLibrary, promptOverrides, translate, providerId, harnessCatalog: harnessCatalog.state });
 
   const selectedModelOption = composerSelectedOptionId({ platformModel: runningPlatformModel, model: store.model, customModel: runningCustomModel });
   // 换了模型、新模型还没报读数:记录里那份已用量,分母换成此刻模型的窗口(recordedContextUsage)。
@@ -1751,10 +1751,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     })),
   });
 
-  const handleViewerOpen = useCallback((src?: string, alt?: string) => {
-    setViewer({ src, alt });
-  }, []);
-
   /** Text attachments open in the panel preview. */
   const handleAttachmentView = useCallback((att: ComposerAttachment) => {
     setViewer({
@@ -1814,7 +1810,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       classifyLink: classifyFileLink,
       onOpenLink: followConversationLink,
       onOpenWebLink: openWebLink,
-      onDrawnPictureLink: noteDrawnPictureLink,
       // transcript 自己那颗停止按钮（用户消息卡右下角）一直**没有**接过宿主 ——
       // `commands().onStop?.()` 在 `?.` 上整条短路，按下去一个字节都不发（#3498 查出来的，
       // 与 #3500 同形）。composer 上那颗是另一条路，它一直是通的，于是这颗死按钮
@@ -1868,34 +1863,20 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         const modelName = guguReasonCopy(reason).action === 'join-membership' ? membershipLock?.modelName : null;
         return { text: guguReasonText(reason, translate, modelName), ...(action ? { action } : {}) };
       },
-      // 图片与文件是同一个回调,宿主按 kind 分岔(#5269)。文件走的是与从前那枚正文 pill
-      // **一模一样**的打开路径 —— 它已经会先问一句「这条路径有没有副本」(见
-      // `openExternalFilePath`),❌ 别在这儿另写一套解析。
+      // 文件走的是与从前那枚正文 pill **一模一样**的打开路径 —— 它已经会先问一句「这条路径有没有副本」(见
+      // `openExternalFilePath`),❌ 别在这儿另写一套解析。图片由会话视图统一打开(`openTranscriptImage`)。
       onViewAttachment: (arg: {
         attachment: { id: string; name: string; kind?: 'image' | 'file' | 'annotation'; dataUrl?: string };
         itemId: string;
         source: 'user-message';
         thumb?: HTMLElement;
       }) => {
-        if (arg.attachment.kind === 'file') {
-          const path = pathAttachmentTarget(arg.attachment.id);
-          if (!path || !store) return;
-          // ⚠️ 走 `onOpenExternal`,❌ 不是 `onOpenFile`:后者先要一个**工作区**
-          // (`workspaceRegistry.get` 空就静默 return),而「未选择项目」建出来的任务根本没有
-          // ——`path:` 附件不是工作区文件,它自己就带着一条绝对路径。
-          makeFileLinkHandlers(store.projectId, store.sessionId, { beside: true }).onOpenExternal(path);
-          return;
-        }
-        // 字节读不回来时由附件对话框如实说「没有可预览的内容」
-        const viewImage = (src: string | null | undefined) =>
-          src
-            ? openImageViewer([{ url: src, alt: arg.attachment.name, file: { name: arg.attachment.name }, thumb: arg.thumb }])
-            : handleViewerOpen(undefined, arg.attachment.name);
-        if (arg.attachment.dataUrl || !store) {
-          viewImage(arg.attachment.dataUrl);
-          return;
-        }
-        void resolveAttachmentDataUrl(store, arg.attachment.id).then(viewImage);
+        const path = pathAttachmentTarget(arg.attachment.id);
+        if (arg.attachment.kind !== 'file' || !path || !store) return;
+        // ⚠️ 走 `onOpenExternal`,❌ 不是 `onOpenFile`:后者先要一个**工作区**
+        // (`workspaceRegistry.get` 空就静默 return),而「未选择项目」建出来的任务根本没有
+        // ——`path:` 附件不是工作区文件,它自己就带着一条绝对路径。
+        makeFileLinkHandlers(store.projectId, store.sessionId, { beside: true }).onOpenExternal(path);
       },
       resolveAttachment: (attachment) =>
         store ? resolveAttachmentDataUrl(store, attachment.id) : Promise.resolve(null),
@@ -1965,7 +1946,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         if (store) dismissSubagent(store.sessionId, entryId);
       },
     }),
-    [store, translate, quotes.onMessageTextMount, quotes.restorePrompt, sourceMessage.reveal, sourceMessage.flashMessageId, conversationAgentName, historyActionsEnabled, messageEdit, messageEditPending, handleViewerOpen, translate, membershipLock?.modelName, outputMenu.commands, openWebLink]
+    [store, translate, quotes.onMessageTextMount, quotes.restorePrompt, sourceMessage.reveal, sourceMessage.flashMessageId, conversationAgentName, historyActionsEnabled, messageEdit, messageEditPending, translate, membershipLock?.modelName, outputMenu.commands, openWebLink]
   );
 
   // A freshly-created task can publish its tab before the resource manager has finished attaching

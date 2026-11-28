@@ -94,6 +94,8 @@ export const pillSigil = style({
 });
 
 export const pillName = style({
+  // Anchor the chip to its name even when a glyph precedes it.
+  alignSelf: 'baseline',
   maxWidth: '200px',
   overflow: 'hidden',
   textOverflow: 'ellipsis',

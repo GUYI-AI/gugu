@@ -159,7 +159,12 @@ beforeEach(async () => {
   // from the entries as they start — so what a red case left in it (an upload, a folder it made) is not there.
   (document.activeElement as HTMLElement | null)?.blur?.()
   await menu.dismiss()
+  // The chat is put back as it starts, and says so as a chat says what changed (files.onChanged): every entry as it is
+  // now, and the ones a case added gone — a folder read before is kept by its changes, never read again.
+  const before = ENTRIES.map((e) => e.id)
   reset()
+  const heard = (gugu.files.onChanged.mock.calls.at(-1) as unknown as [unknown, (change: unknown) => void] | undefined)?.[1]
+  heard?.({ kind: 'entries', entries: ENTRIES.map((e) => ({ ...e })), gone: before.filter((id) => !ENTRIES.some((e) => e.id === id)) })
   gugu.files.upload.mockReset().mockImplementation(async () => [])
   ;($('filter') as HTMLInputElement).value = ''
   $('filter').dispatchEvent(new Event('input'))
@@ -167,7 +172,7 @@ beforeEach(async () => {
   await refreshed()
   for (const banner of document.querySelectorAll<HTMLElement>('.banner')) banner.hidden = true
   $('conflicts').hidden = true
-  // Each folder read once, as a person who opened them: what a case left in one is not known any more.
+  // Each folder read once, as a person who opened them (the first case reads them; later ones find them kept).
   await enter('contracts')
   await enter('y2026')
   goTop()
@@ -196,8 +201,8 @@ describe('the folder on screen', () => {
     await refreshed()
     ;($('filter') as HTMLInputElement).value = 'shared'
     $('filter').dispatchEvent(new Event('input'))
-    await settle() // the whole tree, read for the search
     const ids = () => [...$('file-list').querySelectorAll<HTMLElement>('.file')].map((e) => e.dataset.id)
+    await until('the database answered the search by name', () => gugu.files.list.mock.calls.some(([place]) => (place as { name?: string } | undefined)?.name === 'shared') && ids().length === 2)
     expect(ids()).toEqual(['a-folder', 'z-folder'])
     ENTRIES.reverse()
     await refreshed()
@@ -300,7 +305,11 @@ describe('what the chat says while the folder is open', () => {
     expect(names(), 'deleted').toEqual(['附件', '合同'])
     await enter('contracts')
     await settle()
-    expect(gugu.files.list.mock.calls.length - reads, 'only 合同, read as it is entered').toBe(1)
+    expect(names(), '合同 as its changes left it').toEqual(['2026', 'notes.md'])
+    expect(gugu.files.list.mock.calls.length - reads, '合同 was read before: its changes keep it, nothing is read').toBe(0)
+    // notes.md moves back where this rig's chat has it, as the chat would say it.
+    heard({ kind: 'entries', entries: [{ ...ENTRIES.find((e) => e.id === 'notes')! }], gone: [] })
+    expect(names(), 'moved out again').toEqual(['2026'])
   })
 })
 

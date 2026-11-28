@@ -182,8 +182,8 @@ export interface AppPlatform {
    */
   openRemoteFile: (file: FileHandle, filename: string) => Promise<void>
   /**
-   * 「保存」:把这份字节存成一个文件。桌面与网页交给浏览器的下载(a[download]);安卓的 WebView 不接下载,交给系统的
-   * 「保存到…」。saved:false = 人在系统界面里取消了(不是失败);写不进去照常抛。
+   * 「保存」:把这份字节存成一个文件。桌面走主进程的保存框(和 Files 的下载同一份);网页交给浏览器的下载(a[download]);
+   * 安卓的 WebView 不接下载,交给系统的「保存到…」。saved:false = 人在系统界面里取消了(不是失败);写不进去照常抛。
    */
   saveFile: (blob: Blob, filename: string) => Promise<{ saved: boolean }>
   writeClipboardText: (value: string) => Promise<void>

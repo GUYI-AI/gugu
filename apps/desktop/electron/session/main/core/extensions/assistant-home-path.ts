@@ -8,14 +8,14 @@ function inside(root: string, target: string): boolean {
 
 /** Validate both lexical components and the real existing parent chain. An
  * absent child must not hide an existing symlink farther up the path. */
-export async function assistantPanelPath(root: string, path: unknown, options: { home: string; createParents?: boolean }): Promise<string> {
+export async function assistantHomePath(root: string, path: unknown, options: { home: string; createParents?: boolean }): Promise<string> {
   if (typeof path !== 'string' || !path || path.length > 4096
     || /(^[/~]|[\\:%]|(^|\/)\.{1,2}(\/|$)|\/\/|\/$)/.test(path)
     || [...path].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)) {
-    throw new Error('PANEL_PATH_INVALID')
+    throw new Error('HOME_PATH_INVALID')
   }
   const home = resolve(options.home), base = resolve(root), target = resolve(base,path)
-  if (!inside(home,base) || target === base || !inside(base,target)) throw new Error('PANEL_PATH_OUTSIDE_HOME')
+  if (!inside(home,base) || target === base || !inside(base,target)) throw new Error('HOME_PATH_OUTSIDE_HOME')
   const actualHome = await realpath(home)
   const rootParts = relative(home,base).split(sep).filter(Boolean)
   const segments = [...rootParts,...path.split('/')]
@@ -25,8 +25,13 @@ export async function assistantPanelPath(root: string, path: unknown, options: {
     let actual: string | null = null
     try {
       const info = await lstat(current)
-      actual = await realpath(current)
-      if (index < segments.length - 1 && !info.isDirectory() && !info.isSymbolicLink()) throw new Error('PANEL_PATH_NOT_DIRECTORY')
+      // An existing link whose destination is missing cannot authorize creation at that destination.
+      if (info.isSymbolicLink()) {
+        actual = await realpath(current).catch(() => { throw new Error('HOME_PATH_UNRESOLVED_LINK') })
+      } else {
+        actual = await realpath(current)
+      }
+      if (index < segments.length - 1 && !info.isDirectory() && !info.isSymbolicLink()) throw new Error('HOME_PATH_NOT_DIRECTORY')
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       if (options.createParents && index < segments.length - 1) {
@@ -35,7 +40,7 @@ export async function assistantPanelPath(root: string, path: unknown, options: {
       }
     }
     if (actual && (!inside(actualHome,actual) || index >= rootParts.length && !inside(actualBase,actual))) {
-      throw new Error('PANEL_PATH_OUTSIDE_HOME')
+      throw new Error('HOME_PATH_OUTSIDE_HOME')
     }
     if (index === rootParts.length - 1 && actual) actualBase = actual
   }

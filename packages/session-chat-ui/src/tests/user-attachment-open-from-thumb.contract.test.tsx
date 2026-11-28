@@ -8,10 +8,10 @@ import { until } from '../../../../tests/support/awaitCondition';
 
 const PIXEL = 'data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=';
 
-// A sent picture opens by its chat-folder link (the authorized original, its source, its siblings — #1332/#1333). Drawn
-// here already, its thumbnail goes with that link, so the file opens out of it as a chat message's picture does; without
-// it the link re-read the bytes with nothing to open from (~0.5s, blank). A file's link carries no picture.
-it('follows a picture\'s link with the thumbnail it drew, and a file\'s link alone', async () => {
+// A sent picture opens in the viewer at once, out of the thumbnail drawn here, as a chat message's picture does: the host
+// gets the picture with the click and opens it before any read. Following its link first read the file again with
+// nothing on screen; repeated clicks each queued one more opening. A file opens where its link says.
+it('opens a picture with the thumbnail it drew, and follows a file\'s link', async () => {
   const context = createChatContext({ locale: () => 'en-US' });
   const state = createChatState(context);
   const turn: TranscriptTurn = { id: 'turn', seq: 0, initiator: 'user', outcome: { kind: 'done' }, items: [
@@ -24,21 +24,20 @@ it('follows a picture\'s link with the thumbnail it drew, and a file\'s link alo
   state.transcript.history.seed([turn]);
   const host = document.body.appendChild(document.createElement('div'));
   host.style.cssText = 'position:fixed;top:0;left:0;width:640px;height:600px';
-  const calls: string[] = [];
-  const onDrawnPictureLink = vi.fn((href: string) => { calls.push(`drawn ${href}`); });
-  const onOpenLink = vi.fn((href: string) => { calls.push(`open ${href}`); return true; });
-  const view = createChatView({ context, state, parent: host, commands: { onOpenLink, onDrawnPictureLink, resolveAttachment: async () => PIXEL } });
+  const onViewAttachment = vi.fn();
+  const onOpenLink = vi.fn(() => true);
+  const view = createChatView({ context, state, parent: host, commands: { onOpenLink, onViewAttachment, resolveAttachment: async () => PIXEL } });
   const chip = (kind: string) => host.querySelector<HTMLButtonElement>(`button[data-attachment-chip][data-kind=${kind}]`);
   try {
     await until('both attachment chips are drawn', () => !!chip('image')?.querySelector('img') && !!chip('file'));
     chip('image')!.click();
-    expect(onDrawnPictureLink).toHaveBeenCalledWith('gugu-file://item-photo?v=1', chip('image')!.querySelector('img'));
-    expect(onOpenLink).toHaveBeenCalledWith('gugu-file://item-photo?v=1');
+    expect(onViewAttachment).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      attachment: expect.objectContaining({ name: 'photo.jpg', href: 'gugu-file://item-photo?v=1' }), thumb: chip('image')!.querySelector('img'),
+    }));
+    expect(onOpenLink, 'a picture does not follow its link').not.toHaveBeenCalled();
     chip('file')!.click();
-    expect(onOpenLink).toHaveBeenLastCalledWith('gugu-file://item-notes?v=1');
-    expect(calls, 'the picture is told before its link is followed; a file has none').toEqual([
-      'drawn gugu-file://item-photo?v=1', 'open gugu-file://item-photo?v=1', 'open gugu-file://item-notes?v=1',
-    ]);
+    expect(onOpenLink).toHaveBeenCalledExactlyOnceWith('gugu-file://item-notes?v=1');
+    expect(onViewAttachment).toHaveBeenCalledOnce();
   } finally {
     view.dispose(); state.dispose(); context.dispose(); host.remove();
   }

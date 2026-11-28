@@ -5,7 +5,8 @@ import { messageEntityId } from './ids';
 import type { AgentState } from '../models/agents';
 import type { SessionConfigState, SessionUsage } from '../models/config';
 import type { SessionPlans } from '../models/plan';
-import type { TranscriptTurn, TranscriptTurnOutcome } from '../models/turns';
+import type { TranscriptItem, TranscriptTurn, TranscriptTurnOutcome } from '../models/turns';
+import { UNRECORDED_PROMPT } from '../native-prompt-key';
 import type { NormalizedEvent } from './normalized-event';
 import { initialState, reduce, type ParserState } from './reducer';
 
@@ -175,13 +176,24 @@ export class AcpTranscriptParser {
 
   /** Attach the native receipt to the exact client-submitted message. */
   setRevertAnchor(messageId: string, anchor: string, files = false): void {
+    this.updateUserMessage(messageId, (item) => item.revertAnchor === anchor && !!item.revertFiles === files ? item
+      : { ...item, revertAnchor: anchor, ...(files ? { revertFiles: true as const } : {}) });
+  }
+
+  /** The agent keeps no record of this input (`UNRECORDED_PROMPT`); the host journals it when its turn commits. */
+  markUnrecorded(messageId: string): void {
+    this.updateUserMessage(messageId, (item) => item._meta?.[UNRECORDED_PROMPT] === true ? item
+      : { ...item, _meta: { ...item._meta, [UNRECORDED_PROMPT]: true } });
+  }
+
+  private updateUserMessage(messageId: string, change: (item: Extract<TranscriptItem, { kind: 'message' }>) => TranscriptItem): void {
     const update = (turn: TranscriptTurn): TranscriptTurn => {
       let changed = false;
       const items = turn.items.map((item) => {
-        if (item.kind !== 'message' || item.role !== 'user' || (item.revertAnchor === anchor && !!item.revertFiles === files)
-          || !(item.id === messageId || item.id.endsWith(`:${messageId}`))) return item;
-        changed = true;
-        return { ...item, revertAnchor: anchor, ...(files ? { revertFiles: true as const } : {}) };
+        if (item.kind !== 'message' || item.role !== 'user' || !(item.id === messageId || item.id.endsWith(`:${messageId}`))) return item;
+        const next = change(item);
+        if (next !== item) changed = true;
+        return next;
       });
       return changed ? { ...turn, items } : turn;
     };

@@ -37,29 +37,29 @@ vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: () => ({
   return query;
 } }) }));
 // The resource authority and store, as app-bound-resources.ts answers them; its refusal and reason classes are its own.
+const mockResourceClient = {
+  snapshot: async () => {
+    if (state.storeError) throw state.storeError;
+    return { version: 1, revision: '10', application: [], items: ['memory', 'files', 'skills'].map((domain) => ({
+      assistant_user_id: AGENT, owner_user_id: OWNER, domain, resource_key: '__collection__', device_id: null, revision: '1',
+      data: { state: 'ready', schemaVersion: 1, itemCount: [...items.values()].filter((item) => item.domain === domain).length },
+      body_item_id: null, body_sha256: null, deleted_at: null, observed_at: null, updated_at: '2026-11-11T00:00:00Z' })).concat([...items.values()] as never[]) };
+  },
+  resource: async (_agent: string, domain: string, key: string) => {
+    if (state.storeError) throw state.storeError;
+    return items.get(`${domain}\0${key}`) ?? null;
+  },
+};
 vi.mock('./app-bound-resources', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./app-bound-resources')>()),
   boundAgent: async (_app: string, name: string, needs: string[], domain: string) => {
     if (needs.join() !== 'resources' || !state.grants.resources || !state.domains.includes(domain) || name !== 'main') throw denied('domain not granted');
     if (state.owner !== state.selectedBy) return null;
     const handle = state.handle;
-    return { ownerId: OWNER, token: OWNER, chatId: CHAT, handle, agentId: AGENT, deviceId: 'home', recheck: async () => {
+    return { ownerId: OWNER, token: OWNER, chatId: CHAT, handle, agentId: AGENT, deviceId: 'home', store: async () => ({ client: mockResourceClient }), recheck: async () => {
       if (state.owner !== OWNER || state.handle !== handle) throw denied('Conversation binding changed');
     } };
   },
-  storeOf: () => ({
-    snapshot: async () => {
-      if (state.storeError) throw state.storeError;
-      return { version: 1, revision: '10', application: [], items: ['memory', 'files', 'skills'].map((domain) => ({
-        assistant_user_id: AGENT, owner_user_id: OWNER, domain, resource_key: '__collection__', device_id: null, revision: '1',
-        data: { state: 'ready', schemaVersion: 1, itemCount: [...items.values()].filter((item) => item.domain === domain).length },
-        body_item_id: null, body_sha256: null, deleted_at: null, observed_at: null, updated_at: '2026-11-11T00:00:00Z' })).concat([...items.values()] as never[]) };
-    },
-    resource: async (_agent: string, domain: string, key: string) => {
-      if (state.storeError) throw state.storeError;
-      return items.get(`${domain}\0${key}`) ?? null;
-    },
-  }),
 }));
 const { draftIntoBoundConversation } = await import('./app-unread-bindings');
 
@@ -136,6 +136,9 @@ describe('what a draft may not carry', () => {
     await expect(draft([{ domain: 'files', key: 'gone.pdf' }])).rejects.toMatchObject({ code: 'not-found' });
     resource('files', 'lost.pdf', { body_item_id: '99000000-0000-4000-8000-000000000009' });
     await expect(draft([{ domain: 'files', key: 'lost.pdf' }])).rejects.toMatchObject({ code: 'not-found' });
+    resource('files', 'local.pdf', { body_item_id: 'home:local.pdf' });
+    await expect(draft([{ domain: 'files', key: 'local.pdf' }])).rejects.toMatchObject({ code: 'failed', reason: 'unreadable' });
+    expect(groupFile).not.toHaveBeenCalledWith(CHAT, 'home:local.pdf');
     files.list.mockRejectedValueOnce(Object.assign(new Error('no such folder'), { code: 'not-found' }));
     await expect(draft([{ file: 'nowhere/x.md' }])).rejects.toMatchObject({ code: 'not-found' });
     expect(drafted).toEqual([]);

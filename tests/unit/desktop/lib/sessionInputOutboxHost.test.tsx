@@ -36,7 +36,6 @@ vi.mock('../../../../apps/desktop/src/mobile/local-agent/phoneHostRpc', () => ({
 vi.mock('../../../../apps/desktop/src/hooks/useLocalSessionDirectory', () => ({ useLocalSessionDirectory: () => undefined }))
 vi.mock('../../../../apps/desktop/src/lib/sessionSendQueueHost', () => ({ watchSessionSendQueues: () => () => {} }))
 // The host also registers the App-notice kind; its cloud client is another subject.
-vi.mock('../../../../apps/desktop/src/lib/outbox/kinds/assistantNotice', () => ({ assistantNoticeOutboxKind: { name: 'assistantNotice', lane: () => 'assistant', send: async () => {} } }))
 vi.mock('../../../../apps/desktop/src/lib/outbox/legacy', () => ({ importLegacyWrites: async () => {} }))
 vi.mock('../../../../apps/desktop/src/session/renderer/localization/locale-store', async original => ({ ...await original<object>(), translateSessionMessage: (key: string, values?: { count: number }) => key === 'composer.attachmentHostUpdateRequired' ? 'Update the task host to send attachments' : key === 'composer.annotationHostUpdateRequired' ? 'Update the task host to send comments' : key === 'composer.attachmentsNotSent' ? `(${values!.count} attachments could not be included after the upgrade. Please send them again.)` : 'Waiting for host; sends automatically' }))
 let harness: ReturnType<typeof createReactHarness>

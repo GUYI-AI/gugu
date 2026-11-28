@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation';
 import { observable, runInAction } from 'mobx';
+import { InitialResizeObserver } from '../../../../../../../tests/support/initialResizeObserver';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -69,6 +70,7 @@ const innerFrame = vi.hoisted(() => ({ folded: null as boolean | null }));
 vi.mock('@renderer/lib/layout/layout-provider', () => ({
   useInnerSidebarFrame: (folded: boolean) => { innerFrame.folded = folded; },
   useInnerSidebarCrowded: () => false,
+  useInnerColumnMoving: () => false,
 }));
 vi.mock('@renderer/localization/use-session-messages', () => ({
   useSessionMessages: () => ({ translate: (key: string, params?: Record<string, unknown>) => (params ? `${key}:${Object.values(params).join(',')}` : key) }),
@@ -177,7 +179,7 @@ const sessionRows = () => [...host.querySelectorAll<HTMLElement>('[data-session-
 const moreRows = () => [...host.querySelectorAll<HTMLElement>('[data-more-row]')].map((row) => row.textContent);
 const render = () => act(async () => root.render(<InnerSidebar />));
 const agentsCount = () => host.querySelector('[data-inner-sidebar-section="agents"] [data-inner-agents-count]')?.textContent;
-const topicsView = (chatId: string, fields: { total: number; hidden: number; calling?: number }) =>
+const topicsView = (chatId: string, fields: { total: number; calling?: number }) =>
   act(() => publishInnerSidebarTopicsView({ chatId, calling: 0, ...fields }));
 let shellColumnPresent = false;
 function ShellProbe() {
@@ -186,6 +188,7 @@ function ShellProbe() {
 }
 
 beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', InitialResizeObserver);
   installShellSlots();
   runInAction(() => {
     state.live.shownMore.clear();
@@ -213,11 +216,12 @@ beforeEach(() => {
     { id: 'shop-chat', kind: 'group', name: 'Shop', unread_count: 0, member_user_ids: ['agent-a', 'agent-m'] },
     { id: 'dm', kind: 'dm', unread_count: 0 },
   ]);
-  topicsView('group', { total: 2, hidden: 0 });
+  topicsView('group', { total: 2 });
   host = document.body.appendChild(document.createElement('div'));
   root = createRoot(host);
 });
 afterEach(() => {
+  vi.unstubAllGlobals();
   act(() => root.unmount());
   host.remove();
   act(() => setInnerSidebarTopicsAll(null));
@@ -353,8 +357,8 @@ describe('inner sidebar', () => {
     expect(state.navigateToGroupRoot).toHaveBeenCalledWith('group', true);
   });
 
-  it('All › (the only way to every topic: no 「All N topics」 row under them) expands the topics in place and hides what sits below; the main area stays; ‹ Back brings it back', async () => {
-    topicsView('group', { total: 9, hidden: 6 });
+  it('All › (the search view: no 「All N topics」 row under them) expands the topics in place and hides what sits below; the main area stays; ‹ Back brings it back', async () => {
+    topicsView('group', { total: 9 });
     openChat('group');
     await render();
     const drill = () => host.querySelector<HTMLElement>('[data-inner-topics-drill]')!;
@@ -377,7 +381,7 @@ describe('inner sidebar', () => {
   });
 
   it('no All › when level one already shows every topic', async () => {
-    topicsView('group', { total: 2, hidden: 0 });
+    topicsView('group', { total: 2 });
     openChat('group');
     await render();
     expect(host.querySelector('[data-inner-topics-drill]')).toBeNull();
@@ -435,7 +439,7 @@ describe('inner sidebar', () => {
   });
 
   it('no find box in the column, however much is in it (the top search takes over)', async () => {
-    topicsView('group', { total: 40, hidden: 35 });
+    topicsView('group', { total: 40 });
     openChat('group');
     await render();
     expect(host.querySelector('[data-region="inner-sidebar"] input')).toBeNull();

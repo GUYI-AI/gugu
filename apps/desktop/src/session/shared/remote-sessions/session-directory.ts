@@ -206,12 +206,15 @@ export function listedSession(
   sessionId: string,
 ): { row: SessionDirectoryRow } | { unread: string[] } {
   const row = directoryRows(devices, liveSessions).find(({ session }) => session.conversationId === sessionId)
-  if (row) return { row }
-  const unread = devices.filter((device) => {
+  return row ? { row } : { unread: unreadDevices(devices, liveSessions) }
+}
+
+/** The machines whose list is not read yet (online, still loading or failed): a session missing from the rest may be on one. */
+export function unreadDevices(devices: readonly Device[], liveSessions: Readonly<Record<string, DeviceSessions>>): string[] {
+  return devices.filter((device) => {
     if (!device.is_online) return false
     const listed = liveSessions[device.device_id]
     return !listed || listed.loading || listed.error !== null
-  })
-  return { unread: unread.map((device) => device.label) }
+  }).map((device) => device.label)
 }
 

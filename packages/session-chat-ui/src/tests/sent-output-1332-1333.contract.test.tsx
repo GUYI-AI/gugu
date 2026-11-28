@@ -23,8 +23,8 @@ async function mount(agentConversation: boolean, items: TranscriptItem[], active
   const state = createChatState(context), host = document.createElement('div');
   host.style.cssText = 'position:fixed;inset:0;width:900px;height:1700px;background:white';
   document.body.append(host);
-  const open = vi.fn((_href: string) => true), resolve = vi.fn(async () => image);
-  const view = createChatView({ context, state, parent: host, commands: { onOpenLink: open, resolveAttachment: resolve, conversationAgentName: () => 'Fixture agent', onMessageBodyMount: plainMessageBody } });
+  const open = vi.fn((_href: string) => true), resolve = vi.fn(async () => image), viewAttachment = vi.fn();
+  const view = createChatView({ context, state, parent: host, commands: { onOpenLink: open, onViewAttachment: viewAttachment, resolveAttachment: resolve, conversationAgentName: () => 'Fixture agent', onMessageBodyMount: plainMessageBody } });
   dispose = () => { view.dispose(); state.dispose(); context.dispose(); host.remove(); };
   const turn: TranscriptTurn = { id: 'sent-output', seq: 0, initiator: 'user', startedAt: 1000,
     ...(!active ? { endedAt: 4000, outcome: { kind: 'done' as const } } : {}), items };
@@ -33,19 +33,21 @@ async function mount(agentConversation: boolean, items: TranscriptItem[], active
     state.transcript.history.seed([turn]);
     state.viewState.setCollapsed('sent-output:process', true);
   }
-  return { host, open, resolve };
+  return { host, open, resolve, viewAttachment };
 }
 it.each([false, true])('draws two scoped images as one card group with clickable previews (conversation=%s)', async conversation => {
   const files = ids.map((id, index) => tool(`file-${index}`, 'message_send_file', { chat_id: `user:${owner}`, file_name: `proof-${index}.png` },
     { message_id: id, file_name: `proof-${index}.png`, source_link: `gugu-chat://${chat}/${id}`, mime_type: 'image/png' }));
-  const { host, open, resolve } = await mount(conversation, files);
+  const { host, open, resolve, viewAttachment } = await mount(conversation, files);
   await expect.poll(() => host.querySelectorAll('[data-attachment-chip] img').length).toBe(2);
   const chips = host.querySelectorAll<HTMLButtonElement>('[data-attachment-chip]');
   expect(chips).toHaveLength(2);
   expect(chips[0].parentElement).toBe(chips[1].parentElement);
   expect([...chips].every(chip => chip.dataset.kind === 'image')).toBe(true);
   chips.forEach(chip => chip.click());
-  expect(open.mock.calls.map(call => call[0])).toEqual(ids.map(id => `gugu-message-file://${id}?chat=${chat}`));
+  // A sent picture opens in the viewer out of its drawn thumbnail, by the message its link names.
+  expect(viewAttachment.mock.calls.map(([arg]) => [arg.attachment.href, arg.thumb])).toEqual(ids.map((id, index) => [`gugu-message-file://${id}?chat=${chat}`, chips[index].querySelector('img')]));
+  expect(open).not.toHaveBeenCalled();
   expect(resolve).toHaveBeenCalledTimes(2);
   expect(host.querySelectorAll('[data-slot="sent-to"]')).toHaveLength(1);
   expect(host.querySelector('[data-slot="sent-to"]')?.getAttribute('aria-label')).toBe('Sent to you');

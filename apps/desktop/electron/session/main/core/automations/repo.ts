@@ -278,13 +278,6 @@ export async function listAutomations(projectId?: string): Promise<Automation[]>
   return mapAutomationRows(await query);
 }
 
-/** The sessions that have live schedules of their own: one index read, no automation rows (the scheduler asks every minute). */
-export function listAgentScheduleSessionIds(): string[] {
-  return db.selectDistinct({ id: automations.agentSessionId }).from(automations)
-    .where(and(isNotNull(automations.agentSessionId), isNull(automations.deletedAt))).all()
-    .flatMap(({ id }) => (id ? [id] : []));
-}
-
 /** Only a missing local identity is orphaned; archived tasks still have their row. */
 export async function listOrphanedAgentScheduleIds(sessionId?: string): Promise<string[]> {
   const rows = await db.select({ id: automations.id }).from(automations)
@@ -831,7 +824,7 @@ export async function scheduleAutomationRun(input: {
   return run ?? null;
 }
 
-export async function listQueuedRuns(limit = 100, blockedSessions: readonly string[] = [], attemptedRuns: readonly string[] = []): Promise<
+export async function listQueuedRuns(limit = 100, attemptedRuns: readonly string[] = []): Promise<
   Array<{
     run: AutomationRun;
     automation: Automation;
@@ -846,7 +839,6 @@ export async function listQueuedRuns(limit = 100, blockedSessions: readonly stri
         eq(automationRuns.status, 'queued'),
         attemptedRuns.length ? notInArray(automationRuns.id,[...attemptedRuns]) : undefined,
         eq(automations.enabled, 1),
-        blockedSessions.length ? or(isNull(automations.agentSessionId),notInArray(automations.agentSessionId,[...blockedSessions])) : undefined,
         isNull(automations.deletedAt)
       )
     )

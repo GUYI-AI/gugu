@@ -1,4 +1,4 @@
-import { guguLinkScheme, parseGuguLink } from '@gugu/core/shared/ui/guguLink';
+import { conversationLink, guguLinkScheme, parseGuguLink, parseShortRef, SHORT_REF_IN_TEXT } from '@gugu/core/shared/ui/guguLink';
 import { uuidPrefixRange } from '@gugu/core/shared/idPrefix';
 /**
  * The one markdown dialect of Gugu.
@@ -43,7 +43,7 @@ export type MarkdownDialectOptions = {
   frontmatter?: boolean;
   /** `chat` trust: images stay image nodes, for a surface that paints them without loading them (link chips). */
   keepImageNodes?: boolean;
-  /** The chat this text is a message of: its `msg:<prefix>` ids link to messages there (remarkMessageIdLinks). */
+  /** The chat this text is a message of: its `msg:` / `session:` ids are links (remarkShortRefLinks), messages resolved there. */
   messageChat?: string;
 };
 
@@ -118,20 +118,21 @@ function linkProse(tree: Root, split: (node: Text) => Array<Text | Link>) {
   visit(tree);
 }
 
-const MESSAGE_ID_IN_TEXT = /(?<![\w:/-])msg:([0-9a-f]{8}[0-9a-f-]{0,28})(?![\w-])/gi;
-
 /**
- * Owner 2026-11-16: `msg:<first 8+ characters>` in a message's prose links to that message in the message's own chat
- * (`gugu-chat://<chat>/<prefix>`); the reader resolves the prefix there (a topic or DM is its own chat, never its source).
+ * `msg:<id>` / `session:<id>` in a message's prose (guguLink.ts `parseShortRef`) is a link to that message or session,
+ * as written: the pill resolves it as the reader sees it — a message in the message's own chat (a topic or DM is its
+ * own chat, never its source), a session among the reader's own. A whole message id is that message's link.
  */
-function remarkMessageIdLinks(chatId: string) {
+function remarkShortRefLinks(chatId: string) {
   return (tree: Root) => linkProse(tree, (node) => {
     const out: Array<Text | Link> = [];
     let at = 0;
-    for (const match of node.value.matchAll(MESSAGE_ID_IN_TEXT)) {
-      if (!uuidPrefixRange(match[1]!)) continue;
+    for (const match of node.value.matchAll(SHORT_REF_IN_TEXT)) {
+      const ref = parseShortRef(match[0]);
+      if (!ref) continue;
       if (match.index > at) out.push({ type: 'text', value: node.value.slice(at, match.index) });
-      out.push({ type: 'link', url: `gugu-chat://${chatId}/${match[1]!.toLowerCase()}`, children: [{ type: 'text', value: match[0] }] });
+      const url = ref.kind === 'msg' && !uuidPrefixRange(ref.id) ? conversationLink(chatId, ref.id) : `${ref.kind}:${ref.id}`;
+      out.push({ type: 'link', url, children: [{ type: 'text', value: match[0] }] });
       at = match.index + match[0].length;
     }
     if (out.length === 0) return [node];
@@ -361,7 +362,7 @@ export function markdownRemarkPlugins(options: MarkdownDialectOptions): Pluggabl
     ...GRAMMAR,
     ...(options.trust === 'chat' ? [literalize] : []),
     ...(options.hardBreaks ? [remarkHardBreaks] : []),
-    ...(options.messageChat ? [[remarkMessageIdLinks, options.messageChat] as Pluggable] : []),
+    ...(options.messageChat ? [[remarkShortRefLinks, options.messageChat] as Pluggable] : []),
   ];
 }
 
@@ -369,7 +370,7 @@ export function markdownRemarkPlugins(options: MarkdownDialectOptions): Pluggabl
 const DRIVE_LETTERS = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].flatMap((letter) => [letter, letter.toLowerCase()]);
 
 /**
- * GitHub's schema plus `tel:` links, Windows drive paths (agents link files that way; the host classifies
+ * GitHub's schema plus `tel:` links, `msg:` / `session:` short ids (remarkShortRefLinks), Windows drive paths (agents link files that way; the host classifies
  * and opens them) and `gugu-file:` links to a group's files (摩擦单 F10 — without it the link lost its href and
  * clicked to nothing). An image may name a group's file too (`![](gugu-file://<id>)`): an App page's markdown loads it
  * through the host (`gugu.markdown()`). Math is typeset after sanitizing, so KaTeX output is not filtered.
@@ -378,7 +379,7 @@ export const MARKDOWN_SANITIZE_SCHEMA = {
   ...defaultSchema,
   protocols: {
     ...defaultSchema.protocols,
-    href: [...(defaultSchema.protocols?.href ?? []), 'tel', 'gugu-file', 'gugu-chat', 'gugu-widget', guguLinkScheme({ tier: 'production', devLaunch: false }), guguLinkScheme({ tier: 'beta', devLaunch: false }), guguLinkScheme({ tier: undefined, devLaunch: true }), ...DRIVE_LETTERS],
+    href: [...(defaultSchema.protocols?.href ?? []), 'tel', 'msg', 'session', 'gugu-file', 'gugu-chat', 'gugu-widget', guguLinkScheme({ tier: 'production', devLaunch: false }), guguLinkScheme({ tier: 'beta', devLaunch: false }), guguLinkScheme({ tier: undefined, devLaunch: true }), ...DRIVE_LETTERS],
     src: [...(defaultSchema.protocols?.src ?? []), 'gugu-file'],
   },
   // A fence's header (```html-render height=320), which a code renderer reads as `meta`; text, never a URL.

@@ -44,7 +44,6 @@ import { remoteFileStreams } from './projectFileSsh'
 import { nodeImagePreview } from '@gugu/core/local/files/nodeImagePreview'
 import { rendererImagePreview, rendererScaleImage } from './imagePreview'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
-import { localCopy } from '@gugu/core/local/files/fileSnapshots'
 import { registerExternalImportIpc } from './external-import/ipc'
 import { uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
 import { writeTaskCopy } from './projectFilePublication'
@@ -107,8 +106,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { homedir, hostname, platform } from 'os'
 import { dirname, join, resolve, sep } from 'path'
 import { autoUpdater } from 'electron-updater'
-import windowStateStore from 'electron-window-state'
 import { mainWindowSize } from './main-window-size'
+import { openMainWindowState } from './main-window-state'
 import {
   invokeRendererAuth,
   invokeRendererExtensions,
@@ -456,7 +455,7 @@ import { integrationCredentialStore } from './session/main/core/integrations/int
 import { applySessionMaterialization } from './session-materialization'
 import { assistantHomeTaskContext, preparePersonalAssistantContext } from './sessionpage/assistant-context'
 import { startupDiscovery } from './sessionpage/startup-discovery'
-import { createPanelConnectionRuntime } from './sessionpage/panel-connection-runtime'
+import { createConnectionRuntime } from './sessionpage/connection-runtime'
 import { isPersonalAssistantAgent, personalAssistantSessionBindings } from './sessionpage/assistant-agent-role'
 import { assistantWorkBinding, assistantWorkForAgent } from './sessionpage/assistant-work'
 import { createStableMcpPersistence, persistedMcpGrantCount, sessionpageSessionOfGrantKey } from './stable-mcp-persistence'
@@ -632,6 +631,7 @@ import {
   takeAccountHandoff, writeAccountHandoff, writeAccountRegistry, type AccountLayout,
 } from './account-profiles'
 import { removeLegacyBrowserLogins } from './lib/remove-legacy-browser-logins'
+import { removeLegacyAssistantPanelState } from './lib/remove-legacy-assistant-panel-state'
 import { enterUserDataDirectory } from './working-directory'
 
 const IS_TEST_MODE = process.env.GUGU_TEST_MODE === '1'
@@ -867,6 +867,11 @@ if (hasSingleInstanceLock) {
   removeLegacyBrowserLogins(app.getPath('userData'), {
     info: (message, fields) => migrationLog.info(fields ?? {}, message),
     warn: (message, fields) => migrationLog.warn(fields ?? {}, message),
+  })
+  const panelMigrationLog = createLogger('assistant-panel/migration')
+  removeLegacyAssistantPanelState(resolveGuguHome(process.env), {
+    info: (message, fields) => panelMigrationLog.info(fields ?? {}, message),
+    warn: (message, fields) => panelMigrationLog.warn(fields ?? {}, message),
   })
 }
 
@@ -1315,7 +1320,6 @@ async function onLocalAgentRosterRemoved(
   if (reason === 'cloud-gone' || reason === 'cloud-removed') {
     const sessionId = cacheString(agent.cache, SESSION_CACHE_KEY) || cacheString(agent.cache, PARKED_SESSION_CACHE_KEY)
     if (reason === 'cloud-removed' && receipt?.userId !== agentUserId) throw new Error('Confirmed removal receipt does not match the Agent')
-    if (reason === 'cloud-removed') assistantPanelRuntime?.remove(agentUserId)
     await unregisterSessionpageDeliveryOwners(agentUserId)
     await revokeAgentCards(agentUserId)
     if (reason === 'cloud-removed') {
@@ -1707,7 +1711,7 @@ const mainRendererResponsiveness = createMainRendererResponsivenessLog({
 
 function createWindow(loadContents = true): void {
   const { width: defaultWidth, height: defaultHeight } = mainWindowSize(screen.getPrimaryDisplay().workAreaSize)
-  const winState = windowStateStore({ defaultWidth, defaultHeight, path: machineUserData })
+  const winState = openMainWindowState({ defaultWidth, defaultHeight, path: machineUserData })
   const display = winState.x == null || winState.y == null
     ? screen.getPrimaryDisplay()
     : screen.getDisplayMatching(winState)
@@ -2593,7 +2597,7 @@ const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider()
   fetch: egress.fetch, links: () => sshLinks,
   root: async projectId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectRoot(projectId) },
   project: async chatId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectOfGroup(chatId) },
-  deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
+  deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient, home: resolveGuguHome(process.env),
 })
 // A file on another of this account's machines streams over its device link (`@@@machine-file-stream`).
 setMachineFileStreams(remoteFileStreams(() => sshLinks ?? null, async () => (await requireAuth()).userId, linkReaches))
@@ -2628,11 +2632,15 @@ const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments
   local: desktopFiles.providers.local, ssh: desktopFiles.providers.ssh, publish: (chat, file, actor, message, task) => desktopFiles.publish(chat, file, null, actor, undefined, { message, ...(task ? { task: true, itemId: task.itemId } : {}) }),
   taskCopy: (name, bytes, mimeType) => writeTaskCopy(join(resolveGuguHome(process.env), 'attachments'), name, bytes, mimeType), publication: desktopFiles.publish.local,
   openPath: path => shell.openPath(path), published: directory => trackRemoteFileDirectory(remoteFileOpenDirectories, directory),
-  stored: async sha256 => await localCopy(resolveGuguHome(process.env), sha256) ?? await desktopFiles.held(sha256),
+  stored: sha256 => desktopFiles.here(sha256),
   serve: async (sha256, contentType, file) => {
     const { createBytesPreview, releasePreview } = await import('./session/main/core/files/preview-protocol')
     const { url, previewId } = createBytesPreview(sha256, contentType, file)
     return { url, release: () => releasePreview(previewId) }
+  },
+  cloud: { ...desktopFiles.cloud,
+    download: (scope, context, name, known) => desktopFiles.download(context.ref, context.actor,
+      async () => (await import('./session/main/core/extensions/app-files')).askSaveTarget(webContents.fromId(scope) ?? null, name), known, context.signal),
   },
 })
 /**
@@ -3955,7 +3963,6 @@ function definedEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   return out
 }
 let emdashBridge: EmdashBridgeModule | null = null
-let assistantPanelRuntime: ReturnType<typeof createPanelConnectionRuntime> | null = null
 let reconcileSessionpagePlatformOnResume: (() => Promise<void>) | null = null
 let sessionpagePlatformRecovery: SessionpagePlatformRecoveryCoordinator | null = null
 let sessionpagePlatformRecoveryHooks: SessionpagePlatformHooks | null = null
@@ -5561,9 +5568,8 @@ app.whenReady().then(async () => {
     // 这里只喂它桌面版的四样:登录态、设备 id、项目名、会话事实。
     const sessionpageIdentityHost = createSessionpageIdentityHost({
       beforeIdentityRemoval: async id => {
-        const settlePanel = assistantPanelRuntime?.pauseRemoval(id)
         const settleRuntime = await deviceRuntimeHost?.beginAgentRemoval(id)
-        return removed => { settleRuntime?.(removed); settlePanel?.(removed) }
+        return removed => { settleRuntime?.(removed) }
       },
       getAuth: getSessionpageAuth,
       // #4320② 锁内解析:localDeviceId 不起 tick,不会派发要同一把锁的设备命令。
@@ -5605,23 +5611,23 @@ app.whenReady().then(async () => {
       open: async target => (await sessionpageIdentityHost.ensureAgentAddress(target)).chatId, publication: sessionpageIdentityHost.nativePublication,
       failed: error => createLogger('sessionpage/personal-inbox').warn({ error: String(error) }, 'Personal conversation address remains pending'),
     })
-    app.once('will-quit', () => { nativeInbox.dispose(); assistantPanelRuntime?.dispose() })
-    // 项目的跨设备身份由宿主的群对照维护；每次写入后通知渲染层重读。
-    const assistantPanel = assistantPanelRuntime = createPanelConnectionRuntime({
-      locale: currentHostLocale,
+    const ownerConnections = createConnectionRuntime({
       getAuth: getSessionpageAuth,
       instanceId: () => deviceRuntimeHost?.instanceId ?? null,
-      deviceId: async () => { const id = await localDeviceId(); if (!id) throw new Error('PANEL_DEVICE_UNAVAILABLE'); return id },
-      local: emdash.assistantPanelLocal,guguHome: resolveGuguHome(process.env),kind: assistantHomeKind(process.env),env: process.env,
-      failed: domain => createLogger('assistant-panel').warn({ domain },'Panel publication will retry during host activity'),
+      deviceId: async () => { const id = await localDeviceId(); if (!id) throw new Error('CONNECTION_DEVICE_UNAVAILABLE'); return id },
+      local: emdash.assistantPanelLocal,guguHome: resolveGuguHome(process.env),
+      failed: () => createLogger('owner-connections').warn({},'Owner connection publication will retry during host activity'),
     })
+    emdash.assistantPanelLocal.setOwnerConnectionControl(ownerConnections)
+    app.once('will-quit', () => { nativeInbox.dispose(); ownerConnections.dispose() })
     emdash.setSessionAdmissionPreparation(async (sessionId,text) => {
       if (!SERVER_MODE) {
         const owner = humanAuthUserId()
         if (!owner || !desktopClosureBootReady || await desktopClosureHost().isPaused(owner)) throw new ClosureFailure('closure_not_prepared')
       }
-      return assistantPanel.prepare(sessionId,text)
+      return { text,accepted: async () => {} }
     })
+    // 项目的跨设备身份由宿主的群对照维护；每次写入后通知渲染层重读。
     emdash.setProjectGroupHost(createSessionpageProjectGroupHost({ getAuth: getSessionpageAuth, env: process.env }))
     emdash.setAssistantProjectCleanupOwner(async () => (await getSessionpageAuth())?.userId ?? null, localDeviceId, async () => {
       const auth = await getSessionpageAuth()
@@ -6273,16 +6279,13 @@ app.whenReady().then(async () => {
           lifecycle: info.lifecycle,
           providerSessionId: openedProviderSession(info),
         })
-        const panelStatePath = assistantRole && assistantResourceOwner ? await assistantPanel.bind({
-          sessionId: persistedSessionId,assistantId: provisioned.guguAgentUserId,ownerId: assistantResourceOwner,cwd: info.cwd,
-        }) : undefined
         const capabilities = assistantRole && (info.providerId === 'claude' || info.providerId === 'codex') ? await preparePersonalAssistantContext(
           loaded, info.cwd, resolveGuguHome(process.env), assistantHomeKind(process.env), {
             accountId: async () => {
               const owner = (await getSessionpageAuth())?.userId
               return owner && owner === assistantResourceOwner ? owner : null
             },
-            localSources: readAssistantResources,panelStatePath,
+            localSources: readAssistantResources,
             run: async (action, signal) => {
               const auth = await getSessionpageAuth()
               if (!auth) throw new Error('Assistant startup index: owner not authenticated')
@@ -6691,13 +6694,6 @@ app.whenReady().then(async () => {
       const auth = await desktopAuthProvider().getAuth()
       if (auth?.userId && (SERVER_MODE || !await desktopClosureHost().isPaused(auth.userId))) await bootedSessionLife().signIn(auth.userId)
     }).catch((error: unknown) => createLogger('session-life').error({ error: String(error) }, 'session-life could not sign in at boot'))
-    void emdashBoot.then(() => {
-      emdash.onAgentStatus(change => {
-        if (change.reading?.status !== 'working') void assistantPanel.publish(change.sessionId).catch(() => {
-          createLogger('assistant-panel').warn({},'Panel state publication will retry at the next host activity')
-        })
-      })
-    }).catch(() => undefined)
     // 认回重启前留在 tmux 里的平台会话(#7120):它读 tmux 名与平台票账本,两样都是 boot 里段 2 迁移改的
     // (task-to-session 改 tmux 名、session-naming 改账本键)—— 先读就把旧名下活着的会话判死、删掉它的取票文件。
     // 所以与下面的开机重注册一样排在 boot 之后。只读本机、不等登录;boot 失败也照样跑,终端腿与启动结清都在等它落定。

@@ -17,7 +17,6 @@ import type { PrepareLocalHomeInput, PrepareLocalHomeResult, WipeLocalHomeResult
 import { createLogger } from './lib/logger'
 import { refreshedAssistantRules } from './assistant-rules-resolver'
 import { adoptMemoryEntries, refreshAssistantContext } from './sessionpage/assistant-instructions'
-import { forgetFreshAssistantProfile, rememberFreshAssistantProfile } from './sessionpage/assistant-profile-review'
 import { readAssistantFile, writeAssistantFile } from './sessionpage/assistant-files'
 
 const log = createLogger('assistant-home')
@@ -53,7 +52,6 @@ export async function wipeLocalAssistantHome(env: { guguHome?: string; home?: st
   const home = env.home ?? homedir()
   const workdir = join(env.guguHome ?? resolveGuguHome(), ASSISTANT_COMPUTER_WORKDIR_NAME)
   const paths = assistantHomePaths(home, workdir, 'computer')
-  forgetFreshAssistantProfile(paths.memoryDir)
   const link = await lstat(paths.claudeMemoryDir).catch((error: NodeJS.ErrnoException) => {
     if (error.code === 'ENOENT') return null
     throw error
@@ -84,8 +82,6 @@ export async function prepareLocalAssistantHome(
   if (input.dryRun) return { workdir, home }
   // Setup looks at the assistant App again (#1931); the handbook and the profile memory come from this one snapshot. With
   // none here yet the setup waits for them (the ensure step is putting the App in; the entry shows it is preparing).
-  // An instruction-only App refresh must not revoke the unconsumed fresh-profile proof.
-  // Final admission still checks profile/index bytes and both rule versions before accepting it.
   const { rules } = await refreshedAssistantRules()
   if (input.fresh) await wipeLocalAssistantHome(env)
   await mkdir(workdir, { recursive: true })
@@ -99,12 +95,8 @@ export async function prepareLocalAssistantHome(
     const profilePath = join(paths.memoryDir, OWNER_PROFILE_MEMORY_FILE)
     const previousIndex = await readAssistantFile(paths.memoryIndex)
     const indexText = withOwnerProfileIndex(previousIndex, rules)
-    if (await readAssistantFile(profilePath) !== profileText || previousIndex !== indexText) {
-      forgetFreshAssistantProfile(paths.memoryDir)
-    }
     await writeAssistantFile(profilePath, profileText)
     await writeAssistantFile(paths.memoryIndex, indexText)
-    if (input.fresh) rememberFreshAssistantProfile(paths.memoryDir, profileText, indexText, rules)
   }
   log.info({ workdir, wroteProfile: !!profile }, 'local assistant home prepared')
   return { workdir, home }

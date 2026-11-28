@@ -1,15 +1,18 @@
-import { parseGuguLink } from '@gugu/core/shared/ui/guguLink'
+import { parseGuguLink, parseShortRef } from '@gugu/core/shared/ui/guguLink'
 import type { Element, Root } from 'hast'
 import { FILE_PILL_CLASS } from './filePills'
 
 /**
- * Chat link pills: in a chat bubble, a link to a folder file, a chat or topic, or one message is drawn in place as the
+ * Chat link pills: in a chat bubble, a link to a folder file, a chat or topic, one message or a session is drawn in place as the
  * file mention chip (MentionPill), as Discord draws a channel or message link. Runs after sanitizing, like the file pill
  * pass; an `@` file pill already is one.
  */
 export const LINK_PILL_CLASS = 'gg-link-pill'
 
+/** What a pill is drawn for. A session is named by its id or a prefix of it (`session:<id>`), a `msg:` prefix in its message's chat. */
 export function linkPillTarget(href: string) {
+  const short = parseShortRef(href)
+  if (short) return short.kind === 'session' ? { kind: 'session' as const, sessionId: short.id } : { kind: 'msg' as const, prefix: short.id }
   const target = parseGuguLink(href)
   return target?.kind === 'file' || target?.kind === 'chat' || target?.kind === 'session' ? target : null
 }

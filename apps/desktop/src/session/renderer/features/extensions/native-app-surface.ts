@@ -1,13 +1,18 @@
 import type { ExtensionSurfaceMetrics } from '@shared/extensions/bridge-protocol';
+import type { ElementBox as Box } from '@/lib/elementVisibility';
 import { isBrowserPageOccluded } from '../browser/browser-page-occlusion';
+
+const edges = (b: Box) => ({ x: b.left, y: b.top, right: b.left + b.width, bottom: b.top + b.height });
 
 /**
  * Only the trusted renderer measures native embedding bounds; App HTML cannot enlarge this box. `occluded`: the last sample,
  * for a placing that only follows the page as it moves (no hit test then; overlays coming and going are sampled on their own).
  */
 export function nativeAppSurfaceMetrics(element: HTMLElement, clipElement: HTMLElement, visible: boolean,
-  width: number, height: number, occluded?: boolean): ExtensionSurfaceMetrics {
-  const box = element.getBoundingClientRect(), clip = clipElement.getBoundingClientRect();
+  width: number, height: number, occluded?: boolean, placed?: { page: Box; clip: Box }): ExtensionSurfaceMetrics {
+  // `placed`: the page's and the clip's boxes as the caller has just placed them (viewport px). Read back off the elements
+  // right after those writes, each would lay the whole page out again in the middle of a moving panel's frame.
+  const box = placed ? edges(placed.page) : element.getBoundingClientRect(), clip = placed ? edges(placed.clip) : clipElement.getBoundingClientRect();
   const doc = element.ownerDocument, win = doc.defaultView!;
   const x = Math.max(0, clip.x, box.x), y = Math.max(0, clip.y, box.y);
   const clipped = { x, y, width: Math.max(0, Math.min(win.innerWidth, clip.right, box.right) - x),

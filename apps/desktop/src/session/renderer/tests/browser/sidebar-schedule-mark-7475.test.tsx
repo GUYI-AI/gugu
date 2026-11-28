@@ -106,10 +106,12 @@ it.each(['working', 'needs_user', 'error'] as const)('%s:让位给状态的标�
   expect(host.querySelector('[data-session-schedule-hover]')).toBeNull();
 });
 
-it('最近一次没送到:空闲时是 ⚠,在跑时同样让位', async () => {
+it('最近一次没送到不上行:还会回来的照旧是钟,只剩没送到的照旧是那个时间', async () => {
   const failing = { ...inAnHour(), attention: { kind: 'failed' as const, title: '回归汇总' } };
   await mount('idle', failing);
-  await until('attention mark', () => mark()?.dataset.sessionSchedule === 'attention');
-  await mount('working', failing);
-  await until('yields to working', () => mark() == null);
+  await until('clock mark', () => mark()?.dataset.sessionSchedule === 'pending');
+  expect(mark()!.querySelector('svg')!.innerHTML).toBe(new DOMParser().parseFromString(renderToStaticMarkup(<Clock />), 'text/html').querySelector('svg')!.innerHTML);
+  await mount('idle', { ...failing, nextAt: null });
+  await until('relative time', () => time() != null);
+  expect(mark()).toBeNull();
 });

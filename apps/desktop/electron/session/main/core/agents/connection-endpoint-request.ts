@@ -1,5 +1,7 @@
 import { EgressError, causeCode, fetchWithEnv } from '@gugu/core/shared/egress';
+import type { ModelProtocol } from '@gugu/session-core/models/custom-model';
 import type { ConnectionFailureReason } from '@gugu/session-core/workspace-server/agent-config';
+import { log } from '@main/lib/logger';
 
 const PROBE_TIMEOUT_MS = 10_000;
 const REDIRECTS = new Set([301, 302, 303, 307, 308]);
@@ -34,18 +36,33 @@ export async function requestEndpoint<T>(
   init: RequestInit,
   env: NodeJS.ProcessEnv | undefined,
   consume: (response: Response) => Promise<T>,
+  trace: { protocol: ModelProtocol; deadline?: AbortSignal } | undefined = undefined,
 ): Promise<Result<T>> {
-  const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+  // A request that is part of a whole check runs until that check's deadline (a relay waking a model takes longer than one
+  // request's own limit, gugu-dev#1617); a request on its own keeps its own limit.
+  const signal = trace?.deadline ?? AbortSignal.timeout(PROBE_TIMEOUT_MS);
+  const started = performance.now();
+  let status: number | undefined;
+  let result: Result<T>;
   try {
     // Manual inspection preserves the redirect diagnosis without ever forwarding a credential.
     const request: RequestInit = { ...init, redirect: 'manual', signal };
     const response = await (fetchImpl ? fetchImpl(url, request) : fetchWithEnv(env ?? process.env, url, request));
-    const result: Result<T> = REDIRECTS.has(response.status)
+    status = response.status;
+    result = REDIRECTS.has(response.status)
       ? { ok: false, reason: 'redirect' }
       : { ok: true, value: await consume(response) };
     if (response.body && !response.bodyUsed) await response.body.cancel();
-    return result;
   } catch (error) {
-    return { ok: false, reason: failureReason(error, signal) };
+    result = { ok: false, reason: failureReason(error, signal) };
   }
+  // One line per request so a report from a person's machine can be read (gugu-dev#1617): the path only, never the
+  // host's query, the key or the body.
+  log.info({ protocol: trace?.protocol ?? null, method: init.method ?? 'GET', path: pathOf(url), ...(status !== undefined ? { status } : {}),
+    ...(!result.ok ? { reason: result.reason } : {}), ms: Math.round(performance.now() - started) }, 'custom model endpoint request');
+  return result;
+}
+
+function pathOf(url: string): string {
+  try { return new URL(url).pathname; } catch { return ''; }
 }

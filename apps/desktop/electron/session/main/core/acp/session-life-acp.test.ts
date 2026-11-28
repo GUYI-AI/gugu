@@ -3,6 +3,7 @@ import type { ExitFact, Gen, ProcessLease, StageOut } from '@gugu/core/local/ses
 
 type Summary = { lifecycle: string; failure?: { kind: string; message: string; exitCode?: number | null; signal?: string | null } | null };
 const h = vi.hoisted(() => ({
+  catalog: { kind: 'unknown' } as unknown,
   watchers: new Map<string, (summary: Summary | undefined) => void>(),
   gone: null as ((cause: string) => void) | null,
   client: { tag: 'worker-client' },
@@ -52,6 +53,7 @@ vi.mock('./runtime-process/host', () => ({
 }));
 vi.mock('../session-timeline/turn-files', () => ({ turnFileText: h.turnFiles }));
 vi.mock('./inject-prompt', () => ({ injectEmdashPromptDetached: h.inject }));
+vi.mock('../agents/harness-model-catalog', () => ({ lookupHarnessModelCatalog: async () => ({ state: h.catalog, refreshing: false }) }));
 vi.mock('@main/lib/logger', () => ({ log: { error: h.logError } }));
 vi.mock('./emdash-platform-injector', async original => ({
   ...await original<typeof import('./emdash-platform-injector')>(), prepareEmdashPlatformSession: h.preparePlatform,
@@ -366,6 +368,32 @@ describe('session-life ACP leg', () => {
     await adapter.dispatch({ capabilities: { injection: { firstTurn: { kind: 'plain' } } } } as never, first, ctx());
     expect(h.inject).toHaveBeenLastCalledWith('s', 'hi', { clientMessageId: 'm', origin: 'manual' });
     await expect(adapter.dispatch({ capabilities: { injection: {} } } as never, first, ctx())).rejects.toThrow(/did not land/);
+  });
+
+  // gugu-dev#1644: in a group, a task card's first sentence that is one of the harness's commands runs as that command;
+  // inside the card's envelope it would be words only. The command goes first, the envelope after it.
+  it('sends a task card that opens with a harness command as the command, then the card\'s envelope', async () => {
+    const adapter = await boundAdapter();
+    h.inject.mockResolvedValue({ outcome: 'started', completion: Promise.resolve({ success: true, data: undefined }), turnId: 't' });
+    const envelope = { kind: 'envelope', envelope: { guguUserId: '11111111-1111-4111-8111-111111111111', chatId: '22222222-2222-4222-8222-222222222222', messageId: '33333333-3333-4333-8333-333333333333', senderUserId: '44444444-4444-4444-8444-444444444444', replyTo: null, threadRootId: null },
+      identities: new Map(), chat: { publicId: 1, name: 'group', kind: 'group' }, timestamp: '2026-11-27 09:00 UTC+0' };
+    const first = (text: string) => ({ ...(row as object), message: { id: 'm', text }, turn: { kind: 'chat-page-first-turn' } }) as never;
+    const have = { capabilities: { injection: { firstTurn: envelope } } } as never;
+    h.catalog = { kind: 'ready', models: [], selected: null, efforts: [], selectedEffort: null, commands: [{ name: 'goal', description: 'Set a goal' }] };
+
+    h.inject.mockClear();
+    await adapter.dispatch(have, first('/goal ship it'), ctx());
+    expect(h.inject.mock.calls.map((call) => [call[1].startsWith('<gugu_delivery') ? 'envelope' : call[1], call[2].origin])).toEqual([
+      ['/goal ship it', 'manual'], ['envelope', 'communication']]);
+
+    // Words, a path, or a harness that advertised nothing: the card's envelope alone, as before.
+    for (const [text, catalog] of [['ship it', h.catalog], ['/Users/me/a.txt look', h.catalog], ['/goal ship it', { kind: 'unknown' }]] as const) {
+      h.catalog = catalog;
+      h.inject.mockClear();
+      await adapter.dispatch(have, first(text), ctx());
+      expect(h.inject).toHaveBeenCalledOnce();
+      expect(h.inject.mock.calls[0]![2].origin).toBe('communication');
+    }
   });
 
   it('#2558 a turn whose files are still being placed waits for them before preparing them; a stop while it waits refuses it', async () => {

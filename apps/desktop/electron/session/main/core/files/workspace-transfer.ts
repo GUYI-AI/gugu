@@ -83,7 +83,7 @@ export async function inWorkspace(root: string, target: string, canonical = fals
   return canonical ? checked : file;
 }
 
-async function currentEtag(file: string): Promise<string | null> {
+export async function currentEtag(file: string): Promise<string | null> {
   try {
     const info = await stat(file, { bigint: true });
     return info.isFile() ? etagOf(info) : null;
@@ -142,7 +142,7 @@ type PendingUpload = {
  * 按块收一次上传;半截的保存留两分钟等下一段(一次保存的各段带同一个 uploadId)。`maxBytes` 是一份文件的上限(默认工作副本的;
  * 另一台机器发来的 App 包用它自己的,received-packages.ts)。
  */
-export function createWorkspaceUploads(options: { idleMs?: number; maxBytes?: number } = {}) {
+export function createWorkspaceUploads(options: { idleMs?: number; maxBytes?: number; createMode?: number } = {}) {
   const uploads = new Map<string, PendingUpload>();
   const operations = new Map<string, Promise<void>>();
   const locked = <T>(id: string, work: () => Promise<T>): Promise<T> => {
@@ -175,7 +175,7 @@ export function createWorkspaceUploads(options: { idleMs?: number; maxBytes?: nu
       const upload = uploads.get(uploadId);
       if (upload) await drop(uploadId, upload);
     }); },
-    write(root: string, request: WorkspaceWriteChunk): Promise<WorkspaceWriteResult> { return locked(request.uploadId, async () => {
+    write(root: string, request: WorkspaceWriteChunk, validate?: (file: string) => Promise<void>): Promise<WorkspaceWriteResult> { return locked(request.uploadId, async () => {
       const file = await inWorkspace(root, request.path, true);
       if (!Number.isInteger(request.total) || request.total < 0 || request.total > maxBytes) {
         throw new WorkspaceTransferError('too_large', `file too large to save: ${request.total} bytes`);
@@ -208,7 +208,7 @@ export function createWorkspaceUploads(options: { idleMs?: number; maxBytes?: nu
       }
       touch(request.uploadId, upload);
       try {
-        await appendFile(upload.temp, bytes);
+        await appendFile(upload.temp, bytes, { mode: options.createMode });
       } catch (error) {
         await drop(request.uploadId, upload);
         throw fsError(error, file);
@@ -221,6 +221,7 @@ export function createWorkspaceUploads(options: { idleMs?: number; maxBytes?: nu
           throw new WorkspaceTransferError('upload_lost', `received ${upload.received} of ${upload.total} bytes`);
         }
         if ((await stat(upload.temp)).size !== upload.total) throw new WorkspaceTransferError('upload_lost', 'Staged file length does not match this save');
+        if (validate) await validate(file);
         const now = await currentEtag(file);
         if (upload.expectedEtag !== WORKSPACE_WRITE_FORCE && now !== upload.expectedEtag) {
           throw new WorkspaceTransferError(WORKSPACE_CONFLICT_CODE, now ?? '');

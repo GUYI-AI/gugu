@@ -5,7 +5,7 @@ import * as syncProtocol from 'y-protocols/sync';
 import * as Y from 'yjs';
 import { chatForCapabilities } from './bridge-protocol';
 import { folderElsewhereRefusal, notOnSessionMachine } from './machine-call';
-import { APP_RUNTIME_ENTRY, FRAME_TYPE, encodeAuthFrame, encodeCloseFrame, encodeSyncUpdateFrame, fileRefOf, injectAppRuntime, isBareFrame, placeKey, placeOf, readAuthAnswer, readCloseFrame, readFrameHead, readSyncStatus, splitRoutingKey, workspaceSession, workspaceTarget, folderWorkspace, workspaceFolder } from './app-runtime-protocol';
+import { APP_RUNTIME_ENTRY, chatListOptionsOf, FRAME_TYPE, encodeAuthFrame, encodeCloseFrame, encodeSyncUpdateFrame, fileRefOf, injectAppRuntime, isBareFrame, placeKey, placeOf, readAuthAnswer, readCloseFrame, readFrameHead, readSyncStatus, splitRoutingKey, workspaceSession, workspaceTarget, folderWorkspace, workspaceFolder } from './app-runtime-protocol';
 
 const TAG = `<script src="${APP_RUNTIME_ENTRY}"></script>`;
 
@@ -197,5 +197,27 @@ describe('a project folder elsewhere', () => {
     const chat = { id: 'c', name: 'P', kind: 'group' as const, groupId: 'c', folders: [{ workspace: 'folder:d/w', path: '/p', machine: 'M', online: true }] };
     expect(chatForCapabilities(chat, ['chat:read'])).not.toHaveProperty('folders');
     expect(chatForCapabilities(chat, ['files:read']).folders).toHaveLength(1);
+  });
+});
+
+describe('chatListOptionsOf: what files.list({ chat, … }) reads besides its place', () => {
+  it('passes a folder, folders only, a name, and one page; a working copy takes a folder alone', () => {
+    expect(chatListOptionsOf({ chat: 'c', folder: '', limit: 100 }, true)).toEqual({ folder: '', limit: 100 });
+    expect(chatListOptionsOf({ chat: 'c', folder: 'Docs', kind: 'folder' }, true)).toEqual({ folder: 'Docs', kind: 'folder' });
+    expect(chatListOptionsOf({ chat: 'c', name: ' png ', offset: 200, limit: 200 }, true)).toEqual({ name: 'png', offset: 200, limit: 200 });
+    expect(chatListOptionsOf({ chat: 'c' }, true)).toEqual({});
+    expect(chatListOptionsOf({ workspace: 'w', folder: 'src' }, false)).toEqual({ folder: 'src' });
+  });
+
+  it('refuses what is not one, naming it', () => {
+    const refused = (value: unknown, chat = true) => { try { chatListOptionsOf(value, chat); } catch (error) { return error as Error & { code?: string }; } throw new Error('accepted'); };
+    expect(refused({ workspace: 'w', limit: 10 }, false)).toMatchObject({ code: 'invalid', message: expect.stringContaining('one folder at a time') });
+    expect(refused({ kind: 'file' })).toMatchObject({ code: 'invalid', message: expect.stringContaining("kind: 'folder'") });
+    expect(refused({ name: '  ' }).code).toBe('invalid');
+    expect(refused({ limit: 0 }).code).toBe('invalid');
+    expect(refused({ limit: 1001 }).code).toBe('invalid');
+    expect(refused({ limit: 1.5 }).code).toBe('invalid');
+    expect(refused({ offset: -1, limit: 1 }).code).toBe('invalid');
+    expect(refused({ offset: 10 }).message).toContain('offset, 0 or more, goes with it');
   });
 });

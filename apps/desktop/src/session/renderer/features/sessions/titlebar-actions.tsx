@@ -61,24 +61,38 @@ function useTightRow(ref: RefObject<HTMLDivElement | null>): boolean {
       const end = Math.max(...Array.from(row.children, (child) => child.getBoundingClientRect().right));
       return end - (row.getBoundingClientRect().right - TITLEBAR_ACTION_EDGE_GAP_PX);
     };
-    const check = () => {
+    // The row's and the tabs' widths as the observer delivers them, ❌ read off the boxes: in a panel's frame an earlier
+    // observer in the same delivery has written styles, and each read here laid the whole page out again. The row's own
+    // edges are read only when the row changed (its width or its content); the whole strip resizing alone cannot make it overflow.
+    const width = new Map<Element, number>();
+    const check = (rowChanged: boolean) => {
+      const rowWidth = width.get(row) ?? row.clientWidth;
       if (!row.hasAttribute('data-tabbar-actions-tight')) {
+        if (!rowChanged) return;
         const by = row.children.length ? over() : 0;
         if (by > 0.5) {
-          needed.current = row.clientWidth + by;
+          needed.current = rowWidth + by;
           setTight(true);
         }
-      } else if (row.clientWidth + (tabs?.clientWidth ?? 0) >= needed.current) {
+      } else if (rowWidth + (tabs ? width.get(tabs) ?? tabs.clientWidth : 0) >= needed.current) {
         setTight(false);
       }
     };
     // ❌ check() synchronously here: a layout effect that reads geometry forces a layout in the middle of the commit
     // (the first reader paid for restyling the whole page). The observer's first delivery comes after layout, before
     // paint; flushSync keeps that first paint already collapsed.
-    const resize = new ResizeObserver(() => flushSync(check));
+    const resize = new ResizeObserver((entries) => {
+      let rowChanged = false;
+      for (const entry of entries) {
+        const next = entry.borderBoxSize[0]?.inlineSize ?? entry.contentRect.width;
+        if (entry.target === row && next !== width.get(row)) rowChanged = true;
+        width.set(entry.target, next);
+      }
+      flushSync(() => check(rowChanged));
+    });
     resize.observe(row);
-    if (bar) resize.observe(bar);
-    const mutation = new MutationObserver(() => flushSync(check));
+    if (tabs) resize.observe(tabs);
+    const mutation = new MutationObserver(() => flushSync(() => check(true)));
     mutation.observe(row, { childList: true, subtree: true, characterData: true });
     return () => {
       resize.disconnect();

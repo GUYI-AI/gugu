@@ -3,12 +3,10 @@ import type { ExtensionHostEvent } from '../../session/shared/extensions/bridge-
 import type { ExtensionAgentView } from '../../session/shared/extensions/bridge-protocol';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types';
 import type { AppMessageReceipt } from '@gugu/session-core/session-record/contract';
-import type { AssistantAppChange } from '../../session/shared/extensions/assistant-app';
 import { libraryHost } from './assistant-library-client';
 import type { AssistantMachine } from '../../session/renderer/features/assistant/assistant-machine-core';
-import { rendererLogger } from '../../lib/log';
 import { cachedDevicesAccount } from '../../store/devicesCache';
-import { assistantPanelAccountId, requireAssistantPanelBridge } from '../../lib/assistantPanelBridge';
+import { assistantPanelAccountId } from '../../lib/assistantPanelBridge';
 import { onAssistantPanelChanged } from './assistant-panel-replica';
 
 type ProgramNotification = { server: string; method: string; params?: unknown };
@@ -58,25 +56,4 @@ export async function assistantAppProgram<T>(machine: AssistantAppMachine | null
   if (result.isError) throw new Error(result.content.filter(block => block.type === 'text').map(block => block.text).join('\n'), { cause: result });
   if (!result.structuredContent || !('result' in result.structuredContent)) throw new Error('Assistant App program did not return a result');
   return result.structuredContent.result as T;
-}
-
-export async function publishAssistantAppChange(
-  machine: AssistantAppMachine | null | undefined,
-  change: Omit<AssistantAppChange, 'operationId'> & { operationId?: string },
-  assistantId: string | undefined = undefined,
-  expectedOwnerId = machine?.panel?.ownerId ?? assistantPanelAccountId() ?? cachedDevicesAccount(),
-): Promise<void> {
-  return requireAssistantPanelBridge().queueNotice({ ...change, operationId: change.operationId ?? crypto.randomUUID() },assistantId,expectedOwnerId);
-}
-
-/** Call after a successful state mutation. A failed delivery must not turn a committed save into a fake save failure. */
-export async function reportAssistantAppChange(
-  machine: AssistantAppMachine | null | undefined, assistantId: string | undefined,
-  change: Omit<AssistantAppChange, 'operationId'> & { operationId?: string },
-  expectedOwnerId = machine?.panel?.ownerId ?? assistantPanelAccountId() ?? cachedDevicesAccount(),
-): Promise<void> {
-  if (machine?.panel && change.resource !== 'pending-work') return;
-  void publishAssistantAppChange(machine, change, assistantId, expectedOwnerId).catch(() => {
-    rendererLogger('assistant/app').warn({ operationId: change.operationId }, 'Saved App change publication deferred');
-  });
 }

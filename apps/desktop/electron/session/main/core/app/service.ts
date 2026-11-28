@@ -544,11 +544,6 @@ class AppService implements IInitializable, IDisposable {
     return result.filePath;
   }
 
-  async showDownloadSaveDialog(defaultPath: string): Promise<string | undefined> {
-    const result = await dialog.showSaveDialog(getMainWindow()!, { defaultPath });
-    return result.canceled || !result.filePath ? undefined : result.filePath;
-  }
-
 }
 
 export const appService = new AppService();

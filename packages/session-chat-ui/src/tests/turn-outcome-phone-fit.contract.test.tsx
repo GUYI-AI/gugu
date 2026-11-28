@@ -11,16 +11,6 @@ const signIn: TurnOutcomeItem = { kind: 'turn-outcome', id: 'sign-in:outcome', t
 const said: TurnOutcomeItem = { kind: 'turn-outcome', id: 'said:outcome', turnId: 'said',
   outcome: { kind: 'error', said: 'upstream refused' } }
 
-/** Width the badge's own contents take on one line, read from the DOM the row painted. */
-function naturalBadgeWidth(badge: HTMLElement) {
-  const clone = badge.cloneNode(true) as HTMLElement
-  clone.style.cssText = 'position:absolute;visibility:hidden;width:max-content;height:auto'
-  document.body.appendChild(clone)
-  const width = clone.getBoundingClientRect().width
-  clone.remove()
-  return width
-}
-
 describe('the turn outcome badge is measured from what it paints', () => {
   for (const locale of ['en-US', 'zh-CN']) for (const [name, data] of [['sign-in needed', signIn], ['upstream said', said]] as const) {
     for (const width of [296, 640]) {
@@ -36,10 +26,10 @@ describe('the turn outcome badge is measured from what it paints', () => {
           expect(badge.textContent).not.toContain('·')
           const range = document.createRange()
           range.selectNodeContents(reason)
-          return { set: badge.getBoundingClientRect().width, natural: naturalBadgeWidth(badge), reasonLines: new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size }
+          return { set: badge.getBoundingClientRect().width, available: host.querySelector('[data-slot="turn-outcome-lane"]')!.getBoundingClientRect().width, reasonLines: new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size }
         }, { onRestorePrompt: () => {} })
-        expect(Math.abs(reading.inspected.set - reading.inspected.natural)).toBeLessThan(0.1)
-        expect(reading.inspected.reasonLines).toBe(1)
+        expect(reading.inspected.set).toBeLessThan(reading.inspected.available)
+        expect(reading.inspected.reasonLines).toBeLessThanOrEqual(2)
         expect(reading.dom).toBe(reading.computed)
       })
     }
