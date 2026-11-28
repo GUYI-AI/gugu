@@ -47,19 +47,16 @@ export function createDesktopFileAccess(deps: {
   project(chatId: string): Promise<string | undefined>
   links(): HeldFileSshLinks | null; tempRoot: string; fetch: typeof globalThis.fetch; env?: NodeJS.ProcessEnv
   rpc(name: string, args: Record<string, unknown>): Promise<unknown>
-  /** Where this device keeps what it sends into project chats it binds no project to (DEVICE_STORE). */
+  /** Where this device keeps the copies of what it sends (DEVICE_STORE). Versions sent before it are read in their projects. */
   deviceStore: string
   /** This device's Gugu home: its file cache (`fileCacheDirectory`) keeps what the window read over the network. */
   home: string
   /** The identity schema, as the signed-in account: its own settings and projects. */
   identityDb(accessToken: string): ReturnType<typeof makeIdentityClient>
 }) {
-  // The device store is served and written like a project root.
-  const root = async (projectId: string) => {
-    if (projectId !== DEVICE_STORE) return deps.root(projectId)
-    await mkdir(deps.deviceStore, { recursive: true, mode: 0o700 })
-    return deps.deviceStore
-  }
+  const store = async () => { await mkdir(deps.deviceStore, { recursive: true, mode: 0o700 }); return deps.deviceStore }
+  // The device store is served like a project root.
+  const root = async (projectId: string) => projectId === DEVICE_STORE ? store() : deps.root(projectId)
   const identityDb = async () => {
     const auth = await deps.auth(); if (!auth) throw new Error('File publisher is not signed in')
     return { auth, db: deps.identityDb(auth.accessToken) }
@@ -183,7 +180,7 @@ export function createDesktopFileAccess(deps: {
     return resolve(fileRef, reader, { ...(options?.localOnly ? { localOnly: true } : {}), ...(options?.signal ? { signal: options.signal } : {}) })
   }
   const sshHandlers: DeviceRpcHandlers = { [PROJECT_FILE_READ]: async (payload, ctx) => ({ result: await read(payload as Parameters<typeof read>[0], ctx.request.user_id) }) }
-  const publish = createProjectFilePublisher({ identity, root, project: deps.project, rpc: deps.rpc, env: deps.env,
+  const publish = createProjectFilePublisher({ identity, store, project: deps.project, rpc: deps.rpc, env: deps.env,
     preview: async (original, contentType, sha256) => offerImagePreviewOf(await endpoint(), original, contentType, sha256, (await identity()).accountId),
     async storage() { const { auth, db } = await identityDb(); return parseFileStorage(await readUserSettingsConfig(db as unknown as SettingsTableClient, auth.userId, 'user')) },
     // The account's projects are its project groups (chat.project_groups), with or without a folder on any machine.

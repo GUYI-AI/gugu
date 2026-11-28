@@ -32,16 +32,18 @@ type Publisher = NonNullable<FilesPlatform['publishFile']>
 type AppUpload = Parameters<Publisher>[1]
 type Rpc = (name: string, args: Record<string, unknown>) => Promise<unknown>
 /**
- * A project chat has no host: what this device sends into it stays on this device — in a project it binds to the chat, or
- * in its device store — and every member's device may send the next version of any file, which it then keeps. Whether
- * a file stays here or is uploaded is this account's own setting. The ordinary uploader stays shared.
+ * A project chat has no host: what this device sends into it stays on this device, as a copy in its device store found by
+ * device and path alone (no project, no binding), and every member's device may send the next version of any file, which
+ * it then keeps. Whether a file stays here or is uploaded is this account's own setting. The ordinary uploader stays shared.
  */
 export function createProjectFilePublisher(deps: {
-  identity(): Promise<{ accountId: string; deviceId: string }>; root(id: string): Promise<string | null>
+  identity(): Promise<{ accountId: string; deviceId: string }>
+  /** This device's store (DEVICE_STORE), where every copy it sends is kept. */
+  store(): Promise<string>
   rpc: Rpc; env?: NodeJS.ProcessEnv
   /** This account's own file storage setting. */
   storage(): Promise<FileStorage>
-  /** This device's project bound to the chat — the one the account records for it (device_projects), so the publication names a project the account knows. */
+  /** This device's project bound to the chat (device_projects): such a chat keeps its files here. */
   project(chatId: string): Promise<string | undefined>
   /** Whether the chat is one of this account's projects (its project group), whatever folders its machines bind. */
   projectChat(chatId: string): Promise<boolean>
@@ -51,10 +53,9 @@ export function createProjectFilePublisher(deps: {
   /** Null: not a project chat, so the ordinary upload decides. */
   const place = async (chatId: string, task = false) => {
     const identity = await deps.identity()
-    if (task) return { identity, projectId: DEVICE_STORE, storage: null }
-    const bound = await deps.project(chatId)
-    if (!bound && !await deps.projectChat(chatId)) return null
-    return { identity, projectId: bound ?? DEVICE_STORE, storage: await deps.storage() }
+    if (task) return { identity, storage: null }
+    if (!await deps.project(chatId) && !await deps.projectChat(chatId)) return null
+    return { identity, storage: await deps.storage() }
   }
   const publishFile = async (chatId: string, file: SelectedProjectFile, parentId: string | null, actor: string,
     store?: Parameters<Publisher>[4], { message, next, task, itemId }: ProjectFilePublishOptions = {}): Promise<Awaited<ReturnType<Publisher>> & { message?: Record<string, unknown>; path?: string } | null> => {
@@ -62,9 +63,8 @@ export function createProjectFilePublisher(deps: {
     if (!here) return null
     if (here.storage?.proactive_upload) return store ? store() : null
     const handed = file.path
-    const { identity, projectId } = here
-    const root = await deps.root(projectId)
-    if (!root) throw new Error('Project root is unavailable')
+    const { identity } = here
+    const root = await deps.store()
     if (!isAbsolute(file.path)) throw new Error('Choose an original file on this computer')
     file = { ...file, path: await importProjectFile(root, file) }
     const path = relative(root, file.path).split(sep).join('/')
@@ -80,7 +80,7 @@ export function createProjectFilePublisher(deps: {
     }
     const sha256 = hash.digest('hex')
     const receipt = await deps.rpc('file_device_publish', { p_item: next?.itemId ?? itemId ?? randomUUID(), p_chat: chatId, p_device: identity.deviceId,
-      p_project: projectId, p_path: path, p_sha: sha256, p_size: first.size, p_filename: file.name.split('/').at(-1), p_type: file.contentType, p_parent: parentId,
+      p_project: DEVICE_STORE, p_path: path, p_sha: sha256, p_size: first.size, p_filename: file.name.split('/').at(-1), p_type: file.contentType, p_parent: parentId,
       ...(pixels ? { p_width: pixels.width, p_height: pixels.height } : {}),
       ...(next ? { p_expected: next.expectedVersion } : {}), ...(message ? { p_message: message } : {}) }) as { item_id: string; message?: Record<string, unknown> }
     const sent = receipt.message
@@ -89,7 +89,7 @@ export function createProjectFilePublisher(deps: {
     const row = (Array.isArray(result) ? result[0] : result) as NonNullable<Awaited<ReturnType<Publisher>>>
     if (!row || JSON.stringify(await deps.identity()) !== JSON.stringify(identity)) throw new Error('File publication account changed')
     const revision: FileRevision = { source: 'local', item_id: row.id, version: row.version, chat_id: row.chat_id, file_name: row.filename,
-      content_type: row.content_type, size_bytes: first.size, sha256, host_account_id: identity.accountId, host_device_id: identity.deviceId, host_project_id: projectId, relative_path: path,
+      content_type: row.content_type, size_bytes: first.size, sha256, host_account_id: identity.accountId, host_device_id: identity.deviceId, host_project_id: DEVICE_STORE, relative_path: path,
       workspace: { path: row.path, parent_id: row.parent_id, created_at: row.created_at, updated_at: row.updated_at, created_by: row.created_by, source_message_ids: row.source_message_ids ?? [] } }
     await rememberProjectFile(revision, identity.accountId, deps.env)
     // An image is read at a glance, often when this machine is off: its preview goes up with it.
