@@ -6,7 +6,7 @@
 import { afterEach, expect, it } from 'vitest';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { PanelSlot } from '@renderer/lib/layout/panel-slot';
-import { PanelTrack } from '@renderer/lib/layout/panel-track';
+import { MOVE, PanelTrack } from '@renderer/lib/layout/panel-track';
 import '@renderer/index.css';
 
 let harness: ReturnType<typeof createReactHarness>;
@@ -157,4 +157,29 @@ it('the fill at nothing from the start is at rest like any other: inert, out of 
   expect(fill.window.inert).toBe(true);
   expect(fill.window.getBoundingClientRect().right).toBeLessThan(0);
   expect(fill.content.offsetWidth).toBe(900);
+});
+
+it('a slot that exits clipped is held where it is laid out, unfaded; what rides it moves on its clock, and a rider that comes once the move is under way joins it where it is', async () => {
+  const track = new PanelTrack([{ id: 'a', at: { size: 300 }, exit: 'clip' }], 'x', 900);
+  const { slot } = await mount(track);
+  const rider = (mark: HTMLElement) => (from: number, to: number) => [mark.animate({ opacity: [String(from / 300), String(to / 300)] }, MOVE)];
+  const marks = [document.createElement('i'), document.createElement('i')];
+  slot.content.append(...marks);
+  track.ride('a', rider(marks[0]));
+  track.to({ a: { size: 0 } });
+  let joined = false;
+  const read = await frames(track, () => {
+    // What mounts in the render that starts a move registers after the move has started.
+    if (!joined) { joined = true; track.ride('a', rider(marks[1])); }
+    return { place: width(slot.place), content: width(slot.content), rides: marks.map((mark) => Number(getComputedStyle(mark).opacity)), window: getComputedStyle(slot.window).opacity, mask: slot.window.style.maskImage, left: slot.content.getBoundingClientRect().left - slot.place.getBoundingClientRect().left };
+  });
+  expect(read.length).toBeGreaterThan(3);
+  for (const at of read) {
+    expect(at.content).toBe(300);
+    expect(Math.abs(at.left)).toBeLessThan(0.5);
+    expect([at.window, at.mask]).toEqual(['1', '']);
+    for (const ride of at.rides) expect(ride).toBeCloseTo(at.place / 300, 1);
+  }
+  expect(marks.flatMap((mark) => mark.getAnimations())).toHaveLength(0);
+  expect(slot.content.offsetWidth).toBe(300);
 });

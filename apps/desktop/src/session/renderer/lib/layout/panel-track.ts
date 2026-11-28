@@ -50,12 +50,10 @@ export interface PanelSlotNodes {
   content: HTMLElement;
 }
 
-/** What moves with a slot through a move, as animations on the move's clock: made when the move starts, gone when it lands. */
-type SlotRider = (from: number, to: number, content: number) => Animation[];
+type SlotRider = (from: number, to: number, content: number) => Animation[]; // what moves with a slot through a move, as animations on the move's clock: made when it starts, gone when it lands
 interface Slot {
   id: string;
-  /** To or from nothing it is slid out with its edge and faded (default), or held where it is laid out and clipped by its drawn edge: the track does not fade that one — what fades with it rides it (`ride`). */
-  exit: 'slide' | 'clip';
+  exit: 'slide' | 'clip'; // to or from nothing: slid out with its edge and faded (default), or held where it is laid out and clipped by its drawn edge — the track does not fade that one, what fades with it rides it (`ride`)
   riders: SlotRider[];
   nodes: PanelSlotNodes | null;
   /** What the caller last said: written when the nodes come, and what the next `to` is compared with. */
@@ -69,6 +67,7 @@ export class PanelTrack {
   /** The move under way: the platform's animations of it, and the clock that steps them. */
   private move: Animation[] = [];
   private clock: { stop(): void } | null = null;
+  private starts = new Map<string, number>(); // where each slot was drawn as the move under way began
   private readonly landings = new Set<() => void>();
 
   /** `axis`: a row (x, widths) or a column (y, heights). `extent`: the track's length as its owner measures it: the fill has this less the slots, so placing writes and never reads the layout back. */
@@ -80,9 +79,7 @@ export class PanelTrack {
     this.slots = slots.map(({ id, at, exit = 'slide' }) => ({ id, exit, riders: [], nodes: null, target: at }));
   }
 
-  measure(extent: number): void {
-    this.extent = extent;
-  }
+  measure(extent: number): void { this.extent = extent; }
 
   attach(id: string, nodes: PanelSlotNodes | null): void {
     const slot = this.slot(id);
@@ -112,10 +109,12 @@ export class PanelTrack {
     return slot.nodes ? this.sizeOf(slot.nodes.content) : (slot.target.content ?? slot.target.size);
   }
 
-  /** `rider`'s animations go with every move of this slot from here on. */
+  /** `rider`'s animations go with every move of this slot from here on — the one under way too, from where it is (what mounts as a move starts rides it). */
   ride(id: string, rider: SlotRider): () => void {
-    const riders = this.slot(id).riders;
-    return riders.push(rider), () => void riders.splice(riders.indexOf(rider), 1);
+    const { riders, nodes, target } = this.slot(id);
+    riders.push(rider);
+    for (const animation of this.moving && nodes ? rider(this.starts.get(id) ?? target.size, target.size, heldPx(nodes.content, this.sides[0]) || target.size) : []) this.move.push((animation.pause(), (animation.currentTime = this.move[0].currentTime), animation));
+    return () => void riders.splice(riders.indexOf(rider), 1);
   }
 
   /** Called when a move ends: it landed, or a jump took it over. */
@@ -160,6 +159,7 @@ export class PanelTrack {
     const from = new Map(this.slots.map((slot) => [slot.id, this.moving ? this.drawn(slot.id) : slot.target.size]));
     const fillFrom = this.left((slot) => from.get(slot.id)!);
     this.stop();
+    this.starts = from;
     const move: Animation[] = [];
     let distance = 0;
     for (const slot of this.slots) {

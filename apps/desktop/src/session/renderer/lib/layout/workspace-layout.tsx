@@ -23,6 +23,8 @@ interface WorkspaceLayoutProps {
   innerSidebarRestore?: ReactNode;
 }
 
+const all = (root: Element | null | undefined, name: string) => [...(root?.getElementsByClassName(name) ?? [])] as HTMLElement[];
+const moves = (from: number, to: number, content: number) => Math.abs(from - to) >= PANEL_LANDED_PX && content > 0;
 /**
  * 侧栏折不折只由用户说了算(顶栏按钮 / 快捷键 / 拖分隔条)。
  *
@@ -77,25 +79,25 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
   // `right` and the fading blocks' `opacity`. The card's `data-inner-column` (@@@inner-on-card) is held while any of the column is drawn: its left corners go at the start of an unfold and
   // come back when a fold has landed, ❌ at the click (a seam for the whole move). ❌ An inherited variable on the shell or the page: every frame would restyle every element under it.
   useLayoutEffect(() => {
-    const fill = fillNode.current;
     const column = workspaceRootRef.current?.querySelector(':scope > [data-panel-slot="inner"]');
-    const all = (root: Element | null | undefined, name: string) => [...(root?.getElementsByClassName(name) ?? [])] as HTMLElement[];
-    const rest = (open = track.drawn('inner') > PANEL_LANDED_PX) => {
+    return track.ride('inner', (from, to, content) => !moves(from, to, content) ? [] : [
+      ...all(column, INNER_FOLD_LINE).map((line) => line.animate({ right: [`${content - from}px`, `${content - to}px`] }, MOVE)),
+      ...all(column, INNER_FOLD_FADES).map((block) => block.animate(innerFoldFrames(from, to, content, 'opacity', innerFoldOpacity), MOVE)),
+    ]);
+  }, [track, workspaceRootRef]);
+  // The followers come and go with the render that starts the move (the lane's button mounts, the strip takes the class): their rider is registered after that render, and joins the move under way.
+  useLayoutEffect(() => {
+    const fill = fillNode.current;
+    const rest = () => {
+      const open = track.drawn('inner') > PANEL_LANDED_PX;
       for (const follower of all(fill, RESTORE_LANE_FOLLOWER)) follower.style.setProperty('--shell-restore-lane-shown', open ? '0' : '1');
       fill?.toggleAttribute('data-inner-column', innerSidebarShown || open);
     };
     rest();
-    const off = [track.onLanded(() => rest()), track.ride('inner', (from, to, content) => {
-      if (Math.abs(from - to) < PANEL_LANDED_PX || content <= 0) return [];
-      fill?.toggleAttribute('data-inner-column', true);
-      return [
-        ...all(fill, RESTORE_LANE_FOLLOWER).map((follower) => follower.animate(innerFoldFrames(from, to, content, '--shell-restore-lane-shown', (open) => innerFoldOpacity(1 - open)), MOVE)),
-        ...all(column, INNER_FOLD_LINE).map((line) => line.animate({ right: [`${content - from}px`, `${content - to}px`] }, MOVE)),
-        ...all(column, INNER_FOLD_FADES).map((block) => block.animate(innerFoldFrames(from, to, content, 'opacity', innerFoldOpacity), MOVE)),
-      ];
-    })];
+    const off = [track.onLanded(rest), track.ride('inner', (from, to, content) => !moves(from, to, content) ? [] : (fill?.toggleAttribute('data-inner-column', true),
+      all(fill, RESTORE_LANE_FOLLOWER).map((follower) => follower.animate(innerFoldFrames(from, to, content, '--shell-restore-lane-shown', (open) => innerFoldOpacity(1 - open)), MOVE))))];
     return () => off.forEach((stop) => stop());
-  }, [track, workspaceRootRef, innerSidebarShown]);
+  }, [track, innerSidebarShown]);
 
   const maxSidebarWidth = () => {
     const rootWidth = workspaceRootRef.current?.clientWidth ?? 0;
