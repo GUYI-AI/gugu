@@ -1,3 +1,4 @@
+import { registeredQuickChatAccelerator } from '@/lib/quickChatIpc';
 import { quickChatShortcutLabel, useQuickChatState } from '@/components/assistant/useQuickChatState';
 import { effectiveAliases } from '@shared/effective-hotkey';
 import { promptEditorShortcuts } from '@gugu/session-ui/react/components';
@@ -409,7 +410,7 @@ export const KeyboardShortcutsCheatSheet: React.FC<BaseModalProps> = ({ onClose 
   const keyboard = useShortcutOverrides();
   const { available, reading: quickChat } = useQuickChatState();
   const showQuickChat = available && quickChat.state === 'value' && quickChat.value.supported;
-  const quickChatBinding = quickChat.state === 'value' && quickChat.value.registered ? quickChatShortcutLabel(quickChat.value) : undefined;
+  const quickChatBinding = showQuickChat && registeredQuickChatAccelerator(quickChat.value) ? quickChatShortcutLabel(quickChat.value) : undefined;
   const [editorShortcuts] = useState(() => {
     const roots = new Set<ParentNode>([document, (getPortalContainer()?.getRootNode() ?? document) as ParentNode]);
     const editors = [...roots].flatMap(root => Array.from(root.querySelectorAll<HTMLElement>('[contenteditable][data-prompt-history]')))

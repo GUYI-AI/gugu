@@ -98,6 +98,25 @@ describe('Quick Chat native visibility', () => {
     expect(native.send).toHaveBeenLastCalledWith(QUICK_CHAT_CHANNELS.visibility, false)
   })
 
+  it('delivers the OS shortcut to the focused recorder and restores Quick Chat after recording or a reload', () => {
+    const { main, child } = setup()
+    main.focused = true
+    const [accelerator, press] = native.register.mock.calls[0]!
+    const record = native.handlers.get(QUICK_CHAT_CHANNELS.recordShortcut)!
+    record({ sender: main.webContents }, true)
+    press()
+    expect(native.send).toHaveBeenCalledWith(QUICK_CHAT_CHANNELS.shortcutRecorded, accelerator)
+    expect(child.show).not.toHaveBeenCalled()
+    record({ sender: main.webContents }, false)
+    press()
+    expect(child.show).toHaveBeenCalledOnce()
+    child.hide()
+    record({ sender: main.webContents }, true)
+    main.webContents.emit('did-navigate')
+    press()
+    expect(child.show).toHaveBeenCalledTimes(2)
+  })
+
   it('dismisses through the shared Close IPC without needing an assistant', () => {
     const { child } = setup()
     child.show()

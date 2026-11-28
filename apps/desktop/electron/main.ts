@@ -1417,7 +1417,7 @@ function publishWindowChromeLabels(): void {
 }
 
 // ⌘W 交给主窗渲染层的前提是它认领了「关闭」(menu-close-routing.ts);认领随那一页的文档与进程走。
-let menuKeyboard: AppSettings['keyboard'] | null = null
+let menuKeyboard: AppSettings['keyboard'] | undefined
 const menuCloseRouting = createMenuCloseRouting()
 ipcMain.on(menuCloseHandlerChannel.name, (event, handles: unknown) => menuCloseRouting.claim(event.sender.id, handles === true))
 

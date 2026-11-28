@@ -129,6 +129,47 @@ describe('the registry', () => {
     expect(settings).toHaveBeenCalledOnce();
   });
 
+  it('keeps a non-tab command in the shell on non-Mac terminals', async () => {
+    saved.keyboard = { 'app.library': 'Control+Y' };
+    await act(async () => root.render(<KeyboardDispatcher key="shell" />));
+    const openMarket = vi.fn();
+    provide({ scopeId: 'app', getCommands: () => [{ id: 'app.library', execute: openMarket }] });
+    const terminal = shadow.getElementById('editor')!;
+    const consume = vi.fn((event: KeyboardEvent) => {
+      const claimed = dispatchKey(event, 'terminal');
+      event.stopPropagation();
+      return claimed;
+    });
+    terminal.addEventListener('keydown', consume);
+    focus('editor');
+    await userEvent.keyboard('{Control>}y{/Control}');
+    expect(openMarket).toHaveBeenCalledTimes(isMacHost() ? 1 : 0);
+    expect(consume.mock.results.some(result => result.value)).toBe(isMacHost());
+    terminal.removeEventListener('keydown', consume);
+    focus('pane');
+    await userEvent.keyboard('{Control>}y{/Control}');
+    expect(openMarket).toHaveBeenCalledTimes(isMacHost() ? 2 : 1);
+  });
+
+  it('dispatches navigation arrows and character help from the hidden navigation holder', async () => {
+    const holder = shadow.appendChild(document.createElement('div'));
+    holder.dataset.region = 'session-nav-focus';
+    holder.tabIndex = -1;
+    holder.setAttribute('aria-hidden', 'true');
+    const next = vi.fn();
+    const help = vi.fn();
+    provide({ scopeId: 'session', getCommands: () => [
+      { id: 'session.next', execute: next }, { id: 'app.showKeyboardShortcuts', execute: help },
+    ] });
+    holder.focus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(shadow.activeElement).toBe(holder);
+    await pressMod('{ArrowDown}');
+    expect(next).toHaveBeenCalledOnce();
+    await userEvent.keyboard('?');
+    expect(help).toHaveBeenCalledOnce();
+  });
+
   it('lets a rebound tab command leave the terminal and keeps its disabled alias inside', async () => {
     saved.keyboard = { 'session.tabPrev': 'Control+Y', 'session.tabNext': null };
     await act(async () => root.render(<KeyboardDispatcher key="rebound" />));

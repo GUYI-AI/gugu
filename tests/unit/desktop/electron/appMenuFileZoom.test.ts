@@ -118,6 +118,14 @@ describe('application menu file zoom (#1625)', () => {
     expect(closeFromMenu).toHaveBeenCalledWith(window, true);
   });
 
+  it('keeps explicitly cleared Settings and Close Window accelerators empty', () => {
+    const menu = apply('darwin', false, undefined, { 'app.settings': null, 'app.closeWindow': null })
+    const settings = menu.items.find(item => item.role === 'appMenu')!.submenu!.items.find(item => item.label === '设置…')!
+    const close = menu.items.find(item => item.role === 'windowMenu')!.submenu!.items.find(item => item.label === 'Close Window')!
+    expect(settings.accelerator).toBeUndefined()
+    expect(close.accelerator).toBeUndefined()
+  })
+
   it('⌘W (the native Close item) goes to the host close routing, which hands it to the shortcut registry', () => {
     for (const locked of [false, true]) {
       const closeFromMenu = vi.fn()

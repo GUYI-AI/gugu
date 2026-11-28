@@ -6,7 +6,7 @@ import type { FileZoomCommand } from '../src/session/shared/preview/file-zoom'
 import { runWindowMenuCommand } from './window-menu-commands'
 import { createLogger } from './lib/logger'
 
-type MenuKeyboard = AppSettings['keyboard'] | null
+type MenuKeyboard = AppSettings['keyboard']
 
 function acceleratorFor(command: 'app.settings' | 'app.closeWindow' | 'session.tabClose', keyboard?: MenuKeyboard): string | undefined {
   const hotkey = getEffectiveHotkey(command, keyboard)

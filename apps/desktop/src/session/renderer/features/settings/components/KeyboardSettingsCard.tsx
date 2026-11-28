@@ -1,4 +1,9 @@
 import { useHotkeyRecorder, type Hotkey } from '@tanstack/react-hotkeys';
+import { useQuickChatState } from '@/components/assistant/useQuickChatState';
+import { useStableHandler } from '@/hooks/useStableHandler';
+import { QUICK_CHAT_CHANNELS, registeredQuickChatAccelerator } from '@/lib/quickChatIpc';
+import { rendererLogger } from '@/lib/log';
+import { desktopIpc } from '@/platform/desktopIpc';
 import { RotateCcw, X } from '@/lib/icons'
 import React, { useEffect, useState } from 'react';
 import { commandRegistry } from '@renderer/lib/commands/registry';
@@ -34,25 +39,26 @@ const KeyboardSettingsCard: React.FC = () => {
 
 const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: AppSettingsKeyApi<'keyboard'> }> = ({ keyboard, api }) => {
   const terminalEnabled = terminalShown(useTerminalEnabled());
+  const quickChat = useQuickChatState();
+  const systemChord = registeredQuickChatAccelerator(quickChat.available && quickChat.reading.state === 'value' ? quickChat.reading.value : undefined);
   const { update, isSaving: saving, resetField } = api;
   const { translate } = useSessionMessages();
 
   const [editingKey, setEditingKey] = useState<CommandId | null>(null);
 
+  const rejectConflict = (owner: CommandId) => {
+    toast({ title: translate('keyboard.conflictTitle'), description: translate('keyboard.conflictDescription', { label: commandLabel(owner) }), variant: 'destructive' });
+    recorder.cancelRecording();
+    setEditingKey(null);
+  };
+
   const recorder = useHotkeyRecorder({
     onRecord: (hotkey: Hotkey) => {
       if (!editingKey) return;
 
-      const conflictKey = shortcutConflict(editingKey, hotkey, keyboard);
+      const conflictKey = shortcutConflict(editingKey, hotkey, keyboard, systemChord);
       if (conflictKey) {
-        const msg = translate('keyboard.conflictDescription', { label: commandLabel(conflictKey) });
-        toast({
-          title: translate('keyboard.conflictTitle'),
-          description: msg,
-          variant: 'destructive',
-        });
-        recorder.cancelRecording();
-        setEditingKey(null);
+        rejectConflict(conflictKey);
         return;
       }
 
@@ -78,6 +84,20 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
     if (!recorder.isRecording) return;
     return commandRegistry.pauseShortcuts();
   }, [recorder.isRecording]);
+
+  const rejectSystemShortcut = useStableHandler(() => rejectConflict('app.quickChat'));
+  useEffect(() => {
+    if (!recorder.isRecording || !systemChord) return;
+    const ipc = desktopIpc();
+    if (!ipc) return;
+    const off = ipc.eventOn(QUICK_CHAT_CHANNELS.shortcutRecorded, rejectSystemShortcut);
+    const setRecording = (active: boolean) => {
+      void ipc.invoke(QUICK_CHAT_CHANNELS.recordShortcut, active).catch(error =>
+        rendererLogger('keyboard-settings').warn({ error: String(error) }, 'Could not update native shortcut recording'));
+    };
+    setRecording(true);
+    return () => { off(); setRecording(false); };
+  }, [recorder.isRecording, systemChord, rejectSystemShortcut]);
 
   const handleReset = (key: CommandId) => {
     const owner = defaultShortcutOwner(key, keyboard);

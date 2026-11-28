@@ -4,15 +4,24 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { KeyboardShortcutsCheatSheet } from '@renderer/features/settings/components/keyboard-shortcuts-cheat-sheet';
 import { commandLabel } from '@renderer/lib/commands/command-copy';
 import { CONFIGURABLE_SHORTCUTS } from '@shared/commands';
+import { registeredQuickChatAccelerator } from '@/lib/quickChatIpc';
 
 const host = vi.hoisted(() => ({ desktop: false, supported: false }));
 vi.mock('@/components/assistant/useQuickChatState', () => ({
-  useQuickChatState: () => ({ available: host.desktop, reading: { state: 'value', value: { supported: host.supported, registered: true } } }),
+  useQuickChatState: () => ({ available: host.desktop, reading: { state: 'value', value: { supported: host.supported, registered: true, accelerator: 'Alt+Shift+Space' } } }),
   quickChatShortcutLabel: () => '⌥⇧Space',
 }));
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => {
   const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble');
   return { useAppSettingsKey: () => fakeAppSettings({ 'app.quickChat': 'Alt+J' }) };
+});
+
+it('reports only the shortcut that the native host registered', () => {
+  const state = { supported: true, enabled: true, registered: true, accelerator: 'Control+Shift+F11' };
+  expect(registeredQuickChatAccelerator(state)).toBe(state.accelerator);
+  expect(registeredQuickChatAccelerator({ ...state, supported: false })).toBeUndefined();
+  expect(registeredQuickChatAccelerator({ ...state, registered: false })).toBeUndefined();
+  expect(registeredQuickChatAccelerator(undefined)).toBeUndefined();
 });
 
 let cleanup: (() => Promise<void>) | undefined;
