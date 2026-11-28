@@ -1,3 +1,4 @@
+import { registerComposerModelCommand } from '@renderer/lib/commands/composer-model-command';
 import { resolveInitialEffort } from '@shared/core/agents/create-efforts';
 import { rememberPickedEffort } from './last-live-effort';
 import { usePermissionMenu } from './use-permission-menu';
@@ -1844,6 +1845,7 @@ export function InitialSessionField({
           onAgentAction={remoteCreateForActions ? undefined : (id) => openAgentAppDetail(navigate, id)}
           modelOptions={modelOptions === undefined ? null : modelOptions}
           modelUnknown={modelOptions === undefined || !state.modelKnown}
+          registerModelMenuCommand={registerComposerModelCommand}
           onModelMenuOpen={refreshHarnessModels}
           modelMenuNotice={modelPreparationNotice}
           // 编解码都在装配那份里(@@@composer-model-assembly)—— 这里只把分好的两路写回

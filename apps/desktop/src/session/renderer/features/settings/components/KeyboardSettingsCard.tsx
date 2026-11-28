@@ -1,18 +1,21 @@
 import { useHotkeyRecorder, type Hotkey } from '@tanstack/react-hotkeys';
+import { useQuickChatState } from '@/components/assistant/useQuickChatState';
+import { useStableHandler } from '@/hooks/useStableHandler';
+import { QUICK_CHAT_CHANNELS, registeredQuickChatAccelerator } from '@/lib/quickChatIpc';
+import { rendererLogger } from '@/lib/log';
+import { desktopIpc } from '@/platform/desktopIpc';
 import { RotateCcw, X } from '@/lib/icons'
 import React, { useEffect, useState } from 'react';
 import { commandRegistry } from '@renderer/lib/commands/registry';
 import { commandCategoryLabel, commandDescription, commandLabel } from '@renderer/lib/commands/command-copy';
 import { useAppSettingsKey, type AppSettingsKeyApi } from '@renderer/features/settings/use-app-settings-key';
 import type { AppSettings } from '@shared/core/app-settings';
-import type { CommandCategory } from '@shared/commands';
+import { SHORTCUTS_BY_CATEGORY } from '@shared/commands';
+import { defaultShortcutOwner, shortcutConflict } from '@shared/effective-hotkey';
 import { SettingValue } from './SettingControls';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import {
-  COMMANDS,
   getEffectiveHotkey,
-  resolveDefaultHotkey,
-  sharesChordIntentionally,
   type CommandId,
 } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { Button } from '@renderer/lib/ui/button';
@@ -21,19 +24,6 @@ import { describeHotkey } from '@renderer/lib/ui/shortcut-format';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { terminalShown, useTerminalEnabled } from '../use-terminal-enabled';
-
-const CONFIGURABLE_SHORTCUTS = (
-  Object.entries(COMMANDS) as [
-    CommandId,
-    (typeof COMMANDS)[CommandId],
-  ][]
-).filter(([, def]) => !def.hideFromSettings);
-
-const SHORTCUTS_BY_CATEGORY = CONFIGURABLE_SHORTCUTS.reduce((acc, entry) => {
-  const category = entry[1].category;
-  acc.set(category, [...(acc.get(category) ?? []), entry]);
-  return acc;
-}, new Map<CommandCategory, [CommandId, (typeof COMMANDS)[CommandId]][]>());
 
 /** 只对终端起作用的快捷键:「终端」开关关着时不列(终端整个不出现,它们也就无事可做)。 */
 const TERMINAL_SHORTCUTS: ReadonlySet<CommandId> = new Set<CommandId>(['session.newTerminal', 'session.viewTerminals']);
@@ -49,33 +39,30 @@ const KeyboardSettingsCard: React.FC = () => {
 
 const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: AppSettingsKeyApi<'keyboard'> }> = ({ keyboard, api }) => {
   const terminalEnabled = terminalShown(useTerminalEnabled());
+  const quickChat = useQuickChatState();
+  const systemChord = registeredQuickChatAccelerator(quickChat.available && quickChat.reading.state === 'value' ? quickChat.reading.value : undefined);
   const { update, isSaving: saving, resetField } = api;
   const { translate } = useSessionMessages();
 
   const [editingKey, setEditingKey] = useState<CommandId | null>(null);
 
+  const rejectConflict = (owner: CommandId) => {
+    toast({
+      title: translate('keyboard.conflictTitle'),
+      description: translate('keyboard.conflictDescription', { label: commandLabel(owner) }),
+      variant: 'destructive',
+    });
+    recorder.cancelRecording();
+    setEditingKey(null);
+  };
+
   const recorder = useHotkeyRecorder({
     onRecord: (hotkey: Hotkey) => {
       if (!editingKey) return;
 
-      const conflict = CONFIGURABLE_SHORTCUTS.find(([key]) => {
-        if (key === editingKey) return false;
-        // A registered intentional share is not a conflict — refusing it here would make the
-        // shared default unreachable once the user has rebound either half.
-        if (sharesChordIntentionally(key, editingKey)) return false;
-        return getEffectiveHotkey(key, keyboard) === hotkey;
-      });
-
-      if (conflict) {
-        const [conflictKey] = conflict;
-        const msg = translate('keyboard.conflictDescription', { label: commandLabel(conflictKey) });
-        toast({
-          title: translate('keyboard.conflictTitle'),
-          description: msg,
-          variant: 'destructive',
-        });
-        recorder.cancelRecording();
-        setEditingKey(null);
+      const conflictKey = shortcutConflict(editingKey, hotkey, keyboard, systemChord);
+      if (conflictKey) {
+        rejectConflict(conflictKey);
         return;
       }
 
@@ -102,11 +89,27 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
     return commandRegistry.pauseShortcuts();
   }, [recorder.isRecording]);
 
+  const rejectSystemShortcut = useStableHandler(() => rejectConflict('app.quickChat'));
+  useEffect(() => {
+    if (!recorder.isRecording || !systemChord) return;
+    const ipc = desktopIpc();
+    if (!ipc) return;
+    const off = ipc.eventOn(QUICK_CHAT_CHANNELS.shortcutRecorded, rejectSystemShortcut);
+    const setRecording = (active: boolean) => {
+      void ipc.invoke(QUICK_CHAT_CHANNELS.recordShortcut, active).catch(error =>
+        rendererLogger('keyboard-settings').warn({ error: String(error) }, 'Could not update native shortcut recording'));
+    };
+    setRecording(true);
+    return () => { off(); setRecording(false); };
+  }, [recorder.isRecording, systemChord, rejectSystemShortcut]);
+
   const handleReset = (key: CommandId) => {
+    const owner = defaultShortcutOwner(key, keyboard);
     resetField(key);
     toast({
       title: translate('keyboard.resetTitle'),
-      description: translate('keyboard.resetDescription', { label: commandLabel(key) }),
+      description: owner ? translate('keyboard.defaultInUse', { label: commandLabel(owner) })
+        : translate('keyboard.resetDescription', { label: commandLabel(key) }),
     });
   };
 
@@ -130,13 +133,12 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
               {commandCategoryLabel(category)}
             </div>
             <div className="space-y-3">
-              {shortcuts.map(([key, def]) => {
+              {shortcuts.map(([key]) => {
                 const effectiveHotkey = getEffectiveHotkey(key, keyboard);
+                const displacedBy = keyboard[key] === undefined && defaultShortcutOwner(key, keyboard);
                 const capturing = editingKey === key && recorder.isRecording;
-                const cleared = keyboard[key] === null;
-                const showClear = !cleared;
-                const defaultHotkey = resolveDefaultHotkey(def);
-                const showReset = defaultHotkey != null && effectiveHotkey !== defaultHotkey;
+                const showClear = effectiveHotkey !== null;
+                const showReset = keyboard[key] !== undefined;
                 const showActions = showClear || showReset;
 
                 return (
@@ -149,6 +151,7 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
                       <div className="text-sm break-words">{commandLabel(key)}</div>
                       <div className="text-foreground-muted text-xs break-words">
                         {commandDescription(key)}
+                        {displacedBy && <p>{translate('keyboard.defaultInUse', { label: commandLabel(displacedBy) })}</p>}
                       </div>
                     </div>
                     <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -230,7 +233,7 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
                             onClick={() => startCapture(key)}
                             disabled={saving}
                           >
-                            <Shortcut hotkey={effectiveHotkey} variant="keycaps" />
+                            {effectiveHotkey ? <Shortcut hotkey={effectiveHotkey} variant="keycaps" /> : translate('keyboard.unassignedValue')}
                           </Button>
                         </>
                       )}

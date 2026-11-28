@@ -406,6 +406,18 @@ describe('BrowserWebContentsRegistry', () => {
     });
   });
 
+  it('moves to the previous tab when the guest receives its reassigned Ctrl+Tab', () => {
+    const registry = new BrowserWebContentsRegistry();
+    registry.setKeyboardSettings({ 'session.tabPrev': 'Control+Tab' });
+    const contents = fakeWebContents();
+    const navigate = vi.fn(() => true);
+    registry.bindAppShortcuts(contents as never, vi.fn(), navigate);
+    const event = { preventDefault: vi.fn() };
+    contents.emitEvent('before-input-event', event, { type: 'keyDown', key: 'Tab', control: true });
+    expect(navigate).toHaveBeenCalledExactlyOnceWith('previous');
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+  });
+
   it('shares configured native shortcut forwarding with an App guest without consuming its other keys', () => {
     const registry = withPlatform('darwin', () => new BrowserWebContentsRegistry());
     const contents = fakeWebContents();

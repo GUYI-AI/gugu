@@ -321,6 +321,8 @@ export interface ComposerModelMenuProps {
    * ❌ 宿主去 DOM 里找触发器 click —— 那是拿测试锚点当产品接口。
    */
   openRequest?: number;
+  /** The desktop host can expose this mounted menu as a command. */
+  registerOpenCommand?: (trigger: HTMLButtonElement, open: () => void) => () => void;
   settingNotice?: string | null;
   /** See `modelMenuNotice` on the composer. */
   menuNotice?: string;
@@ -368,6 +370,7 @@ export function ComposerModelMenu({
   onModelChange,
   effortOptionsForModel,
   openRequest,
+  registerOpenCommand,
   settingNotice,
   menuNotice,
   onOpen,
@@ -396,6 +399,10 @@ export function ComposerModelMenu({
     focusListOnOpen.current = true;
     setModelPanelOpen(true);
   }, []);
+  useEffect(() => {
+    const trigger = modelTrigger.current;
+    if (trigger && panel.kind === 'shown' && !disabled) return registerOpenCommand?.(trigger, openModelPanel);
+  }, [registerOpenCommand, openModelPanel, panel.kind, disabled]);
   useEffect(() => {
     if (openRequest) openModelPanel();
   }, [openRequest, openModelPanel]);

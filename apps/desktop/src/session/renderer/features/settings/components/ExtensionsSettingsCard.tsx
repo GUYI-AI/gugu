@@ -200,7 +200,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   useCommandProvider({
     scopeId: 'session-sub',
     isActive: (element) => !!element && !!rootRef.current?.contains(element),
-    getCommands: () => !searchRef.current?.isConnected ? [] : [{ id: 'app.find', hideFromPalette: true, execute: () => searchRef.current?.focus() }],
+    getCommands: () => !searchRef.current?.isConnected ? [] : [{ id: 'app.find', execute: () => searchRef.current?.focus() }],
   });
 
   const scroller = () => {

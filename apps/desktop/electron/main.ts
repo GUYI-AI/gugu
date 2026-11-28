@@ -613,6 +613,7 @@ import {
   paintBadgeOnBitmap,
 } from './tray-badge'
 import { FIRST_FRAME_CHANNEL, type FirstFrameAnswer, type FirstFrameRequest } from '../shared/first-frame'
+import type { AppSettings } from '../src/session/shared/core/app-settings'
 import type { DevicePreferences } from '../shared/device-preferences'
 import { HOST_SYSTEM_LANGUAGES_CHANNEL, hostText, updateRestartCopy } from '../shared/host-localization'
 
@@ -1416,6 +1417,7 @@ function publishWindowChromeLabels(): void {
 }
 
 // ⌘W 交给主窗渲染层的前提是它认领了「关闭」(menu-close-routing.ts);认领随那一页的文档与进程走。
+let menuKeyboard: AppSettings['keyboard'] | undefined
 const menuCloseRouting = createMenuCloseRouting()
 ipcMain.on(menuCloseHandlerChannel.name, (event, handles: unknown) => menuCloseRouting.claim(event.sender.id, handles === true))
 
@@ -1424,11 +1426,12 @@ function refreshApplicationMenu(): void {
   applyApplicationMenu({
     locked: isDevtoolsLocked(),
     settingsLabel: hostCopy().appMenu.settings,
+    keyboard: menuKeyboard,
     // 设置是会话页那边的弹窗(product spec):主窗收在托盘里也先拉出来,再叫它打开。
     // ⌘W / 菜单「关闭」:主窗交给渲染层的快捷键登记(有页签关页签,没有才关窗);别的窗口照旧直接关。
-    closeFromMenu: (window) => {
+    closeFromMenu: (window, tabFirst) => {
       const main = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
-      menuCloseRouting.route(window, main, () => main?.webContents.send(menuCloseChannel.name), () => window?.close())
+      menuCloseRouting.route(window, main, () => main?.webContents.send(menuCloseChannel.name, tabFirst), () => window?.close())
     },
     openSettings: () => {
       if (!mainWindow || mainWindow.isDestroyed()) return
@@ -4925,6 +4928,10 @@ app.whenReady().then(async () => {
   // window's contents load; then on every change (a settings write, or the first-frame move of the old keys).
   applyDevicePreferences(emdashBridgeModule.devicePreferencesNow())
   emdashBridgeModule.onDevicePreferencesChanged(applyDevicePreferences)
+  emdashBridgeModule.onKeyboardSettingsChanged(keyboard => {
+    menuKeyboard = keyboard
+    refreshApplicationMenu()
+  })
   hydrateLoginShellPath()
   ensureWindowsNpmGlobalBinInPath()
   if (SERVER_MODE) {

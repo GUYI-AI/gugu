@@ -102,6 +102,16 @@ interface BoundShortcutProps {
   variant?: ShortcutVariant;
 }
 
+export function ariaHotkey(hotkey: Hotkey | null): string | undefined {
+  if (!hotkey) return undefined;
+  return getShortcutKeys(parseHotkey(hotkey, PLATFORM), PLATFORM).join('+');
+}
+
+export function useCommandAriaShortcut(command?: CommandId): string | undefined {
+  const keyboard = useShortcutOverrides();
+  return command ? ariaHotkey(getEffectiveHotkey(command, keyboard)) : undefined;
+}
+
 /** Display a shortcut directly from an app shortcut settings key. */
 function BoundShortcut({ commandId, className, variant }: BoundShortcutProps) {
   const keyboard = useShortcutOverrides();

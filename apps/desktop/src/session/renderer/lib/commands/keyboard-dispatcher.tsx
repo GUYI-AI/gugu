@@ -1,7 +1,9 @@
+import { SESSION_NAV_FOCUS_REGION } from '@renderer/features/sidebar/session-navigation-focus';
 import { detectPlatform, matchesKeyboardEvent, parseHotkey, type Hotkey } from '@tanstack/react-hotkeys';
 import { observer } from 'mobx-react-lite';
 import { useEffect } from 'react';
 import { revealSessionpage } from '@/hooks/useSessionpageReveal';
+import { effectiveAliases } from '@shared/effective-hotkey';
 import { isImeComposing } from '@/lib/ime';
 import { COMMANDS, getEffectiveHotkey, isHostCommandId, type CommandId, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { isEmbedVisible, subscribeEmbedVisibility } from '@renderer/lib/portal-container';
@@ -74,16 +76,23 @@ function dispatchIn(event: KeyboardEvent, source: KeySource): boolean {
     const id = command.id;
     if (seen.has(id) || !isHostCommandId(id)) continue;
     seen.add(id);
+    // A non-Mac terminal keeps shell control sequences; only tab navigation may claim its effective bindings.
+    if (source === 'terminal' && PLATFORM !== 'mac' && id !== 'session.tabNext' && id !== 'session.tabPrev') continue;
     const def = COMMANDS[id];
     if (def.conflictBehavior === 'allow') continue;
     // Capture phase: the entry keys a terminal or modal root would swallow, and everything while a code editor holds
     // focus (CodeMirror stops the keys its keymaps bind) except what the editor keeps for itself.
     if (source === 'capture' && !def.capture && !(inEditor && !def.ignoreWhenCodeEditorFocused)) continue;
     if (source === 'bubble' && (def.capture || (inEditor && !def.ignoreWhenCodeEditorFocused))) continue;
-    const hotkeys = [getEffectiveHotkey(id, overrides), ...(def.aliases ?? [])].filter((h): h is Hotkey => !!h);
-    const hotkey = hotkeys.find((h) => matchesKeyboardEvent(event, h, PLATFORM));
-    if (!hotkey) continue;
-    if (typing && !def.capture && !inEditor && yieldsToText(id, hotkey)) continue;
+    const bindings = [getEffectiveHotkey(id, overrides), ...effectiveAliases(id, overrides)];
+    const match = bindings.find(binding => {
+      if (!binding) return false;
+      if (typeof binding === 'string') return matchesKeyboardEvent(event, binding as Hotkey, PLATFORM);
+      return binding.region === 'navigation' && !!start?.closest(`[data-region="left-sidebar"], [data-region="${SESSION_NAV_FOCUS_REGION}"]`) &&
+        event.key === binding.character && !event.metaKey && (!event.ctrlKey || event.getModifierState('AltGraph'));
+    });
+    if (!match) continue;
+    if (typing && !def.capture && !inEditor && (typeof match !== 'string' || yieldsToText(id, match as Hotkey))) continue;
     // @@@native-editor-find — CodeMirror owns replacement, regex and selection search; only app.find yields.
     if (id === 'app.find' && start?.closest('.cm-editor, [cmdk-root], [role=menu]')) continue;
     if (!commandRegistry.sessionPageVisible && def.whenSessionPageHidden === 'reveal') {
@@ -142,7 +151,7 @@ let uninstall: (() => void) | null = null;
 
 /**
  * Listens for the whole document, always — not only while the task page is on screen: the shell's own tabs need their
- * shortcuts too (⌘P, ⌘, … used to go dead on 通讯录). Which commands answer while the task page is hidden is the
+ * shortcuts too (the palette and settings … used to go dead on 通讯录). Which commands answer while the task page is hidden is the
  * registry's call. Mounted by the shell and by the task page (which also runs standalone); the listeners go in once.
  */
 export const KeyboardDispatcher = observer(function KeyboardDispatcher() {

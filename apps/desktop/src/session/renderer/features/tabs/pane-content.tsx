@@ -52,7 +52,6 @@ const PaneBody = observer(function PaneBody({
     isActive: () => isFocusedPane,
     getCommands: () => ([-1, 1] as const).map((delta) => ({
       id: delta === -1 ? 'app.navigateBack' as const : 'app.navigateForward' as const,
-      hideFromPalette: true,
       execute() { const id = pane.resolvedActiveTabId; if (id) void pane.go(id, delta); },
     })),
   }), [pane, isFocusedPane]));

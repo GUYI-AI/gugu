@@ -1,9 +1,18 @@
+import { registeredQuickChatAccelerator } from '@/lib/quickChatIpc';
+import { quickChatShortcutLabel, useQuickChatState } from '@/components/assistant/useQuickChatState';
+import { effectiveAliases } from '@shared/effective-hotkey';
+import { promptEditorShortcuts } from '@gugu/session-ui/react/components';
+import { commandRegistry } from '@renderer/lib/commands/registry';
+import { isCurrentComposerControl } from '@renderer/lib/commands/composer-model-command';
+import { getPortalContainer } from '@renderer/lib/portal-container';
+import type { CommandAlias } from '@shared/commands';
+import type { Hotkey } from '@tanstack/react-hotkeys';
 import React, { useState, useMemo } from 'react';
 import {
-  COMMANDS,
   getEffectiveHotkey,
   type CommandId, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
-import { commandDescription, commandLabel } from '@renderer/lib/commands/command-copy';
+import { COMMANDS, SHORTCUTS_BY_CATEGORY } from '@shared/commands';
+import { commandCategoryLabel, commandDescription, commandLabel } from '@renderer/lib/commands/command-copy';
 import { type BaseModalProps } from '@renderer/lib/modal/modal-provider';
 import { Shortcut } from '@renderer/lib/ui/shortcut';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -14,11 +23,6 @@ import { cn } from '@renderer/utils/utils';
 // ---------------------------------------------------------------------------
 
 type ShortcutEntry = [CommandId, (typeof COMMANDS)[CommandId]];
-
-const NAV_CATEGORY  = 'Navigation'     as const;
-const VIEW_CATEGORY = 'View'           as const;
-const SESSION_CATEGORY = 'Task View'      as const;
-const TAB_CATEGORY  = 'Tab Navigation' as const;
 
 // ---------------------------------------------------------------------------
 // Hotkey → Key ID Parsing
@@ -79,19 +83,6 @@ function parseHotkeyToKeys(hotkey: string): Set<string> {
 // ---------------------------------------------------------------------------
 // Shortcut Data Helpers
 // ---------------------------------------------------------------------------
-
-const CONFIGURABLE_SHORTCUTS: ShortcutEntry[] = (
-  Object.entries(COMMANDS) as ShortcutEntry[]
-).filter(([, def]) => !def.hideFromSettings);
-
-function getCategoryEntries(cat: string, query: string): ShortcutEntry[] {
-  return CONFIGURABLE_SHORTCUTS.filter(([id, def]) => {
-    if (def.category !== cat) return false;
-    if (!query) return true;
-    const q = query.toLowerCase();
-    return commandLabel(id).toLowerCase().includes(q) || commandDescription(id).toLowerCase().includes(q);
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Mac Keyboard SVG
@@ -312,7 +303,9 @@ MacKeyboard.displayName = 'MacKeyboard';
 interface ShortcutRowProps {
   shortcutKey: CommandId;
   label: string;
-  hotkey: string;
+  hotkeys: readonly CommandAlias[];
+  systemBinding?: string;
+  emptyLabel: string;
   isActive: boolean;
   onActivate: (key: CommandId | null) => void;
 }
@@ -320,7 +313,9 @@ interface ShortcutRowProps {
 const ShortcutRow: React.FC<ShortcutRowProps> = ({
   shortcutKey,
   label,
-  hotkey,
+  hotkeys,
+  systemBinding,
+  emptyLabel,
   isActive,
   onActivate,
 }) => {
@@ -337,7 +332,13 @@ const ShortcutRow: React.FC<ShortcutRowProps> = ({
       )}
     >
       <span className="truncate text-[length:var(--font-body)] text-foreground">{label}</span>
-      <Shortcut hotkey={hotkey as any} variant="keycaps" />
+      <span className="flex flex-wrap justify-end gap-2">
+        {hotkeys.map(binding => typeof binding === 'string'
+          ? <Shortcut key={binding} hotkey={binding as Hotkey} variant="keycaps" />
+          : <Shortcut key={binding.character} hotkey={binding.character as Hotkey} variant="keycaps" />)}
+        {systemBinding && <kbd>{systemBinding}</kbd>}
+        {!hotkeys.length && !systemBinding && emptyLabel}
+      </span>
     </div>
   );
 };
@@ -351,6 +352,7 @@ interface CategorySectionProps {
   category: string;
   categoryLabel: string;
   entries: ShortcutEntry[];
+  quickChatBinding?: string;
   keyboard: Record<string, string | null> | null;
   activeShortcut: CommandId | null;
   onActivate: (key: CommandId | null) => void;
@@ -360,10 +362,12 @@ const CategorySection: React.FC<CategorySectionProps> = ({
   category,
   categoryLabel,
   entries,
+  quickChatBinding,
   keyboard,
   activeShortcut,
   onActivate,
 }) => {
+  const { translate } = useSessionMessages();
   if (!entries.length) return null;
   return (
     <div>
@@ -379,60 +383,15 @@ const CategorySection: React.FC<CategorySectionProps> = ({
       <div className="flex flex-col gap-0.5">
         {entries.map(([key]) => {
           const hotkey = getEffectiveHotkey(key, keyboard);
-          if (!hotkey) return null;
+          const aliases = effectiveAliases(key, keyboard);
           return (
             <ShortcutRow
               key={key}
               shortcutKey={key}
               label={commandLabel(key)}
-              hotkey={hotkey}
-              isActive={activeShortcut === key}
-              onActivate={onActivate}
-            />
-          );
-        })}
-      </div>
-    </div>
-  );
-};
-
-// ---------------------------------------------------------------------------
-// Tab Navigation Section (2-column grid)
-// ---------------------------------------------------------------------------
-
-interface TabNavSectionProps {
-  entries: ShortcutEntry[];
-  keyboard: Record<string, string | null> | null;
-  activeShortcut: CommandId | null;
-  onActivate: (key: CommandId | null) => void;
-}
-
-const TabNavSection: React.FC<TabNavSectionProps> = ({
-  entries,
-  keyboard,
-  activeShortcut,
-  onActivate,
-}) => {
-  const { translate } = useSessionMessages();
-  if (!entries.length) return null;
-  return (
-    <div>
-      <div className="mb-1.5 flex items-center gap-1.5 px-2">
-        <span className="text-micro font-semibold uppercase tracking-wider text-foreground-muted">
-          {translate('keyboard.tabNavigation')}
-        </span>
-        <span className="text-micro text-foreground-muted/60">{entries.length}</span>
-      </div>
-      <div className="grid grid-cols-2 gap-x-2">
-        {entries.map(([key]) => {
-          const hotkey = getEffectiveHotkey(key, keyboard);
-          if (!hotkey) return null;
-          return (
-            <ShortcutRow
-              key={key}
-              shortcutKey={key}
-              label={commandLabel(key)}
-              hotkey={hotkey}
+              systemBinding={key === 'app.quickChat' ? quickChatBinding : undefined}
+              hotkeys={hotkey ? [hotkey, ...aliases] : aliases}
+              emptyLabel={translate('keyboard.unassignedValue')}
               isActive={activeShortcut === key}
               onActivate={onActivate}
             />
@@ -449,6 +408,16 @@ const TabNavSection: React.FC<TabNavSectionProps> = ({
 
 export const KeyboardShortcutsCheatSheet: React.FC<BaseModalProps> = ({ onClose }) => {
   const keyboard = useShortcutOverrides();
+  const { available, reading: quickChat } = useQuickChatState();
+  const showQuickChat = available && quickChat.state === 'value' && quickChat.value.supported;
+  const quickChatBinding = showQuickChat && registeredQuickChatAccelerator(quickChat.value) ? quickChatShortcutLabel(quickChat.value) : undefined;
+  const [editorShortcuts] = useState(() => {
+    const roots = new Set<ParentNode>([document, (getPortalContainer()?.getRootNode() ?? document) as ParentNode]);
+    const editors = [...roots].flatMap(root => Array.from(root.querySelectorAll<HTMLElement>('[contenteditable][data-prompt-history]')))
+      .filter(editor => isCurrentComposerControl(editor, commandRegistry.contextElement));
+    const editor = editors.length === 1 ? editors[0] : editors.find(el => el.contains(commandRegistry.contextElement));
+    return editor ? promptEditorShortcuts(editor.enterKeyHint === 'send' ? 'submit' : 'newline', editor.dataset.promptHistory === 'enabled') : [];
+  });
   const [activeShortcut, setActiveShortcut] = useState<CommandId | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const { translate } = useSessionMessages();
@@ -460,10 +429,13 @@ export const KeyboardShortcutsCheatSheet: React.FC<BaseModalProps> = ({ onClose 
     return parseHotkeyToKeys(hotkey);
   }, [activeShortcut, keyboard]);
 
-  const navEntries  = useMemo(() => getCategoryEntries(NAV_CATEGORY,  searchQuery), [searchQuery]);
-  const viewEntries = useMemo(() => getCategoryEntries(VIEW_CATEGORY, searchQuery), [searchQuery]);
-  const sessionEntries = useMemo(() => getCategoryEntries(SESSION_CATEGORY, searchQuery), [searchQuery]);
-  const tabEntries  = useMemo(() => getCategoryEntries(TAB_CATEGORY,  searchQuery), [searchQuery]);
+  const groups = [...SHORTCUTS_BY_CATEGORY].map(([category, entries]) => {
+    const query = searchQuery.trim().toLowerCase();
+    const group: ShortcutEntry[] = showQuickChat && category === COMMANDS['app.quickChat'].category
+      ? [['app.quickChat', COMMANDS['app.quickChat']], ...entries] : entries;
+    return [category, group.filter(([id]) =>
+      !query || [commandLabel(id), commandDescription(id)].some(text => text.toLowerCase().includes(query)))] as const;
+  });
 
   return (
     <div className="flex max-h-[80vh] flex-col">
@@ -496,68 +468,21 @@ export const KeyboardShortcutsCheatSheet: React.FC<BaseModalProps> = ({ onClose 
         </button>
       </div>
 
-      {/* Content: complex grid layout */}
-      <div className="overflow-hidden p-4 flex-1 min-h-0">
-        <div
-          className="grid gap-4"
-          style={{
-            gridTemplateAreas: '"nav kbd sessions" "nav vtabs sessions"',
-            gridTemplateColumns: '1fr 2fr 1fr',
-          }}
-        >
-          {/* Navigation (left, spans 2 rows, independently scrollable) */}
-          <div
-            style={{ gridArea: 'nav', maxHeight: 'calc(80vh - 130px)', overflowY: 'auto' }}
-            className="pr-1"
-          >
-            <CategorySection
-              category={NAV_CATEGORY}
-              categoryLabel={translate('keyboard.categoryNavigation')}
-              entries={navEntries}
-              keyboard={keyboard}
-              activeShortcut={activeShortcut}
-              onActivate={setActiveShortcut}
-            />
-          </div>
-
-          {/* Keyboard SVG (center-top, sticky) */}
-          <div style={{ gridArea: 'kbd' }} className="sticky top-4 flex flex-col items-start gap-2">
-            <p className="text-tiny text-foreground-muted">{translate('keyboard.hoverHint')}</p>
-            <MacKeyboard highlightedKeys={highlightedKeys} />
-          </div>
-
-          {/* Task View (right, spans 2 rows, independently scrollable) */}
-          <div
-            style={{ gridArea: 'tasks', maxHeight: 'calc(80vh - 130px)', overflowY: 'auto' }}
-            className="pl-1"
-          >
-            <CategorySection
-              category={SESSION_CATEGORY}
-              categoryLabel={translate('keyboard.categoryTaskView')}
-              entries={sessionEntries}
-              keyboard={keyboard}
-              activeShortcut={activeShortcut}
-              onActivate={setActiveShortcut}
-            />
-          </div>
-
-          {/* View + Tab Navigation (center-bottom, side by side) */}
-          <div style={{ gridArea: 'vtabs' }} className="grid grid-cols-2 gap-x-4 items-start">
-            <CategorySection
-              category={VIEW_CATEGORY}
-              categoryLabel={translate('keyboard.categoryView')}
-              entries={viewEntries}
-              keyboard={keyboard}
-              activeShortcut={activeShortcut}
-              onActivate={setActiveShortcut}
-            />
-            <TabNavSection
-              entries={tabEntries}
-              keyboard={keyboard}
-              activeShortcut={activeShortcut}
-              onActivate={setActiveShortcut}
-            />
-          </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="mx-auto mb-4 max-w-lg">
+          <p className="mb-2 text-tiny text-foreground-muted">{translate('keyboard.hoverHint')}</p>
+          <MacKeyboard highlightedKeys={highlightedKeys} />
+        </div>
+        {editorShortcuts.filter(({ action }) => translate(`keyboard.${action}`).toLowerCase().includes(searchQuery.trim().toLowerCase()))
+          .map(({ action, keys }) => <div key={action} className="mb-2 flex justify-between gap-2 px-2">
+            <span>{translate(`keyboard.${action}`)}</span>
+            <span className="flex gap-2">{keys.map(key => <Shortcut key={key} hotkey={key} variant="keycaps" />)}</span>
+          </div>)}
+        <div className="grid items-start gap-4 sm:grid-cols-2">
+          {groups.map(([category, entries]) => (
+            <CategorySection key={category} category={category} categoryLabel={commandCategoryLabel(category)}
+              entries={entries} quickChatBinding={quickChatBinding} keyboard={keyboard} activeShortcut={activeShortcut} onActivate={setActiveShortcut} />
+          ))}
         </div>
       </div>
 

@@ -1,3 +1,4 @@
+import { promptEditorKeys } from '../keyboard-shortcuts';
 /**
  * behavior session-page「键盘导航」: ↑↓ in the composer walk this session's already-sent prompts.
  *
@@ -137,7 +138,7 @@ export function buildPromptHistoryKeymap({ getHistory, restoreText = plainTextDo
 
     addKeyboardShortcuts() {
       return {
-        ArrowUp: ({ editor }) => {
+        [promptEditorKeys.previous]: ({ editor }) => {
           if (!editor.state.selection.empty) return false;
           if (!atEdgeLine(editor, 'up')) return false;
           const step = stepPromptHistory(

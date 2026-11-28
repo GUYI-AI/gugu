@@ -14,7 +14,7 @@ import {
 } from '@renderer/features/sessions/session-view-context';
 import { canStartSideSession, startSideSession } from '@renderer/features/sessions/start-side-session';
 import { useArrowKeyNavigation } from '@renderer/lib/hooks/use-arrow-key-navigation';
-import { BoundShortcut } from '@renderer/lib/ui/shortcut';
+import { BoundShortcut, useCommandAriaShortcut } from '@renderer/lib/ui/shortcut';
 import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format';
 import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { cn } from '@renderer/utils/utils';
@@ -342,8 +342,10 @@ export function PaneEmptyStateAction({
   onClick?: () => void;
   onMouseEnter?: () => void;
 }) {
+  const shortcut = useCommandAriaShortcut(shortcutSettingsKey);
   return (
     <button
+      aria-keyshortcuts={shortcut}
       data-slot="button"
       disabled={disabled}
       title={title}

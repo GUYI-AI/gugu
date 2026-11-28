@@ -218,10 +218,8 @@ export function createSessionCommandProvider(projectId: string, sessionId: strin
         {
           ...gitPushDef,
           // Dynamic label: push vs publish branch
-          label: git?.isBranchPublished ? 'Git Push' : 'Git Publish Branch',
-          description: git?.isBranchPublished
-            ? 'Push commits to remote'
-            : 'Publish this branch to remote',
+          label: git?.isBranchPublished ? gitPushDef.label : translateSessionMessage('git.publishBranch'),
+          description: git?.isBranchPublished ? gitPushDef.description : '',
           enabled: git != null,
           execute() {
             if (!git) return;

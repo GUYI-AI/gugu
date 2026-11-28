@@ -1,3 +1,4 @@
+import { registerComposerModelCommand } from '@renderer/lib/commands/composer-model-command';
 import type { SessionContextChoice } from '@shared/core/sessions/session-config';
 import { useContextThresholds } from '../session-config/use-context-thresholds';
 import { usePermissionMenu } from '@renderer/features/sessions/session-config/use-permission-menu';
@@ -1213,6 +1214,7 @@ const ComposerForStore = observer(function ComposerForStore({
         selectedModel={selectedModelOption}
         onModelChange={handleModelChange}
         effortOptionsForModel={effortOptionsForModel}
+        registerModelMenuCommand={registerComposerModelCommand}
         modelMenuOpenRequest={modelMenuRequest}
         modelSettingNotice={modelSettingNotice}
         modelMenuNotice={lockedForTurn ? translate('composer.modelBusy') : modelPreparationNotice}

@@ -102,7 +102,7 @@ export function useDesktopContactSearch({ enabled, query, onQuery, sections, peo
     scopeId: 'session-sub',
     surface: 'shell',
     isActive: () => enabled && onScreen,
-    getCommands: () => [{ id: 'app.find', hideFromPalette: true, execute: () => { input.current?.focus(); input.current?.select() } }],
+    getCommands: () => [{ id: 'app.find', execute: () => { input.current?.focus(); input.current?.select() } }],
   })
 
   const field = (

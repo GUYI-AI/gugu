@@ -1,3 +1,4 @@
+import { promptEditorKeys } from '../keyboard-shortcuts';
 /**
  * Keymap extension:
  *  - Enter (no modifier) → submit.
@@ -13,13 +14,13 @@ export function buildSubmitKeymap(onSubmit: () => void, enterBehavior: () => 'su
     name: 'submitKeymap',
     addKeyboardShortcuts() {
       return {
-        Enter: ({ editor }) => {
+        [promptEditorKeys.enter]: ({ editor }) => {
           if (enterBehavior() === 'newline') return editor.commands.setHardBreak();
           onSubmit();
           return true;
         },
 
-        'Shift-Enter': ({ editor }) => {
+        [promptEditorKeys.lineBreak.replace('+', '-')]: ({ editor }) => {
           editor.commands.setHardBreak();
           return true;
         },

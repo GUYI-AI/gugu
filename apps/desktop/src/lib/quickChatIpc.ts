@@ -9,10 +9,13 @@ export const QUICK_CHAT_WINDOW_NAME = 'gugu-aux:quick-chat'
 export const QUICK_CHAT_CHANNELS = {
   /** 快捷键此刻的样子(invoke,回 QuickChatState)。 */
   state: 'quick-chat:state',
+  recordShortcut: 'quick-chat:record-shortcut',
+  shortcutRecorded: 'quick-chat:shortcut-recorded',
   /** 开 / 关快捷键(invoke,boolean → QuickChatState)。记在这台电脑上。 */
   setEnabled: 'quick-chat:set-enabled',
   /** 收起小窗(invoke):关闭钮、发完想走。 */
   hide: 'quick-chat:hide',
+  show: 'quick-chat:show',
   /** 收起小窗、把主窗叫到前面(invoke):「打开咕咕」。 */
   openMain: 'quick-chat:open-main',
   /** 主进程 → 主窗:按了快捷键而小窗还没开(或被关掉了),开一扇;开好主进程就把它摆出来(event)。 */
@@ -31,6 +34,11 @@ export type QuickChatState = {
   accelerator: string
   /** 开着却没注册上 = 被别的应用占了(或系统不让);❌ 假装生效。 */
   registered: boolean
+}
+
+/** The OS reserves only a shortcut this desktop instance actually registered. */
+export function registeredQuickChatAccelerator(state: QuickChatState | undefined): string | undefined {
+  return state?.supported && state.registered ? state.accelerator : undefined
 }
 
 /**

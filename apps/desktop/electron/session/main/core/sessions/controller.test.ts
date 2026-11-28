@@ -13,7 +13,6 @@ vi.mock('./dehydrateSession', () => ({ dehydrateSession: vi.fn() }));
 vi.mock('./getSessions', () => ({ getSessions: vi.fn() }));
 vi.mock('./getSessionsForProject', () => ({ getSessionsForProject: vi.fn() }));
 vi.mock('./getUnarchivedSession', () => ({ getUnarchivedSession: vi.fn() }));
-vi.mock('./convert-automation-session', () => ({ convertAutomationSession: vi.fn() }));
 vi.mock('./fork-session', () => ({ forkSession: vi.fn() }));
 vi.mock('./markSessionSeen', () => ({ markSessionSeen: vi.fn() }));
 vi.mock('./renameSession', () => ({ renameSession: vi.fn() }));
