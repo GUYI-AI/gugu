@@ -487,8 +487,8 @@ export function createFileCache(directory: string, maxBytes = FILE_CACHE_BYTES) 
     return null
   }
   const trim = async () => {
+    await requireAgentFileTreeAccess(directory)
     const names = await readdir(directory).catch(error => { if (error.code === 'ENOENT') return [] as string[]; throw error })
-    if (names.length) await requireAgentFileTreeAccess(directory)
     const copies = await Promise.all(names.map(async name => ({
       name, copy: /^[0-9a-f]{64}$/.test(name) ? await copyOf(name) : null,
     })))
