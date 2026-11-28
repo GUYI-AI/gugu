@@ -1,5 +1,6 @@
 import { AttachmentsError, attachmentRequest, uploadAttachmentPlan, type AttachmentsEndpoint, type AttachmentUploadPlan } from '@gugu/core/cloud/attachmentsApi'
 import { ciphertextSize, createFileKey, transformFile } from '@gugu/core/shared/fileCipher'
+import { FileIntegrityError } from '@gugu/core/shared/fileResolver'
 import { createFileSink } from './fileSnapshot'
 import { openProjectFileSource, type ProjectFileReader } from './projectFileHost'
 import { readProjectFile, type ProjectFileVersionLookup } from './sessionpage/sessionpage-project-groups'
@@ -12,6 +13,13 @@ function failureReason(error: unknown) {
   if (!(error instanceof Error)) return 'unknown'
   const code = (error as NodeJS.ErrnoException).code
   return typeof code === 'string' ? code : /^[\w -]+$/.test(error.message) ? error.message : error.name
+}
+
+/** What the reader is told: the server's code for a refusal (its quota codes read as quota), else one fixed phrase. */
+function declineReason(error: unknown) {
+  if (error instanceof AttachmentsError) return error.code
+  if (['ENOENT', 'not_found'].includes(String((error as NodeJS.ErrnoException).code))) return 'The file is no longer on that computer'
+  return error instanceof FileIntegrityError || /changed/.test(String((error as Error).message)) ? 'The file changed on that computer' : 'The file could not be read on that computer'
 }
 
 /** Existing device events and reconnect reconciliation call this drain; no timer or new subscription. */
@@ -50,10 +58,9 @@ export function createProjectTransferHost(deps: {
         // Key travels over the authenticated API only, never the object form, a device event or a log.
         await attachmentRequest(endpoint, 'file-commit', { transfer_id: row.id, ciphertext_bytes: size, ciphertext_sha256: encrypted.ciphertextSha256, key: Buffer.from(key).toString('base64') })
       } catch (error) {
+        failed.push(`${row.id}: ${failureReason(error)}`)
         // The reader sees the cause at its next poll instead of waiting out its whole bound.
-        const reason = failureReason(error).slice(0, 300)
-        failed.push(`${row.id}: ${reason}`)
-        await attachmentRequest(endpoint, 'file-decline', { transfer_id: row.id, reason })
+        await attachmentRequest(endpoint, 'file-decline', { transfer_id: row.id, reason: declineReason(error) })
           .catch((declined: unknown) => failed.push(`${row.id} decline: ${failureReason(declined)}`))
       } finally { key?.fill(0); await sink?.abort() }
     }

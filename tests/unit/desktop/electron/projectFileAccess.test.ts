@@ -697,15 +697,15 @@ describe('the host’s on-demand client-encrypted transfer', () => {
     const failure = await f.drain().then(() => null, (error: Error) => error.message)
     expect(failure).toMatch(/^1 project file transfer\(s\) failed; .*\(transfer: \w+\)$/)
     expect(failure).not.toContain(root)
+    expect(f.declines).toEqual([{ transfer_id: 'transfer', reason: 'The file is no longer on that computer' }])
   })
   it.each(['quota', 'revision', 'source-sha'])('declines without uploading or committing when %s fails', async failure => {
     const f = fixture({ denied: failure === 'quota', changed: failure === 'revision' })
     if (failure === 'source-sha') await writeFile(join(root, 'file.bin'), Buffer.alloc(bytes.length, 9))
-    const reason = failure === 'quota' ? 'file-accept 403 quota: Quota exhausted' : failure === 'revision' ? 'Transfer revision changed' : 'integrity_failed'
-    await expect(f.drain()).rejects.toThrow(`(transfer: ${reason})`)
+    await expect(f.drain()).rejects.toThrow(failure === 'quota' ? '(transfer: file-accept 403 quota: Quota exhausted)' : failure === 'revision' ? '(transfer: Transfer revision changed)' : '(transfer: integrity_failed)')
     expect(f.calls).not.toContain('object'); expect(f.calls).not.toContain('file-commit')
-    // The reader's next poll ends with this cause instead of waiting out its whole bound.
-    expect(f.declines).toEqual([{ transfer_id: 'transfer', reason }])
+    // The reader's next poll ends with this cause instead of waiting out its whole bound: the server's code, or a fixed phrase.
+    expect(f.declines).toEqual([{ transfer_id: 'transfer', reason: failure === 'quota' ? 'quota' : 'The file changed on that computer' }])
     if (failure !== 'source-sha') expect(f.read).not.toHaveBeenCalled()
     expect(await readdir(tempRoot).catch(() => [])).toEqual([])
   })
