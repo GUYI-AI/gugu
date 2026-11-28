@@ -52,10 +52,16 @@ export async function readOneVersion(
     if (reader.signal?.aborted) throw reader.stopped();
     let next = await settled(readPiece(0, part));
     const { size, etag } = next;
+    if (!Number.isSafeInteger(size) || size < 0) {
+      if (attempt > 0) throw reader.changing();
+      continue;
+    }
     if (await settled(reader.begin(size)) === false) return null;
     for (;;) {
+      if (next.size !== size || next.etag !== etag || at + next.data.byteLength > size) break;
       if (next.data.byteLength > 0) await settled(reader.piece(next.data, at += next.data.byteLength, size));
-      if (at >= size || next.data.byteLength === 0) return { size, etag };
+      if (at === size) return { size, etag };
+      if (next.data.byteLength === 0) break;
       part = nextPartBytes(part, Date.now() - started);
       started = Date.now();
       next = await settled(readPiece(at, part));
@@ -83,20 +89,29 @@ export async function uploadInParts(
   for (const { name, blob } of files) {
     const path = folder ? `${folder.replace(/^\/+|\/+$/g, '')}/${name}` : name;
     const uploadId = crypto.randomUUID();
-    for (let offset = 0, final = false, size = SMALLEST_PART_BYTES; !final;) {
-      if (options?.signal?.aborted) {
-        await write({ place, path, uploadId, offset, data: '', total: blob.size, final: false, expectedEtag: null, abort: true });
-        throw Object.assign(new Error('The upload was stopped'), { code: 'invalid' });
+    let offset = 0;
+    const check = () => { if (options?.signal?.aborted) throw Object.assign(new Error('The upload was stopped'), { code: 'invalid' }); };
+    try {
+      for (let final = false, size = SMALLEST_PART_BYTES; !final;) {
+        check();
+        const bytes = new Uint8Array(await blob.slice(offset, offset + size).arrayBuffer());
+        check();
+        if (bytes.length !== Math.min(size, blob.size - offset)) throw new Error('The upload source changed');
+        final = offset + bytes.length === blob.size;
+        const started = Date.now();
+        const answer = await write({ place, path, uploadId, offset, data: bytesToBase64(bytes), total: blob.size, final, expectedEtag: options?.expectedEtag ?? (options?.replace ? WORKSPACE_WRITE_FORCE : null) });
+        check();
+        if (answer.received !== offset + bytes.length || (final && !answer.entry)) throw new Error('Invalid upload acknowledgement');
+        size = nextPartBytes(size, Date.now() - started);
+        offset += bytes.length;
+        sent += bytes.length;
+        options?.onProgress?.(sent, total);
+        if (final) entries.push(answer.entry!);
       }
-      const bytes = new Uint8Array(await blob.slice(offset, offset + size).arrayBuffer());
-      final = offset + bytes.length >= blob.size;
-      const started = Date.now();
-      const answer = await write({ place, path, uploadId, offset, data: bytesToBase64(bytes), total: blob.size, final, expectedEtag: options?.expectedEtag ?? (options?.replace ? WORKSPACE_WRITE_FORCE : null) });
-      size = nextPartBytes(size, Date.now() - started);
-      offset += bytes.length;
-      sent += bytes.length;
-      options?.onProgress?.(sent, total);
-      if (final) entries.push(answer.entry!);
+    } catch (error) {
+      // 等已发出的请求结束后清理暂存；清理失败不能盖过原来的传输错误。
+      await write({ place, path, uploadId, offset, data: '', total: blob.size, final: false, expectedEtag: null, abort: true }).catch(() => undefined);
+      throw error;
     }
   }
   return entries;
