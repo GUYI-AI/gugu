@@ -1,4 +1,5 @@
 import { installerEnvironment } from './egress/installer'
+import { coreLogger } from '@gugu/core/log'
 // 两样随包工具,给 claude 桥接(acp-bridge/claude-bridge-deps.ts)在后台装用户那份 Claude 配对的桥接用:
 //   · execWithStallWatch:跑一个子进程,盯工作目录的字节进展,连续零进展就杀掉并报错(#2004 §3);
 //   · resolveBundledNpmInvocation:用 Electron 内嵌的 node 跑随 App 交付的 npm。
@@ -171,9 +172,12 @@ export function execWithStallWatch(
     let stallMsg: string | null = null // 已判卡死，等子进程真正退出后以此结算（见 onExit）。
     let walking = false // 读数防重入：慢盘上一轮 walk 未归就跳过本轮，不叠加 IO。
     let lastResortTimer: NodeJS.Timeout | undefined
+    let killTimer: NodeJS.Timeout | undefined
+    let pollTimer: ReturnType<typeof setInterval> | undefined = undefined
     const child = spawn(cmd, args, execOptions.env, (err, stdout) => {
       clearInterval(pollTimer)
       if (lastResortTimer) clearTimeout(lastResortTimer)
+      if (killTimer) clearTimeout(killTimer)
       if (settled) return
       settled = true
       // 结算永远发生在子进程真正退出之后（onExit 即退出信号）→ 调用方 finally 的清理
@@ -182,51 +186,63 @@ export function execWithStallWatch(
       else if (err) reject(err)
       else resolve(stdout)
     })
+    if (settled) return
     let lastBytes = -1
     let lastGrowthAt = Date.now()
-    const pollTimer = setInterval(() => {
+    let sampleFailed = false
+    const sampled = (bytes: number) => {
+      walking = false
+      if (settled || stallMsg) return
+      const now = Date.now()
+      if (bytes > lastBytes) {
+        // 仅**增长**算进展。下降（npm 清理坏 partial / cacache 搬迁走文件）只更新基线不续命——
+        // 否则半开连接期间 npm 自身 bookkeeping 的字节波动能把 stall 时钟无限续期（假阴性）。
+        // #2136 - 增长即外显**正增长 delta**（1s 轮询天然限频）。回调抛错不得影响 stall 判定/下载本体。
+        // lastBytes 初值 -1（哨兵）：首轮按「从 0 起的增长」计（不多算哨兵那 1 字节）；空目录首轮
+        // （0 > -1 走增长分支但 delta=0）不回调——契约是只报正增长。
+        const delta = bytes - Math.max(0, lastBytes)
+        lastBytes = bytes
+        lastGrowthAt = now
+        if (delta > 0) {
+          try {
+            watchOptions.onBytes?.(delta)
+          } catch (e) {
+            console.warn('[engine-downloader] onBytes 回调抛错（已忽略）：', e)
+          }
+        }
+        return
+      }
+      if (bytes < lastBytes) lastBytes = bytes
+      if (now - lastGrowthAt < stallTimeoutMs) return
+      // 子进程已自然退出（成功/失败）→ 让 onExit 结算，不把恰好静默收尾的成功误报成卡死。
+      if (child.hasExited()) return
+      stallMsg = `[engine-downloader] 下载卡死：连续 ${Math.round(stallTimeoutMs / 1000)}s 零字节进展（${cmd} ${args.join(' ')}）`
+      clearInterval(pollTimer)
+      child.killTree('SIGTERM')
+      // SIGTERM 后仍未退出（真卡死的进程可能吞信号）→ 兜底 SIGKILL；SIGKILL 都压不死（不可中断
+      // IO）→ 最后强制结算：状态必须收敛（fail-loud 优先），进程残留在错误信息里言明。
+      if (settled) return
+      killTimer = setTimeout(() => {
+        if (!settled) child.killTree('SIGKILL')
+      }, STALL_KILL_ESCALATE_MS).unref()
+      lastResortTimer = setTimeout(() => {
+        if (settled) return
+        settled = true
+        reject(new Error(`${stallMsg}；SIGKILL 后进程仍未退出，可能残留`))
+      }, STALL_KILL_ESCALATE_MS * 2)
+      lastResortTimer.unref()
+    }
+    pollTimer = setInterval(() => {
       if (settled || stallMsg || walking) return
       walking = true
-      void readProgressBytes(progressDir).then((bytes) => {
-        walking = false
-        if (settled || stallMsg) return
-        const now = Date.now()
-        if (bytes > lastBytes) {
-          // 仅**增长**算进展。下降（npm 清理坏 partial / cacache 搬迁走文件）只更新基线不续命——
-          // 否则半开连接期间 npm 自身 bookkeeping 的字节波动能把 stall 时钟无限续期（假阴性）。
-          // #2136 - 增长即外显**正增长 delta**（1s 轮询天然限频）。回调抛错不得影响 stall 判定/下载本体。
-          // lastBytes 初值 -1（哨兵）：首轮按「从 0 起的增长」计（不多算哨兵那 1 字节）；空目录首轮
-          // （0 > -1 走增长分支但 delta=0）不回调——契约是只报正增长。
-          const delta = bytes - Math.max(0, lastBytes)
-          lastBytes = bytes
-          lastGrowthAt = now
-          if (delta > 0) {
-            try {
-              watchOptions.onBytes?.(delta)
-            } catch (e) {
-              console.warn('[engine-downloader] onBytes 回调抛错（已忽略）：', e)
-            }
-          }
-          return
-        }
-        if (bytes < lastBytes) lastBytes = bytes
-        if (now - lastGrowthAt < stallTimeoutMs) return
-        // 子进程已自然退出（成功/失败）→ 让 onExit 结算，不把恰好静默收尾的成功误报成卡死。
-        if (child.hasExited()) return
-        stallMsg = `[engine-downloader] 下载卡死：连续 ${Math.round(stallTimeoutMs / 1000)}s 零字节进展（${cmd} ${args.join(' ')}）`
-        clearInterval(pollTimer)
-        child.killTree('SIGTERM')
-        // SIGTERM 后仍未退出（真卡死的进程可能吞信号）→ 兜底 SIGKILL；SIGKILL 都压不死（不可中断
-        // IO）→ 最后强制结算：状态必须收敛（fail-loud 优先），进程残留在错误信息里言明。
-        setTimeout(() => {
-          if (!settled) child.killTree('SIGKILL')
-        }, STALL_KILL_ESCALATE_MS).unref()
-        lastResortTimer = setTimeout(() => {
-          if (settled) return
-          settled = true
-          reject(new Error(`${stallMsg}；SIGKILL 后进程仍未退出，可能残留`))
-        }, STALL_KILL_ESCALATE_MS * 2)
-        lastResortTimer.unref()
+      void Promise.resolve().then(() => readProgressBytes(progressDir)).then((bytes) => {
+        sampleFailed = false
+        sampled(bytes)
+      }, (error: unknown) => {
+        if (!settled && !stallMsg && !sampleFailed) coreLogger('engine-downloader').warn({ err: error }, 'Could not sample installation progress')
+        sampleFailed = true
+        // 采样失败不算增长，也不能停掉之后的轮询和超时判定。
+        sampled(lastBytes)
       })
     }, pollIntervalMs)
   })
