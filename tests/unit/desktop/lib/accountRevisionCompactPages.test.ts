@@ -4,7 +4,7 @@ import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localS
 import { imSelectors, openImRepository } from '../../../../apps/desktop/src/lib/imRepository'
 import { createAccountRevisionCoordinator } from '../../../../apps/desktop/src/lib/accountRevisionCoordinator'
 import { parseRevisionPage, validatePage, type AccountRevisionOperation, type AccountRevisionPage } from '../../../../apps/desktop/src/lib/accountRevisionRuntime'
-import { readMessagePage } from '../../../../apps/desktop/src/lib/messageIngest'
+import { ingestMessagePage, readMessagePage } from '../../../../apps/desktop/src/lib/messageIngest'
 import { clearMessageWindows, initializeMessageWindows } from '../../../../apps/desktop/src/lib/messageWindows'
 
 const stops: Array<() => void> = []
@@ -58,4 +58,36 @@ it('asks for the compacted read, takes its window as the cursor, voids a stream 
   wake('901'); await coordinator.whenIdle()
   expect((await readMessagePage('viewer', { chatId: 'room', beforeSeq: 481, limit: 3 })).rows.map(row => row.id)).toEqual(['held-1', 'held-2', 'after-gap'])
   expect((await readMessagePage('viewer', { chatId: 'room', beforeSeq: 481, limit: 3 })).covered).toBe(false)
+})
+
+// A collapsed chat still delivers each deletion (the backend keeps message_deleted out of the collapse).
+it('removes deleted rows it holds when their chat arrives collapsed, and refuses them from a later page', async () => {
+  initializeMessageWindows('viewer')
+  const repository = await openImRepository('viewer', { adapter: createMemoryLocalSyncDb() })
+  await repository.transaction(tx => tx.putSyncState('account-revision-cursor', { revision: '0' }))
+  let wake!: (head?: string | null) => void
+  const deleted = (revision: string, id: string): AccountRevisionOperation =>
+    ({ revision, event: 'message_deleted', payload: { chat_id: 'room', entity_id: id, tombstone: true } })
+  const pages: Record<string, AccountRevisionPage> = {
+    0: { operations: [arrival('1', 'held-1', 1), arrival('2', 'held-2', 2), arrival('3', 'held-3', 3)], hasMore: false },
+    // Away: 'middle' and 'newest' arrived and were deleted, and so was held-2. The marker names the deleted newest message.
+    3: { operations: [{ revision: '700', event: 'message_created', payload: { chat_id: 'room', entity_id: 'newest', gap: true, tombstone: false } },
+      deleted('710', 'held-2'), deleted('720', 'middle'), deleted('730', 'newest')], hasMore: false, through: '900' },
+  }
+  const recover = vi.fn(async () => null)
+  const coordinator = createAccountRevisionCoordinator('viewer', repository, {
+    syncSince: async cursor => pages[cursor] ?? { operations: [], hasMore: false },
+    subscribeWake: (_account, onWake) => { wake = onWake; return () => undefined },
+  }, { recover, notify: vi.fn(async () => {}) })
+  stops.push(() => { coordinator.stop(); repository.close() })
+  coordinator.start()
+  await coordinator.whenIdle()
+  wake('900'); await coordinator.whenIdle()
+  const stored = async () => (await readMessagePage('viewer', { chatId: 'room', limit: 50 })).rows.map(row => row.id)
+  expect(await stored()).toEqual(['held-1', 'held-3'])
+  expect(recover).not.toHaveBeenCalled()
+  // Scrolling up reads a server page; a row the journal deleted cannot come back with it.
+  const row = (id: string, seq: number) => message({ id, seq, chat_id: 'room', sender_user_id: 'peer', to_user_ids: ['viewer'] })
+  await ingestMessagePage('viewer', [row('held-1', 1), row('held-2', 2), row('held-3', 3), row('middle', 40), row('newest', 90)], 'room', 60)
+  expect(await stored()).toEqual(['held-1', 'held-3'])
 })
