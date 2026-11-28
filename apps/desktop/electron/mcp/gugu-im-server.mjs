@@ -1713,7 +1713,11 @@ async function handleMessage(args, deps) {
     try {
       await attemptSend()
     } catch (err) {
+      // 旧的命令租约只在当前 turn 有效，不能存入 outbox：租约过期后延迟直插会绕过数据库围栏。
+      // 现在用稳定的消息 ID 直写，业务错误原样返回，只有鉴权失效才在当前调用内重试一次。
       if (!isRefreshableAuthError(err)) throw err
+      // @@@2083 renderer/main 负责刷新 token，子进程只读 host 每 tick 同步的 session 文件。
+      // 取到新 token 才重试写入；仍然失败就把错误返回给当前 turn。
       const fresh = await deps.context.getAccessToken()
       if (!fresh || fresh === err.accessToken) throw err
       try {
@@ -2826,7 +2830,7 @@ function peerRow(row, agentId) {
 
 export const TOOL_DEFS = [
   chatActivityTool(resolveChatIdInput),
-  // ── message_ ── 聊天消息:写入走 command lease/群规闸/表达一致性,读走 messages_view;附件 = 消息的一种
+  // ── message_ ── 聊天消息:按稳定消息 ID 写入，群发送校验群规和寻址表达，读走 messages_view;附件 = 消息的一种
   {
     name: 'message_send',
     writer: true,
