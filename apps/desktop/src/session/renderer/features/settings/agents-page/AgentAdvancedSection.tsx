@@ -1,7 +1,8 @@
+import { isDeepEqual } from '@gugu/session-shared';
 import { useForm } from '@tanstack/react-form';
 import { ChevronRight, Plus, RotateCcw, Trash2 } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { parseEnvAssignmentPaste, replaceEnvEntryWithPaste } from '@renderer/lib/env-paste';
 import { Button } from '@renderer/lib/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@renderer/lib/ui/collapsible';
@@ -64,13 +65,16 @@ export const AgentAdvancedSection = observer(function AgentAdvancedSection({
 
   const form = useForm({ defaultValues: makeDefaultValues(storedConfig) });
 
-  // Re-sync form when external config changes (e.g. after a reset from outside).
+  const lastStored = useRef(makeDefaultValues(storedConfig));
+  // A blur saves one field while the next is already being edited. Apply a host refresh only to clean fields.
   useEffect(() => {
     if (isLoading) return;
     const next = makeDefaultValues(storedConfig);
-    form.setFieldValue('extraArgs', next.extraArgs);
-    form.setFieldValue('envEntries', next.envEntries);
-  }, [isLoading, storedConfig, isOverridden, form]);
+    const draft = form.state.values;
+    if (draft.extraArgs === lastStored.current.extraArgs) form.setFieldValue('extraArgs', next.extraArgs);
+    if (isDeepEqual(draft.envEntries, lastStored.current.envEntries)) form.setFieldValue('envEntries', next.envEntries);
+    lastStored.current = next;
+  }, [isLoading, storedConfig, form]);
 
   const commit = useCallback(() => {
     const { extraArgs, envEntries } = form.state.values;

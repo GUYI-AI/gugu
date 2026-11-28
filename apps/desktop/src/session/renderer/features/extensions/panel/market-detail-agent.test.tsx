@@ -8,9 +8,11 @@ import type { AgentInstallationStatus, AgentPayload } from '@shared/core/agents/
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { until } from '../../../../../../../../tests/support/awaitCondition';
+import { typeInto } from '../../../../../../../../tests/support/testHarness';
+import { agentSettings } from '@renderer/lib/stores/agent-replicas';
 import { AgentAppDetailDialog } from '@renderer/features/apps/agent-app-detail-dialog';
 
-const f = vi.hoisted(() => ({ install: vi.fn(), installed: false }));
+const f = vi.hoisted(() => ({ install: vi.fn(), installed: false, config: { extraArgs: '--search' } as { extraArgs: string; env?: Record<string, string> } }));
 const codex = { id: 'codex', name: 'Codex', status: 'missing', reading: 'not-detected', command: 'codex',
   installOptions: [{ method: 'mise', command: 'mise install http:gugu-codex', target: { kind: 'mise' } }],
   capabilities: { hostDependency: { updates: { kind: 'none' }, uninstall: { kind: 'none' } } },
@@ -27,7 +29,7 @@ vi.mock('@renderer/lib/ipc', async original => {
     list: async () => [current()],
     listIcons: async () => ({}),
     listAgentInstallationStatus: async () => [{ id: 'codex', ...installState(), used: { kind: 'auto' }, installations: [] } as unknown as AgentInstallationStatus],
-    getSettings: async () => ({ value: { extraArgs: '--search' }, defaults: {}, overrides: {} }),
+    getSettings: async () => ({ value: f.config, defaults: {}, overrides: {} }),
     getInstallSourceVersions: async () => ({ sources: [] }),
     install: f.install,
   };
@@ -41,6 +43,7 @@ beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   queryClient.clear();
   f.installed = false;
+  f.config = { extraArgs: '--search' };
   followRendererSession('SIGNED_IN', 'market-agent-fixture');
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
@@ -106,4 +109,23 @@ it('offers no 高级设置 before the agent is installed', async () => {
   await until('the Install button is offered', () => [...document.querySelectorAll('button')].some(b => b.textContent === translateSessionMessage('extensions.installAction')));
   expect(document.querySelector('[data-testid=agent-advanced-settings]')).toBeNull();
   expect(document.querySelector('[data-testid=agent-advanced-panel]')).toBeNull();
+});
+
+
+it('keeps a newer environment edit when the host confirms an earlier save', async () => {
+  f.installed = true;
+  f.config = { extraArgs: '--search', env: { EXAMPLE: '' } };
+  await act(async () => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>
+    <AgentAppDetailDialog agentId='codex' onClose={() => {}} onCreate={() => {}} />
+  </SessionLocalizationProvider></QueryClientProvider>));
+  const toggle = () => document.querySelector<HTMLButtonElement>('[data-testid=agent-advanced-settings]');
+  await until('the settings are available', () => !!toggle());
+  await act(async () => toggle()!.click());
+  const value = () => document.querySelector<HTMLInputElement>('input[aria-label="value"]');
+  await until('the saved variable is shown', () => !!value());
+  await typeInto(value()!, 'draft');
+  f.config = { extraArgs: '--verbose', env: { EXAMPLE: '' } };
+  await act(async () => { await agentSettings.refresh(null, 'codex'); });
+  await until('the clean field reflects the host refresh', () => document.querySelector<HTMLInputElement>('#agent-extraArgs')?.value === '--verbose');
+  expect(value()!.value).toBe('draft');
 });

@@ -312,7 +312,7 @@ export const InstallSection = observer(function InstallSection({
   const busy = vm.isInstalling || vm.isUpdating || vm.isUninstalling;
   const ready = runnable && state !== 'installing' && !vm.isUninstalling && !vm.lastInstallError && !vm.lastUpdateError;
   const advanced = (panel: boolean) => (
-    <AgentAdvancedSection compact panel={panel} agentId={agentId} registries={registries} registry={selectedSource.registry} onRegistryChange={onRegistryChange}>
+    <AgentAdvancedSection key={`${host.key}:${agentId}`} compact panel={panel} agentId={agentId} registries={registries} registry={selectedSource.registry} onRegistryChange={onRegistryChange}>
       {panel && sources}
       {/* The sources' versions could not be read (again): said where they are listed. */}
       {registries.length > 0 ? <RefreshFailed reading={sourceVersions} /> : null}
