@@ -1,5 +1,5 @@
 import type { PersonalConversationHiding } from '../../lib/hideListedConversation'
-import { memo, useEffect, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatItem, NotificationLevel } from '@gugu/core/shared/types/chat'
 import { chatAttention } from '@gugu/core/shared/ui/chatModels'
@@ -22,7 +22,7 @@ import { Chip } from '../ui/Chip'
 import { SearchField } from '../ui/SearchField'
 import { ChatRowContextMenu } from './ChatRowContextMenu'
 import { TopicCallChip } from './GroupTopicsRows'
-import { innerSidebarTopicRows, topicsOfChat } from './innerSidebarTopicsModel'
+import { topicsOfChat } from './innerSidebarTopicsModel'
 import { useCloseTopic } from './useCloseTopic'
 import { useGroupChatSettings } from './useGroupChatSettings'
 import { useToast } from '../toastContext'
@@ -72,17 +72,29 @@ function TopicRows({ chatId, all, query }: { chatId: string; all: boolean; query
     (store) => [chatId, store.chats.filter((chat) => chat.source_chat_id === chatId)],
   )
   const { focusedChatId, split = [] } = useSidebarChatView()
-  const openTopicIds = topics.filter(topic => topic.id === focusedChatId || split.includes(blockKey.chat(topic.id))).map(topic => topic.id)
   const needle = query.trim().toLocaleLowerCase()
-  const rows = innerSidebarTopicRows(needle ? topics.filter((topic) => (topic.name ?? '').toLocaleLowerCase().includes(needle)) : topics, { all, openTopicIds })
-  const level = innerSidebarTopicRows(topics, { all: false })
+  const rows = needle ? topics.filter(topic => (topic.name ?? '').toLocaleLowerCase().includes(needle)) : topics
+  const calling = topics.reduce((sum, topic) => sum + chatAttention(topic).forYou, 0)
+  const list = useRef<HTMLDivElement>(null)
+  const active = topics.some(topic => topic.id === focusedChatId) ? focusedChatId : null
+  // Navigation may reveal an offscreen topic. List updates and manual scrolling leave the viewport alone.
+  useLayoutEffect(() => {
+    if (!active || all) return
+    const viewport = list.current?.closest<HTMLElement>('[data-topic-viewport]')
+    const row = list.current?.querySelector('[aria-current="page"]')?.closest('[role="listitem"]')
+    if (!viewport || !row) return
+    const item = row.getBoundingClientRect()
+    const frame = viewport.getBoundingClientRect()
+    if (item.top < frame.top) viewport.scrollTop += item.top - frame.top
+    else if (item.bottom > frame.bottom) viewport.scrollTop += item.bottom - frame.bottom
+  }, [active, all])
   const sourceRole = useChatStoreSelect((store) => store.chats.find((chat) => chat.id === chatId)?.my_role ?? 'unknown')
-  const { settings, error } = useGroupChatSettings(rows.shown.length ? chatId : null, sourceRole)
+  const { settings, error } = useGroupChatSettings(rows.length ? chatId : null, sourceRole)
   // For group/project topics the server derives can_archive_topic from the source group's management authority.
   const canClose = !error && settings?.can_manage === true && (sourceRole === 'unknown' || settings.my_role === sourceRole)
   useEffect(
-    () => publishInnerSidebarTopicsView({ chatId, total: topics.length, hidden: level.hidden, calling: level.calling }),
-    [chatId, topics.length, level.hidden, level.calling],
+    () => publishInnerSidebarTopicsView({ chatId, total: topics.length, calling }),
+    [chatId, topics.length, calling],
   )
 
   // 与聊天列表侧栏那一份点话题同一条路:话题和群一样是一条主会话,请会话页摆出它自己那一块(#62)。
@@ -105,12 +117,12 @@ function TopicRows({ chatId, all, query }: { chatId: string; all: boolean; query
     sessionPage.leaveSplit(blockKey.chat(topicId))
   })
 
-  if (needle && rows.shown.length === 0) {
+  if (needle && rows.length === 0) {
     return <p className="px-2 py-1 text-[length:var(--font-caption)] text-[var(--text-tertiary)]">{t('history.empty.searchTopics')}</p>
   }
   return (
-    <div role="list" aria-label={t('history.tabs.topics')} data-inner-sidebar-topics={chatId}>
-      {rows.shown.map((topic) => (
+    <div ref={list} role="list" aria-label={t('history.tabs.topics')} data-inner-sidebar-topics={chatId}>
+      {rows.map((topic) => (
         <InnerTopicRow key={topic.id} topic={topic} active={topic.id === focusedChatId} onOpen={open} onPin={pin} onClose={canClose ? close : undefined} onSetLevel={setLevel} onRemove={remove} onLeaveSplit={split.includes(blockKey.chat(topic.id)) ? leaveSplit : undefined} />
       ))}
     </div>

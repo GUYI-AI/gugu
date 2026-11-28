@@ -1,23 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
-import { INNER_SIDEBAR_TOPIC_LIMIT, innerSidebarTopicRows, topicsOfChat } from '@/components/chat/innerSidebarTopicsModel'
+import { topicsOfChat } from '@/components/chat/innerSidebarTopicsModel'
 
 const topic = (id: string, at: number, extra: Partial<ChatItem> = {}) =>
   ({ id, kind: 'topic', source_chat_id: 'g', status: 'active', unread_count: 0, is_pinned: false, last_message_at: new Date(at * 1000).toISOString(), ...extra }) as ChatItem
 
 describe('inner sidebar topics, level one', () => {
-  it('never shows more than the limit, even when every topic is unread (a personal project nobody opened)', () => {
-    const topics = topicsOfChat(Array.from({ length: 15 }, (_, i) => topic(`t${i}`, 100 - i, { unread_count: 1 })), 'g')
-    const rows = innerSidebarTopicRows(topics, { all: false })
-    expect(rows.shown).toHaveLength(INNER_SIDEBAR_TOPIC_LIMIT)
-    expect(rows.hidden).toBe(15 - INNER_SIDEBAR_TOPIC_LIMIT)
-  })
-
-  it('keeps open topics in the compact list without changing its size or sort order', () => {
-    const topics = Array.from({ length: 12 }, (_, i) => topic(`t${i}`, 100 - i))
-    const rows = innerSidebarTopicRows(topics, { all: false, openTopicIds: ['t8', 't11'] })
-    expect(rows.shown.map(topic => topic.id)).toEqual(['t0', 't1', 't2', 't3', 't8', 't11'])
-    expect(rows.hidden).toBe(6)
+  it('keeps topics beyond the default viewport available in order, including all unread ones', () => {
+    const topics = Array.from({ length: 15 }, (_, i) => topic(`t${i}`, 100 - i, { unread_count: 1 }))
+    expect(topicsOfChat(topics, 'g')).toEqual(topics)
   })
 
   it('pinned first, then most recent, in both levels: unread only marks a topic, it never moves one (reading it leaves it in place)', () => {
@@ -26,9 +17,8 @@ describe('inner sidebar topics, level one', () => {
       topic('old-unread', 10, { unread_count: 3 }), topic('old-pinned', 5, { is_pinned: true }),
     ]
     const order = ['old-pinned', 'recent', 'recent-2', 'recent-3', 'old-unread']
-    const levelOne = (list: ChatItem[]) => innerSidebarTopicRows(topicsOfChat(list, 'g'), { all: false }).shown.map((t) => t.id)
+    const levelOne = (list: ChatItem[]) => topicsOfChat(list, 'g').map((t) => t.id)
     expect(levelOne(chats)).toEqual(order)
-    expect(innerSidebarTopicRows(topicsOfChat(chats, 'g'), { all: true }).shown.map((t) => t.id)).toEqual(order)
     expect(levelOne(chats.map((t) => ({ ...t, unread_count: 0 }))), 'after reading them all').toEqual(order)
   })
 })

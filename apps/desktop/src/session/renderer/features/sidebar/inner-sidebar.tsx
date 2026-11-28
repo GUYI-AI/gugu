@@ -54,6 +54,7 @@ import {
 } from './inner-sidebar-parts';
 import { SidebarGroupToggle } from './sidebar-group-toggle';
 import { SidebarUnreadCount } from './sidebar-unread-count';
+import { DEFAULT_TOPIC_ROWS, TopicViewport } from './topic-viewport';
 import { SidebarMoreRow } from './sidebar-more-row';
 import {
   SidebarContainer,
@@ -68,7 +69,7 @@ import { moveSessionUnder } from '@renderer/features/sessions/set-session-parent
 import { SampleInnerSidebar } from './sample-inner-sidebar';
 import { SidebarSessionItem } from './sidebar-session-item';
 
-// #2548 内层侧栏:桌面上打开一个用户群或一个项目时,左边列表与对话之间多出来的一列(手机永不出现)。分区顺序:群里「话题」在上、「我的智能体」在下;项目里「智能体」在上、「话题」在下。
+// #2548 内层侧栏:桌面上打开一个用户群或一个项目时,左边列表与对话之间多出来的一列(手机永不出现)。分区顺序:群里「话题」在上、「我的智能体」在下;项目与群同序。
 // 私聊(连派过子会话的智能体)没有这一列(推翻 #2574):子会话从它的详情页进。
 // 手机永不出现是结构上的:这一列住在会话页的工作区里,手机壳不画工作区(check-ui-visual-spec 守着「任务渲染层只在桌面」)。
 // 这一列只重排现有的组件:头一行是侧栏顶上那几行动作行(SidebarMenuButton)画这个群 / 项目自己,分区头是侧栏分区头,
@@ -313,7 +314,7 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
     (element: HTMLDivElement | null) => readShellSlots()?.setSlot(innerSidebarTopicsSlotKey(chatId), element),
     [chatId]
   );
-  const canDrill = levelTwo || (view?.hidden ?? 0) > 0;
+  const canDrill = levelTwo || (view?.total ?? 0) > DEFAULT_TOPIC_ROWS;
   return (
     <SidebarGroup className="mb-2 flex shrink-0 flex-col" data-inner-sidebar-section="topics">
       <div className={sidebarGroupHeaderClass}>
@@ -354,9 +355,9 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
       </div>
       {/* 话题行画进这一格(壳那棵树);格子里的东西归壳管,这一侧 ❌ 往里放子元素。左右留白归 list body(SidebarMenu)。 */}
       {collapsed ? null : (
-        <SidebarMenu data-inner-rows="">
+        <TopicViewport all={levelTwo} total={view?.total ?? 0} label={translate('sidebar.resizeTopics')}>
           <div ref={slot} data-region="inner-sidebar-topics" className="min-h-0" />
-        </SidebarMenu>
+        </TopicViewport>
       )}
       {!collapsed && view?.total === 0 ? (
         <div className={innerSectionEmptyClass}>{translate('sidebar.noTopics')}</div>
