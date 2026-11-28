@@ -25,6 +25,7 @@ import {
   workspaceAppFileChunk,
   type AppFileChunk,
   fileRefOf,
+  chatListOptionsOf,
   fileSearchOf,
   folderOf,
   isWorkspace,
@@ -379,10 +380,11 @@ export async function changedGroupFiles(chatId: string, asAgent: string | null, 
   return files.groupChange(chatId, wanted, { asAgent });
 }
 
-export async function listAppFiles(page: DesktopFilePage, args: { place?: unknown; folder?: unknown }): Promise<AppFileEntry[]> {
+export async function listAppFiles(page: DesktopFilePage, args: { place?: unknown } & Record<string, unknown>): Promise<AppFileEntry[]> {
   const place = placeOf(args.place);
-  const folder = folderOf(args.folder);
-  if ('chat' in place) return files.groupFiles(place.chat, { asAgent: page.asAgent ?? null, ...(folder === undefined ? {} : { folder }) });
+  const options = chatListOptionsOf(args, 'chat' in place);
+  if ('chat' in place) return files.groupFiles(place.chat, { asAgent: page.asAgent ?? null, ...options });
+  const { folder } = options;
   const there = await onItsMachine(page, place, 'filesList', { place, ...(folder === undefined ? {} : { folder }) });
   if (there.there) return there.value as AppFileEntry[];
   const { listWorkingCopy } = await import('./working-copy-files');
