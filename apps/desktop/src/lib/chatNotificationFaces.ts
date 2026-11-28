@@ -1,10 +1,9 @@
 // #3416 The default sources of chatNotificationPresentation: the faces the chat list already draws, as bitmaps an OS
-// notification can hold. Nothing here decides whose face it is or invents a look — it reuses `memberFace` (someone's
-// picture, else the stable-id default human / agent face), `customAvatarUrl` and the shared group face, and only
-// rasterizes what the OS cannot read (SVG).
+// notification can hold. Nothing here decides whose face it is — `identityFace` does, through `memberFace` for people
+// and directly for groups — it only resolves the group face's theme colours and rasterizes what the OS cannot read (SVG).
 import { groupAvatarColorIndex, groupAvatarDefaultText, groupAvatarSvg } from '@gugu/core/shared/ui/groupAvatar'
 import type { PresentationSources } from './chatNotificationPresentation'
-import { customAvatarUrl } from './dicebearAvatar'
+import { faceImageUrl, identityFace } from './identityFace'
 import type { DisplayIdentity } from './displayIdentity'
 import { readIdentityDirectoryBridge } from './identityDirectoryBridge'
 import { memberFace } from './memberFaces'
@@ -64,10 +63,13 @@ export function createNotificationFaceSources(): PresentationSources {
       return face && face.startsWith('data:image/svg') ? rasterize(face) : face
     },
     async groupFace({ id, name, avatar }) {
-      const custom = customAvatarUrl(avatar, 'chat notification')
       // An explicit picture that is malformed or does not load is the unavailable state, never the default face
       // (same rule as Avatar: the default stands for an unset picture only).
-      if (avatar != null) return custom ? rasterize(custom) : null
+      const face = identityFace({ id, avatar, type: 'group' })
+      if (face.kind !== 'group') {
+        const url = faceImageUrl(face, 'chat notification')
+        return url ? rasterize(url) : null
+      }
       const style = getComputedStyle(document.documentElement)
       return rasterize(svgUri(defaultGroupFaceSvg({ id, name }, (variable) => style.getPropertyValue(variable))))
     },

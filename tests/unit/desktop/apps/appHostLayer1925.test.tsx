@@ -23,8 +23,8 @@ vi.mock('../../../../apps/desktop/src/components/assistant/AssistantProjectsLibr
 vi.mock('../../../../apps/desktop/src/session/renderer/features/apps/assistant-app-counts', () => ({ AssistantAppCountsSource: () => null }));
 vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ myAssistant: { peek: () => ({ state: 'unknown' }), fetch: async () => ({ agentId: null, provisionDeviceId: null }), refresh: async () => undefined }, useMyAssistant: () => ({ state: 'unknown' }) }));
 // The engine draws in WebGL, which jsdom has not: who is drawn, and how big, is what is checked here.
-vi.mock('../../../../apps/desktop/src/components/agentAvatar/AgentAvatar', () => ({
-  AgentAvatar: ({ id, size, look }: { id: string; size: number; look?: unknown }) => <div data-testid={`avatar-${id}`} data-size={size} data-look={look ? 'default' : 'own'} />,
+vi.mock('../../../../apps/desktop/src/components/assistantFigure/AssistantFigure', () => ({
+  AssistantFigure: ({ id, size, look }: { id: string; size: number; look?: unknown }) => <div data-testid={`avatar-${id}`} data-size={size} data-look={look ? 'default' : 'own'} />,
 }));
 
 const { installAssistantShellBridge, publishAssistantShell } = await import(`${D}/lib/assistantShellBridge`);

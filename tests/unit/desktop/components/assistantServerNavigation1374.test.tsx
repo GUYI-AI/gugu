@@ -6,13 +6,13 @@ import { createReactHarness, typeInto } from '../../../support/testHarness'
 import '../../../../apps/desktop/src/i18n/registerAssistantCatalog'
 import { UI_EVENTS } from '@/lib/uiEvents'
 import { clearAssistantOnboardingNavigation } from '@/lib/assistantOnboardingNavigation'
-import { BODY_COLORS } from '@/components/agentAvatar/engine/identity'
+import { BODY_COLORS } from '@/components/assistantFigure/engine/identity'
 import { ToastContext } from '@/components/toastContext'
 
 const f = vi.hoisted(() => ({ list: vi.fn(), setup: vi.fn() }))
 // The avatar renderer is a separate WebGL surface; identity editing and all setup steps are real.
-vi.mock('@/components/agentAvatar/AgentAvatar', () => ({ AgentAvatar: () => null }))
-vi.mock('@/components/agentAvatar/posters', () => ({ useAgentLookPostersVersion: () => 0, agentLookPoster: () => null }))
+vi.mock('@/components/assistantFigure/AssistantFigure', () => ({ AssistantFigure: () => null }))
+vi.mock('@/components/assistantFigure/posters', () => ({ useAssistantPostersVersion: () => 0, assistantPoster: () => null }))
 vi.mock('@/lib/assistantSetup', () => ({
   ASSISTANT_NAME_MAX: 30, draftAvatarUrl: () => '', pendingLocalAssistant: () => null,
   resumeLocalAssistant: vi.fn(), setUpAssistantOnThisComputer: vi.fn(), claimCloudAssistant: vi.fn(), AssistantSetupError: class extends Error {},

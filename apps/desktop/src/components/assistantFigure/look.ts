@@ -1,14 +1,15 @@
 /**
- * look.ts —— 一只 agent 的「形象」:身份层的具体取值(身体颜色 + 休息表情 + 装扮),存进它自己的头像字段。
+ * look.ts —— 个人助理的「形象」:小鸟的具体取值(身体颜色 + 休息表情 + 装扮),存进助理自己的头像字段。
+ * 只有助理画小鸟;普通 agent 的脸由 lib/identityFace.ts 决定(Boring beam),它头像位上就算存着形象地址也不画小鸟。
  *
  * 存法:头像字段放一个形象地址 `https://<存储>/storage/v1/object/public/avatars/agent-look/v1/<颜色>.webp?rest=<表情>&wear=<装扮>`。
  *  · wear = 逗号分隔的 `<装扮 id>.<配色序号>`(engine/outfitCatalog.ts):掷骰子 / DIY 之后存下的那一身;`wear=` 为空 = 明确选了不戴;
  *    没有 wear 参数 = 不戴装扮;只有用户掷骰子或 DIY 后保存的 wear 才穿上。
  *    认不出的 id(更新的版本加的)跳过这一件,冲突的留先出现的;
  *  · 新客户端认出这个地址 → 画会动的小鸟(颜色、休息表情按地址),不去加载那张图;
- *  · 老客户端 / 别的消费方只当它是一张普通头像图 → 那个颜色的小鸟定格图(存储里一色一张,所有 agent 共用);
+ *  · 老客户端 / 别的消费方只当它是一张普通头像图 → 那个颜色的小鸟定格图(存储里一色一张,共用);
  *  · 只认路径尾巴 `/agent-look/v1/<颜色>.webp`,不认主机:同一个形象在哪套环境都读得出来。
- * 普通 agent 的默认脸由 Boring Avatars 按 id 生成;这些形象地址只在助理路径继续解释成 3D。
+ *    `agent-look/v1` 是已存进库、老客户端也在读的路径,不随这个模块改名。
  */
 import { rendererLogger } from '@/lib/log'
 import { BODY_COLORS, REST_FACES, agentIdentity, type AgentIdentity } from './engine/identity'
@@ -17,10 +18,10 @@ import { ROLL_RULES, pickWear } from './engine/outfitPick'
 import { EXPRESSIONS, type ExpressionId } from './engine/spec'
 
 /** wear 不给或 [] = 不戴装扮;非空数组 = 用户保存的装扮 */
-export type AgentLook = AgentIdentity & { wear?: readonly WearItem[] }
+export type AssistantLook = AgentIdentity & { wear?: readonly WearItem[] }
 
 /** 个人助理未自定义时：奶油色、平静、不戴装扮。 */
-export const DEFAULT_ASSISTANT_LOOK: AgentLook = { color: 0, rest: 'neutral' }
+export const DEFAULT_ASSISTANT_LOOK: AssistantLook = { color: 0, rest: 'neutral' }
 
 const log = rendererLogger('agents/look')
 
@@ -75,7 +76,7 @@ function parseWear(raw: string): WearItem[] {
 const LOOK_TAIL = /\/agent-look\/v1\/([a-z]+)\.webp(?:\?([^#]*))?(?:#.*)?$/
 
 /** All built-in v1 looks, including older URLs without expression parameters. Custom images stay custom. */
-export function isBuiltinAgentAvatarUrl(avatar: string | null | undefined): boolean {
+export function isLookAvatarUrl(avatar: string | null | undefined): boolean {
   if (!avatar) return false
   try {
     const url = new URL(avatar)
@@ -86,7 +87,7 @@ export function isBuiltinAgentAvatarUrl(avatar: string | null | undefined): bool
 }
 
 /** 头像地址 → 形象;不是形象地址(照片 / null / 认不出的颜色或表情)= null。 */
-export function parseAgentLook(avatar: string | null | undefined): AgentLook | null {
+export function parseAssistantLook(avatar: string | null | undefined): AssistantLook | null {
   if (!avatar) return null
   const m = LOOK_TAIL.exec(avatar.trim())
   if (!m) return null
@@ -99,22 +100,17 @@ export function parseAgentLook(avatar: string | null | undefined): AgentLook | n
   return wear === null ? { color, rest } : { color, rest, wear: parseWear(wear) }
 }
 
-/** 这个头像地址是不是一张「形象」(而不是照片)。 */
-export function isLookAvatar(avatar: string | null | undefined): boolean {
-  return parseAgentLook(avatar) !== null
-}
-
-/** 小鸟该长什么样:存了形象就是形象,否则按 id 推。(传了照片的 agent 头像位画照片,不走这里。) */
-export function resolveAgentLook(id: string | null | undefined, avatar: string | null | undefined): AgentLook {
-  return parseAgentLook(avatar) ?? agentIdentity(id)
+/** 小鸟该长什么样:存了形象就是形象,否则按 id 推。(传了照片的助理画照片,不走这里。) */
+export function resolveAssistantLook(id: string | null | undefined, avatar: string | null | undefined): AssistantLook {
+  return parseAssistantLook(avatar) ?? agentIdentity(id)
 }
 
 /** 实际穿着:有保存就按保存的,缺省或空数组都不戴装扮 */
-export function wornOf(look: AgentLook): readonly WearItem[] {
+export function wornOf(look: AssistantLook): readonly WearItem[] {
   return look.wear ?? []
 }
 
-export function sameLook(a: AgentLook | null | undefined, b: AgentLook | null | undefined): boolean {
+export function sameLook(a: AssistantLook | null | undefined, b: AssistantLook | null | undefined): boolean {
   return !!a && !!b && a.color === b.color && a.rest === b.rest && (a.wear === undefined) === (b.wear === undefined) && wearKey(a.wear) === wearKey(b.wear)
 }
 
@@ -125,35 +121,16 @@ function pickOne<T>(items: readonly T[], rng: Rng): T {
 }
 
 /**
- * 掷骰子 / 出生:挑一个和兄弟们(同一个主人的其它 agent)尽量不撞的形象。
- *  · 颜色:在被用得最少的那几格里随机(12 只以内就是谁都没用过的颜色);avoid 那一格(眼下这只的样子)能避就避,保证骰子一定换个样;
- *  · 表情:日常 6 种里随机,优先同色兄弟没用过的,同样避开 avoid。
+ * 掷骰子:换一个颜色、一种日常休息表情(都避开眼下 avoid 那一格,保证骰子一定换个样),再抽一身装扮(engine/outfitPick.ts)。
+ * 结果带着明确的 wear,存下去就是这一身。
  */
-export function pickDistinctLook(taken: readonly AgentLook[], avoid: AgentLook | null, rng: Rng): AgentLook {
-  const used = new Array<number>(BODY_COLORS.length).fill(0)
-  for (const look of taken) used[look.color]++
-  const colors = BODY_COLORS.map((_, i) => i).filter((i) => i !== avoid?.color)
-  const least = Math.min(...colors.map((i) => used[i]))
-  const color = pickOne(colors.filter((i) => used[i] === least), rng)
-  const sameColorFaces = new Set(taken.filter((look) => look.color === color).map((look) => look.rest))
-  const faces = REST_FACES.filter((f) => f !== avoid?.rest)
-  const fresh = faces.filter((f) => !sameColorFaces.has(f))
-  return { color, rest: pickOne(fresh.length ? fresh : faces, rng) }
-}
-
-/**
- * 掷骰子:颜色、表情照 pickDistinctLook;再抽一身装扮(engine/outfitPick.ts),主件尽量不和兄弟们撞。
- * 结果带着明确的 wear,存下去就是这一身。taken 里兄弟的 wear 由调用方先按 wornOf 定下来。
- */
-export function rollLook(taken: readonly AgentLook[], avoid: AgentLook | null, rng: Rng, month = new Date().getMonth()): AgentLook {
-  const look = pickDistinctLook(taken, avoid, rng)
-  return { ...look, wear: rollWear(look.color, taken, rng, month) }
+export function rollLook(avoid: AssistantLook | null, rng: Rng, month = new Date().getMonth()): AssistantLook {
+  const color = pickOne(BODY_COLORS.map((_, i) => i).filter((i) => i !== avoid?.color), rng)
+  const rest = pickOne(REST_FACES.filter((f) => f !== avoid?.rest), rng)
+  return { color, rest, wear: rollWear(color, rng, month) }
 }
 
 /** 只换装扮(DIY 页签里的骰子):颜色、表情不动 */
-export function rollWear(color: number, taken: readonly AgentLook[], rng: Rng, month = new Date().getMonth()): WearItem[] {
-  // 兄弟的主件 = 它身上在主件池里的那件(DIY 搭过的,主件不一定排第一)
-  const pool = new Set(ROLL_RULES.pool.flatMap((g) => g.ids))
-  const mains = taken.flatMap((t) => t.wear?.find((w) => pool.has(w.id))?.id ?? [])
-  return pickWear(color, rng, ROLL_RULES, { taken: mains, month })
+export function rollWear(color: number, rng: Rng, month = new Date().getMonth()): WearItem[] {
+  return pickWear(color, rng, ROLL_RULES, { month })
 }

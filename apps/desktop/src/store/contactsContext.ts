@@ -4,7 +4,7 @@ import type { FriendRequestEntry } from '../lib/requestHistory'
 import { createContext, useContext } from 'react'
 import { createSelectStore, useSelect, type SelectStore } from '../lib/selectStore'
 import type { AcceptFriendRequestResult, ContactGroup, ContactGroupChat, ContactUser, FriendRequest } from '@gugu/core/shared/types/contacts'
-import type { AgentLook } from '../components/agentAvatar/look'
+import type { AssistantLook } from '../components/assistantFigure/look'
 
 // #2118 — 每个列表的加载态真值:空态 CTA 只能在成功的权威快照为空时出现;idle/loading 不能闪假空,
 // error 必须 fail-loud(不能把基础设施失败伪装成「没有对象」)。
@@ -46,7 +46,7 @@ export interface ContactsContextValue {
   updateAgentProfile: (agentId: string, fields: { name?: string; bio?: string; avatar?: string | null }) => Promise<void>
   uploadAgentAvatar: (agentId: string, file: File, profile?: { name?: string; bio?: string }) => Promise<void>
   /** 存这只 agent 的形象(颜色 + 休息表情):写进它的头像字段,换掉之前的形象或照片。 */
-  setAgentLook: (agentId: string, look: AgentLook) => Promise<void>
+  setAssistantLook: (agentId: string, look: AssistantLook) => Promise<void>
   removeOwnedAgent: (agentId: string, options?: { removeSocialIdentity?: boolean }) => Promise<void>
   removeContact: (contactId: string) => Promise<void>
 }
@@ -83,7 +83,7 @@ const EMPTY_CONTACTS: ContactsContextValue = {
   setAgentDesiredStatus: async () => {},
   updateAgentProfile: async () => {},
   uploadAgentAvatar: async () => {},
-  setAgentLook: async () => {},
+  setAssistantLook: async () => {},
   removeOwnedAgent: async () => {},
   removeContact: async () => {},
 }

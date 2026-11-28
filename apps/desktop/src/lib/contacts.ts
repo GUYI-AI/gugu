@@ -12,7 +12,7 @@ import {
 } from './agentAvatar'
 import type { GroupMemberRole } from '@gugu/core/shared/types/chat'
 import { i18n } from '@/i18n'
-import { buildLookUrl, lookObjectPath, type AgentLook } from '@/components/agentAvatar/look'
+import { buildLookUrl, lookObjectPath, type AssistantLook } from '@/components/assistantFigure/look'
 
 import { DISPLAY_IDENTITY_SELECT, readAgentProfileTypes, readDisplayIdentities, readOwnedDisplayIdentities, readRequiredDisplayIdentities } from './identityReadAdapter'
 import type {
@@ -567,13 +567,13 @@ export const contactsService = {
     const nextPath = managedAgentAvatarPath(updated.avatar)
     if (previousPath && previousPath !== nextPath) {
       const { error: cleanupError } = await dataClient.storage.from('avatars').remove([previousPath])
-      if (cleanupError) console.warn('[AgentAvatar] failed to clean up replaced avatar', cleanupError)
+      if (cleanupError) console.warn('[AssistantFigure] failed to clean up replaced avatar', cleanupError)
     }
     return updated
   },
 
   /** 形象(颜色 + 休息表情)→ 存进头像字段的那个地址(本套环境存储里那个颜色的定格图 + 表情)。 */
-  agentLookAvatarUrl(look: AgentLook): string {
+  assistantLookAvatarUrl(look: AssistantLook): string {
     const { data } = dataClient.storage.from('avatars').getPublicUrl(lookObjectPath(look.color))
     return buildLookUrl(data.publicUrl, look.rest, look.wear)
   },

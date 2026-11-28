@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
-import { AgentAvatar } from '../agentAvatar/AgentAvatar'
-import { DEFAULT_ASSISTANT_LOOK, type AgentLook } from '../agentAvatar/look'
+import { AssistantFigure } from '../assistantFigure/AssistantFigure'
+import { DEFAULT_ASSISTANT_LOOK, type AssistantLook } from '../assistantFigure/look'
 import { Button } from '../ui/Button'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import '../../i18n/registerAssistantCatalog'
@@ -32,7 +32,7 @@ export function AssistantIntro({
   busy?: boolean
   error?: string | null
   /** 开通流程退回介绍页时沿用已经确认的形象。 */
-  look?: AgentLook
+  look?: AssistantLook
   /** 桌面首次流程的一句话介绍；其它开通入口保留原有功能介绍。 */
   summary?: string
 }) {
@@ -42,7 +42,7 @@ export function AssistantIntro({
   const rows = mobile ? ['messages', 'partners'] as const : ['projects', 'chats'] as const
   return (
     <>
-      <AgentAvatar id="assistant-draft" name={t('rail')} look={look} size={88} />
+      <AssistantFigure id="assistant-draft" name={t('rail')} look={look} size={88} />
       <h1 className="ta-onb-title">{t('intro.title')}</h1>
       {summary ? <p className="ta-onb-sub">{summary}</p> : <>
       <div className="ta-onb-intro-gugu" data-intro-row="gugu" data-intro-device={device}>

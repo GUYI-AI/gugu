@@ -71,7 +71,7 @@ export interface AvatarHandle {
   canvas: HTMLCanvasElement
   ctx: CanvasRenderingContext2D
   engine: GuguEngine
-  /** 这只身上的装扮(AgentAvatar 按形象 set) */
+  /** 这只身上的装扮(AssistantFigure 按形象 set) */
   outfit: OutfitDraw
   opts: AvatarOpts
   dpr: number

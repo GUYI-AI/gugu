@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // 这一份测的就是真运行时(全局 setup 里把它换成了替身):只把 GL 与逐帧绘制换成记账的替身,
 // 看每一帧拿哪一份 GL 去画 —— null = 2D 定格退路;没有这一帧 = 被跳过(画面停在上一帧)。
-vi.unmock('../../../../apps/desktop/src/components/agentAvatar/engine/runtime')
+vi.unmock('../../../../apps/desktop/src/components/assistantFigure/engine/runtime')
 
 const fake = vi.hoisted(() => ({
   draws: [] as unknown[],
@@ -26,8 +26,8 @@ const fake = vi.hoisted(() => ({
   intersect: null as ((entries: Array<{ target: Element; isIntersecting: boolean }>) => void) | null,
 }))
 
-vi.mock('../../../../apps/desktop/src/components/agentAvatar/engine/draw', async (orig) => {
-  const real = await orig<typeof import('../../../../apps/desktop/src/components/agentAvatar/engine/draw')>()
+vi.mock('../../../../apps/desktop/src/components/assistantFigure/engine/draw', async (orig) => {
+  const real = await orig<typeof import('../../../../apps/desktop/src/components/assistantFigure/engine/draw')>()
   return {
     lookDiff: real.lookDiff,
     glPasses: () => 1,
@@ -52,7 +52,7 @@ vi.mock('../../../../apps/desktop/src/components/agentAvatar/engine/draw', async
   }
 })
 
-vi.mock('../../../../apps/desktop/src/components/agentAvatar/engine/gl', () => {
+vi.mock('../../../../apps/desktop/src/components/assistantFigure/engine/gl', () => {
   const on = (canvas: HTMLCanvasElement) => {
     const loaded = new Set<string>()
     const gl = { canvas, loaded, has: (id: string) => loaded.has(id), room: () => true, reset: () => {} }
@@ -92,7 +92,7 @@ const lastDraw = () => fake.draws[fake.draws.length - 1]
 
 async function boot(birds = 1, dpr = 1, tracking = false) {
   vi.resetModules()
-  const { runtime } = await import('../../../../apps/desktop/src/components/agentAvatar/engine/runtime')
+  const { runtime } = await import('../../../../apps/desktop/src/components/assistantFigure/engine/runtime')
   for (let i = 0; i < birds; i++) {
     const canvas = document.createElement('canvas')
     document.body.append(canvas)
@@ -209,7 +209,7 @@ describe('只画会变的帧、按变了多少决定什么时候画,看不见就
     await boot()
     const canvas = fake.canvas!
     canvas.setAttribute('inert', '')
-    const { GuguEngine } = await import('../../../../apps/desktop/src/components/agentAvatar/engine/engine')
+    const { GuguEngine } = await import('../../../../apps/desktop/src/components/assistantFigure/engine/engine')
     const update = vi.spyOn(GuguEngine.prototype, 'update')
     step()
     expect(fake.draws, 'the visible rail must not be blank on a cold non-assistant page').toHaveLength(1)
@@ -381,7 +381,7 @@ describe('只画会变的帧、按变了多少决定什么时候画,看不见就
     const panel = document.createElement('div')
     document.body.append(panel)
     panel.append(canvas)
-    const { GuguEngine } = await import('../../../../apps/desktop/src/components/agentAvatar/engine/engine')
+    const { GuguEngine } = await import('../../../../apps/desktop/src/components/assistantFigure/engine/engine')
     const updates = vi.spyOn(GuguEngine.prototype, 'update')
     step()
     expect(updates).toHaveBeenCalledTimes(1)
@@ -406,8 +406,8 @@ describe('小鸟的绘图层出岔子时不整只空白', () => {
     const flat = { complete: false, naturalWidth: 0, src: '' }
     vi.stubGlobal('Image', class { constructor() { return flat } })
     vi.resetModules()
-    await import('../../../../apps/desktop/src/components/agentAvatar/engine/runtime')
-    const { CHARACTER_BY_ID } = await import('../../../../apps/desktop/src/components/agentAvatar/engine/characters')
+    await import('../../../../apps/desktop/src/components/assistantFigure/engine/runtime')
+    const { CHARACTER_BY_ID } = await import('../../../../apps/desktop/src/components/assistantFigure/engine/characters')
     expect(flat.src).toBe(CHARACTER_BY_ID['fjj-beak'].flat)
     expect(fake.made).toHaveLength(0)
   })
@@ -437,7 +437,7 @@ describe('小鸟的绘图层出岔子时不整只空白', () => {
   it('小头像后绘制超出原画布的大预览:先保留已画内容,再扩容,循环继续绘制', async () => {
     fakeClock()
     const runtime = await boot()
-    const { GuguGL } = await vi.importActual<typeof import('../../../../apps/desktop/src/components/agentAvatar/engine/gl')>('../../../../apps/desktop/src/components/agentAvatar/engine/gl')
+    const { GuguGL } = await vi.importActual<typeof import('../../../../apps/desktop/src/components/assistantFigure/engine/gl')>('../../../../apps/desktop/src/components/assistantFigure/engine/gl')
     // 只替代 GPU 指令,空间申请与 begin 使用真实分配器。
     const context = new Proxy({}, { get: (_target, prop) => {
       if (prop === 'isContextLost') return () => false

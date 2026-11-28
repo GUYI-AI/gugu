@@ -57,7 +57,7 @@ export function renameCheck(text: string, current: string | null): { result: 'em
 
 /**
  * Where a page wants the host to draw the assistant's moving figure (`gugu.assistant.figure(name, figure)`, the same
- * `AgentAvatar` the built-in hero and setup guide draw — code, not an image, so it cannot be handed over): its top-left
+ * `AssistantFigure` the built-in hero and setup guide draw — code, not an image, so it cannot be handed over): its top-left
  * corner in the page's own CSS pixels and its size. The host lays it over the page there, clipped to the page, letting
  * clicks through; the page says it again when its layout moves, and null takes it away. With no assistant yet it is the
  * setup guide's bird.

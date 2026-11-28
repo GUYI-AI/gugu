@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GuguEngine } from '@/components/agentAvatar/engine/engine'
+import { GuguEngine } from '@/components/assistantFigure/engine/engine'
 import {
   BLINK_CADENCE,
   EXPRESSION_CADENCE,
@@ -7,7 +7,7 @@ import {
   type ExpressionId,
   expressionPool,
   nextPoolIndex
-} from '@/components/agentAvatar/engine/spec'
+} from '@/components/assistantFigure/engine/spec'
 
 const STEP = 1 / 60
 

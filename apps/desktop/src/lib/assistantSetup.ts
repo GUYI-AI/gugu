@@ -5,9 +5,9 @@
 import { ownerProfileMarkdown, type OwnerProfileInput } from '@gugu/core/shared/assistantPolicy'
 import type { AssistantProductRules } from '@gugu/core/shared/assistantRulesFormat'
 import type { CreateAgentOnDeviceResult } from '@gugu/core/shared/types/chat'
-import { REST_FACES } from '../components/agentAvatar/engine/identity'
-import type { AgentLook } from '../components/agentAvatar/look'
-import type { ExpressionId } from '../components/agentAvatar/engine/spec'
+import { REST_FACES } from '../components/assistantFigure/engine/identity'
+import type { AssistantLook } from '../components/assistantFigure/look'
+import type { ExpressionId } from '../components/assistantFigure/engine/spec'
 import { desktopIpc } from '../platform/desktopIpc'
 import { getLocaleSnapshot } from '../i18n/runtime'
 import {
@@ -41,7 +41,7 @@ export const OWNER_ABOUT_MAX = 1000
 export const ASSISTANT_NAME_IDEAS: readonly string[] = ['松果', '栗子', '糯米', '团子', 'Milo', 'Mochi', 'Kiwi', 'Coco']
 
 /** 引导里攒下的那一份:它叫什么、长什么颜色、主人怎么称呼和几句介绍。 */
-export type AssistantSetupDraft = AgentLook & {
+export type AssistantSetupDraft = AssistantLook & {
   name: string
   owner: OwnerProfileInput
 }
@@ -51,8 +51,8 @@ export function randomRestFace(rng: () => number = Math.random): ExpressionId {
 }
 
 /** 头像字段那个形象地址(本套环境存储里那个颜色的定格图 + 休息表情)。 */
-export function draftAvatarUrl(draft: AgentLook): string {
-  return contactsService.agentLookAvatarUrl({ color: draft.color, rest: draft.rest, wear: draft.wear })
+export function draftAvatarUrl(draft: AssistantLook): string {
+  return contactsService.assistantLookAvatarUrl({ color: draft.color, rest: draft.rest, wear: draft.wear })
 }
 
 /** `rules`: the assistant's product rules for this setup (assistantSetupRules) — the profile memory is in their words. */

@@ -4,8 +4,8 @@ import { observe } from 'mobx';
 import type { Readable } from '@/lib/selectStore';
 import { subscribeToHostTheme } from '../theme/host-theme';
 import { decodeTypedId } from '@gugu/core/shared/typedId.mjs';
-import { displayAvatarUrl } from '@/lib/dicebearAvatar';
-import { subscribeAgentLookPosters } from '@/components/agentAvatar/posters';
+import { faceImageUrl, identityFace } from '@/lib/identityFace';
+import { subscribeAssistantPosters } from '@/components/assistantFigure/posters';
 import { readIdentityDirectoryBridge, type IdentityDirectoryBridge } from '@/lib/identityDirectoryBridge';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
 
@@ -22,8 +22,8 @@ const rosterOwner: SessionOwnerLookup = (sessionId) => sessionAgentBindings.bind
  * 投递卡发信人的头像(#6306):与聊天页**同一个来源、同一个投影**。
  *
  * - 来源:咕咕壳的本地身份缓存,经 identityDirectoryBridge 同步读(会话页与聊天页同一个 document)。
- * - 投影:dicebearAvatar 的 displayAvatarUrl(avatar, uuid) —— 有上传就是那张;没上传就是按同一个 uuid 生成的
- *   同一张脸(聊天气泡的种子也是 sender_user_id)。
+ * - 投影:lib/identityFace 的 identityFace + faceImageUrl —— 与聊天页 Avatar 同一个决定:有上传就是那张;没上传就是
+ *   按同一个 uuid 生成的同一张脸(聊天气泡的种子也是 sender_user_id)。
  * - `session:<id>`(graph 寻址的 session-direct)画**这条会话的属主 agent** —— 与 roster 寻址那一腿(`user:<agent>`)
  *   同一个人、同一张脸。两条都写着「来自会话」,❌ 一条有头像一条没有:地址形态是传输细节,不是身份差别。
  *   会话 → agent 由宿主的花名册回答(见 rosterOwner),信封不为此多带一格(那一格对 agent 没用,却每轮进 prompt)。
@@ -39,7 +39,7 @@ export function senderAvatarUrl(
 ): string | null {
   if (!fromId || !bridge) return null;
   let userId: string;
-  // 会话属主一定是 agent;`user:` 那一腿看身份自己说的 type。agent 的默认脸是 Boring SVG,真人是原来的生成脸。
+  // 会话属主一定是 agent;`user:` 那一腿看身份自己说的 type。
   let ownerIsAgent = false;
   if (fromId.startsWith('user:')) {
     userId = decodeTypedId('user', fromId, 'delivery from_id');
@@ -56,8 +56,7 @@ export function senderAvatarUrl(
     bridge.ensure([userId]);
     return null;
   }
-  const kind = ownerIsAgent || identity.type === 'agent' ? 'agent' : 'human';
-  return displayAvatarUrl(identity.avatar, userId, 'session-page delivery card', kind);
+  return faceImageUrl(identityFace({ id: userId, avatar: identity.avatar, type: ownerIsAgent ? 'agent' : identity.type }), 'session-page delivery card');
 }
 
 /** 头像该重读的时刻:身份缓存变了,会话 → 属主那张表变了(新会话开户 / 改名事件),或小鸟的定格画好了。 */
@@ -65,7 +64,7 @@ export function subscribeSenderAvatars(listener: () => void): () => void {
   sessionAgentBindings.start();
   const offIdentities = readIdentityDirectoryBridge()?.subscribe(listener) ?? (() => {});
   const offOwners = observe(sessionAgentBindings.bindings, () => listener());
-  const offPosters = subscribeAgentLookPosters(listener);
+  const offPosters = subscribeAssistantPosters(listener);
   const offTheme = subscribeToHostTheme(listener);
   const offAssistant = readAssistantShellBridge()?.subscribe(listener) ?? (() => {});
   const offPhoneAssistant = subscribePhoneAssistantIdentity(listener);

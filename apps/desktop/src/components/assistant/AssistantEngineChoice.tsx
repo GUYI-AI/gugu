@@ -4,7 +4,7 @@ import { ArrowLeft, Check, Monitor } from '@/lib/icons'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
-import { AgentAvatar } from '../agentAvatar/AgentAvatar'
+import { AssistantFigure } from '../assistantFigure/AssistantFigure'
 import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
 import { useTheme } from '@/store/theme'
 import type { AssistantSetupDraft } from '@/lib/assistantSetup'
@@ -54,7 +54,7 @@ export function AssistantEngineChoice({ engine, onEngineChange, draft, onContinu
 
   return <>
     <header className="ta-engine-header">
-      <AgentAvatar name={draft.name} look={draft} id="assistant-draft" size={64} />
+      <AssistantFigure name={draft.name} look={draft} id="assistant-draft" size={64} />
       <Chip><Monitor size={16} />{t('setup.homeComputerTitle')}</Chip>
       <h1 className="ta-onb-title" id="assistant-engine-title">{t('setup.engineTitle')}</h1>
     </header>

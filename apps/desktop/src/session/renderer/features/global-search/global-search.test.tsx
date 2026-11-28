@@ -19,7 +19,7 @@ import { messageKinds } from './use-global-search'
 import { resetSearchSession, updateSearchSession, useSearchSession, type SearchSession } from './search-session'
 import { installIdentityDirectoryBridge, publishIdentityDirectory } from '@/lib/identityDirectoryBridge'
 import { publishSelfIdentity } from '@/lib/selfIdentityBridge'
-import { dicebearAvatarDataUri } from '@/lib/dicebearAvatar'
+import { faceImageUrl, identityFace } from '@/lib/identityFace'
 import { displayIdentity } from '../../../../../../../tests/support/testHarness'
 import { sessionAgentBindings } from '../sessions/stores/session-agent-bindings'
 import { installPhoneImeDismiss } from '@/mobile/usePhoneImeDismiss'
@@ -178,9 +178,9 @@ describe('global search sender avatars', () => {
   it('keeps the sender-id placeholder when the display name changes', async () => {
     publishIdentityDirectory({ u1: displayIdentity('u1', { avatar: null }) }, ensureIdentity)
     await render('回滚')
-    expect(options()[0]!.querySelector('img')?.getAttribute('src')).toBe(dicebearAvatarDataUri('u1'))
+    expect(options()[0]!.querySelector('img')?.getAttribute('src')).toBe(faceImageUrl(identityFace({ id: 'u1', avatar: null, type: 'human' }), 'test'))
     await act(async () => publishIdentityDirectory({ u1: displayIdentity('u1', { display_name: 'Renamed', avatar: null }) }, ensureIdentity))
-    expect(options()[0]!.querySelector('img')?.getAttribute('src')).toBe(dicebearAvatarDataUri('u1'))
+    expect(options()[0]!.querySelector('img')?.getAttribute('src')).toBe(faceImageUrl(identityFace({ id: 'u1', avatar: null, type: 'human' }), 'test'))
   })
 
   it('replaces a missing identity placeholder without querying again or changing the selected result', async () => {
@@ -189,7 +189,7 @@ describe('global search sender avatars', () => {
     await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })))
     const selected = options().find((option) => option.getAttribute('aria-selected') === 'true')
     expect(ensureIdentity).toHaveBeenCalledWith(['u1'])
-    expect(options()[0]!.querySelector('img')?.getAttribute('src')).toBe(dicebearAvatarDataUri('u1'))
+    expect(options()[0]!.querySelector('img')?.getAttribute('src')).toBe(faceImageUrl(identityFace({ id: 'u1', avatar: null, type: 'human' }), 'test'))
     const messageCalls = remote.messages.mock.calls.length
     const taskCalls = remote.turns.mock.calls.length
     await act(async () => publishIdentityDirectory({ u1: displayIdentity('u1', { avatar: photo }) }, ensureIdentity))

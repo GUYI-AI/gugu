@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { cloudComputer, cloudFailureOf, useCloudComputer } from '../../lib/cloudComputer'
 import { Button } from '../ui/Button'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
-import { AgentAvatar } from '../agentAvatar/AgentAvatar'
+import { AssistantFigure } from '../assistantFigure/AssistantFigure'
 import { CloudComputerRefusal, type CloudComputerActionFailure } from '../settings/CloudComputerSection'
 import { billingLinksAvailable } from '../../lib/appLinks'
 
@@ -34,7 +34,7 @@ export function AssistantHomeChoice({
   const askAgain = () => { setCheck('checking'); void cloudComputer.refresh().finally(() => setCheck('checked')) }
   const checkFailure = check === 'checked' ? cloudFailureOf(cloud) : null
   const header = <>
-    <AgentAvatar name={name} avatar={draftAvatar} id="assistant-draft" size={72} />
+    <AssistantFigure name={name} avatar={draftAvatar} id="assistant-draft" size={72} />
     <h1 className="ta-onb-title">{t('setup.homeTitle', { name })}</h1>
   </>
   const back = <div className="ta-onb-actions">

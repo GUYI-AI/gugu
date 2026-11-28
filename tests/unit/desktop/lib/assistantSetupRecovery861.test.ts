@@ -22,7 +22,7 @@ vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: {
 } }))
 vi.mock('../../../../apps/desktop/src/lib/listDevicesOnceIdentified', () => ({ listDevicesOnceIdentified: async () => [{ device_id: 'device', is_online: true }] }))
 vi.mock('../../../../apps/desktop/src/lib/cloudComputer', async (original) => ({ ...await original<object>(), provisionCloudComputer: vi.fn() }))
-vi.mock('../../../../apps/desktop/src/lib/contacts', () => ({ contactsService: { agentLookAvatarUrl: () => 'avatar' } }))
+vi.mock('../../../../apps/desktop/src/lib/contacts', () => ({ contactsService: { assistantLookAvatarUrl: () => 'avatar' } }))
 vi.mock('../../../../apps/desktop/src/platform/desktopIpc', () => ({ desktopIpc: () => ({ invoke: async () => ({ workdir: '/assistant' }) }) }))
 vi.mock('../../../../apps/desktop/src/lib/assistantSetupPreparation', () => ({ prepareLocalAssistantSetup: setup.prepare }))
 

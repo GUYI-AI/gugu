@@ -77,7 +77,7 @@
   {
     "rule": "console-member",
     "file": "apps/desktop/src/components/Avatar.tsx",
-    "count": 3
+    "count": 1
   },
   {
     "rule": "console-member",
@@ -126,7 +126,7 @@
   },
   {
     "rule": "console-member",
-    "file": "apps/desktop/src/lib/dicebearAvatar.ts",
+    "file": "apps/desktop/src/lib/identityFace.ts",
     "count": 1
   },
   {

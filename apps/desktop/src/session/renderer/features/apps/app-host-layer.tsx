@@ -7,14 +7,14 @@
 // 齿轮)、开在哪(App 的页独自一页 = AppHostLayerFrame;摆在会话旁边 = AppConversationFrame 的面板里)、什么时候自己收起
 // (那个 App 的页不在了、换了账号、它不再是「找到的助理」)。每开一层、收一层由壳告诉主进程,App 只听到「有宿主页开着 / 关了」。
 // 同一处也摆数数的来源(useAssistantAppCounts):内置面板那几行的数,按同一份读法读,只交数字。
-// 同一处还画 App 要的那只会动的小鸟(44 `gugu.assistant.figure`):形象是引擎一帧帧画的(AgentAvatar),交不出一张图,
+// 同一处还画 App 要的那只会动的小鸟(44 `gugu.assistant.figure`):形象是引擎一帧帧画的(AssistantFigure),交不出一张图,
 // 于是宿主把它画在 App 页上 App 说的那个位置,裁在页里、点击穿透;宿主页盖着时不画。App 的页换了文档(重载、改了授权)=
 // 它要过的宿主页和小鸟一并收起。
 import '@/i18n/registerAssistantCatalog';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { AgentAvatar } from '@/components/agentAvatar/AgentAvatar';
-import { DEFAULT_ASSISTANT_LOOK } from '@/components/agentAvatar/look';
+import { AssistantFigure } from '@/components/assistantFigure/AssistantFigure';
+import { DEFAULT_ASSISTANT_LOOK } from '@/components/assistantFigure/look';
 import { useTranslation } from 'react-i18next';
 import { PanelToggleIcon } from '@/components/PanelToggleIcon';
 import { ChevronLeft } from '@/lib/icons';
@@ -28,7 +28,7 @@ import { LOCAL_HOST, useInstalledApps, type InstalledApps } from '@renderer/feat
 import { useAssistantMachine } from '@renderer/features/assistant/assistant-data';
 import { useAssistantShell } from '@renderer/features/assistant/assistant-shell';
 import { AssistantShellPageFrame } from '@renderer/features/assistant/assistant-ui';
-import type { AssistantFigure, AssistantLayerScreen } from '@shared/extensions/assistant-binding';
+import type { AssistantFigure as FigurePlacement, AssistantLayerScreen } from '@shared/extensions/assistant-binding';
 import { assistantLayerPage, assistantLayerPageShown, type AppHostLayerPage } from '@shared/extensions/app-host-layer';
 import { AssistantAppCountsSource } from './assistant-app-counts';
 
@@ -102,7 +102,7 @@ export function closeAppHostLayer(extensionId: string): void {
 }
 
 /** The figure each App asked for over its page: where, for which account, and whose (the assistant, or the setup bird). */
-type Figure = { figure: AssistantFigure; ownerId: string; who: 'assistant' | 'draft'; from: string };
+type Figure = { figure: FigurePlacement; ownerId: string; who: 'assistant' | 'draft'; from: string };
 let figures: Readonly<Record<string, Figure>> = Object.freeze({});
 const figureListeners = new Set<() => void>();
 function publishFigure(extensionId: string, next: Figure | null): void {
@@ -315,8 +315,8 @@ function AssistantFigureOverlay({ anchor, figure }: { anchor: RefObject<HTMLDivE
       style={{ position: 'fixed', ...box, overflow: 'hidden', pointerEvents: 'none', zIndex: 'calc(var(--z-pane-resident) + 1)' }}>
       <div style={{ position: 'absolute', left: x, top: y, width: size, height: size }}>
         {figure.who === 'assistant' && assistant
-          ? <AgentAvatar id={assistant.id} avatar={assistant.avatar} name={assistant.display_name} size={size} />
-          : <AgentAvatar id="assistant-draft" name={t('rail')} look={DEFAULT_ASSISTANT_LOOK} size={size} />}
+          ? <AssistantFigure id={assistant.id} avatar={assistant.avatar} name={assistant.display_name} size={size} />
+          : <AssistantFigure id="assistant-draft" name={t('rail')} look={DEFAULT_ASSISTANT_LOOK} size={size} />}
       </div>
     </div>,
     document.body,

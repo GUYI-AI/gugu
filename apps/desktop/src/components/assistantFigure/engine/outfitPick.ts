@@ -100,8 +100,6 @@ export function blendsWithBody(swatch: string, color: number, rules: PickRules =
 const pick = <T>(items: readonly T[], rng: Rng): T => items[Math.min(items.length - 1, Math.floor(rng() * items.length))]
 
 export interface PickOptions {
-  /** 兄弟们(同一个主人的其它 agent)此刻的主件:先在用得最少的里面抽 */
-  taken?: readonly string[]
   /** 0–11;掷骰子时给出月份,使对应季节件进入候选池 */
   month?: number
 }
@@ -116,11 +114,6 @@ export function pickWear(color: number, rng: Rng, rules: PickRules, opts: PickOp
     const group = gi < 0 ? rules.pool.length - 1 : gi
     let ids = rules.pool[group].ids
     if (rules.seasonal && opts.month === rules.seasonal.month && group === rules.seasonal.group) ids = [...ids, rules.seasonal.id]
-    if (opts.taken?.length) {
-      const used = (id: string) => opts.taken!.filter((t) => t === id).length
-      const least = Math.min(...ids.map(used))
-      ids = ids.filter((id) => used(id) === least)
-    }
     const id = pick(ids, rng)
     const cws = okForBody(id)
     if (!cws.length) continue

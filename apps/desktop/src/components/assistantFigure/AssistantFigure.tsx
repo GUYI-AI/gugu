@@ -7,26 +7,25 @@ import { runtime, type AvatarHandle } from './engine/runtime'
 import type { DisplayStateId } from './engine/spec'
 import { bodyTint } from './engine/identity'
 import { wearKey } from './engine/outfitCatalog'
-import { colorSlug, wornOf, type AgentLook } from './look'
-import { useAgentLook } from './useAgentLook'
+import { colorSlug, wornOf, type AssistantLook } from './look'
+import { useAssistantLook } from './useAssistantLook'
 
-const log = rendererLogger('agent-avatar')
+const log = rendererLogger('assistant-figure')
 
 // 引擎的 14 个展示状态就是 presentAgentStatus 的 14 个 label,逐字同一份词表;两边任何一边多一个或少一个,
 // 下面两行就编译不过 —— 不靠人记。
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never
-export const AGENT_AVATAR_STATES_MATCH: Same<AgentStatusLabel, DisplayStateId> = true
+export const FIGURE_STATES_MATCH: Same<AgentStatusLabel, DisplayStateId> = true
 
-export interface AgentAvatarProps {
+export interface AssistantFigureProps {
   /**
-   * 稳定身份 id(agent 的 user id)。决定这只 agent 的形象(身体颜色 + 休息表情 + 装扮:存了就按存的,没存按 id 推,见 look.ts)
-   * 与眨眼 / 小动作的相位:同一个 agent 在哪儿都长一个样,列表里的几只不会一起眨眼。
-   * 还没有 agent 身份的格子(会话页里没开户的会话)传那一格自己的稳定 id(会话 id),❌ 传空串 —— 那会让它们全长成一个样。
+   * 稳定身份 id(助理的 user id)。决定它的形象(身体颜色 + 休息表情 + 装扮:存了就按存的,没存按 id 推,见 look.ts)
+   * 与眨眼 / 小动作的相位。还没有助理身份的格子(引导、草稿)传那一格自己的稳定 id,❌ 传空串。
    */
   id: string
   /** 明确给定的形象(形象工坊的草稿、没开户的会话按会话 id 推的);给了就不再去读存的。 */
-  look?: AgentLook | null
-  /** 调用方手里这只 agent 的头像地址:身份缓存里还没有它时,按这个读存着的形象。 */
+  look?: AssistantLook | null
+  /** 调用方手里助理的头像地址:身份缓存里还没有它时,按这个读存着的形象。 */
   avatar?: string | null
   /** 一直挂着这张休息表情、不轮换(形象工坊里要看清选中的那张脸)。 */
   holdExpression?: boolean
@@ -73,11 +72,11 @@ function prefersReducedMotion(): boolean {
 }
 
 /**
- * agent 的头像:咕咕小鸟,状态靠身体自己变形来说(缩成三颗点、拉成「!」、塌成一滩……),不挂角标。
+ * 个人助理的形象:咕咕小鸟,只有助理画它(普通 agent 的脸见 lib/identityFace.ts)。状态靠身体自己变形来说(缩成三颗点、拉成「!」、塌成一滩……),不挂角标。
  * 一块 canvas;画什么由 engine/ 说了算,这里只负责挂载、尺寸与把 props 递给引擎。
  * 无背景、透明底:放在什么颜色上都成立。
  */
-export function AgentAvatar({
+export function AssistantFigure({
   id,
   look: explicitLook,
   avatar,
@@ -93,7 +92,7 @@ export function AgentAvatar({
   fx,
   className,
   canvasPaddingX = 0
-}: AgentAvatarProps) {
+}: AssistantFigureProps) {
   const ref = useRef<HTMLCanvasElement>(null)
   const handle = useRef<AvatarHandle | null>(null)
   const reactId = useId()
@@ -110,7 +109,7 @@ export function AgentAvatar({
     tracking: !reduced && (tracking ?? px >= 48)
   }
   const gain = Math.min(1.8, Math.max(1, 1 + (110 - px) / 110))
-  const look = useAgentLook(id, explicitLook, avatar)
+  const look = useAssistantLook(id, explicitLook, avatar)
   // 实际穿着:存了按存的,没存不戴装扮
   const worn = wornOf(look)
   const wear = wearKey(worn)
@@ -123,7 +122,7 @@ export function AgentAvatar({
     userSelect: 'none'
   }
 
-  // 挂载一次:画布尺寸 + 注册进全局 rAF。id 变了(同一个格子换了个 agent)就重新注册,眨眼相位跟着换。
+  // 挂载一次:画布尺寸 + 注册进全局 rAF。id 变了(同一个格子换了个身份)就重新注册,眨眼相位跟着换。
   useEffect(() => {
     const canvas = ref.current
     if (!canvas) return
@@ -211,11 +210,11 @@ export function AgentAvatar({
       aria-label={name}
       draggable={false}
       className={className}
-      data-agent-avatar=""
-      data-agent-avatar-state={state ?? undefined}
-      data-agent-avatar-color={colorSlug(look.color)}
-      data-agent-avatar-rest={look.rest}
-      data-agent-avatar-wear={wear || undefined}
+      data-assistant-figure=""
+      data-assistant-figure-state={state ?? undefined}
+      data-assistant-figure-color={colorSlug(look.color)}
+      data-assistant-figure-rest={look.rest}
+      data-assistant-figure-wear={wear || undefined}
       style={canvasStyle}
       onClick={interactive ? () => handle.current?.engine.poke() : undefined}
       onPointerEnter={hoverPoke ? onHoverPoke : undefined}

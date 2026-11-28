@@ -1205,7 +1205,7 @@ button, [role="button"] {
   --image-fg: #ffffff;
   /* 文档预览画的是白纸:文档内容本身按白页面排版,不随主题变。 */
   --paper: #ffffff;
-  /* 形象工坊浅色舞台上的星屑(白星星在浅底上看不见),原写在 AgentLookPane.css,搬来不改值。 */
+  /* 形象工坊浅色舞台上的星屑(白星星在浅底上看不见),原写在 AssistantLookPane.css,搬来不改值。 */
   --gg-look-star-light: oklch(0.82 0.13 80);
   --gg-look-star-glow-light: rgb(255 255 255 / 0.9);
   /* 形象工坊色球左上角的高光:球是身体颜色画的立体球,高光是光源,不随主题变。搬来不改值。 */

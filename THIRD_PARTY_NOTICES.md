@@ -48,7 +48,7 @@ SOFTWARE.
 - Project: https://github.com/boringdesigners/boring-avatars
 - Version: 2.0.4
 - License: MIT
-- Used in: deterministic SVG default avatars for agents; the beam variant is ported into `apps/desktop/src/components/BoringAgentAvatar.tsx` (face colour chosen by contrast).
+- Used in: deterministic SVG default avatars for agents; the beam variant is ported into `apps/desktop/src/lib/identityFace.ts` (face takes the identity colour).
 
 ```
 MIT License

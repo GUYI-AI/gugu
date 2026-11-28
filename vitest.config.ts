@@ -403,7 +403,7 @@ export default defineConfig({
             // #6264 浏览器页里的 SSH 提问卡(SshPromptCard)经 ui/Field 引了它:PR#6504 CI 原文同上
             //   ✨ new dependencies optimized: @base-ui/react/field → reloading → 5818 / 5846 整个文件挂不上行。
             '@base-ui/react/field',
-            // #6325 会话页投递卡的头像投影经 @/lib/dicebearAvatar 引了 DiceBear(没上传头像时的生成脸)。
+            // #6325 会话页投递卡的头像投影经 @/lib/identityFace 引了 DiceBear(没上传头像时的生成脸)。
             // CI 冷缓存上它跑到一半才被发现 ⇒ 预构建 + 整页重载 ⇒ 两份 React,5818 整个文件 Invalid hook call、行永远挂不上。
             '@dicebear/core',
             '@dicebear/collection',

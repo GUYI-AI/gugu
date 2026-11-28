@@ -7,7 +7,7 @@ import { page, userEvent } from 'vitest/browser';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { AssistantEngineChoice } from '@/components/assistant/AssistantEngineChoice';
 import type { AssistantEngine } from '@/lib/assistantHomeIpc';
-import { DEFAULT_ASSISTANT_LOOK } from '@/components/agentAvatar/look';
+import { DEFAULT_ASSISTANT_LOOK } from '@/components/assistantFigure/look';
 import { connectionAvailability } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { setLocalePreference } from '@/i18n';

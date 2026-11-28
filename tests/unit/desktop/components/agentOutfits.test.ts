@@ -1,36 +1,36 @@
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { GuguEngine } from '@/components/agentAvatar/engine/engine'
-import { drawnLook, lookDiff } from '@/components/agentAvatar/engine/draw'
-import { NEUTRAL_BODY } from '@/components/agentAvatar/engine/geometry'
-import { CHARACTER_BY_ID, DEFAULT_CHARACTER } from '@/components/agentAvatar/engine/characters'
-import { OUTFIT_BY_ID, OUTFIT_DEFS, clashes } from '@/components/agentAvatar/engine/outfitCatalog'
-import { OutfitDraw, OutfitRig } from '@/components/agentAvatar/engine/outfits'
-import type { GuguFrame } from '@/components/agentAvatar/engine/engine'
-import { buildLookUrl, lookObjectPath, parseAgentLook, sameLook, type AgentLook } from '@/components/agentAvatar/look'
+import { GuguEngine } from '@/components/assistantFigure/engine/engine'
+import { drawnLook, lookDiff } from '@/components/assistantFigure/engine/draw'
+import { NEUTRAL_BODY } from '@/components/assistantFigure/engine/geometry'
+import { CHARACTER_BY_ID, DEFAULT_CHARACTER } from '@/components/assistantFigure/engine/characters'
+import { OUTFIT_BY_ID, OUTFIT_DEFS, clashes } from '@/components/assistantFigure/engine/outfitCatalog'
+import { OutfitDraw, OutfitRig } from '@/components/assistantFigure/engine/outfits'
+import type { GuguFrame } from '@/components/assistantFigure/engine/engine'
+import { buildLookUrl, lookObjectPath, parseAssistantLook, sameLook, type AssistantLook } from '@/components/assistantFigure/look'
 
 const HOST = 'https://devdb.example.space/storage/v1/object/public/avatars'
-const url = (look: AgentLook) => buildLookUrl(`${HOST}/${lookObjectPath(look.color)}`, look.rest, look.wear)
-const ASSETS = path.join(process.cwd(), 'apps/desktop/src/components/agentAvatar/assets/outfits')
+const url = (look: AssistantLook) => buildLookUrl(`${HOST}/${lookObjectPath(look.color)}`, look.rest, look.wear)
+const ASSETS = path.join(process.cwd(), 'apps/desktop/src/components/assistantFigure/assets/outfits')
 
 describe('形象地址里的装扮(wear)', () => {
   it('拼出来再读回去是同一身,顺序不变', () => {
-    const look: AgentLook = { color: 5, rest: 'happy', wear: [{ id: 'set-bear', cw: 0 }, { id: 'glasses', cw: 1 }] }
+    const look: AssistantLook = { color: 5, rest: 'happy', wear: [{ id: 'set-bear', cw: 0 }, { id: 'glasses', cw: 1 }] }
     const u = url(look)
     expect(u).toBe(`${HOST}/agent-look/v1/sky.webp?rest=happy&wear=set-bear.0,glasses.1`)
-    expect(parseAgentLook(u)).toEqual(look)
+    expect(parseAssistantLook(u)).toEqual(look)
   })
 
   it('没有 wear 参数 = 老形象(wear 不给);wear= 为空 = 明确不戴', () => {
-    expect(parseAgentLook(`${HOST}/agent-look/v1/sky.webp?rest=happy`)).toEqual({ color: 5, rest: 'happy' })
-    expect(parseAgentLook(`${HOST}/agent-look/v1/sky.webp?rest=happy&wear=`)).toEqual({ color: 5, rest: 'happy', wear: [] })
+    expect(parseAssistantLook(`${HOST}/agent-look/v1/sky.webp?rest=happy`)).toEqual({ color: 5, rest: 'happy' })
+    expect(parseAssistantLook(`${HOST}/agent-look/v1/sky.webp?rest=happy&wear=`)).toEqual({ color: 5, rest: 'happy', wear: [] })
     expect(url({ color: 5, rest: 'happy' })).not.toContain('wear')
     expect(url({ color: 5, rest: 'happy', wear: [] })).toMatch(/&wear=$/)
   })
 
   it('认不出的 id、越界的配色、和前面冲突的:跳过那一件,其余照戴', () => {
-    const parsed = parseAgentLook(`${HOST}/agent-look/v1/sky.webp?rest=happy&wear=jetpack.0,beanie.99,beanie.1,headphones.0,glasses.0`)
+    const parsed = parseAssistantLook(`${HOST}/agent-look/v1/sky.webp?rest=happy&wear=jetpack.0,beanie.99,beanie.1,headphones.0,glasses.0`)
     // headphones 和所有帽子冲突(先出现的毛线帽留下)
     expect(parsed?.wear).toEqual([{ id: 'beanie', cw: 1 }, { id: 'glasses', cw: 0 }])
   })

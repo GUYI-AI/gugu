@@ -1,5 +1,5 @@
 import { i18n } from '@/i18n'
-import { LOOK_ROOT } from '@/components/agentAvatar/look'
+import { LOOK_ROOT } from '@/components/assistantFigure/look'
 
 export const AGENT_AVATAR_MAX_BYTES = 5 * 1024 * 1024
 

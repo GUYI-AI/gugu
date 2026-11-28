@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { readIdentityDirectoryBridge } from '@/lib/identityDirectoryBridge'
-import { parseAgentLook, type AgentLook } from './look'
+import { parseAssistantLook, type AssistantLook } from './look'
 import { agentIdentity } from './engine/identity'
 
 const noop = () => () => {}
@@ -31,9 +31,9 @@ function useDirectoryAvatar(id: string): string | null | undefined {
  * 小鸟该长什么样。优先级:调用方明确给的形象(形象工坊的草稿、没开户会话按会话 id 推的)→ 身份缓存里这只 agent
  * 存着的形象(最新的那一份)→ 调用方手里的头像地址(缓存里还没有这个人时)→ 按 id 推出来的样子。
  */
-export function useAgentLook(id: string, explicit?: AgentLook | null, knownAvatar?: string | null): AgentLook {
+export function useAssistantLook(id: string, explicit?: AssistantLook | null, knownAvatar?: string | null): AssistantLook {
   // 给了形象就不去缓存里找(那一格的 id 可能根本不是用户 id,比如形象工坊的表情样片、没开户的会话):❌ 为它去补取身份。
   const cached = useDirectoryAvatar(explicit ? '' : id)
-  const stored = parseAgentLook(cached !== undefined ? cached : knownAvatar)
+  const stored = parseAssistantLook(cached !== undefined ? cached : knownAvatar)
   return explicit ?? stored ?? agentIdentity(id)
 }
