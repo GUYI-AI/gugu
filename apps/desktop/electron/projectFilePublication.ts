@@ -6,6 +6,7 @@ import { inferDroppedBlobExtension, normalizeDroppedImageBytes } from './session
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import { DEVICE_STORE, FILE_CHUNK_BYTES, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { canonicalPath } from '@gugu/session-core/files'
 import { imagePixelSize } from '@gugu/core/shared/imagePixelSize'
 import { readWorkspaceChunk } from './session/main/core/files/workspace-transfer'
 import { rememberProjectFile } from './sessionpage/sessionpage-project-groups'
@@ -64,7 +65,8 @@ export function createProjectFilePublisher(deps: {
     if (here.storage?.proactive_upload) return store ? store() : null
     const handed = file.path
     const { identity } = here
-    const root = await deps.store()
+    // The store as its copies are named (links resolved), so a copy's path is relative to it even when the store's own path has a link.
+    const root = canonicalPath(await deps.store())
     if (!isAbsolute(file.path)) throw new Error('Choose an original file on this computer')
     file = { ...file, path: await importProjectFile(root, file) }
     const path = relative(root, file.path).split(sep).join('/')
