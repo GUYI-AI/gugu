@@ -95,7 +95,7 @@ export function createAttachmentUploads({ now = Date.now, maxAgeMs = MAX_AGE_MS 
     const targetDir = await directory(root, `.gugu/attachments/${spec.itemId}`);
     return { staging, dir, meta: path.join(dir, 'upload.json'), part: path.join(dir, 'data.part'), target: path.join(targetDir, spec.name) };
   }
-  async function cleanup(staging: string) {
+  async function cleanup(root: string, staging: string) {
     if (now() - (swept.get(staging) ?? -Infinity) < 10 * 60_000) return;
     swept.set(staging, now());
     for (const entry of await readdir(staging, { withFileTypes: true })) {
@@ -103,7 +103,15 @@ export function createAttachmentUploads({ now = Date.now, maxAgeMs = MAX_AGE_MS 
       const dir = path.join(staging, entry.name);
       try {
         const saved = await readSaved(path.join(dir, 'upload.json'));
-        if (Number.isFinite(saved.expires) && saved.expires < now()) await rm(dir, { recursive: true, force: true });
+        if (saved.expires >= now()) continue;
+        // 回包丢失或发布后崩溃的上传仍可恢复；只有未发布的数据按过期时间清理。
+        const target = await inWorkspace(root, `.gugu/attachments/${saved.spec.itemId}/${saved.spec.name}`);
+        let published = false;
+        try {
+          const info = await lstat(target);
+          published = info.isFile() && !info.isSymbolicLink() && info.size === saved.spec.size && await digest(target) === saved.spec.sha256;
+        } catch (error) { if (!missing(error)) throw error; }
+        if (!published) await rm(dir, { recursive: true, force: true });
       } catch (error) {
         // 兄弟上传的坏回执不应阻止新上传；保留原文件，由该上传自己的读取报告错误。
         if (!missing(error) && !(error instanceof WorkspaceTransferError && error.code === 'invalid_payload')) throw error;
@@ -138,7 +146,7 @@ export function createAttachmentUploads({ now = Date.now, maxAgeMs = MAX_AGE_MS 
       // Never reset a known receipt whose final file disappeared.
       try { await lstat(p.meta); return fail('upload_lost', 'This upload cannot be restarted under the same identity'); }
       catch (error) { if (!missing(error)) throw error; }
-      await cleanup(p.staging);
+      await cleanup(root, p.staging);
       // Without metadata, no prefix was acknowledged. Recover a begin interrupted before its receipt.
       const handle = await open(p.part, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o600);
       await handle.close();

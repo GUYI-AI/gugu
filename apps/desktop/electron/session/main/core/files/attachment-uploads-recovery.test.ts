@@ -42,3 +42,24 @@ it('still expires an unpublished partial upload', async () => {
   const r = await fixture(); await r.uploads.begin(r.root, r.spec); r.expire();
   await expect(r.uploads.status(r.root, r.spec)).rejects.toMatchObject({ code: 'upload_expired' });
 });
+
+it.each(['uploading', 'committed'] as const)('a sibling sweep retains a verified published target with a %s receipt', async state => {
+  const r = await fixture(); await r.uploads.begin(r.root, r.spec);
+  await r.uploads.write(r.root, { ...r.spec, offset: 0, data: Buffer.from('data').toString('base64'), chunkSha256: hash('data') });
+  await r.uploads.commit(r.root, r.spec);
+  const meta = path.join(r.root, '.gugu/attachments/.incoming', r.spec.uploadId, 'upload.json');
+  const saved = JSON.parse(await readFile(meta, 'utf8'));
+  await writeFile(meta, JSON.stringify({ ...saved, state }));
+  r.expire();
+  // 新进程首次 begin 会扫过过期回执，随后旧客户端仍应拿到已发布的结果。
+  const restarted = createAttachmentUploads({ now: () => 200, maxAgeMs: 100 });
+  await restarted.begin(r.root, { ...r.spec, uploadId: 'sibling-1234', itemId: 'sibling-1234' });
+  expect(await restarted.status(r.root, r.spec)).toMatchObject({ state: 'committed', received: 4 });
+});
+
+it('a sibling sweep still removes expired unpublished data', async () => {
+  const r = await fixture(); await r.uploads.begin(r.root, r.spec);
+  const restarted = createAttachmentUploads({ now: () => 200, maxAgeMs: 100 });
+  await restarted.begin(r.root, { ...r.spec, uploadId: 'sibling-1234', itemId: 'sibling-1234' });
+  await expect(restarted.status(r.root, r.spec)).rejects.toMatchObject({ code: 'upload_lost' });
+});
