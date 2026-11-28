@@ -7,18 +7,22 @@ export interface ProviderPreset {
   group: 'coding-plan' | 'api';
   /** A coding plan's vendor, as its model tag and its Settings group say it (智谱 / Kimi / 火山方舟 / Z.ai). */
   vendor?: string;
-  endpoints: { protocol: ModelProtocol; baseUrl: string; source: string }[];
+  endpoints: ProviderPresetEndpoint[];
   docsUrl: string;
   sources: string[];
   checkedAt: string;
   modelsListing: boolean;
 }
 
+type ProviderPresetEndpoint = { protocol: ModelProtocol; baseUrl: string; source: string; supportsToolSearch?: true };
+
 function preset(
   id: string, name: string, icon: string, group: ProviderPreset['group'],
-  docsUrl: string, endpoints: [ModelProtocol, string, string?][], vendor?: string,
+  docsUrl: string, endpoints: [protocol: ModelProtocol, baseUrl: string, source?: string, supportsToolSearch?: true][], vendor?: string,
 ): ProviderPreset {
-  const sourced = endpoints.map(([protocol, baseUrl, source = docsUrl]) => ({ protocol, baseUrl, source }));
+  const sourced = endpoints.map(([protocol, baseUrl, source = docsUrl, supportsToolSearch]) => ({
+    protocol, baseUrl, source, ...(supportsToolSearch ? { supportsToolSearch } : {}),
+  }));
   return {
     id, name, icon, group, docsUrl, endpoints: sourced, ...(vendor ? { vendor } : {}),
     sources: [...new Set(sourced.map(({ source }) => source))],
@@ -80,7 +84,7 @@ export const providerPresets: readonly ProviderPreset[] = [
     ]),
   preset('anthropic', 'Anthropic', 'claude', 'api',
     'https://platform.claude.com/docs/en/api/overview', [
-      ['anthropic-messages', 'https://api.anthropic.com'],
+      ['anthropic-messages', 'https://api.anthropic.com', 'https://code.claude.com/docs/en/mcp#tool-search-through-an-llm-gateway', true],
     ]),
   preset('gemini', 'Google Gemini', 'google', 'api',
     'https://ai.google.dev/gemini-api/docs/openai', [

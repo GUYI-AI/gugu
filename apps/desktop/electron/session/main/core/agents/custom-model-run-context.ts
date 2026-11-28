@@ -26,6 +26,9 @@ async function reviewResolution(custom: ResolvedCustomModel, scope: ClaudeSettin
 function claudeModelEnv(custom: ResolvedCustomModel, reviewer: string | undefined): Record<string, string> {
   return {
     ...claudeApiKeyEnv(custom.apiKey, custom.endpoint, custom.models[0]),
+    // Claude Code sees a gateway (our loopback forwarder) and defers MCP tools by default. Only an upstream
+    // that declares tool search can accept those blocks. Otherwise declare the tools upfront.
+    ...(custom.supportsToolSearch ? {} : { ENABLE_TOOL_SEARCH: 'false' }),
     // No reviewer = Auto mode is off for this session (the menu says why); nothing else is named in its place.
     ...(reviewer ? { CLAUDE_CODE_AUTO_MODE_MODEL: reviewer, CLAUDE_CODE_AUTO_MODE_SERVER: '0' } : {}),
     ...(custom.capabilities?.contextWindow ? { CLAUDE_CODE_MAX_CONTEXT_TOKENS: String(custom.capabilities.contextWindow) } : {}),
