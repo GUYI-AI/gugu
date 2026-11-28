@@ -55,10 +55,7 @@ export function PaneDimensionProvider({
   children,
 }: {
   sink: PaneDimensionSink;
-  /**
-   * Through a move of a panel around it the width is the one it lands at (PanelTrack's panelRest): narrow or not is
-   * decided once.
-   */
+  /** Through a move around it, the width it lands at (PanelTrack's panelRest): narrow or not is decided once. */
   atRest?: boolean;
   children: ReactNode;
 }) {

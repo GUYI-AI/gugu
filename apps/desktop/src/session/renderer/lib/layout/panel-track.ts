@@ -45,8 +45,7 @@ const SOFT_EDGE = {
 
 /**
  * Where a box at nothing is drawn: out of any window, at its own size (inert does not take back the app-region rects
- * its content hands the window). ❌ visibility (it restyles the whole subtree), ❌ scale(0) (what measures the box reads
- * nothing).
+ * its content hands the window). ❌ visibility (restyles the whole subtree), ❌ scale(0) (a measure reads nothing).
  */
 const OUT_OF_WINDOW = 'translate(-100000px, -100000px)';
 
@@ -58,28 +57,16 @@ export const clamp01 = (value: number): number => Math.max(0, Math.min(1, value)
 /** Where a slot goes: the size it takes on screen. */
 export interface SlotTarget {
   size: number;
-  /**
-   * The size its content is laid out at whatever the slot's (default: the slot's, and at nothing the size it was open
-   * at).
-   */
+  /** The size its content is laid out at, whatever the slot's (default: the slot's; at nothing, its open size). */
   content?: number;
-  /**
-   * Between two open sizes its content is laid out at the drawn size in every frame (default: the wider, until it
-   * lands).
-   */
+  /** Between two open sizes, content laid out at the drawn size every frame (default: the wider, until it lands). */
   reflows?: boolean;
 }
 
 export interface PanelSlotNodes {
-  /**
-   * In the flow: the slot's place, laid out at its drawn size. Through a move `panelRest` has for it the size its
-   * content will rest at.
-   */
+  /** In the flow, laid out at its drawn size; through a move `panelRest` has the size its content will rest at. */
   place: HTMLElement;
-  /**
-   * Fills `place` and clips the content (overflow clip, ❌ hidden: a hidden box can be scrolled, and focus coming into a
-   * page still off the edge scrolls it, moving everything beside it).
-   */
+  /** Fills `place` and clips the content (overflow clip, ❌ hidden: focus coming into a hidden box scrolls it). */
   window: HTMLElement;
   /** The content, laid out at the slot's content size. */
   content: HTMLElement;
@@ -129,10 +116,7 @@ export class PanelTrack {
     if (nodes && !this.moving) this.rest(nodes, slot.target, 'slot', this.extent);
   }
 
-  /**
-   * The fill in its three boxes (PanelSlot), or a box the flow lays out by itself: told the size it rests at, never
-   * sized.
-   */
+  /** The fill in its three boxes (PanelSlot), or one box the flow lays out: told the size it rests at, never sized. */
   attachFill(fill: PanelSlotNodes | HTMLElement | null): void {
     this.fill = fill;
     if (!this.moving) this.restFill();

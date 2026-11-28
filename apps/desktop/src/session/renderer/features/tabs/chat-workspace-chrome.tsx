@@ -40,10 +40,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   embedded = false,
 }: ChatWorkspaceChromeProps & {
   layout: PaneLayoutStore;
-  /**
-   * The strip's two columns' hosts (@@@placed-surface), and whether pane-tree-view shows them at the heads of their
-   * panes' cells.
-   */
+  /** The strip's two columns' hosts (@@@placed-surface), and whether pane-tree-view shows them heading their cells. */
   heads: { chat: HTMLElement; tools: HTMLElement };
   inCells: boolean;
   // where the hosts wait while no box shows them; the hooks below find the workspace from it

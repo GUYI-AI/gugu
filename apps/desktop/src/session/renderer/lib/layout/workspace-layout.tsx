@@ -78,13 +78,12 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     track.attachFill(element);
   }, [track]);
   // @@@inner-fold-motion (owner 11-26) — what goes with the inner column's move, as animations riding it on these
-  // elements only: the restore lane's button and the tab strip that
-  // leaves it room get `--shell-restore-lane-shown` (0 → 1 over the second half of a fold, 1 → 0 over the first half of
-  // an unfold); inside the column (inner-fold-paint.ts) the line's
-  // `right` and the fading blocks' `opacity`. The card's `data-inner-column` (@@@inner-on-card) is held while any of
-  // the column is drawn: its left corners go at the start of an unfold and
-  // come back when a fold has landed, ❌ at the click (a seam for the whole move). ❌ An inherited variable on the shell
-  // or the page: every frame would restyle every element under it.
+  // elements only: the restore lane's button and the tab strip that leaves it room get `--shell-restore-lane-shown`
+  // (0 → 1 over the second half of a fold, 1 → 0 over the first half of an unfold); inside the column
+  // (inner-fold-paint.ts) the line's `right` and the fading blocks' `opacity`. The card's `data-inner-column`
+  // (@@@inner-on-card) is held while any of the column is drawn: its left corners go at the start of an unfold and come
+  // back when a fold has landed, ❌ at the click (a seam for the whole move). ❌ An inherited variable on the shell or
+  // the page: every frame would restyle every element under it.
   useLayoutEffect(() => {
     const column = workspaceRootRef.current?.querySelector(':scope > [data-panel-slot="inner"]');
     return track.ride('inner', (from, to, content) => !moves(from, to, content) ? [] : [

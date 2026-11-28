@@ -23,10 +23,7 @@ export function placeIn(host: HTMLElement, box: Element | null): void {
   else box.append(host);
 }
 
-/**
- * A box that shows `host` (none: an empty box): in it while the box is there, back in `park` (still in the document) as
- * the box goes.
- */
+/** A box that shows `host` (none: empty): in it while the box is there, back in `park` (in the document) as it goes. */
 export function SurfaceBox(
   { host, park, ...props }: ComponentProps<'div'> & { host: HTMLElement | null; park: RefObject<Element | null> }
 ) {

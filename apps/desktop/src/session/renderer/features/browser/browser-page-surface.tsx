@@ -164,8 +164,9 @@ export function BrowserPageSurface({
           void report(mode, rect);
           if (mode === 'shown' && !wasShown) takePicture();
         }
-      // at rest at a size it has no picture of
-      } else if (mode === 'shown' && takenAt.current !== sizeOf(element)) takePicture();
+      } else if (mode === 'shown' && takenAt.current !== sizeOf(element)) {
+        takePicture(); // at rest at a size it has no picture of
+      }
     };
 
     void rpc.browser
@@ -206,8 +207,9 @@ export function BrowserPageSurface({
     };
   }, [browserId, partition]);
 
-  // 切走这个页签:画之前就报,原生视图和换上来的那一帧一起撤(❌ 多留一帧)。切到:等这一帧画完再报 —— 原生视图先于新布局上屏会盖住旁边还没让开的格子,这一帧占位上是它的画面。只在屏上时跟着占位、按 SAMPLE_MS
-  // 量,后台页签什么都不跑。
+  // 切走这个页签:画之前就报,原生视图和换上来的那一帧一起撤(❌ 多留一帧)。
+  // 切到:等这一帧画完再报 —— 原生视图先于新布局上屏会盖住旁边还没让开的格子,这一帧占位上是它的画面。
+  // 只在屏上时跟着占位、按 SAMPLE_MS 量,后台页签什么都不跑。
   useLayoutEffect(() => {
     const win = ref.current?.ownerDocument.defaultView;
     if (!visible || !win) return void tickRef.current?.();

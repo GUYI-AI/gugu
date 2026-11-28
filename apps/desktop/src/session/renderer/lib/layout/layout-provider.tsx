@@ -202,8 +202,8 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   const leftRailLayout = useMotionValue(sidebarRailLayout(track.content('list')));
   // @@@rail-follow - the one per-frame relay left: the sidebar's rail fade (useSidebarProgressFollow) writes each
   // element's own opacity, padding and mask from the list's progress, as the slots resize and when the track lands.
-  // It is a curve per element, not a size anyone lays out by; making it riders of the list's move would redo the
-  // rail's look.
+  // It can later ride the list's move instead: each curve as keyframes on the move's clock, as innerFoldFrames does
+  // for the inner column.
   const [read] = useState(() => () => {
     // first: a follower of the progress reads it in the same frame
     leftRailLayout.set(sidebarRailLayout(track.content('list')));

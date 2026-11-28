@@ -342,9 +342,13 @@ function wirePage(page: BrowserPage): void {
   webContents.on('page-favicon-updated', (_event, favicons) => emitPageEvent(page, 'page-favicon-updated', { favicons }));
   webContents.on('focus', () => emitPageEvent(page, 'focus'));
   webContents.on('blur', () => emitPageEvent(page, 'blur'));
-  // The page's own input (keys, wheel, pointer) has stopped a moment: the picture kept of it is taken again (browser-page-surface).
+  // The page's own input (keys, wheel, pointer) has stopped a moment: the picture kept of it is taken again
+  // (browser-page-surface).
   let idle: ReturnType<typeof setTimeout> | undefined;
-  webContents.on('input-event', () => { clearTimeout(idle); idle = setTimeout(() => emitPageEvent(page, 'input-idle'), 300); });
+  webContents.on('input-event', () => {
+    clearTimeout(idle);
+    idle = setTimeout(() => emitPageEvent(page, 'input-idle'), 300);
+  });
   webContents.on('zoom-changed', () => notifyPresentation(page));
   // 网页要全屏(视频):view 铺满整个窗口内容区,退出时回到页签那一块。
   webContents.on('enter-html-full-screen', () => {
@@ -556,9 +560,11 @@ export async function snapshotBrowserPage(browserId: string): Promise<string | n
   if (!page || !page.runtime.host || !page.rect) return null;
   try {
     const { width, height } = page.runtime.view.getBounds();
-    const shaped = (image: { isEmpty(): boolean; getAspectRatio(): number }) => !image.isEmpty() && Math.abs(image.getAspectRatio() - width / height) <= 0.02;
+    const shaped = (image: { isEmpty(): boolean; getAspectRatio(): number }) =>
+      !image.isEmpty() && Math.abs(image.getAspectRatio() - width / height) <= 0.02;
     let image = await page.runtime.snapshot();
-    if (!shaped(image)) image = await page.runtime.snapshot(); // a view just resized can hand back its last frame, at the old shape: the one after it is this page
+    // a view just resized can hand back its last frame, at the old shape: the one after it is this page
+    if (!shaped(image)) image = await page.runtime.snapshot();
     if (page.webContents.isDestroyed() || !shaped(image)) return null;
     return `data:image/jpeg;base64,${image.toJPEG(85).toString('base64')}`;
   } catch {
