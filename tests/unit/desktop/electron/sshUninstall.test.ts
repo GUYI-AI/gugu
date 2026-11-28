@@ -303,13 +303,37 @@ describe('#6264 卸载时把同机别的账号都注销(照 code tunnel unregist
   it('账号 id 形状不对就不当成要留的那个(❌ 拼进脚本)', () => {
     expect(uninstallScript({ keepUserId: "x'; echo pwned #" })).toContain("KEEP=''")
   })
+
+  it.each(['revoked', 'local', 'unreachable', 'removed'])('preserving agent records requires a revocation receipt: %s', outcome => {
+    const home = tmp()
+    try {
+      const serverHome = fakeInstall(home)
+      const session = path.join(serverHome, 'accounts', ME, 'data', 'server-session.enc')
+      const bin = path.join(serverHome, 'versions', '0.2.99', 'bin', 'gugu-server')
+      const log = path.join(home, 'calls.log')
+      fs.writeFileSync(bin, `#!/bin/sh\necho "$*" >> '${log}'\nif [ "$1" = unregister ]; then rm -f '${session}'; echo '${UNREGISTERED_MARK} ${outcome}'; fi\n`, { mode: 0o755 })
+      const script = uninstallScript({ keepUserId: ME, preserveAgentRecords: true, ownerWasSignedIn: true })
+      if (outcome === 'revoked') {
+        expect(runSh(home, script)).toContain(UNINSTALLED_MARK)
+        expect(fs.existsSync(serverHome)).toBe(false)
+      } else {
+        expect(() => runSh(home, script)).toThrow('UNINSTALL_REVOKE_FAILED')
+        expect(fs.existsSync(session)).toBe(true)
+        expect(fs.existsSync(`${session}.uninstall-pending`)).toBe(false)
+        expect(fs.readFileSync(log, 'utf8')).not.toContain('service uninstall')
+      }
+      expect(fs.readFileSync(log, 'utf8')).toContain(`unregister --account ${ME}`)
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('#6264 卸载的状态机', () => {
   const target = { destination: 'alice@box', display: 'alice@box' }
   const inspectOut = `${INSPECT_BEGIN}\ninstalled=1\nversion=0.2.99\naccount=${ME} 1 me@example.test\naccount=${OTHER} 1 lab@example.test\n${INSPECT_END}\n`
 
-  function harness(responses: Array<{ code: number; stdout?: string; stderr?: string }>, confirm: boolean) {
+  function harness(responses: Array<{ code: number; stdout?: string; stderr?: string }>, confirm: 'remove' | 'cascade' | 'preserve' | null) {
     const scripts: string[] = []
     const spawnSsh: SpawnSsh = async (_args, { stdin }) => {
       scripts.push(typeof stdin === 'string' ? stdin : stdin.file)
@@ -329,7 +353,7 @@ describe('#6264 卸载的状态机', () => {
   }
 
   it('看过清单、确认之后才跑删除脚本;删完是 done', async () => {
-    const { done, scripts, states } = harness([{ code: 0, stdout: inspectOut }, { code: 0, stdout: `${UNINSTALLED_MARK}\n` }], true)
+    const { done, scripts, states } = harness([{ code: 0, stdout: inspectOut }, { code: 0, stdout: `${UNINSTALLED_MARK}\n` }], 'remove')
     const final = await done
     expect(final.phase).toBe('done')
     expect(scripts).toHaveLength(2)
@@ -338,18 +362,26 @@ describe('#6264 卸载的状态机', () => {
   })
 
   it('人不确认 ⇒ 什么都不删,结束在 cancelled', async () => {
-    const { done, scripts } = harness([{ code: 0, stdout: inspectOut }], false)
+    const { done, scripts } = harness([{ code: 0, stdout: inspectOut }], null)
     expect((await done).phase).toBe('cancelled')
     expect(scripts).toHaveLength(1)
   })
 
   it('SSH 连不上 ⇒ failed,原因按 ssh 的报错归类;删不掉 ⇒ uninstallFailed', async () => {
-    const refused = harness([{ code: 255, stderr: 'ssh: connect to host box port 22: Connection refused' }], true)
+    const refused = harness([{ code: 255, stderr: 'ssh: connect to host box port 22: Connection refused' }], 'remove')
     expect((await refused.done).failure?.reason).toBe('connectionRefused')
-    const stuck = harness([{ code: 0, stdout: inspectOut }, { code: 1, stderr: '卸载失败:删不掉 /home/alice/.gugu-server' }], true)
+    const stuck = harness([{ code: 0, stdout: inspectOut }, { code: 1, stderr: '卸载失败:删不掉 /home/alice/.gugu-server' }], 'remove')
     const final = await stuck.done
     expect(final.phase).toBe('failed')
     expect(final.failure).toEqual({ reason: 'uninstallFailed', detail: '卸载失败:删不掉 /home/alice/.gugu-server' })
+  })
+
+  it('reports failure if preservation loses the SSH connection or cannot verify revocation', async () => {
+    const inspection = { code: 0, stdout: inspectOut }
+    const lost = harness([inspection, { code: 255, stderr: 'ssh: Connection refused' }], 'preserve')
+    expect(await lost.done).toMatchObject({ phase: 'failed', disposition: 'preserve', failure: { reason: 'connectionRefused' } })
+    const refused = harness([inspection, { code: 1, stderr: '__GUGU_UNINSTALL_REVOKE_FAILED__\n' }], 'preserve')
+    expect(await refused.done).toMatchObject({ phase: 'failed', disposition: 'preserve', failure: { reason: 'revokeFailed' } })
   })
 })
 

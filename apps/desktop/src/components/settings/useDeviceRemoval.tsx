@@ -99,24 +99,25 @@ export function useDeviceRemoval(machines: readonly DeviceMachine[], { onRemoved
   }, [machines])
 
   /** 移除 = 这个账号不再用这台机器;用 SSH 装上的,这台电脑也不再记得怎么连过去。 */
-  const removeDevice = useCallback(async (device: Device): Promise<void> => {
+  const removeDevice = useCallback(async (device: Device, cascade: boolean): Promise<void> => {
     try {
-      await remove(device.device_id, { cascade: agents.agents.length > 0 })
+      await remove(device.device_id, { cascade })
       await forget(device.device_id)
     } catch (err) {
       log.error({ err: String((err as Error)?.message ?? err), deviceId: device.device_id }, 'remove device failed')
       throw err
     }
     onRemoved?.()
-  }, [remove, forget, agents.agents.length, onRemoved])
+  }, [remove, forget, onRemoved])
 
   const confirmRemove = async () => {
     if (dialog?.kind !== 'remove') return
     const { devices, machineKey } = dialog
+    const cascade = agents.agents.length > 0 && agents.cascadeChecked
     setDialog({ kind: 'remove', devices, removing: true, failed: '', machineKey })
     const left = [...devices]
     try {
-      while (left.length) { await removeDevice(left[0]!); left.shift() }
+      while (left.length) { await removeDevice(left[0]!, cascade); left.shift() }
       back(machineKey)
     }
     // 删到一半失败:已删的不再列,重试只删剩下的。
@@ -179,7 +180,7 @@ export function useDeviceRemoval(machines: readonly DeviceMachine[], { onRemoved
         address={addressOf(dialog.device.device_id) ?? dialog.device.label}
         agents={agents}
         onCascadeChange={(value) => setAgents((s) => ({ ...s, cascadeChecked: value }))}
-        onRemove={() => removeDevice(dialog.device)}
+        onRemove={(cascade) => removeDevice(dialog.device, cascade)}
         onRemoveOnly={() => setDialog({ kind: 'remove', devices: [dialog.device], removing: false, failed: '', machineKey: dialog.machineKey })}
         onClose={() => back(dialog.machineKey)}
       />

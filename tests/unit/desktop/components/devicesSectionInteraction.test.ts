@@ -12,6 +12,7 @@ import { SessionLocalizationProvider } from '@/session/renderer/localization/loc
 import { ProjectFolderCard } from '@/session/renderer/features/projects/components/main-panel/project-folder-card'
 import { DevicesContext, type DevicesContextValue } from '@/store/devicesContext'
 import type { Device } from '@gugu/core/shared/types/chat'
+import type { ServerUninstallState } from '@/lib/serverSshMachines'
 const retryMatch = vi.hoisted(() => vi.fn(async (_deviceId: string) => true))
 const restartNow = vi.hoisted(() => vi.fn(async (_deviceId: string, _version: string, _confirmedRpc: boolean) => ({ requested: true })))
 vi.mock('@/lib/serverVersionRetry', () => ({ retryServerVersionMatch: retryMatch, restartServerVersionNow: restartNow, readServerVersionSwitchBusyAgents: async () => undefined }))
@@ -546,16 +547,24 @@ describe('DevicesSection interaction', () => {
     expect(ids).toEqual(['gpu'])
   })
 
-  it('shows the bound agent count and requires cascade consent when uninstalling an SSH server', async () => {
+  it.each(['preserve', 'cascade'] as const)('uses the selected %s disposition when uninstalling an SSH server', async (disposition) => {
+    const confirming: ServerUninstallState = {
+      runId: 'uninstall-1', deviceId: 'srv', target: 'alice@box', phase: 'confirm', disposition: null,
+      inspection: { installed: true, version: '1.0', accounts: [] }, prompt: null, failure: null,
+    }
+    let pushState: ((state: ServerUninstallState) => void) | undefined
     const invoke = vi.fn(async (channel: string, _arg?: unknown) => {
       if (channel === 'server-ssh-machines:describe') return [{ deviceId: 'srv', display: 'alice@box' }]
-      if (channel === 'server-ssh-machines:uninstall-start') {
-        const runId = 'uninstall-1'
-        return { runId, state: { runId, phase: 'confirm', inspection: { installed: true, version: '1.0', accounts: [] } } }
-      }
+      if (channel === 'server-ssh-machines:uninstall-start') return { runId: confirming.runId, state: confirming }
       return null
     })
-    ;(window as unknown as { electronAPI: unknown }).electronAPI = { invoke, eventOn: () => () => undefined }
+    ;(window as unknown as { electronAPI: unknown }).electronAPI = {
+      invoke,
+      eventOn: (channel: string, callback: (state: ServerUninstallState) => void) => {
+        if (channel === 'server-ssh-machines:uninstall-state') pushState = callback
+        return () => undefined
+      },
+    }
     try {
       const value = store({
         devices: [device({ device_id: 'srv', label: 'Linux 1', capabilities: { terminals: [], runtimes: [], host_kind: 'server' } })],
@@ -576,7 +585,7 @@ describe('DevicesSection interaction', () => {
       await act(async () => { item.click() })
       const dialog = document.body.querySelector<HTMLElement>('[data-testid="settings-device-uninstall-dialog"]')!
       expect(value.listBoundAgents).toHaveBeenCalledWith('srv')
-      expect(dialog.textContent).toContain('将同时删除这台机器上你的 2 个智能体。')
+      expect(dialog.textContent).toContain('共有 2 条智能体记录')
       expect(dialog.textContent).toContain('同时永久删除这 2 个智能体')
       expect(dialog.textContent).not.toContain('Research Agent')
       expect(dialog.textContent).not.toContain('Review Agent')
@@ -584,15 +593,21 @@ describe('DevicesSection interaction', () => {
       const confirm = buttonByText(dialog, '卸载')
       const checkbox = dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')!
       expect(checkbox.checked).toBe(false)
-      expect(confirm.disabled).toBe(true)
-      await act(async () => { checkbox.click() })
       expect(confirm.disabled).toBe(false)
       await act(async () => { checkbox.click() })
-      expect(confirm.disabled).toBe(true)
-      await act(async () => { buttonByText(dialog, '取消').click() })
-      expect(invoke).toHaveBeenCalledWith('server-ssh-machines:uninstall-cancel', 'uninstall-1')
-      expect(invoke.mock.calls.map(([channel]) => channel)).not.toContain('server-ssh-machines:uninstall-confirm')
+      if (disposition === 'preserve') await act(async () => { checkbox.click() })
+      expect(checkbox.checked).toBe(disposition === 'cascade')
+      expect(confirm.disabled).toBe(false)
+      await act(async () => { confirm.click() })
+      expect(invoke).toHaveBeenCalledWith('server-ssh-machines:uninstall-confirm', { runId: confirming.runId, disposition })
       expect(value.remove).not.toHaveBeenCalled()
+      await act(async () => { pushState!({ ...confirming, phase: 'done', disposition }) })
+      if (disposition === 'cascade') {
+        expect(value.remove).toHaveBeenCalledWith('srv', { cascade: true })
+      } else {
+        expect(value.remove).not.toHaveBeenCalled()
+        expect(dialog.textContent).toContain('智能体记录保留在离线设备记录下')
+      }
     } finally {
       delete (window as unknown as { electronAPI?: unknown }).electronAPI
     }

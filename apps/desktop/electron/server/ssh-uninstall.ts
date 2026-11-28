@@ -12,6 +12,7 @@
  */
 import type {
   ServerUninstallAccount,
+  ServerUninstallDisposition,
   ServerUninstallInspection,
   ServerUninstallState,
 } from '../../src/lib/serverSshMachines'
@@ -25,6 +26,7 @@ import { UNREGISTERED_MARK } from './server-unregister'
 export const INSPECT_BEGIN = '__GUGU_UNINSTALL_PROBE_BEGIN__'
 export const INSPECT_END = '__GUGU_UNINSTALL_PROBE_END__'
 export const UNINSTALLED_MARK = '__GUGU_UNINSTALLED__'
+const REVOKE_FAILED_MARK = '__GUGU_UNINSTALL_REVOKE_FAILED__'
 
 /** 卸的是这台桌面那条通道的 server(server-names.ts),同一个用户下别的通道的那份不碰。 */
 const { home: SERVER_HOME, bin: SERVER_BIN } = remoteServerPaths(desktopServerChannel())
@@ -93,28 +95,60 @@ export function toInspection(result: InspectResult, currentUserId: string | null
  * 卸载。先把同机别的账号逐个注销(见脚本里的注释);再让 server 自己注销服务、停下(守护进程会收掉各账号的进程);再收各账号的 tmux 终端服务端
  * (server 为了让终端活过升级,停的时候特意不碰它们);最后删目录与指进目录的软链(别处装的同名程序不碰)。
  */
-export function uninstallScript(options: { keepUserId?: string | null } = {}): string {
+export function uninstallScript(options: {
+  keepUserId?: string | null
+  preserveAgentRecords?: boolean
+  ownerWasSignedIn?: boolean
+} = {}): string {
   const keep = options.keepUserId && /^[A-Za-z0-9_-]{1,128}$/.test(options.keepUserId) ? options.keepUserId : ''
   return [
     ...installationPaths,
     'if [ ! -d "$H" ]; then echo "卸载失败:安装目录不存在 $H (启动脚本 $B)" >&2; exit 1; fi',
     'OWN_B=',
     'if [ -L "$B" ]; then case "$(readlink "$B")" in "$H"/*) OWN_B=1 ;; esac; elif [ -f "$B" ] && grep -qF "GUGU_SERVER_HOME=\\"$H\\"" "$B"; then OWN_B=1; fi',
-    // #6264 先把这台机器上每个账号都注销(从账号里移除这台机器、续期令牌作废),照 `code tunnel unregister`:
-    // ❌ 只删本地文件 —— 那样别人的账号里一直挂着一台永远离线的机器、云端的会话也一直有效。
-    // 桌面自己那个账号(KEEP)由桌面在卸完后自己移除(它知道要不要连同智能体一起删)。老版本不认这条命令:照卸。
+    // 先注销其余账号。通常由桌面移除自己的设备行并撤票。
+    // 保留智能体时由远端撤票，设备行继续承载绑定。
     `KEEP='${keep}'`,
+    `PRESERVE=${options.preserveAgentRecords ? 1 : 0}`,
+    `REQUIRE_REVOKE=${options.ownerWasSignedIn ? 1 : 0}`,
+    'revoked=0',
+    `revoke_failed() { echo '${REVOKE_FAILED_MARK}' >&2; exit 1; }`,
+    'unregister_account() {',
+    '  if [ "${d%/}" = "$H/account" ]; then "$B" unregister; else "$B" unregister --account "$id"; fi',
+    '}',
+    // Released unregister may clear the local session even when revocation fails. Keep the
+    // encrypted file recoverable on the same disk until the CLI confirms cloud revocation.
+    'revoke_preserved_session() (',
+    '  backup="$session.uninstall-pending"',
+    '  [ ! -e "$backup" ] && [ ! -L "$backup" ] || exit 1',
+    '  if [ ! -f "$session" ]; then [ "$REQUIRE_REVOKE" = 0 ]; exit $?; fi',
+    '  ln "$session" "$backup" || exit 1',
+    '  restore_session() {',
+    '    [ -f "$backup" ] || return 0',
+    '    if [ -f "$session" ]; then rm -f "$backup"; else mv "$backup" "$session"; fi',
+    '  }',
+    '  trap restore_session 0',
+    "  trap 'exit 1' HUP INT TERM",
+    `  o="$(unregister_account </dev/null 2>/dev/null)" && printf '%s\\n' "$o" | grep -Fxq '${UNREGISTERED_MARK} revoked' || exit 1`,
+    '  rm -f "$backup"',
+    ')',
     'if [ -n "$OWN_B" ] && [ -x "$B" ]; then',
     '  for d in "$H/account" "$H"/accounts/*/; do',
     '    [ -L "${d%/}" ] && continue',
-    '    [ -f "$d/data/server-session.enc" ] || continue',
+    '    [ -f "$d/account.json" ] || continue',
     '    id="$(sed -n \'s/.*"userId": *"\\([^"]*\\)".*/\\1/p\' "$d/account.json" 2>/dev/null | head -n 1)"; [ -n "$id" ] || id="$(basename "$d")"',
-    '    [ "$id" = "$KEEP" ] && continue',
-    '    if [ "${d%/}" = "$H/account" ]; then o="$("$B" unregister </dev/null 2>/dev/null)"; else o="$("$B" unregister --account "$id" </dev/null 2>/dev/null)"; fi',
+    '    session="$d/data/server-session.enc"',
+    '    if [ "$id" = "$KEEP" ]; then',
+    '      if [ "$PRESERVE" = 1 ]; then revoke_preserved_session || revoke_failed; revoked=1; fi',
+    '      continue',
+    '    fi',
+    '    [ -f "$session" ] || continue',
+    '    o="$(unregister_account </dev/null 2>/dev/null)"',
     // 连不上云端的账号:它的登录态还在,停在这里(什么都还没删),网络好了重卸一次就能补上。
     `    case "$o" in *"${UNREGISTERED_MARK} unreachable"*) echo "卸载失败:账号 $id 无法连接咕咕云端,未能从其设备列表中移除这台机器(\${o#*${UNREGISTERED_MARK} unreachable });请在网络恢复后重新卸载" >&2; exit 1 ;; esac`,
     '  done',
     'fi',
+    'if [ "$PRESERVE" = 1 ] && [ "$REQUIRE_REVOKE" = 1 ] && [ "$revoked" = 0 ]; then revoke_failed; fi',
     'if [ -n "$OWN_B" ] && [ -x "$B" ]; then',
     '  "$B" service uninstall </dev/null >/dev/null 2>&1',
     'fi',
@@ -147,8 +181,8 @@ export type UninstallDeps = {
   controlPath: string | null
   /** 桌面此刻登着的账号,用来在清单里标「你」。 */
   currentUserId: string | null
-  /** 等人看完清单:true = 确认卸载,false = 不卸了。 */
-  waitForConfirm: () => Promise<boolean>
+  /** 等人明确选择卸载结果；null 表示取消。 */
+  waitForConfirm: () => Promise<ServerUninstallDisposition | null>
   signal: AbortSignal
 }
 
@@ -171,7 +205,7 @@ export class UninstallRun {
     target: string,
     private readonly emit: (state: ServerUninstallState) => void,
   ) {
-    this.state = { runId, deviceId, target, phase: 'inspecting', prompt: null, inspection: null, failure: null }
+    this.state = { runId, deviceId, target, phase: 'inspecting', disposition: null, prompt: null, inspection: null, failure: null }
   }
 
   snapshot(): ServerUninstallState {
@@ -212,17 +246,27 @@ export async function runSshUninstall(target: SshTarget, run: UninstallRun, deps
     const inspected = await ssh(inspectScript())
     const parsed = parseInspectOutput(inspected.stdout)
     if (!parsed) throw new UninstallFailure('unknown', lastLines(`${inspected.stdout}\n${inspected.stderr}`))
+    const inspection = toInspection(parsed, deps.currentUserId)
     run.update((draft) => {
       draft.prompt = null
-      draft.inspection = toInspection(parsed, deps.currentUserId)
+      draft.inspection = inspection
       draft.phase = 'confirm'
     })
-    if (!(await deps.waitForConfirm())) throw new UninstallFailure('cancelled')
+    const disposition = await deps.waitForConfirm()
+    if (!disposition) throw new UninstallFailure('cancelled')
+    const preserveAgentRecords = disposition === 'preserve'
+    if (preserveAgentRecords && !deps.currentUserId) throw new UninstallFailure('revokeFailed')
     run.update((draft) => {
       draft.phase = 'uninstalling'
+      draft.disposition = disposition
     })
-    const removed = await ssh(uninstallScript({ keepUserId: deps.currentUserId }))
+    const removed = await ssh(uninstallScript({
+      keepUserId: deps.currentUserId,
+      preserveAgentRecords,
+      ownerWasSignedIn: inspection.accounts.some(account => account.you && account.signedIn),
+    }))
     if (removed.code !== 0 || !removed.stdout.includes(UNINSTALLED_MARK)) {
+      if (removed.stderr.split(/\r?\n/).includes(REVOKE_FAILED_MARK)) throw new UninstallFailure('revokeFailed')
       const own = removed.stderr.split(/\r?\n/).reverse().find((line) => line.startsWith('卸载失败'))
       throw new UninstallFailure('uninstallFailed', own ?? lastLines(`${removed.stdout}\n${removed.stderr}`))
     }

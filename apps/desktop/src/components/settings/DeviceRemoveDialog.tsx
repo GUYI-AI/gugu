@@ -18,20 +18,21 @@ export function BoundAgentsConfirm({
   state,
   onCascadeChange,
   removesVersion = false,
-  showAgentNames = true,
+  uninstall = false,
 }: {
   state: BoundAgentsState
   onCascadeChange: (value: boolean) => void
   removesVersion?: boolean
-  showAgentNames?: boolean
+  uninstall?: boolean
 }) {
   const { t } = useTranslation('settings')
   if (state.loading) return <div className={`${body} text-[var(--muted-fg)]`}>{t('devices.checkingAgents')}</div>
   if (state.agents.length === 0) return null
+  const countKey = uninstall ? 'devices.uninstall.boundAgents' : removesVersion ? 'devices.remove.version.boundAgents' : 'devices.boundAgents'
   return (
     <div className="flex flex-col gap-2">
-      <div className={`${body} text-[var(--muted-fg)]`}>{t(removesVersion ? 'devices.remove.version.boundAgents' : 'devices.boundAgents', { count: state.agents.length })}</div>
-      {showAgentNames && (
+      <div className={`${body} text-[var(--muted-fg)]`}>{t(countKey, { count: state.agents.length })}</div>
+      {!uninstall && (
         <div className="flex max-h-40 flex-col gap-[5px] overflow-y-auto rounded-[var(--radius-document)] bg-foreground/[0.025] px-[10px] py-2 dark:bg-foreground/[0.04]">
           {state.agents.map((agent) => (
             <div key={agent.id} className={`${body} truncate text-[var(--fg)]`}>{agent.display_name}</div>

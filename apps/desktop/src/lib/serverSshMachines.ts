@@ -23,7 +23,7 @@ export const SERVER_SSH_MACHINES_CHANNELS = {
   changed: 'server-ssh-machines:changed',
   /** 开始卸载:先连上去看看装了什么、谁登着(invoke,{ deviceId } → ServerUninstallStartResponse)。 */
   uninstallStart: 'server-ssh-machines:uninstall-start',
-  /** 人看过清单、确认卸载(invoke,runId)。 */
+  /** 人看过清单、确认卸载(invoke,ServerUninstallConfirmation)。 */
   uninstallConfirm: 'server-ssh-machines:uninstall-confirm',
   /** 回答 SSH 的提问(invoke,ServerUninstallAnswer)。 */
   uninstallAnswer: 'server-ssh-machines:uninstall-answer',
@@ -74,13 +74,17 @@ export type ServerUninstallInspection = {
  */
 export type ServerUninstallPhase = 'inspecting' | 'confirm' | 'uninstalling' | 'done' | 'failed' | 'cancelled'
 
-export type ServerUninstallFailureReason = ServerSshInstallFailureReason | 'uninstallFailed'
+export type ServerUninstallDisposition = 'remove' | 'cascade' | 'preserve'
+export type ServerUninstallConfirmation = { runId: string; disposition: ServerUninstallDisposition }
+
+export type ServerUninstallFailureReason = ServerSshInstallFailureReason | 'uninstallFailed' | 'revokeFailed'
 
 export type ServerUninstallState = {
   runId: string
   deviceId: string
   target: string
   phase: ServerUninstallPhase
+  disposition: ServerUninstallDisposition | null
   prompt: ServerSshInstallPrompt | null
   inspection: ServerUninstallInspection | null
   failure: { reason: ServerUninstallFailureReason; detail?: string } | null

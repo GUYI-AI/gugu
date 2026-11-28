@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import type { Device } from '@gugu/core/shared/types/chat'
 import {
   SERVER_SSH_MACHINES_CHANNELS,
+  type ServerUninstallConfirmation,
   type ServerUninstallStartResponse,
   type ServerUninstallState,
 } from '../../lib/serverSshMachines'
@@ -11,14 +12,14 @@ import { rendererLogger } from '../../lib/log'
 import { desktopIpc } from '../../platform/desktopIpc'
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
-import { boundAgentsBlock, type BoundAgentsState } from '../../lib/deviceRowModel'
+import type { BoundAgentsState } from '../../lib/deviceRowModel'
 import { BoundAgentsConfirm } from './DeviceRemoveDialog'
 import { SshPromptCard } from './addServer/SshPromptCard'
 
 // #6264「从这台机器上卸载咕咕 server」(只给这台电脑用 SSH 装上的机器)。
 // 经 SSH 连过去停服务、删安装。
 // 两段式:先连上去看清楚装了什么、谁登着,摆在确认页上(卸载会让同机的其他账号一起用不了,要点名);
-// 人确认后才卸;卸完把这台机器从你的列表里移除。连不上时给退路:改为只移除。
+// 人确认后才卸;保留智能体时设备行继续承载绑定。连不上时给退路:改为只移除。
 
 const api = desktopIpc
 const log = rendererLogger('devices')
@@ -28,7 +29,7 @@ const muted = 'text-[var(--muted-fg)]'
 
 /** 失败原因 → 一句人话。SSH 那几种与「添加一台机器」同一套说法。 */
 function reasonKey(reason: NonNullable<ServerUninstallState['failure']>['reason']): string {
-  return reason === 'uninstallFailed' ? 'devices.uninstall.uninstallFailed' : `devices.addServer.reasons.${reason}`
+  return reason === 'uninstallFailed' || reason === 'revokeFailed' ? `devices.uninstall.${reason}` : `devices.addServer.reasons.${reason}`
 }
 
 export function ServerUninstallDialog({
@@ -44,8 +45,8 @@ export function ServerUninstallDialog({
   address: string
   agents: BoundAgentsState
   onCascadeChange: (value: boolean) => void
-  /** 卸完之后把它从列表移除;返回是否成功。 */
-  onRemove: () => Promise<void>
+  /** 卸完之后按已确认的级联选项移除设备。 */
+  onRemove: (cascade: boolean) => Promise<void>
   /** 连不上 / 已经没装:改走「只移除」。 */
   onRemoveOnly: () => void
   onClose: () => void
@@ -99,12 +100,14 @@ export function ServerUninstallDialog({
     if (state?.failure) log.error({ reason: state.failure.reason, detail: state.failure.detail ?? null, target: state.target }, 'server uninstall failed')
   }, [state?.failure, state?.target])
 
-  // 卸完 ⇒ 从列表移除(带上智能体的级联选择)。
+  const disposition = state?.disposition
+
   useEffect(() => {
-    if (phase !== 'done' || removeStarted.current) return
+    if (phase !== 'done' || !disposition || removeStarted.current) return
     removeStarted.current = true
-    void onRemove().then(() => setRemoved(true), (error: unknown) => setRemoved(messageForUser(error)))
-  }, [phase, onRemove])
+    if (disposition === 'preserve') setRemoved(true)
+    else void onRemove(disposition === 'cascade').then(() => setRemoved(true), (error: unknown) => setRemoved(messageForUser(error)))
+  }, [phase, disposition, onRemove])
 
   const answer = useCallback((value: string | null) => {
     if (!state?.prompt) return
@@ -112,8 +115,13 @@ export function ServerUninstallDialog({
   }, [state])
 
   const confirm = useCallback(() => {
-    if (runId) void api()?.invoke(SERVER_SSH_MACHINES_CHANNELS.uninstallConfirm, runId)
-  }, [runId])
+    if (!runId || agents.loading) return
+    const confirmation: ServerUninstallConfirmation = {
+      runId,
+      disposition: agents.agents.length === 0 ? 'remove' : agents.cascadeChecked ? 'cascade' : 'preserve',
+    }
+    void api()?.invoke(SERVER_SSH_MACHINES_CHANNELS.uninstallConfirm, confirmation)
+  }, [runId, agents])
 
   const inspection = state?.inspection ?? null
   const othersSignedIn = inspection?.accounts.some((account) => !account.you && account.signedIn) ?? false
@@ -172,15 +180,15 @@ export function ServerUninstallDialog({
           </>
         )}
 
-        {(phase === 'confirm' || uninstalling) && (
-          <BoundAgentsConfirm state={agents} onCascadeChange={onCascadeChange} showAgentNames={false} />
+        {phase === 'confirm' && (
+          <BoundAgentsConfirm state={agents} onCascadeChange={onCascadeChange} uninstall />
         )}
 
         {uninstalling && <div className={`${body} ${muted}`}>{t('devices.uninstall.uninstalling')}</div>}
 
         {phase === 'done' && removed !== null && (
           <div className={`${body} text-[var(--fg)]`}>
-            {removed === true ? t('devices.uninstall.done', { target: state?.target ?? address }) : removed}
+            {removed === true ? t(disposition === 'preserve' ? 'devices.uninstall.donePreservingAgents' : 'devices.uninstall.done', { target: state?.target ?? address }) : removed}
           </div>
         )}
 
@@ -193,7 +201,7 @@ export function ServerUninstallDialog({
         <div className="flex justify-end gap-2">
           {!finished && !uninstalling && <Button size="sm" onClick={onClose}>{t('devices.cancel')}</Button>}
           {phase === 'confirm' && inspection?.installed && (
-            <Button size="sm" variant="danger" disabled={boundAgentsBlock(agents)} onClick={confirm}>{t('devices.uninstall.confirm')}</Button>
+            <Button size="sm" variant="danger" disabled={agents.loading} onClick={confirm}>{t('devices.uninstall.confirm')}</Button>
           )}
           {((phase === 'confirm' && inspection && !inspection.installed) || phase === 'failed' || unknownMachine) && (
             <Button size="sm" variant={phase === 'failed' ? 'secondary' : 'danger'} onClick={onRemoveOnly}>

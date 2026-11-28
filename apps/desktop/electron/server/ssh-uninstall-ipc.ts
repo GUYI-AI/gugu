@@ -11,6 +11,8 @@ import type { BrowserWindow, IpcMain } from 'electron'
 import {
   SERVER_SSH_MACHINES_CHANNELS,
   type ServerUninstallAnswer,
+  type ServerUninstallConfirmation,
+  type ServerUninstallDisposition,
   type ServerUninstallStartResponse,
   type ServerUninstallState,
 } from '../../src/lib/serverSshMachines'
@@ -23,7 +25,7 @@ type ActiveUninstall = {
   run: UninstallRun
   abort: AbortController
   prompts: SshPromptBroker
-  confirm: ((ok: boolean) => void) | null
+  confirm: ((disposition: ServerUninstallDisposition | null) => void) | null
 }
 
 export function registerServerSshUninstallIpc(options: {
@@ -67,11 +69,11 @@ export function registerServerSshUninstallIpc(options: {
             controlPath: workspaceControlPath(workspace.dir),
             currentUserId: userId,
             waitForConfirm: () =>
-              new Promise<boolean>((resolve) => {
-                if (abort.signal.aborted) return resolve(false)
-                active.confirm = (ok) => {
+              new Promise<ServerUninstallDisposition | null>((resolve) => {
+                if (abort.signal.aborted) return resolve(null)
+                active.confirm = (disposition) => {
                   active.confirm = null
-                  resolve(ok)
+                  resolve(disposition)
                 }
               }),
             signal: abort.signal,
@@ -92,7 +94,7 @@ export function registerServerSshUninstallIpc(options: {
           }
         } finally {
           prompts.cancelAll()
-          active.confirm?.(false)
+          active.confirm?.(null)
           const controlPath = workspace ? workspaceControlPath(workspace.dir) : null
           if (controlPath) {
             await new Promise<void>((resolve) => {
@@ -112,10 +114,12 @@ export function registerServerSshUninstallIpc(options: {
     },
   )
 
-  options.ipcMain.handle(SERVER_SSH_MACHINES_CHANNELS.uninstallConfirm, (_event, runId: unknown) => {
-    const active = runs.get(String(runId))
+  options.ipcMain.handle(SERVER_SSH_MACHINES_CHANNELS.uninstallConfirm, (_event, request: Partial<ServerUninstallConfirmation> | null) => {
+    const { runId, disposition } = request ?? {}
+    if (typeof runId !== 'string' || (disposition !== 'remove' && disposition !== 'cascade' && disposition !== 'preserve')) return false
+    const active = runs.get(runId)
     if (!active?.confirm) return false
-    active.confirm(true)
+    active.confirm(disposition)
     return true
   })
 
@@ -123,7 +127,7 @@ export function registerServerSshUninstallIpc(options: {
     const active = runs.get(String(runId))
     if (!active) return false
     active.abort.abort()
-    active.confirm?.(false)
+    active.confirm?.(null)
     active.prompts.cancelAll()
     return true
   })
