@@ -62,6 +62,12 @@ export type AccountRevisionRuntime = {
   stop: () => void
   wake: (head?: string | null) => void
   whenIdle: () => Promise<void>
+  /**
+   * Whether the account is more than one page behind its head, so what it has stored is not yet current. Waits for at
+   * most one page: the one in flight, or the one it asks for when the last read failed. A read that fails is no
+   * evidence of a backlog and answers false.
+   */
+  behind: () => Promise<boolean>
 }
 
 export function createAccountRevisionRuntime(
@@ -95,6 +101,11 @@ export function createAccountRevisionRuntime(
   let retryTimer: ReturnType<typeof setTimeout> | null = null
   let retryAttempt = 0
   let caughtUp = false
+  const behindWaiters = new Set<(behind: boolean) => void>()
+  const answerBehind = (behind: boolean) => {
+    for (const answer of [...behindWaiters]) answer(behind)
+    behindWaiters.clear()
+  }
 
   const clearRetryTimer = () => {
     if (!retryTimer) return
@@ -234,6 +245,7 @@ export function createAccountRevisionRuntime(
         if (!active || generation !== runGeneration) return
         cursor = await applyPage(page, cursor, runGeneration)
         hasMore = page.hasMore
+        if (hasMore) answerBehind(true)
         if (hasMore && page.operations.length === 0) {
           throw new Error('account revision page claims more rows but is empty')
         }
@@ -262,6 +274,7 @@ export function createAccountRevisionRuntime(
       () => {
         draining = false
         retryAttempt = 0
+        answerBehind(false)
         // drain 的 do-while 已把「需要再拉」的情况留在循环里;走到这里通常 wakePending 已被涵盖,清掉即可。
         // 极窄的窗口(drain 收尾到本回调之间又来一条 wake)仍按 head 判断,不丢。
         if (!active) return
@@ -275,6 +288,7 @@ export function createAccountRevisionRuntime(
       },
       (error: unknown) => {
         draining = false
+        answerBehind(false)
         if (!active || generation !== runGeneration) return
         scheduleRetry(error)
       },
@@ -305,12 +319,20 @@ export function createAccountRevisionRuntime(
       clearRetryTimer()
       abortController?.abort()
       abortController = null
+      answerBehind(false)
       unsubscribeWake?.()
       unsubscribeWake = null
     },
     wake: scheduleWake,
     whenIdle() {
       return drainPromise
+    },
+    behind() {
+      if (retryTimer) scheduleWake()
+      if (!draining) return Promise.resolve(false)
+      // A scheduled drain yields to foreground reads (accountCatchupPriority), so a foreground read cannot wait for it.
+      if (scheduling) return Promise.resolve(true)
+      return new Promise(resolve => { behindWaiters.add(resolve) })
     },
   }
 }

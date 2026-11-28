@@ -3,8 +3,7 @@ import { mergeMessagesById } from '@gugu/core/shared/ui/messageListModels'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import type { AccountImRepository } from '../lib/imRepository'
 import { chatService } from '../lib/chat'
-import { decideColdStartFetch, deltaResultRequiresDegrade } from '../lib/coldStartFetch'
-import { INITIAL_PAGE, NEWER_PAGE, maxMainlineSeq } from './chatMessageWindow'
+import { INITIAL_PAGE, maxMainlineSeq } from './chatMessageWindow'
 import { seedCacheFromDisk } from './chatDiskWindow'
 import { rendererLogger } from '../lib/log'
 import { readMessagePage } from '../lib/messageIngest'
@@ -25,11 +24,22 @@ export type WindowObserver = {
   readSeqs: (seqs: Record<string, number>) => void
 }
 
-/** The main window's L1/L2, delta and result-side degrade path also opens topics and blocks. */
+/** Whether the store holds the conversation's newest page as one verified range (im-message-store `page`). */
+export async function storedTailCovered(userId: string, chatId: string): Promise<boolean> {
+  const tail = maxMainlineSeq(messageWindow(userId, chatId) ?? [])
+  return tail > 0 && (await readMessagePage(userId, { chatId, beforeSeq: tail + 1, limit: INITIAL_PAGE })).covered
+}
+
+/**
+ * @@@open-by-coverage - one rule opens every conversation, topic and block: paint what is stored; when the stored
+ * newest page is a verified range that the account journal keeps current, that is the tail and nothing is read.
+ * Otherwise one newest page is read and establishes the tail. Older pages are the reader's to ask for.
+ */
 export async function openCachedChatWindow(options: {
   chatId: string; userId: string; cache: Map<string, MessageItem[]>; history: ChatHistoryWindow
   getRepository: () => Promise<AccountImRepository>
-  expectedTailSeq: number | null; hasPositiveUnread: boolean
+  /** Whether the account journal delivers this conversation's arrivals and is not a longer backlog behind. */
+  journalCurrent: () => Promise<boolean>
   observer: WindowObserver
   commit: (rows: MessageItem[], replaceTail: boolean, hasMoreOlder?: boolean) => void
   revalidate: () => Promise<void>
@@ -40,37 +50,20 @@ export async function openCachedChatWindow(options: {
   const disk = seedCacheFromDisk(cache, repository, chatId)
   let painted = !!cache.get(chatId)?.some((message) => message.seq >= 0)
   if (disk) { observer.painted(disk.rows, disk.hasMoreOlder); painted = true }
-  // Whether the stored tail is contiguous up to its own newest row; whether the server has newer rows is
-  // decideColdStartFetch's question (expected tail, unread), answered below.
-  const storedTail = maxMainlineSeq(messageWindow(userId, chatId) ?? [])
-  const sparse = !storedTail || !(await readMessagePage(userId, { chatId, beforeSeq: storedTail + 1, limit: INITIAL_PAGE })).covered
-  if (!observer.current()) return
-  const maxSeq = maxMainlineSeq(cache.get(chatId))
-  const plan = sparse ? { kind: 'initialLoad' as const } : decideColdStartFetch({
-    hasCache: painted, maxSeq,
-    expectedTailSeq: options.expectedTailSeq ?? maxSeq,
-    // A topic visible to an observer may have no list row. Only a server delta proves its tail.
-    hasPositiveUnread: options.hasPositiveUnread || options.expectedTailSeq === null,
-  })
   const readSeqs = chatService.getOtherMembersReadSeqs(chatId, userId)
     .then((seqs) => { if (observer.current()) observer.readSeqs(seqs) })
     .catch((error: unknown) => rendererLogger('chat/window').error({ error, chatId }, 'member read seqs load failed'))
+  const current = (await options.journalCurrent()) && await storedTailCovered(userId, chatId)
+  if (!observer.current()) return
   const finalize = async (rows: MessageItem[], replaceTail: boolean, hasMoreOlder?: boolean) => {
     if (!observer.current()) return
     options.commit(rows, replaceTail, hasMoreOlder)
     observer.ready(hasMoreOlder)
     await Promise.all([options.revalidate(), readSeqs])
   }
-  if (plan.kind === 'paintRevalidateOnly') {
+  if (current) {
     await finalize(cache.get(chatId) ?? [], false)
     return
-  }
-  if (plan.kind === 'paintLoadNewerDelta') {
-    const rows = await chatService.getMessages(chatId, userId, 'loadNewer', NEWER_PAGE, undefined, plan.sinceSeq)
-    if (!deltaResultRequiresDegrade(rows.length, NEWER_PAGE)) {
-      await finalize(rows, false)
-      return
-    }
   }
   if (!painted) {
     await options.history.load('latest', fetchChatHistoryPage(userId))

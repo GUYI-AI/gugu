@@ -197,6 +197,8 @@ export type AccountRevisionCoordinator = {
   /** A head-unknown wake: pull from the committed cursor once (the reconcile beat). */
   wake(head?: string): void
   whenIdle(): Promise<void>
+  /** See AccountRevisionRuntime.behind. */
+  behind(): Promise<boolean>
 }
 
 type PendingOperation = {
@@ -493,6 +495,7 @@ export function createAccountRevisionCoordinator(
       await runtime.whenIdle()
       await dispatchPromise
     },
+    behind: () => runtime.behind(),
   }
 }
 

@@ -179,7 +179,7 @@ export class ChatHistoryWindow {
       newMessageCount: previous.newMessageCount + received })
   }
 
-  /** A full cold-start delta cannot be joined to a disconnected cached range. */
+  /** A newest page cannot be joined to a cached range it does not connect to. */
   establishTail = (messages: MessageItem[]): void => {
     if (maxMainlineSeq(messages) < maxMainlineSeq(this.state.messages)) {
       this.update(mergeMessagesById(this.state.messages, messages, this.state.chatId!))
