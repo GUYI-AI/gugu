@@ -1,17 +1,19 @@
+import { isImeComposing } from '@/lib/ime';
 import { Command } from 'cmdk';
 import { FolderOpen, MessageSquare, Search } from '@/lib/icons';
 import { useObserver } from 'mobx-react-lite';
 import { useState } from 'react';
 import { getSessionPageStore } from '@renderer/features/sessions/stores/session-selectors';
+import type { AppCommand } from '@renderer/lib/commands/types';
 import { commandRegistry } from '@renderer/lib/commands/registry';
-import { commandDescription, commandLabel } from '@renderer/lib/commands/command-copy';
+import { commandCategoryLabel, commandDescription, commandLabel } from '@renderer/lib/commands/command-copy';
 import { useDebounce } from '@renderer/lib/hooks/useDebounce';
 import { getEffectiveHotkey, isHostCommandId, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { rpc } from '@renderer/lib/ipc';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import type { BaseModalProps } from '@renderer/lib/modal/modal-provider';
-import { Shortcut } from '@renderer/lib/ui/shortcut';
-import { COMMANDS } from '@shared/commands';
+import { ariaHotkey, Shortcut } from '@renderer/lib/ui/shortcut';
+import { COMMAND_CATEGORIES, COMMANDS } from '@shared/commands';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { getCommandIcon } from './command-icons';
 import { PALETTE_ITEM_CLASS } from './palette-item-styles';
@@ -42,13 +44,22 @@ const commandPaletteSearch = replica({
   keep: 5_000,
 });
 
+interface CommandRow {
+  command: AppCommand;
+  title: string;
+  description: string;
+  group: string;
+  icon: ReturnType<typeof getCommandIcon>;
+  hotkey: ReturnType<typeof getEffectiveHotkey>;
+}
+
 interface CommandPaletteProps {
   initialQuery?: string;
 }
 
 const GROUP_CLASS = '[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:text-foreground/50';
 
-/** O and P differ only in their initial input; the prefix is the mode's only state. Each opening starts fresh (ModalRenderer keys it). */
+/** The quick switcher and command palette differ only in their initial input; the prefix is the mode's only state. Each opening starts fresh (ModalRenderer keys it). */
 export function CommandPaletteModal({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseModalProps) {
   // Picking a row is the palette doing its job: close it as done (focus goes where the row leads; see @@@modal-focus-return).
   const done = () => onSuccess(undefined);
@@ -70,19 +81,32 @@ export function CommandPaletteModal({ initialQuery = '', onSuccess }: CommandPal
   const readingGroupClass = stale ? `${GROUP_CLASS} gg-stale` : GROUP_CLASS;
   // A failed read, or a refresh failing over results still drawn: said above them with a retry.
   const failed = settled ? refreshFailure(reading) : null;
-  const commands = useObserver(() => rankPaletteMatches(commandRegistry.activeCommands
-    .filter((command, index, all) => command.enabled !== false && !command.hideFromPalette
-      && all.findIndex((other) => other.id === command.id) === index)
-    .map((command) => {
-      const hostId = isHostCommandId(command.id) ? command.id : undefined;
-      const def = hostId ? COMMANDS[hostId] : undefined;
-      // The catalog's words, in the app's language — unless the provider says this one itself (置顶 / 取消置顶, Push / Publish).
-      const title = hostId && def && command.label === def.label ? commandLabel(hostId) : command.label ?? command.id;
-      const description = hostId && def && command.description === def.description ? commandDescription(hostId) : command.description ?? '';
-      return { command, title, description,
-        icon: def ? getCommandIcon(def.iconKey) : undefined, hotkey: hostId ? getEffectiveHotkey(hostId, keyboard) : null };
-    })
-    , search, ({ title, description }) => [title, description]));
+  const commandGroups = useObserver(() => {
+    const seen = new Set<string>();
+    const rows = commandRegistry.activeCommands.flatMap<CommandRow>(command => {
+      if (command.enabled === false || seen.has(command.id)) return [];
+      seen.add(command.id);
+      if (command.hideFromPalette) return [];
+      if (!isHostCommandId(command.id)) {
+        return command.label ? [{ command, title: command.label, description: command.description ?? '',
+          group: translate('palette.commands'), icon: undefined, hotkey: null }] : [];
+      }
+      const id = command.id;
+      const def = COMMANDS[id];
+      if (def.hideFromPalette) return [];
+      // Providers may supply a state-dependent name such as Pin / Unpin.
+      const title = command.label && command.label !== def.label ? command.label : commandLabel(id);
+      const description = command.description !== undefined && command.description !== def.description
+        ? command.description : commandDescription(id);
+      return [{ command, title, description, group: commandCategoryLabel(def.category),
+        icon: getCommandIcon(def.iconKey), hotkey: getEffectiveHotkey(id, keyboard) }];
+    });
+    const ranked = rankPaletteMatches(rows, search, ({ title, description }) => [title, description]);
+    const groups = Map.groupBy(ranked, row => row.group);
+    if (search) return groups;
+    return new Map([...COMMAND_CATEGORIES.map(commandCategoryLabel), translate('palette.commands')]
+      .filter(group => groups.has(group)).map(group => [group, groups.get(group)!]));
+  });
   // 本机索引负责召回(短查询的 LIKE 没有分数);排序与 @ 选人同一套,同分保留索引给的顺序。
   const ranked = results ? rankPaletteMatches(results, search, (item) => [item.title], { recallOnly: true }) : null;
   const tasks = useObserver(() => {
@@ -106,7 +130,9 @@ export function CommandPaletteModal({ initialQuery = '', onSuccess }: CommandPal
   return (
     <Command className="flex flex-col overflow-hidden" shouldFilter={false} loop>
       <div className="border-b border-foreground/10 bg-[var(--em-surface-input)] px-1">
-        <Command.Input value={query} onValueChange={setQuery}
+        <Command.Input onKeyDown={event => {
+          if (isImeComposing(event)) event.stopPropagation();
+        }} value={query} onValueChange={setQuery}
           placeholder={commandsMode ? translate('palette.commandPlaceholder') : translate('palette.switchPlaceholder')}
           className="w-full bg-transparent px-3 py-3 text-sm outline-none placeholder:text-foreground/40" autoFocus />
       </div>
@@ -118,16 +144,17 @@ export function CommandPaletteModal({ initialQuery = '', onSuccess }: CommandPal
           </Command.Empty>
         )}
         {commandsMode ? (
-          <Command.Group heading={translate('palette.commands')} className={GROUP_CLASS}>
+          [...commandGroups].map(([group, commands]) => (
+          <Command.Group key={group} heading={group} className={GROUP_CLASS}>
             {commands.map(({ command, title, icon: Icon, hotkey }) => (
-              <Command.Item key={command.id} value={command.id} className={PALETTE_ITEM_CLASS}
+              <Command.Item key={command.id} value={command.id} aria-keyshortcuts={ariaHotkey(hotkey)} className={PALETTE_ITEM_CLASS}
                 onSelect={() => { done(); command.execute(); }}>
                 {Icon && <Icon size={14} className="shrink-0 text-foreground/40" />}
                 <span className="flex-1 truncate">{title}</span>
                 <Shortcut hotkey={hotkey} variant="keycaps" />
               </Command.Item>
             ))}
-          </Command.Group>
+          </Command.Group>))
         ) : (
           <>
             {failed && <ReadFailedLine className="p-2" message={translate('palette.searchFailed')} onRetry={retryOf(reading)} />}

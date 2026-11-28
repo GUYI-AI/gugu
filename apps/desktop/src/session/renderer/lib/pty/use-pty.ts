@@ -24,7 +24,6 @@ import {
   CTRL_J_ASCII,
   CTRL_U_ASCII,
   shouldCopySelectionFromTerminal,
-  shouldDispatchAppHotkeyFromTerminal,
   shouldKillLineFromTerminal,
   shouldMapShiftEnterToCtrlJ,
   shouldPasteToTerminal,
@@ -41,8 +40,7 @@ const IS_WINDOWS_PLATFORM = isWindowsHost();
 const LAST_SELECTION_COPY_GRACE_MS = 2_000;
 
 function dispatchTerminalAppHotkey(event: KeyboardEvent): boolean {
-  if (!shouldDispatchAppHotkeyFromTerminal(event, IS_MAC_PLATFORM)) return false;
-  return dispatchKey(event, 'terminal');
+  return event.type === 'keydown' && dispatchKey(event, 'terminal');
 }
 
 function getRecentSelection(selection: { text: string; capturedAt: number } | null): string {

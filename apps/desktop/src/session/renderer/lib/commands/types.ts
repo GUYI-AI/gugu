@@ -1,8 +1,6 @@
 import type { CommandId } from '@renderer/lib/hooks/useKeyboardShortcuts';
 
-export interface AppCommand {
-  id: CommandId | `extension:${string}`;
-  label?: string;
+export type AppCommand = ({ id: CommandId; label?: string } | { id: `extension:${string}`; label: string }) & {
   description?: string;
   /**
    * When false the palette hides the command and the hotkey dispatcher skips

@@ -71,3 +71,5 @@ export {
 } from '../localization/message-provider';
 
 export type { ComposerContextThresholds } from './chat-composer/context-threshold';
+
+export { promptEditorShortcuts } from './prompt-editor/keyboard-shortcuts';

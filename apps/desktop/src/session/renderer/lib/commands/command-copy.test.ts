@@ -28,7 +28,7 @@ describe('built-in command copy', () => {
     }
     expect(commandLabel('app.settings')).toBe('设置');
     expect(commandLabel('app.toggleTheme')).toBe('切换主题');
-    for (const category of ['Navigation', 'Task View', 'Tab Navigation', 'View'] as const) {
+    for (const category of ['Create', 'Navigation', 'Current Conversation', 'View', 'Tab Navigation', 'Git', 'Browser', 'Apps', 'Diagnostics'] as const) {
       expect(commandCategoryLabel(category)).toMatch(/[一-鿿]/);
     }
   });

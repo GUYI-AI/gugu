@@ -33,7 +33,11 @@ export function GroupAddMenu({ chatId, canAddMembers, onNewAgent = () => newAgen
     <DropdownMenu.Root modal={false}>
       <Tooltip>
         <DropdownMenu.Trigger render={<TooltipTrigger render={labeled
-          ? <ButtonPrimitive aria-label={label} data-group-add-menu="" className="inline-flex h-[22px] items-center gap-[5px] rounded-full px-2 text-[length:var(--font-caption)] text-[var(--muted-fg)] hover:bg-row-hover"><Plus size={12} /><span className="@max-[380px]/details:hidden">{label}</span></ButtonPrimitive>
+          ? <ButtonPrimitive aria-label={label} data-group-add-menu="" className="inline-flex h-[22px] items-center gap-[5px] rounded-full px-2 text-[length:var(--font-caption)] text-[var(--muted-fg)] hover:bg-row-hover">
+              {/* Move the plus from 8px to 5px while keeping the label and hit box in place. */}
+              <Plus size={12} className="@min-[380px]/details:-ms-0.75 @min-[380px]/details:me-0.75" />
+              <span className="@max-[380px]/details:hidden">{label}</span>
+            </ButtonPrimitive>
           : <IconButton size={size} tone="strong" aria-label={label} data-group-add-menu="" className={className}><Plus /></IconButton>
         } />} />
         <TooltipContent>{label}</TooltipContent>

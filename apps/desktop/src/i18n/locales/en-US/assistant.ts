@@ -843,6 +843,7 @@ export default {
     "morePrompt": "I've seen these ideas. Based on what you know about me, give me a fresh set."
   },
   "quickChat": {
+    "openFailed": "Quick Chat could not open. Try again from Gugu.",
     "settingUnreadable": "Can't read the quick chat setting right now.",
     "title": "Quick chat with {{name}}",
     "assistant": "Gugu",

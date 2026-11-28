@@ -176,9 +176,30 @@ export function installQuickChat({ mainWindow, focusMain, supported }: { mainWin
     if (!win || win.isDestroyed() || !win.isVisible()) return
     win.hide()
   }
+  // A system accelerator never reaches a DOM key recorder. Only its focused, recording main window may receive it here.
+  let recordingContents: Electron.WebContents | undefined
+  const stopRecording = () => {
+    recordingContents?.removeListener('did-navigate', stopRecording)
+    recordingContents?.removeListener('destroyed', stopRecording)
+    recordingContents = undefined
+  }
+  ipcMain.handle(QUICK_CHAT_CHANNELS.recordShortcut, (event, active: unknown) => {
+    const main = mainWindow()
+    if (!supported || !main || main.isDestroyed() || event.sender !== main.webContents || event.senderFrame !== event.sender.mainFrame) return
+    stopRecording()
+    if (active === true) {
+      recordingContents = event.sender
+      event.sender.once('did-navigate', stopRecording)
+      event.sender.once('destroyed', stopRecording)
+    }
+  })
   const toggle = () => {
     // A callback already queued by the OS must not outlive its registration.
     if (!enabled || !registered || !owner.owns()) return
+    if (recordingContents && mainWindow()?.isFocused()) {
+      recordingContents.send(QUICK_CHAT_CHANNELS.shortcutRecorded, accelerator)
+      return
+    }
     if (win && !win.isDestroyed()) {
       if (win.isVisible() && win.isFocused()) hide()
       else show()
@@ -243,6 +264,11 @@ export function installQuickChat({ mainWindow, focusMain, supported }: { mainWin
     updateEligibility()
     tellMain(QUICK_CHAT_CHANNELS.changed)
     return state()
+  })
+  ipcMain.handle(QUICK_CHAT_CHANNELS.show, (event) => {
+    if (!supported || event.sender !== mainWindow()?.webContents || !win || win.isDestroyed()) return false
+    show()
+    return true
   })
   ipcMain.handle(QUICK_CHAT_CHANNELS.hide, () => hide())
   ipcMain.handle(QUICK_CHAT_CHANNELS.openMain, () => {

@@ -1,3 +1,4 @@
+import { useCommandProvider } from '@renderer/lib/commands/use-command-provider'
 import { useNativeAgentChats } from '@/hooks/useNativeAgentChats'
 import { useEffect, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
@@ -23,6 +24,11 @@ export function ChatListSlotHost() {
   const { chats: imChats, loadingChats } = useChatStore('chats', 'loadingChats')
   const chats = useNativeAgentChats(imChats)
   const markRead = useMarkChatsRead()
+  useCommandProvider({
+    scopeId: 'app',
+    surface: 'shell',
+    getCommands: () => [{ id: 'chat.markAllRead', enabled: !loadingChats, execute: () => markRead() }],
+  })
   useEffect(() => {
     const take = () => {
       const action = takeShellChatAction((value): value is Extract<ShellChatAction, { kind: 'mark-read' }> => typeof value === 'object' && value.kind === 'mark-read')

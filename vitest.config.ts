@@ -384,6 +384,8 @@ export default defineConfig({
             'react/jsx-dev-runtime',
             'react/jsx-runtime',
             '@tanstack/react-query',
+            '@tanstack/hotkeys',
+            '@tanstack/react-hotkeys',
             // vanilla-extract 的运行时助手是注入进编译后的 .css.ts 的,vite 的首轮依赖扫描
             // 看不见它们 —— 不预声明就会跑到一半才发现、触发重新预构建 + 整页重载。
             '@vanilla-extract/recipes/createRuntimeFn',

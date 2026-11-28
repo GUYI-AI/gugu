@@ -391,6 +391,7 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
   );
 
   // Read through a ref so a host that rebuilds the getter each render does not rebuild the editor.
+  const hasPromptHistory = !!getPromptHistory;
   const getPromptHistoryRef = useRef(getPromptHistory);
   getPromptHistoryRef.current = getPromptHistory;
   // Keep the history walk state and extensions stable across host renders.
@@ -443,6 +444,7 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
         'aria-disabled': String(disabled),
         'aria-label': placeholder,
         'data-placeholder': placeholder,
+        'data-prompt-history': hasPromptHistory ? 'enabled' : 'disabled',
         enterkeyhint: enterBehavior === 'newline' ? 'enter' : 'send',
       },
       // Let the host claim long text first; otherwise paste literal text and restore canonical mentions.
@@ -474,7 +476,7 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
         slice.content.forEach((node) => parts.push(serializeNode(node)));
         return parts.join('\n').replace(/\n+$/, '');
       },
-    }), [inputTestId, disabled, placeholder, enterBehavior]);
+    }), [inputTestId, disabled, placeholder, enterBehavior, hasPromptHistory]);
   const onEditorUnmount = useCallback(() => setEditorDom(null), []);
   const editor = useEditor({
     extensions,

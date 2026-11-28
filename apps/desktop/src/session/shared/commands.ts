@@ -1,7 +1,9 @@
 import { sessionActionDefault, type ShortcutPlatform } from './shortcuts';
 
-/** The four groups the shortcut settings and the cheat sheet list commands under. */
-export type CommandCategory = 'Navigation' | 'Task View' | 'Tab Navigation' | 'View';
+export const COMMAND_CATEGORIES = ['Create', 'Navigation', 'Current Conversation', 'View', 'Tab Navigation', 'Git', 'Browser', 'Apps', 'Diagnostics'] as const;
+export type CommandCategory = (typeof COMMAND_CATEGORIES)[number];
+
+export type CommandAlias = string | { character: string; region: 'navigation' };
 
 /** The single catalog for built-in command labels and key bindings. */
 export interface CommandDef {
@@ -14,9 +16,12 @@ export interface CommandDef {
   iconKey?: string;
   category: CommandCategory;
   defaultHotkey?: string | ((platform: ShortcutPlatform) => string);
-  /** Further fixed chords for the same command (browser-style Ctrl+Tab next to the configurable one). Not rebindable. */
-  aliases?: readonly string[];
+  /** Aliases stay bound when the primary key changes. Clearing the command disables its aliases too. */
+  aliases?: readonly CommandAlias[];
+  /** The operating system registers this shortcut through its own preference. */
+  systemShortcut?: boolean;
   hideFromSettings?: boolean;
+  hideFromPalette?: boolean;
   ignoreInputs?: boolean;
   /** Capture before terminal widgets and modal roots consume global entry keys. */
   capture?: boolean;
@@ -41,6 +46,12 @@ function defineCommands<const T extends Record<string, Omit<CommandDef, 'id'>>>(
 }
 
 export const COMMANDS = defineCommands({
+  'app.quickChat': {
+    systemShortcut: true,
+    whenSessionPageHidden: 'run',
+    label: 'Quick Chat', description: 'Open the floating assistant chat', category: 'Create',
+  },
+
   'app.settings': {
     whenSessionPageHidden: 'run',
     label: 'Open Settings',
@@ -58,7 +69,7 @@ export const COMMANDS = defineCommands({
     description: 'Open the Marketplace',
     iconKey: 'library',
     defaultHotkey: 'Mod+L',
-    category: 'Navigation',
+    category: 'Apps',
   },
   'app.newProject': {
     whenSessionPageHidden: 'reveal',
@@ -67,7 +78,7 @@ export const COMMANDS = defineCommands({
     description: 'Add a new local or SSH project',
     iconKey: 'folder-plus',
     defaultHotkey: 'Mod+Shift+N',
-    category: 'Navigation',
+    category: 'Create',
   },
   'app.newSession': {
     whenSessionPageHidden: 'reveal',
@@ -76,7 +87,7 @@ export const COMMANDS = defineCommands({
     description: 'Create a new task in this project',
     iconKey: 'bolt',
     defaultHotkey: 'Mod+N',
-    category: 'Navigation',
+    category: 'Create',
   },
   'app.sessionHistory': {
     whenSessionPageHidden: 'reveal',
@@ -92,7 +103,7 @@ export const COMMANDS = defineCommands({
     labelKey: 'sidebar.newGroupChat',
     description: 'Create a group chat',
     iconKey: 'users',
-    category: 'Navigation',
+    category: 'Create',
   },
   'app.addContact': {
     whenSessionPageHidden: 'run',
@@ -100,7 +111,22 @@ export const COMMANDS = defineCommands({
     labelKey: 'sidebar.addContact',
     description: 'Add a contact',
     iconKey: 'user-plus',
+    category: 'Create',
+  },
+  'chat.newDirect': {
+    label: 'New Direct Message',
+    description: 'Choose a contact to message',
+    category: 'Create',
+  },
+  'chat.markAllRead': {
+    label: 'Mark All as Read',
+    description: 'Mark all conversations as read',
     category: 'Navigation',
+  },
+  'session.switchModel': {
+    label: 'Switch Model',
+    description: 'Choose a model for the focused composer',
+    category: 'Current Conversation',
   },
   'app.scheduled': {
     whenSessionPageHidden: 'reveal',
@@ -116,16 +142,17 @@ export const COMMANDS = defineCommands({
     labelKey: 'main:shell.feedback',
     description: 'Send feedback to the Gugu team',
     iconKey: 'message-square-share',
-    category: 'Navigation',
+    category: 'Diagnostics',
   },
   'app.toggleTheme': {
     whenSessionPageHidden: 'run',
     label: 'Toggle Theme',
     description: 'Switch between light and dark themes',
     iconKey: 'palette',
-    category: 'Navigation',
+    category: 'View',
   },
   'app.navigateBack': {
+    hideFromPalette: true,
     label: 'Go Back',
     description: 'Navigate to the previous location',
     iconKey: 'arrow-left',
@@ -133,6 +160,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.navigateForward': {
+    hideFromPalette: true,
     label: 'Go Forward',
     description: 'Navigate to the next location',
     iconKey: 'arrow-right',
@@ -140,6 +168,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.showKeyboardShortcuts': {
+    aliases: [{ character: '?', region: 'navigation' }],
     whenSessionPageHidden: 'reveal',
     label: 'Keyboard Shortcuts',
     description: 'Show the keyboard shortcuts cheat sheet',
@@ -151,102 +180,102 @@ export const COMMANDS = defineCommands({
     label: 'Side Chat',
     description: 'Fork the current task into a temporary side chat',
     iconKey: 'message-square-plus',
-    category: 'Task View',
+    category: 'Current Conversation',
   },
   'session.sidebarChanges': {
     label: 'View Changes',
     description: 'Open the Review tab in the file panel',
     iconKey: 'file-diff',
     defaultHotkey: 'Mod+Shift+1',
-    category: 'Task View',
+    category: 'Current Conversation',
   },
   'session.sidebarFiles': {
     label: 'View Files',
     description: 'Open the Files tab in the file panel',
     iconKey: 'folder-open',
     defaultHotkey: 'Mod+Shift+2',
-    category: 'Task View',
+    category: 'Current Conversation',
   },
   'session.viewTerminals': {
     label: 'View Terminals',
     description: 'Open the terminal drawer',
     iconKey: 'terminal',
-    category: 'Task View',
+    category: 'Current Conversation',
   },
   'session.newTerminal': {
     label: 'New Terminal',
     description: 'Create a new terminal session',
     iconKey: 'square-terminal',
     defaultHotkey: 'Mod+Shift+`',
-    category: 'Task View',
+    category: 'Create',
   },
   'session.openBrowser': {
     label: 'Open Browser',
     description: 'Open an in-app browser for this task',
     iconKey: 'globe',
     defaultHotkey: 'Mod+Shift+B',
-    category: 'Task View',
+    category: 'Browser',
   },
   'session.browserGoBack': {
     label: 'Browser Back',
     description: 'Go back in the active browser tab',
     iconKey: 'arrow-left',
-    category: 'Task View',
+    category: 'Browser',
   },
   'session.browserGoForward': {
     label: 'Browser Forward',
     description: 'Go forward in the active browser tab',
     iconKey: 'arrow-right',
-    category: 'Task View',
+    category: 'Browser',
   },
   'session.browserReload': {
     label: 'Reload Browser',
     description: 'Reload the active browser tab',
     iconKey: 'refresh-cw',
-    category: 'Task View',
+    category: 'Browser',
   },
   'session.browserFocusUrl': {
     label: 'Focus Browser URL',
     description: 'Focus the URL field in the active browser tab',
     iconKey: 'text-cursor-input',
-    category: 'Task View',
+    category: 'Browser',
   },
   'session.browserOpenExternal': {
     label: 'Open Browser URL Externally',
     description: 'Open the active browser URL in the system browser',
     iconKey: 'external-link',
-    category: 'Task View',
+    category: 'Browser',
   },
   'session.browserCopyUrl': {
     label: 'Copy Browser URL',
     description: 'Copy the active browser URL',
     iconKey: 'copy',
     defaultHotkey: 'Mod+Shift+C',
-    category: 'Task View',
+    category: 'Browser',
   },
   'session.gitFetch': {
     label: 'Git Fetch',
     description: 'Fetch latest changes from remote',
     iconKey: 'git-pull-request',
-    category: 'Task View',
+    category: 'Git',
   },
   'session.gitPull': {
     label: 'Git Pull',
     description: 'Pull latest changes from remote',
     iconKey: 'arrow-down-to-line',
-    category: 'Task View',
+    category: 'Git',
   },
   'session.gitPush': {
     label: 'Git Push',
     description: 'Push commits to remote',
     iconKey: 'arrow-up-to-line',
-    category: 'Task View',
+    category: 'Git',
   },
   'task.pin': {
     label: 'Pin',
     description: 'Pin this task to keep it at the top',
     iconKey: 'pin',
-    category: 'Task View',
+    category: 'Current Conversation',
   },
   'task.archive': {
     label: 'Archive session',
@@ -254,14 +283,8 @@ export const COMMANDS = defineCommands({
     description: 'Archive the current task',
     iconKey: 'archive',
     defaultHotkey: 'Mod+Shift+E',
-    category: 'Task View',
+    category: 'Current Conversation',
     ignoreWhenCodeEditorFocused: true,
-  },
-  'session.convertAutomation': {
-    label: 'Convert to Regular Task',
-    description: 'Detach this task from its automation run',
-    iconKey: 'message-square',
-    category: 'Task View',
   },
   'session.focusSidebar': {
     label: 'Focus Sidebar',
@@ -275,7 +298,7 @@ export const COMMANDS = defineCommands({
     description: 'Focus the message composer input',
     iconKey: 'text-cursor-input',
     defaultHotkey: 'Shift+Escape',
-    category: 'Task View',
+    category: 'Current Conversation',
     ignoreWhenCodeEditorFocused: true,
   },
   'session.addContext': {
@@ -283,7 +306,7 @@ export const COMMANDS = defineCommands({
     description: 'Open the context picker for the active task',
     iconKey: 'list-plus',
     defaultHotkey: 'Mod+Shift+A',
-    category: 'Task View',
+    category: 'Current Conversation',
     ignoreWhenCodeEditorFocused: true,
   },
   'session.stageAll': {
@@ -291,7 +314,7 @@ export const COMMANDS = defineCommands({
     description: 'Stage all unstaged files',
     iconKey: 'git-commit',
     defaultHotkey: 'Mod+Shift+G',
-    category: 'Task View',
+    category: 'Git',
     ignoreWhenCodeEditorFocused: true,
   },
   'session.timelineNext': {
@@ -299,7 +322,7 @@ export const COMMANDS = defineCommands({
     description: 'Jump to the next timeline entry',
     iconKey: 'chevron-down',
     defaultHotkey: 'Alt+]',
-    category: 'Task View',
+    category: 'Current Conversation',
     ignoreWhenCodeEditorFocused: true,
     ignoreWhenBrowserFocused: true,
   },
@@ -308,11 +331,12 @@ export const COMMANDS = defineCommands({
     description: 'Jump to the previous timeline entry',
     iconKey: 'chevron-up',
     defaultHotkey: 'Alt+[',
-    category: 'Task View',
+    category: 'Current Conversation',
     ignoreWhenCodeEditorFocused: true,
     ignoreWhenBrowserFocused: true,
   },
   'app.commandPalette': {
+    hideFromPalette: true,
     whenSessionPageHidden: 'reveal',
     capture: true,
     defaultHotkey: 'Mod+P',
@@ -321,6 +345,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.quickSwitcher': {
+    hideFromPalette: true,
     whenSessionPageHidden: 'reveal',
     capture: true,
     defaultHotkey: 'Mod+O',
@@ -352,18 +377,15 @@ export const COMMANDS = defineCommands({
     ignoreInputs: true,
   },
   'app.closeModal': {
+    hideFromPalette: true,
     defaultHotkey: 'Escape',
     label: 'Close Modal',
     description: 'Close the current modal or dialog',
     category: 'Navigation',
     hideFromSettings: true,
   },
-  'project.openInEditor': {
-    label: 'Open in Editor',
-    description: 'Open the project in the default editor',
-    category: 'Navigation',
-  },
   'session.tabNext': {
+    hideFromPalette: true,
     aliases: ['Control+Tab'],
     defaultHotkey: 'Mod+Alt+ArrowRight',
     label: 'Next Tab',
@@ -371,6 +393,7 @@ export const COMMANDS = defineCommands({
     category: 'Tab Navigation',
   },
   'session.tabPrev': {
+    hideFromPalette: true,
     aliases: ['Control+Shift+Tab'],
     defaultHotkey: 'Mod+Alt+ArrowLeft',
     label: 'Previous Tab',
@@ -402,6 +425,7 @@ export const COMMANDS = defineCommands({
     category: 'Tab Navigation',
   },
   'app.confirm': {
+    hideFromPalette: true,
     defaultHotkey: 'Mod+Enter',
     label: 'Confirm',
     description: 'Confirm the current dialog action',
@@ -420,6 +444,7 @@ export const COMMANDS = defineCommands({
     category: 'Tab Navigation',
   },
   'session.next': {
+    hideFromPalette: true,
     defaultHotkey: 'Mod+ArrowDown',
     label: 'Next Task',
     description: 'Move to the next task in the sidebar and show it',
@@ -428,6 +453,7 @@ export const COMMANDS = defineCommands({
     ignoreWhenBrowserFocused: true,
   },
   'session.previous': {
+    hideFromPalette: true,
     defaultHotkey: 'Mod+ArrowUp',
     label: 'Previous Task',
     description: 'Move to the previous task in the sidebar and show it',
@@ -436,6 +462,7 @@ export const COMMANDS = defineCommands({
     ignoreWhenBrowserFocused: true,
   },
   'session.focusComposerFromSidebar': {
+    hideFromPalette: true,
     defaultHotkey: 'ArrowRight',
     label: 'Focus Composer From Sidebar',
     description: 'Hand the keyboard back to the composer',
@@ -454,6 +481,7 @@ export const COMMANDS = defineCommands({
     ignoreWhenBrowserFocused: true,
   },
   'session.backToList': {
+    hideFromPalette: true,
     defaultHotkey: 'ArrowLeft',
     label: 'Back To Task List',
     description: 'Leave the composer for the sidebar when the caret is at the start',
@@ -463,6 +491,7 @@ export const COMMANDS = defineCommands({
     ignoreWhenBrowserFocused: true,
   },
   'session.leaveTerminal': {
+    hideFromPalette: true,
     defaultHotkey: 'Alt+ArrowLeft',
     label: 'Leave Terminal For Task List',
     description: 'Hand the keyboard from a terminal task back to the sidebar',
@@ -472,6 +501,7 @@ export const COMMANDS = defineCommands({
     ignoreWhenBrowserFocused: true,
   },
   'session.leaveComposer': {
+    hideFromPalette: true,
     defaultHotkey: 'Escape',
     label: 'Leave Composer',
     description: 'Return from the composer to sidebar navigation, keeping the draft',
@@ -509,6 +539,7 @@ export const COMMANDS = defineCommands({
     ignoreWhenBrowserFocused: true,
   },
   'app.find': {
+    hideFromPalette: true,
     capture: true,
     label: 'Find in Current View',
     description: 'Search the focused terminal or chat',
@@ -530,72 +561,83 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'session.tab1': {
+    hideFromPalette: true,
     label: 'Go to Tab 1',
     description: 'Switch to tab 1',
-    category: 'Tab Navigation',
     defaultHotkey: 'Mod+1',
+    category: 'Tab Navigation',
   },
   'session.tab2': {
+    hideFromPalette: true,
     label: 'Go to Tab 2',
     description: 'Switch to tab 2',
-    category: 'Tab Navigation',
     defaultHotkey: 'Mod+2',
+    category: 'Tab Navigation',
   },
   'session.tab3': {
+    hideFromPalette: true,
     label: 'Go to Tab 3',
     description: 'Switch to tab 3',
-    category: 'Tab Navigation',
     defaultHotkey: 'Mod+3',
+    category: 'Tab Navigation',
   },
   'session.tab4': {
+    hideFromPalette: true,
     label: 'Go to Tab 4',
     description: 'Switch to tab 4',
-    category: 'Tab Navigation',
     defaultHotkey: 'Mod+4',
+    category: 'Tab Navigation',
   },
   'session.tab5': {
+    hideFromPalette: true,
     label: 'Go to Tab 5',
     description: 'Switch to tab 5',
-    category: 'Tab Navigation',
     defaultHotkey: 'Mod+5',
+    category: 'Tab Navigation',
   },
   'session.tab6': {
+    hideFromPalette: true,
     label: 'Go to Tab 6',
     description: 'Switch to tab 6',
-    category: 'Tab Navigation',
     defaultHotkey: 'Mod+6',
+    category: 'Tab Navigation',
   },
   'session.tab7': {
+    hideFromPalette: true,
     label: 'Go to Tab 7',
     description: 'Switch to tab 7',
-    category: 'Tab Navigation',
     defaultHotkey: 'Mod+7',
+    category: 'Tab Navigation',
   },
   'session.tab8': {
+    hideFromPalette: true,
     label: 'Go to Tab 8',
     description: 'Switch to tab 8',
-    category: 'Tab Navigation',
     defaultHotkey: 'Mod+8',
+    category: 'Tab Navigation',
   },
   'session.tab9': {
+    hideFromPalette: true,
     label: 'Go to Tab 9',
     description: 'Switch to tab 9',
-    category: 'Tab Navigation',
     defaultHotkey: 'Mod+9',
+    category: 'Tab Navigation',
   },
+
   'chat.scrollToTop': {
-    defaultHotkey: 'Mod+ArrowUp',
     label: 'Scroll to Top',
     description: 'Scroll the focused conversation to its first message',
-    category: 'Task View',
+    defaultHotkey: 'Mod+ArrowUp',
+    category: 'Current Conversation',
   },
   'chat.scrollToBottom': {
     defaultHotkey: 'Mod+ArrowDown',
     label: 'Jump to Latest',
     description: 'Scroll the focused conversation to its latest message',
-    category: 'Task View',
+    category: 'Current Conversation',
   },
   'app.closeWindow': {
+    hideFromPalette: true,
     defaultHotkey: 'Mod+W',
     label: 'Close Window',
     description: 'Close this window when no tab has the focus',
@@ -618,54 +660,63 @@ export const COMMANDS = defineCommands({
     whenSessionPageHidden: 'run',
   },
   'chat.select1': {
+    hideFromPalette: true,
     label: 'Open Conversation 1',
     description: 'Open the conversation in position 1 of the list',
     category: 'Navigation',
     defaultHotkey: 'Mod+1',
   },
   'chat.select2': {
+    hideFromPalette: true,
     label: 'Open Conversation 2',
     description: 'Open the conversation in position 2 of the list',
     category: 'Navigation',
     defaultHotkey: 'Mod+2',
   },
   'chat.select3': {
+    hideFromPalette: true,
     label: 'Open Conversation 3',
     description: 'Open the conversation in position 3 of the list',
     category: 'Navigation',
     defaultHotkey: 'Mod+3',
   },
   'chat.select4': {
+    hideFromPalette: true,
     label: 'Open Conversation 4',
     description: 'Open the conversation in position 4 of the list',
     category: 'Navigation',
     defaultHotkey: 'Mod+4',
   },
   'chat.select5': {
+    hideFromPalette: true,
     label: 'Open Conversation 5',
     description: 'Open the conversation in position 5 of the list',
     category: 'Navigation',
     defaultHotkey: 'Mod+5',
   },
   'chat.select6': {
+    hideFromPalette: true,
     label: 'Open Conversation 6',
     description: 'Open the conversation in position 6 of the list',
     category: 'Navigation',
     defaultHotkey: 'Mod+6',
   },
   'chat.select7': {
+    hideFromPalette: true,
     label: 'Open Conversation 7',
     description: 'Open the conversation in position 7 of the list',
     category: 'Navigation',
     defaultHotkey: 'Mod+7',
   },
   'chat.select8': {
+    hideFromPalette: true,
     label: 'Open Conversation 8',
     description: 'Open the conversation in position 8 of the list',
     category: 'Navigation',
     defaultHotkey: 'Mod+8',
   },
   'chat.select9': {
+    hideFromPalette: true,
     label: 'Open Conversation 9',
     description: 'Open the conversation in position 9 of the list',
     category: 'Navigation',
@@ -679,3 +730,16 @@ export type CommandId = keyof typeof COMMANDS;
 export type MenuNamedCommandId = {
   [K in CommandId]: (typeof COMMANDS)[K] extends { labelKey: string } ? K : never;
 }[CommandId];
+
+export const CONFIGURABLE_SHORTCUTS = (
+  Object.entries(COMMANDS) as [
+    CommandId,
+    (typeof COMMANDS)[CommandId],
+  ][]
+).filter(([, def]) => !def.hideFromSettings && !def.systemShortcut);
+
+export const SHORTCUTS_BY_CATEGORY = CONFIGURABLE_SHORTCUTS.reduce((acc, entry) => {
+  const category = entry[1].category;
+  acc.set(category, [...(acc.get(category) ?? []), entry]);
+  return acc;
+}, new Map<CommandCategory, [CommandId, (typeof COMMANDS)[CommandId]][]>(COMMAND_CATEGORIES.map(category => [category, []])));

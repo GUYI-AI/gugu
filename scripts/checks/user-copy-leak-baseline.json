@@ -153,10 +153,5 @@
     "rule": "copy-leaks-raw-error-slot",
     "file": "apps/desktop/src/session/renderer/features/settings/components/BrowserSettingsCard.tsx",
     "count": 1
-  },
-  {
-    "rule": "copy-leaks-raw-error-slot",
-    "file": "apps/desktop/src/session/renderer/features/settings/components/KeyboardSettingsCard.tsx",
-    "count": 1
   }
 ]

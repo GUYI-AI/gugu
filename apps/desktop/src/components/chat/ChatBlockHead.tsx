@@ -5,6 +5,7 @@ import { isRoomChat } from '@gugu/core/shared/ui/chatModels'
 import { Avatar } from '../Avatar'
 import { Popover } from '../ui/Popover'
 import { ChatConversationCard } from './ChatConversationCard'
+import { TopicInviteSheet } from './RoomCardActions'
 
 /**
  * gugu-dev#181 聊天画在会话页一块里(项目块的项目群、对话块,见 ChatSlotHost)时的头:对话的头像和名字画进第一枚页签
@@ -21,12 +22,13 @@ export function ChatBlockHead({ host, chat, name, avatar, isAgent }: {
 }) {
   const room = isRoomChat(chat.kind)
   const [open, setOpen] = useState(false)
+  const [inviting, setInviting] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   // Focus goes back to the name only when the card is closed with Escape. Its rows close it on their way somewhere else
   // (search's input takes focus in the same render): handing focus back to the name there stole it from the search prompt.
   const escaped = useRef(false)
   return host.title ? createPortal(
-    <Popover.Root open={open} modal={false} onOpenChange={(next, details) => { escaped.current = details.reason === 'escape-key'; setOpen(next) }}>
+    <><Popover.Root open={open} modal={false} onOpenChange={(next, details) => { escaped.current = details.reason === 'escape-key'; setOpen(next) }}>
       <Popover.Trigger ref={trigger} nativeButton={false} data-testid="conversation-capsule" render={<span className="flex h-full min-w-0 items-center gap-1" data-chat-block-title="" />}>
         <span className="flex" data-chat-block-avatar=""><Avatar
           name={name}
@@ -42,10 +44,11 @@ export function ChatBlockHead({ host, chat, name, avatar, isAgent }: {
       {open ? <Popover.Portal><Popover.Positioner side="bottom" align="center" sideOffset={3} collisionPadding={8}
         anchor={() => trigger.current?.closest<HTMLElement>('[data-chat-workspace-title]') ?? trigger.current}>
         <Popover.Popup aria-label={name} finalFocus={() => escaped.current}>
-          <ChatConversationCard chat={chat} name={name} avatar={avatar} isAgent={isAgent} onClose={() => setOpen(false)} />
+          <ChatConversationCard chat={chat} name={name} avatar={avatar} isAgent={isAgent} onClose={() => setOpen(false)} onInvite={() => { setOpen(false); setInviting(true) }} />
         </Popover.Popup>
       </Popover.Positioner></Popover.Portal> : null}
-    </Popover.Root>,
+    </Popover.Root>
+    {inviting && chat.kind === 'topic' && <TopicInviteSheet key={chat.id} chat={chat} onClose={() => setInviting(false)} />}</>,
     host.title,
   ) : null
 }

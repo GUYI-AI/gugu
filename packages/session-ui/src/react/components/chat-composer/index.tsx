@@ -253,6 +253,7 @@ export interface ChatComposerProps {
   effortOptionsForModel?: (modelId: string) => Record<string, ComposerEffortOption> | null;
   /** 宿主要把模型面板打开:每变一次开一次(见 `ComposerModelMenu.openRequest`)。 */
   modelMenuOpenRequest?: number;
+  registerModelMenuCommand?: import('./composer-model-menu').ComposerModelMenuProps['registerOpenCommand'];
   /** Failure/recovery copy stays inside the model setting; other settings remain usable. */
   modelSettingNotice?: string | null;
   /** A passing fact shown inside the open model menu only; unlike `modelSettingNotice` it does not replace the trigger. */
@@ -460,6 +461,7 @@ export function ChatComposer({
   onModelChange,
   effortOptionsForModel,
   modelMenuOpenRequest,
+  registerModelMenuCommand,
   modelSettingNotice,
   modelUnknown,
   modelMenuNotice,
@@ -853,6 +855,7 @@ export function ChatComposer({
                 onModelChange={onModelChange}
                 effortOptionsForModel={effortOptionsForModel}
                 openRequest={modelMenuOpenRequest}
+                registerOpenCommand={mobile ? undefined : registerModelMenuCommand}
                 settingNotice={modelSettingNotice}
                 menuNotice={modelMenuNotice}
                 onOpen={onModelMenuOpen}

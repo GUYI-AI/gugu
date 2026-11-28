@@ -35,6 +35,7 @@ import { accountAttachmentsEndpoint, AttachmentsError, commitAttachment, content
 import { fileSha256 } from '../../../../packages/core/src/local/agent/sessionFileHandoff'
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
 import { createGroupAdmin, setGroupAvatar } from '../../../../packages/core/src/cloud/groupAdmin'
+import { createGroupWebhooks, groupWebhookUrl } from '../../../../packages/core/src/cloud/groupWebhooks'
 import { registerGuguTool } from './register-gugu-tool.mjs'
 import {
   agentStatusFilterSchema,
@@ -2209,6 +2210,70 @@ function groupAdmin(deps) {
   return createGroupAdmin({ rpc: async (name, body) => ({ data: await deps.restRpc(name, body), error: null }) }, deps.context.agentId)
 }
 
+const webhookFields = z.object({
+  chat_id: chatIdSchema.describe('Group for list, create, or address.'),
+  webhook_id: z.string().uuid().describe('Webhook for update, address, rotate, disable, or delete.'),
+  name: z.string().trim().min(1).max(32).describe('Sender name for create or update.'),
+  targets: z.array(z.string().trim().min(1)).max(20).describe('Member addresses for create or update: user:<uuid>, gugu:<number>, aid:<Agent ID>, or session:<id> on this machine. An empty list clears targeting.'),
+  disabled: z.boolean().describe('For disable: true disables and false re-enables.'),
+}).strict()
+
+const webhookActions = {
+  list: webhookFields.pick({ chat_id: true }),
+  create: webhookFields.pick({ chat_id: true, name: true, targets: true }).partial({ targets: true }),
+  update: webhookFields.pick({ webhook_id: true, name: true, targets: true }).partial({ name: true, targets: true })
+    .refine((args) => args.name !== undefined || args.targets !== undefined, 'Pass name, targets, or both'),
+  address: webhookFields.pick({ chat_id: true, webhook_id: true }),
+  rotate: webhookFields.pick({ webhook_id: true }),
+  disable: webhookFields.pick({ webhook_id: true, disabled: true }),
+  delete: webhookFields.pick({ webhook_id: true }),
+}
+const webhookAction = z.enum(Object.keys(webhookActions))
+
+// #3934 群 Webhook,以 agent 自己的身份(owner 11-26 21:39:当群主或管理员的 agent 跟人一样能建)。数据库判权限。
+// 地址是口令:列表里不给;只有点名一个 Webhook 取地址、新建、重置时才返回,说明里写明别发群里。
+async function handleWebhook({ action, ...fields }, deps) {
+  if (!webhookAction.safeParse(action).success) throw new Error(`group_webhook: action must be one of ${webhookAction.options.join(', ')}`)
+  const parsed = webhookActions[action].safeParse(fields)
+  if (!parsed.success) {
+    const detail = parsed.error.issues.map((issue) => [...issue.path, issue.message].join(': ')).join('; ')
+    throw new Error(`group_webhook ${action}: ${detail}`)
+  }
+  const args = parsed.data
+  const hooks = createGroupWebhooks({ rpc: async (name, body) => ({ data: await deps.restRpc(name, body), error: null }) }, deps.context.agentId)
+  const shown = (hook) => ({
+    webhook_id: hook.id, chat_id: hook.chatId, name: hook.name,
+    targets: hook.targetUserIds.map((id) => encodeTypedId('user', id)),
+    enabled: hook.disabledAt === null,
+    created_by: hook.createdBy ? encodeTypedId('user', hook.createdBy) : null, created_by_name: hook.createdByName,
+    created_at: hook.createdAt, last_used_at: hook.lastUsedAt,
+  })
+  const withAddress = (hook) => ({ ...shown(hook), address: groupWebhookUrl(deps.context.supabaseUrl, hook.token),
+    slack_address: `${groupWebhookUrl(deps.context.supabaseUrl, hook.token)}/slack` })
+  const targets = async () => args.targets === undefined ? undefined
+    : await resolveRecipientAddresses(decodeRecipientList(args.targets, 'targets'), deps, 'targets')
+  if (action === 'list' || action === 'address') {
+    const chatId = await requireChat(args, deps)
+    const rows = await hooks.list(chatId)
+    if (action === 'list') return JSON.stringify(rows.map(shown))
+    const hook = rows.find((row) => row.id === args.webhook_id)
+    if (!hook) throw new Error('group_webhook address: no such webhook in this group')
+    return JSON.stringify(withAddress(hook))
+  }
+  if (action === 'create') {
+    const chatId = await requireChat(args, deps)
+    return JSON.stringify(withAddress(await hooks.create(chatId, args.name, (await targets()) ?? [])))
+  }
+  if (action === 'update') {
+    const resolved = await targets()
+    return JSON.stringify(shown(await hooks.update(args.webhook_id, { ...(args.name !== undefined ? { name: args.name } : {}),
+      ...(resolved !== undefined ? { targetUserIds: resolved } : {}) })))
+  }
+  if (action === 'rotate') return JSON.stringify(withAddress(await hooks.rotate(args.webhook_id)))
+  if (action === 'disable') return JSON.stringify(shown(await hooks.setDisabled(args.webhook_id, args.disabled)))
+  if (action === 'delete') return JSON.stringify(shown(await hooks.remove(args.webhook_id)))
+}
+
 async function handleGroup(args, deps) {
   if (args.action === 'create') {
     const name = typeof args.name === 'string' ? args.name.trim() : ''
@@ -3151,6 +3216,12 @@ export const TOOL_DEFS = [
     description: 'Accept or reject one group join request as an admin. The request determines its group; approval does not substitute for an invited person or Agent owner consenting.',
     schema: z.object({ request_id: z.string().min(1).describe('The existing join request returned by group_join_requests.'), accept: z.boolean() }),
     handler: (args, deps) => handleGroup({ ...args, action: 'join-decide' }, deps),
+  },
+  {
+    name: 'group_webhook', writer: true,
+    description: 'Group owners and admins manage incoming webhooks for external systems to POST {"text": Markdown}, with create/address/rotate returning a secret address to keep out of group chats and rotation invalidating the old address as soon as it completes.',
+    schema: webhookFields.partial().extend({ action: webhookAction }),
+    handler: handleWebhook,
   },
   {
     name: 'group_info', description: 'Read group settings, your role and whether you may manage it. Management uses your own role, not your owner’s.',

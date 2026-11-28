@@ -9,13 +9,13 @@
 
 ## Working rules
 
-Product specifications are maintained privately by the maintainers; when a change alters user-facing behavior, describe the intended behavior in the issue or PR.
+Product specifications are maintained privately by the maintainers; when a change alters user-facing behavior, describe the intended behavior in the PR.
 
 Keep the assistant runtime single-source across desktop and server. Do not replace authorization failures with successful empty responses.
 
 Use the Node version in .node-version and the pnpm version in package.json. Follow CONTRIBUTING.md for installation and validation. Keep credentials and personal environment files outside Git.
 
-Use a dedicated branch/worktree for substantive work and link the issue in a PR. Confirm Git identity before committing; do not append AI or Co-Authored-By signatures. Report actual validation and remaining limits.
+Use a dedicated branch/worktree for substantive work. Confirm Git identity before committing; do not append AI or Co-Authored-By signatures. Report actual validation and remaining limits.
 
 Community development uses a dedicated user-owned Supabase project and the user's own model/CLI. Never test against official production services. Test app instances must explicitly set both GUGU_HOME and GUGU_USER_DATA_DIR to isolated paths. Preserve other running apps and sessions.
 

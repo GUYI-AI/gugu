@@ -1,3 +1,4 @@
+import { registerComposerModelCommand } from '@renderer/lib/commands/composer-model-command';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -276,6 +277,7 @@ export function TerminalModelMenu({
         modelUnknown={options === undefined || !platformCatalog.known}
         onModelChange={handleModelChange}
         effortOptionsForModel={id => localizeEffortOptions(effortsFor(id)?.options ?? null, translate)}
+        registerOpenCommand={registerComposerModelCommand}
         openRequest={menuRequests - menuRequestsAtMount.current}
         // 底部「管理模型 / 升级解锁更多模型」(#7056),三个模型菜单同一份。
         {...composerModelFooter(platformCatalog.models)}

@@ -106,7 +106,7 @@ export const PromptLibraryView = observer(function PromptLibraryView() {
   useCommandProvider({
     scopeId: 'session-sub',
     isActive: (element) => !!element && !!rootRef.current?.contains(element),
-    getCommands: () => [{ id: 'app.find', hideFromPalette: true, execute: () => searchRef.current?.focus() }],
+    getCommands: () => [{ id: 'app.find', execute: () => searchRef.current?.focus() }],
   });
 
   const actions = usePromptLibraryActions();

@@ -15,12 +15,12 @@ Database setup and authorization follow the backend repository's documentation.
 
 ## Rules
 
-- Issue first: open or claim an issue before you start; describe the implementation when closing it.
+- Bugs, ideas and questions go to [Discussions](https://github.com/GUYI-AI/gugu/discussions).
 - Branch from the latest `origin/dev` and target `dev` in pull requests. `main` is the release channel; maintainers handle promotion.
 - Merging needs passing checks and review; do not merge your own PR. The required checks are whatever the repository currently enforces.
 - Use dedicated test accounts and isolated data. Never touch production, other people's instances or shared tool installations.
-- Keep secrets, login sessions and private operational details out of Git, issues and chat.
-- Product specifications are maintained privately by the maintainers; when a change alters user-facing behavior, describe the intended behavior in the issue or PR.
+- Keep secrets, login sessions and private operational details out of Git, discussions and chat.
+- Product specifications are maintained privately by the maintainers; when a change alters user-facing behavior, describe the intended behavior in the PR.
 - Most code comments are in Chinese. Comments and discussions in English are welcome.
 
 Building and integrating public Apps: see `docs/guides/writing-a-tab-extension.md`.

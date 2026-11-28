@@ -10,6 +10,7 @@ import { openOneListNeighbour } from '@/lib/sidebarChatsBridge';
 import type { SidebarNavNode } from './sidebar-store';
 import { withMountedSession } from './with-mounted-session';
 import {
+  SESSION_NAV_FOCUS_REGION,
   COMPOSER_INPUT_SELECTOR,
   isComposerLayerElement,
   sessionNavigationFocus,
@@ -29,7 +30,6 @@ const STATION_VIEWS: ReadonlySet<string> = new Set(['home', 'new-session', 'proj
  * with no keyboard way out.
  */
 
-export const SESSION_NAV_FOCUS_REGION = 'session-nav-focus';
 
 /** How long the first ⌃X stays armed before the archive silently disarms itself. */
 export const ARCHIVE_CONFIRM_WINDOW_MS = 3_000;

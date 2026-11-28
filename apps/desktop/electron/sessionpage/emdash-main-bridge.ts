@@ -239,4 +239,5 @@ export { projectFoldersPublished } from '@main/core/extensions/extension-bridge'
 export { sessionBootTasks } from '../session/main/core/boot-tasks'
 export { flushViewState, viewStateSnapshot } from '@main/core/view-state/view-state-service'
 // @@@device-preferences — the first-frame answer (with the one-time move of the old keys) and the host's followers.
+export { onKeyboardSettingsChanged } from '@main/core/settings/keyboard-settings'
 export { answerDevicePreferences, devicePreferencesNow, onDevicePreferencesChanged } from '@main/core/settings/device-preferences'

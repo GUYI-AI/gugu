@@ -1,15 +1,17 @@
 import { act } from 'react';
+import { isMacHost } from '@shared/host-os';
 import { createRoot, type Root } from 'react-dom/client';
 import { userEvent } from '@vitest/browser/context';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { KeyboardDispatcher } from '@renderer/lib/commands/keyboard-dispatcher';
+import { dispatchKey, KeyboardDispatcher } from '@renderer/lib/commands/keyboard-dispatcher';
 import { commandRegistry } from '@renderer/lib/commands/registry';
 import type { CommandProvider } from '@renderer/lib/commands/types';
 import { setEmbedVisible } from '@renderer/lib/portal-container';
 import { useTabShortcuts } from '@renderer/features/tabs/hooks/useTabShortcuts';
 import { dismissOpenModal } from '@renderer/lib/modal/modal-open';
 
-vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } });
+const saved = vi.hoisted(() => ({ keyboard: {} as Record<string, string | null> }));
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings(saved.keyboard) } });
 
 // The task page runs inside an open shadow root in the gugu shell; these cases put the focused element there too.
 let root: Root;
@@ -30,12 +32,15 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  saved.keyboard = {};
   disposers.splice(0).forEach((dispose) => dispose());
   setEmbedVisible(true);
   await act(async () => root.unmount());
   document.body.replaceChildren();
 });
 
+const modKey = isMacHost() ? 'Meta' : 'Control';
+const pressMod = (key: string) => userEvent.keyboard(`{${modKey}>}${key}{/${modKey}}`);
 const focus = (id: string) => (shadow.getElementById(id) as HTMLElement).focus();
 
 describe('typing in the task page keeps its keys (shadow root)', () => {
@@ -69,7 +74,7 @@ describe('a command with nothing to do lets the key through', () => {
     const onKey = (event: KeyboardEvent) => { if (event.key === '[') below(event); };
     window.addEventListener('keydown', onKey);
     focus('pane');
-    await userEvent.keyboard('{Control>}[[{/Control}');
+    await pressMod('[[');
     window.removeEventListener('keydown', onKey);
     expect(below).toHaveBeenCalledOnce();
     expect(below.mock.results[0]!.value).toBe(false);
@@ -82,7 +87,7 @@ describe('a command with nothing to do lets the key through', () => {
     const onKey = (event: KeyboardEvent) => { if (event.key === '[') below(); };
     window.addEventListener('keydown', onKey);
     focus('pane');
-    await userEvent.keyboard('{Control>}[[{/Control}');
+    await pressMod('[[');
     window.removeEventListener('keydown', onKey);
     expect(back).toHaveBeenCalledOnce();
     expect(below).not.toHaveBeenCalled();
@@ -99,9 +104,9 @@ describe('while the task page is hidden behind another shell tab', () => {
     provide({ scopeId: 'session-sub', surface: 'shell', getCommands: () => [{ id: 'app.find', execute: contactsFind }] });
     await act(async () => setEmbedVisible(false));
     focus('pane');
-    await userEvent.keyboard('{Control>},{/Control}');
-    await userEvent.keyboard('{Control>}w{/Control}');
-    await userEvent.keyboard('{Control>}f{/Control}');
+    await pressMod(',');
+    await pressMod('w');
+    await pressMod('f');
     expect(settings).toHaveBeenCalledOnce();
     expect(closeTab).not.toHaveBeenCalled();
     expect(contactsFind).toHaveBeenCalledOnce();
@@ -117,14 +122,75 @@ describe('the registry', () => {
     first();
     first();
     focus('pane');
-    await userEvent.keyboard('{Control>},{/Control}');
+    await pressMod(',');
     expect(settings).not.toHaveBeenCalled();
     second();
-    await userEvent.keyboard('{Control>},{/Control}');
+    await pressMod(',');
     expect(settings).toHaveBeenCalledOnce();
   });
 
-  it('Ctrl+Tab is a fixed alias of next tab', async () => {
+  it('keeps a non-tab command in the shell on non-Mac terminals', async () => {
+    saved.keyboard = { 'app.library': 'Control+Y' };
+    await act(async () => root.render(<KeyboardDispatcher key="shell" />));
+    const openMarket = vi.fn();
+    provide({ scopeId: 'app', getCommands: () => [{ id: 'app.library', execute: openMarket }] });
+    const terminal = shadow.getElementById('editor')!;
+    const consume = vi.fn((event: KeyboardEvent) => {
+      const claimed = dispatchKey(event, 'terminal');
+      event.stopPropagation();
+      return claimed;
+    });
+    terminal.addEventListener('keydown', consume);
+    focus('editor');
+    await userEvent.keyboard('{Control>}y{/Control}');
+    expect(openMarket).toHaveBeenCalledTimes(isMacHost() ? 1 : 0);
+    expect(consume.mock.results.some(result => result.value)).toBe(isMacHost());
+    terminal.removeEventListener('keydown', consume);
+    focus('pane');
+    await userEvent.keyboard('{Control>}y{/Control}');
+    expect(openMarket).toHaveBeenCalledTimes(isMacHost() ? 2 : 1);
+  });
+
+  it('dispatches navigation arrows and character help from the hidden navigation holder', async () => {
+    const holder = shadow.appendChild(document.createElement('div'));
+    holder.dataset.region = 'session-nav-focus';
+    holder.tabIndex = -1;
+    holder.setAttribute('aria-hidden', 'true');
+    const next = vi.fn();
+    const help = vi.fn();
+    provide({ scopeId: 'session', getCommands: () => [
+      { id: 'session.next', execute: next }, { id: 'app.showKeyboardShortcuts', execute: help },
+    ] });
+    holder.focus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(shadow.activeElement).toBe(holder);
+    await pressMod('{ArrowDown}');
+    expect(next).toHaveBeenCalledOnce();
+    await userEvent.keyboard('?');
+    expect(help).toHaveBeenCalledOnce();
+  });
+
+  it('lets a rebound tab command leave the terminal and keeps its disabled alias inside', async () => {
+    saved.keyboard = { 'session.tabPrev': 'Control+Y', 'session.tabNext': null };
+    await act(async () => root.render(<KeyboardDispatcher key="rebound" />));
+    const previous = vi.fn();
+    const next = vi.fn();
+    provide({ scopeId: 'session-sub', getCommands: () => [
+      { id: 'session.tabPrev', execute: previous }, { id: 'session.tabNext', execute: next },
+    ] });
+    const terminal = shadow.getElementById('editor')!;
+    terminal.addEventListener('keydown', event => {
+      dispatchKey(event, 'terminal');
+      event.stopPropagation();
+    });
+    focus('editor');
+    await userEvent.keyboard('{Control>}y{/Control}');
+    expect(previous).toHaveBeenCalledOnce();
+    await userEvent.keyboard('{Control>}{Tab}{/Control}');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('Ctrl+Tab is an alias of next tab', async () => {
     const next = vi.fn();
     provide({ scopeId: 'session-sub', getCommands: () => [{ id: 'session.tabNext', execute: next }] });
     focus('editor');

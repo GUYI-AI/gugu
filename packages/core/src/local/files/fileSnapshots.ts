@@ -1,6 +1,6 @@
 import { requireAgentFileAccess, requireAgentFileTreeAccess } from '../state/agentFileBoundary'
-import { openAsBlob, createReadStream } from 'node:fs'
-import { chmod, link, mkdir, mkdtemp, open, readdir, readFile, rename, rm, rmdir, stat, utimes, writeFile } from 'node:fs/promises'
+import { constants, openAsBlob, createReadStream } from 'node:fs'
+import { chmod, copyFile, link, mkdir, mkdtemp, open, readdir, readFile, rename, rm, rmdir, stat, utimes, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import type { FileSink } from '../../shared/fileCipher'
 import { FILE_CHUNK_BYTES, FileIntegrityError, requireFileRange, requireFileRevision } from '../../shared/fileResolver'
@@ -14,50 +14,160 @@ import type { AttachmentsEndpoint } from '../../cloud/attachmentsApi'
 import { coreLogger } from '../../log'
 const cleanupRemoteFileDirectory = async (directory: string) => rm(await requireAgentFileTreeAccess(directory), { recursive: true, force: true })
 
-// Cache instances in one process share directories. Keep each path check and its I/O together:
-// another reader, writer or cleanup must not remove the directory between lstat and realpath.
-const chunkCacheOperations = new Map<string, Promise<void>>()
-async function inChunkCacheDirectory<T>(directory: string, operation: () => Promise<T>): Promise<T> {
-  // Normalize the stable parent, not the removable child: aliases of one cache share the queue.
-  const key = join(await requireAgentFileAccess(dirname(directory)), basename(directory))
-  const result = (chunkCacheOperations.get(key) ?? Promise.resolve()).then(operation)
-  // Only the queue tail settles successfully; the caller receives the original result or failure.
+/**
+ * @@@positional-chunks - a read's chunks are kept in one file, `<temp>/open-<key>/data`, each written once at its own
+ * offset (`index * FILE_CHUNK_BYTES`): the connections of a read write at the same time, with no file made or renamed
+ * per chunk and no queue between them. `done` beside it lists the chunks that are there, for a read that stopped to go
+ * on from them. A chunk is never written twice: a second put of one must bring the same bytes, so what a reader hashed
+ * is what the file holds. Complete, the file is handed over whole (`take`): out of the cache, to one taker.
+ */
+type StagedChunks = {
+  data: Awaited<ReturnType<typeof open>>; done: Awaited<ReturnType<typeof open>>; root: string
+  lengths: Map<number, number>; writing: Map<number, Promise<void>>
+  /** What is reading or writing now, and whether the file was let go of meanwhile: letting go waits for the former. */
+  active: Set<Promise<unknown>>; gone: boolean; closed: boolean
+}
+// Cache instances in one process share directories: one open file per key, whoever asks.
+const stagedChunks = new Map<string, StagedChunks>()
+// Opening a key's file and letting go of it take turns: the directory must not go from under an open's path checks.
+const stagedTurns = new Map<string, Promise<unknown>>()
+function stagedTurn<T>(name: string, turn: () => Promise<T>): Promise<T> {
+  const result = (stagedTurns.get(name) ?? Promise.resolve()).then(turn)
   const tail = result.then(() => {}, () => {})
-  chunkCacheOperations.set(key, tail)
-  void tail.then(() => { if (chunkCacheOperations.get(key) === tail) chunkCacheOperations.delete(key) })
+  stagedTurns.set(name, tail)
+  void tail.then(() => { if (stagedTurns.get(name) === tail) stagedTurns.delete(name) })
   return result
+}
+/** The open chunk file of `name` (`directory`, its parent normalized); `create`: made when there is none yet. */
+async function stagedIn(name: string, directory: string, create: boolean): Promise<StagedChunks | null> {
+  return stagedChunks.get(name) ?? stagedTurn(name, async () => {
+    const already = stagedChunks.get(name)
+    if (already) return already
+    const root = await requireAgentFileAccess(directory), path = await requireAgentFileAccess(join(root, 'data'))
+    if (!create && !await stat(path).catch(error => { if (error.code === 'ENOENT') return null; throw error })) return null
+    await mkdir(root, { recursive: true, mode: 0o700 })
+    const record = join(root, 'done'), lengths = new Map<number, number>()
+    const recorded = await readFile(record, 'utf8').catch(error => { if (error.code === 'ENOENT') return ''; throw error })
+    for (const line of recorded.split('\n')) {
+      const [index, length] = line.split(' ').map(Number)
+      if (!line || !Number.isSafeInteger(index) || !Number.isSafeInteger(length)) continue
+      requireFileRange(FILE_CHUNK_BYTES, 0, length!); lengths.set(index!, length!)
+    }
+    const staged: StagedChunks = {
+      data: await open(path, constants.O_RDWR | constants.O_CREAT, 0o600), done: await open(record, 'a', 0o600), root,
+      lengths, writing: new Map(), active: new Set(), gone: false, closed: false,
+    }
+    stagedChunks.set(name, staged)
+    return staged
+  })
+}
+/**
+ * Lets go of `name`'s open file, in its turn: whoever is using it finishes, then it is closed and `then` runs (remove
+ * it, move it away, or nothing: the chunks stay on disk for a later read). Whoever asks for the key next opens it again.
+ */
+function stagedLetGo<T>(name: string, then: () => Promise<T>, only?: StagedChunks): Promise<T> {
+  const letGo = (staged: StagedChunks) => { staged.gone = true; if (stagedChunks.get(name) === staged) stagedChunks.delete(name) }
+  const open_ = only ?? stagedChunks.get(name)
+  if (open_) letGo(open_)
+  return stagedTurn(name, async () => {
+    // One opened while this waited its turn is let go of too.
+    const staged = only ?? open_ ?? stagedChunks.get(name)
+    if (staged) letGo(staged)
+    if (staged && !staged.closed) {
+      staged.closed = true
+      await Promise.allSettled([...staged.active]); await staged.data.close(); await staged.done.close()
+    }
+    return then()
+  })
+}
+/** `use` the open file, unless it was let go of meanwhile (`GONE`: the caller looks for the file again). */
+const GONE = Symbol('gone')
+async function withStaged<T>(staged: StagedChunks, use: () => Promise<T>): Promise<T | typeof GONE> {
+  if (staged.gone) return GONE
+  const using = use()
+  staged.active.add(using)
+  try { return await using } finally { staged.active.delete(using) }
+}
+const readStaged = async (staged: StagedChunks, index: number): Promise<Uint8Array> => {
+  const bytes = new Uint8Array(staged.lengths.get(index)!)
+  for (let read = 0; read < bytes.length;) {
+    const { bytesRead } = await staged.data.read(bytes, read, bytes.length - read, index * FILE_CHUNK_BYTES + read)
+    if (!bytesRead) throw new Error('Invalid cached file chunk')
+    read += bytesRead
+  }
+  return bytes
 }
 
 /** Raw resumable chunks share the existing private open-file cache and its stale-directory cleanup. */
 export function createFileChunkCache(tempRoot: string): FileChunkCache {
-  const directory = (key: string, index = 0) => {
+  // Normalize the stable parent, not the removable child: aliases of one cache share the file.
+  let parent: Promise<string> | undefined
+  const place = async (key: string, index = 0) => {
     if (!/^(?:[0-9a-f]{32}|[0-9a-f]{64})$/.test(key) || !Number.isSafeInteger(index) || index < 0) throw new Error('Invalid file cache key')
-    return join(tempRoot, `open-${key}`)
+    parent ??= requireAgentFileAccess(tempRoot)
+    return { name: join(await parent, `open-${key}`), directory: join(tempRoot, `open-${key}`) }
   }
   return {
     async get(key, index) {
-      const root = directory(key, index)
-      return inChunkCacheDirectory(root, async () => {
-        const file = await requireAgentFileAccess(join(root, String(index))), info = await stat(file).catch(error => { if (error.code === 'ENOENT') return null; throw error })
-        if (!info) return null
-        requireFileRange(FILE_CHUNK_BYTES, 0, info.size)
-        return new Uint8Array(await readFile(file))
-      })
+      const { name, directory } = await place(key, index)
+      for (;;) {
+        const staged = await stagedIn(name, directory, false)
+        if (!staged) return null
+        const found = await withStaged(staged, async () => {
+          await staged.writing.get(index)?.catch(() => undefined)
+          return staged.lengths.has(index) ? readStaged(staged, index) : null
+        })
+        if (found !== GONE) return found
+      }
     },
     async put(key, index, bytes) {
       requireFileRange(FILE_CHUNK_BYTES, 0, bytes.length)
-      const root = directory(key, index)
-      return inChunkCacheDirectory(root, async () => {
-        const file = await requireAgentFileAccess(join(root, String(index)))
-        await requireAgentFileAccess(root)
-        await mkdir(root, { recursive: true, mode: 0o700 })
-        const part = await requireAgentFileAccess(`${file}.${crypto.randomUUID()}.part`)
-        await writeFile(part, bytes, { flag: 'wx', mode: 0o600 }); await rename(part, file)
-      })
+      const { name, directory } = await place(key, index)
+      for (;;) {
+        const staged = (await stagedIn(name, directory, true))!
+        const put = await withStaged(staged, async () => {
+          // One writer per chunk: whoever comes second waits, then brings the same bytes or is refused.
+          await staged.writing.get(index)?.catch(() => undefined)
+          if (staged.lengths.has(index)) {
+            const kept = await readStaged(staged, index)
+            if (kept.length !== bytes.length || Buffer.compare(kept, bytes)) throw new FileIntegrityError('Cached file chunk')
+            return
+          }
+          const written = (async () => {
+            const at = index * FILE_CHUNK_BYTES
+            for (let wrote = 0; wrote < bytes.length;) {
+              wrote += (await staged.data.write(bytes, wrote, bytes.length - wrote, at + wrote)).bytesWritten
+            }
+            await staged.done.appendFile(`${index} ${bytes.length}\n`)
+            staged.lengths.set(index, bytes.length)
+          })()
+          staged.writing.set(index, written)
+          try { await written } finally { staged.writing.delete(index) }
+        })
+        if (put !== GONE) return
+      }
     },
-    clear(key) {
-      const root = directory(key)
-      return inChunkCacheDirectory(root, () => cleanupRemoteFileDirectory(root))
+    async clear(key) {
+      const { name, directory } = await place(key)
+      await stagedLetGo(name, () => cleanupRemoteFileDirectory(directory))
+    },
+    async rest(key) {
+      const { name } = await place(key)
+      await stagedLetGo(name, async () => {})
+    },
+    async take(key, chunks) {
+      const { name, directory } = await place(key)
+      const staged = await stagedIn(name, directory, false)
+      if (!staged || staged.gone || staged.lengths.size !== chunks) return null
+      for (let index = 0; index < chunks; index++) if (!staged.lengths.has(index)) return null
+      // Under a name of its own, with its record gone: whoever asks for this key next starts a new file.
+      const taken = join(staged.root, `${randomUUID()}.taken`)
+      return stagedLetGo(name, async () => {
+        // Cleared while this waited its turn: there is nothing to hand over.
+        const moved = await rename(join(staged.root, 'data'), taken).then(() => true, error => { if (error.code !== 'ENOENT') throw error; return false })
+        if (moved) await rm(join(staged.root, 'done'), { force: true })
+        return moved ? taken : null
+      }, staged)
     },
   }
 }
@@ -139,6 +249,20 @@ export async function createFileSink(tempRoot: string, size: number, destination
       } }
     },
     abort: dispose,
+    // The file becomes this sink's own, moved under its private name (copied where the two are on different volumes):
+    // nothing is written twice, and nothing else has it. `ENOENT`: it is gone, and this sink is as it was.
+    async adopt(staged) {
+      if (committed || disposed || written) throw new Error('Invalid file staging adoption')
+      if ((await stat(await requireAgentFileAccess(staged))).size !== size) throw new Error('Incomplete file snapshot')
+      await handle.close()
+      try {
+        await rename(staged, partial).catch(async error => {
+          if (error.code !== 'EXDEV') throw error
+          await copyFile(staged, partial); await rm(staged)
+        })
+        written = size
+      } finally { handle = await open(partial, 'r+') }
+    },
     path() { if (!committed || disposed) throw new Error('File snapshot is not committed'); return path },
     async blob() {
       if (!committed || disposed) throw new Error('File snapshot is not committed')
@@ -340,13 +464,13 @@ export async function storedCopy(guguHome: string, sha256: string): Promise<Blob
  * What this desktop's window read over the network: `<home>/file-cache/<sha256>/<name>`, beside the file store and laid
  * out like it. Unlike the store it is only a cache: nothing here is anyone's only copy and no path into it is handed out
  * (the store also holds files this machine sent and files agents were given by path), so it has a byte budget, and past it
- * the least recently read copies are dropped (`trimToBytes`, the page cache's own rule). Whoever reads a copy holds it
+ * the copies used longest ago are dropped (`trimToBytes`, the page cache's own rule). Whoever reads a copy holds it
  * until it lets go (`dispose`): a copy being read, or being written, is never dropped.
  */
 export const fileCacheDirectory = (guguHome: string) => join(guguHome, 'file-cache')
 const FILE_CACHE_BYTES = 10 * 1024 ** 3
 export function createFileCache(directory: string, maxBytes = FILE_CACHE_BYTES) {
-  const held = new Map<string, number>()
+  const held = new Map<string, number>(), filling = new Map<string, Promise<unknown>>()
   const hold = (sha256: string) => { held.set(sha256, (held.get(sha256) ?? 0) + 1) }
   const release = (sha256: string) => {
     const left = held.get(sha256)! - 1
@@ -396,20 +520,35 @@ export function createFileCache(directory: string, maxBytes = FILE_CACHE_BYTES) 
       hold(sha256)
       try {
         let path = await cachedPath(sha256)
+        // One read of a copy over the network at a time: whoever else wants it waits and takes what that read wrote.
+        if (!path && fill && filling.has(sha256)) {
+          await filling.get(sha256)!.catch(() => undefined)
+          path = await cachedPath(sha256)
+        }
         if (!path && fill) {
-          await fill()
+          const mine = fill()
+          filling.set(sha256, mine)
+          try { await mine } finally { if (filling.get(sha256) === mine) filling.delete(sha256) }
           path = await cachedPath(sha256)
           if (path) budget.wrote((await stat(path)).size)
         }
         if (!path) { release(sha256); return null }
-        // Read now: the least recently read copy is the first to go.
-        const info = await stat(path); await utimes(path, new Date(), info.mtime)
+        // The copy used longest ago is the first to go. Its use is stamped here, as it is handed out and again as it is
+        // let go: a system may or may not move the access time on the reads in between, and the order must not depend
+        // on which. (Not the modification time: the Blob below refuses to read a file whose modification time moved.)
+        const copy = path, used = async () => utimes(copy, new Date(), (await stat(copy)).mtime)
+        await used()
         const blob = await openAsBlob(path)
         let disposed = false
         return {
           path, size: blob.size, here: true,
           read: async (offset, length) => new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()),
-          dispose: async () => { if (!disposed) { disposed = true; release(sha256); budget.released() } },
+          async dispose() {
+            if (disposed) return
+            disposed = true
+            await used().catch(error => storeLog.warn({ error }, 'file cache copy not stamped'))
+            release(sha256); budget.released()
+          },
         }
       } catch (error) { release(sha256); throw error }
     },

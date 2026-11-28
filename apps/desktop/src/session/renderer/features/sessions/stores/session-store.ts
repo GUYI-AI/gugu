@@ -161,25 +161,6 @@ export class SessionPageStore {
     }
   }
 
-  /** 自动化运行建出来的会话收成普通会话。 */
-  async convertAutomationSession(): Promise<void> {
-    if (this.state === 'unregistered') return;
-    const data = this.data;
-    const previous = data.automationRunId;
-    if (!previous) return;
-    runInAction(() => {
-      data.automationRunId = undefined;
-    });
-    try {
-      await rpc.sessions.convertAutomationSession(this.id);
-    } catch (e) {
-      runInAction(() => {
-        data.automationRunId = previous;
-      });
-      console.error(e);
-      throw e;
-    }
-  }
 }
 
 export type UnregisteredSession = SessionPageStore & {

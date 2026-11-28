@@ -33,7 +33,7 @@ import {
   browserOpenInNewTabChannel,
 } from '@shared/events/browserEvents';
 import { COMMANDS, type CommandId } from '@shared/commands';
-import { getElectronTabNavigationDirection, resolveDefaultHotkey,  } from '@shared/shortcuts';
+import { effectiveAliases, getEffectiveHotkey } from '@shared/effective-hotkey';
 import { isGoogleAuthUrl, userAgentForBrowserUrl } from './browser-user-agent';
 import { isSupportedBrowserNavigationUrl } from './browser-navigation';
 
@@ -126,9 +126,11 @@ export class BrowserWebContentsRegistry {
     contents.on('before-input-event', (event, input) => {
       const browserId = this.browserIdByWebContentsId.get(contents.id);
       if (browserId && (input.code === 'Space' || input.key === ' ') && input.type === 'keyUp') events.emit(browserAnnotationSpaceChannel, { browserId, pressed: false });
-      const direction = getElectronTabNavigationDirection(input);
-      if (direction && onTab?.(direction)) { event.preventDefault(); return; }
       const command = getBrowserShortcutKey(input, this.browserShortcuts);
+      if (command === 'session.tabNext' || command === 'session.tabPrev') {
+        const direction = command === 'session.tabNext' ? 'next' : 'previous';
+        if (onTab?.(direction)) { event.preventDefault(); return; }
+      }
       if (command && onCommand(command)) event.preventDefault();
     });
   }
@@ -543,51 +545,40 @@ type ParsedShortcut = {
 
 function getBrowserShortcuts(
   keyboard?: AppSettings['keyboard']
-): Map<CommandId, ParsedShortcut> {
-  const shortcuts = new Map<CommandId, ParsedShortcut>();
+): Map<CommandId, ParsedShortcut[]> {
+  const shortcuts = new Map<CommandId, ParsedShortcut[]>();
   for (const commandId of Object.keys(COMMANDS) as CommandId[]) {
     if (commandId === 'app.closeModal' || COMMANDS[commandId].ignoreWhenBrowserFocused) {
       continue;
     }
 
-    const configured = keyboard?.[commandId];
-    if (configured === null) continue;
-
-    const fallback = resolveDefaultHotkey(COMMANDS[commandId]) ?? null;
-    const hotkey = configured ?? fallback;
-    if (hotkey === null) continue;
-
-    const parsed = parseShortcut(hotkey);
-    if (parsed) {
-      shortcuts.set(commandId, parsed);
-      continue;
+    const hotkey = getEffectiveHotkey(commandId, keyboard);
+    const parsed: ParsedShortcut[] = [];
+    for (const binding of [hotkey, ...effectiveAliases(commandId, keyboard)]) {
+      // Browser content cannot own a navigation-region alias.
+      if (!binding || typeof binding !== 'string' && binding.region === 'navigation') continue;
+      const shortcut = parseShortcut(typeof binding === 'string' ? binding : binding.character);
+      if (shortcut) parsed.push(shortcut);
+      else log.warn('Invalid browser app shortcut', { commandId, shortcut: binding });
     }
-
-    if (configured) {
-      const parsedFallback = fallback ? parseShortcut(fallback) : null;
-      if (parsedFallback) shortcuts.set(commandId, parsedFallback);
-      log.warn('Invalid browser app shortcut, falling back to default', {
-        commandId,
-        shortcut: configured,
-      });
-    }
+    if (parsed.length) shortcuts.set(commandId, parsed);
   }
   return shortcuts;
 }
 
 function getBrowserShortcutKey(
   input: Electron.Input,
-  shortcuts: ReadonlyMap<CommandId, ParsedShortcut>
+  shortcuts: ReadonlyMap<CommandId, ParsedShortcut[]>
 ): CommandId | null {
-  if (input.type !== 'keyDown') return null;
-  for (const [commandId, parsed] of shortcuts) {
-    if (
+  if (input.type !== 'keyDown' || input.isComposing) return null;
+  for (const [commandId, bindings] of shortcuts) {
+    if (bindings.some(parsed =>
       normalizeInputKey(input.key) === parsed.key &&
       Boolean(input.shift) === parsed.shift &&
       Boolean(input.alt) === parsed.alt &&
       Boolean(input.meta) === parsed.meta &&
       Boolean(input.control) === parsed.control
-    ) {
+    )) {
       return commandId;
     }
   }

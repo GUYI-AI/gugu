@@ -1,4 +1,6 @@
 import { messageForUser } from '@/lib/userFacingError';
+import { MemberPicker, MEMBER_PICKER_SHEET } from '../components/member-picker/MemberPicker'
+import { commandLabel } from '@renderer/lib/commands/command-copy'
 import { PAGE_MODAL_FRAME, Sheet } from '../components/ui/Sheet'
 import { ModalClose } from '../components/ui/ModalClose'
 import { PaneHeader } from '../components/ui/Pane'
@@ -205,6 +207,7 @@ function InnerLayout({
     setOpenedPhoneApp(null)
     setActiveTab('tasks')
   })
+  const [chooseDmContact, setChooseDmContact] = useState(false)
   const readContacts = useContactsReader()
   const pendingRequestCount = usePendingRequestCount()
   const readChats = useChatStoreReader()
@@ -947,6 +950,7 @@ function InnerLayout({
         selectTab(sessionHostAvailable && !mobile ? 'tasks' : 'chats')
         if (sessionHostAvailable && !mobile && pageModalOpen.get()) returnToScreen()
       } },
+      { id: 'chat.newDirect', execute: () => setChooseDmContact(true) },
       { id: 'app.goContacts', execute: () => { selectTab('contacts') } },
     ],
   })
@@ -1232,6 +1236,15 @@ function InnerLayout({
 
       <ResourceMonitorHost />
       <CustomModelRouteRepairHost />
+      {chooseDmContact && (
+        <Sheet {...MEMBER_PICKER_SHEET} onClose={() => setChooseDmContact(false)} ariaLabel={commandLabel('chat.newDirect')}>
+          <MemberPicker title={commandLabel('chat.newDirect')} onClose={() => setChooseDmContact(false)}
+            confirmLabel={() => t('contacts:common.sendMessage')} onPick={async person => {
+              setChooseDmContact(false)
+              await contactsSwitchToChat(person)
+            }} />
+        </Sheet>
+      )}
       {contactsModal && (
         <Sheet onClose={() => selectTab(pageUnderContacts.current)} {...PAGE_MODAL_FRAME} testId="contacts-modal" ariaLabel={t('shell.contacts')}>
           {/* The ✕ takes the modal's top-right corner (--pane-corner-reserve): headers at the edge and the drawer's close leave

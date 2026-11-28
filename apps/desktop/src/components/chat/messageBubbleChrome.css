@@ -34,6 +34,8 @@
    形状照稿子;稿子的灰底放在白底上,这里在气泡里,底色取气泡色的下一档才读得出是标签。 */
 .msg-sender > [data-message-agent-owner] { visibility: hidden; margin-left: 2px; min-height: 14px; line-height: 14px; border-radius: 6px; color: var(--faint-fg); background: var(--bubble-own); }
 :is(:hover, :focus-within) > [data-message-bubble-column] .msg-sender:not([data-owner-hidden]) > [data-message-agent-owner] { visibility: visible; }
+/* #3934 「Webhook」标签一直在:它说的是「这不是人、回它没人收到」,❌ 悬停才浮出。 */
+.msg-sender > [data-message-webhook-tag] { margin-left: 2px; min-height: 16px; line-height: 16px; border-radius: 6px; color: var(--muted-fg); background: var(--bubble-own); }
 
 /* 时间:标注字号的灰字,钉在气泡右下角。 */
 .msg-time {
