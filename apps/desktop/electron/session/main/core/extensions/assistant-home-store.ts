@@ -309,7 +309,7 @@ export async function agentSessionHere(ownerId: string, agentId: string): Promis
 /**
  * The personal assistant's home, when it lives on this computer: its home device is this one and its session is here,
  * in the folder that session works in. Null: it lives elsewhere — on another computer, or in another install of this one
- (no session of it here), the same as its schedules (app-bound-schedules.ts).
+ * (no session of it here), the same as its schedules (app-bound-schedules.ts).
  */
 export async function assistantHomeHere(ownerId: string, agentId: string, deviceId: string): Promise<AssistantHomeHere | null> {
   if (!(await isThisComputer(deviceId))) return null;
