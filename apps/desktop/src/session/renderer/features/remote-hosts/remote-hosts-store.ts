@@ -44,6 +44,7 @@ import {
   forgetRetiredProjectCaches,
 } from './account-projects';
 import type { ProjectFolder } from '@shared/core/projects/project-folders';
+import { watchInventoryRead } from './inventory-read';
 import { machineSessionListClient } from './machine-session-list';
 import {
   liveDeviceSessions,
@@ -711,6 +712,7 @@ export class RemoteHostsStore {
 
   /** 读那台机器的项目清单并入项目表(连上时 / 那台机器上新建了项目时)。 */
   async syncProjects(deviceId: string): Promise<void> {
+    const read = watchInventoryRead(deviceId, 'projects');
     try {
       const [projects, home, catalog] = await Promise.all([
         rpcOn(deviceId).projects.getProjects(),
@@ -720,6 +722,7 @@ export class RemoteHostsStore {
           return null;
         }),
       ]);
+      if (read && !read.current()) return;
       if (home) this.rememberHomeDir(deviceId, home);
       if (catalog?.sessions.length) appState.projects.syncMachineProjects(deviceId, projects, catalog.sessions);
       else appState.projects.syncMachineProjects(deviceId, projects);
@@ -731,6 +734,8 @@ export class RemoteHostsStore {
       if (records) this.accountSeenLive.set(deviceId, accountCopyKey(records));
     } catch (error) {
       log.warn('[machines] 读那台机器的项目清单失败', { deviceId, error: String(error) });
+    } finally {
+      read?.finish();
     }
   }
 
@@ -743,6 +748,7 @@ export class RemoteHostsStore {
     this.listSyncs.set(
       deviceId,
       startSessionListSync(machineSessionListClient, deviceId, {
+        watchFirstSnapshot: () => watchInventoryRead(deviceId, 'sessions snapshot')?.finish,
         onList: (result) => {
           updateDeviceSessions(deviceId, { projects: result.projects, sessions: result.sessions, cached: false });
           this.bannerWaits(deviceId, result.sessions);
