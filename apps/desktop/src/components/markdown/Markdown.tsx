@@ -78,7 +78,7 @@ export interface MarkdownProps {
   className?: string
   /** File previews only: project a selected DOM range back to its original source lines. */
   sourceLines?: boolean
-  /** A chat message: the chat its `msg:<prefix>` ids resolve in (the dialect's messageChat). */
+  /** A chat message: its `msg:` / `session:` ids are pills, messages resolved in this chat (the dialect's messageChat). */
   messageChat?: string
 }
 
@@ -171,7 +171,8 @@ function pluginsFor(options: MarkdownDialectOptions) {
 function LinkPillGate({ plain, ...props }: { plain: ReactNode } & Omit<ComponentProps<typeof LinkPill>, 'accountId'>) {
   const { user } = useAuth()
   const { chatsRead } = useChatStore('chatsRead')
-  if (!user || (linkPillTarget(props.href)?.kind === 'chat' && !chatsRead)) return <>{plain}</>
+  const kind = linkPillTarget(props.href)?.kind
+  if (!user || ((kind === 'chat' || kind === 'msg') && !chatsRead)) return <>{plain}</>
   return <Suspense fallback={plain}><LinkPill {...props} accountId={user.id} /></Suspense>
 }
 
@@ -278,7 +279,7 @@ export const Markdown = memo(function Markdown({
         )
         // A chat link to a file, chat or message is drawn in place as the file pill, read as the person reading (linkPills.ts).
         if (href && classes.includes(LINK_PILL_CLASS)) {
-          return <LinkPillGate href={href} onClick={onClick} plain={plain} rest={attributes}>{children}</LinkPillGate>
+          return <LinkPillGate href={href} onClick={onClick} plain={plain} rest={attributes} messageChat={messageChat}>{children}</LinkPillGate>
         }
         return plain
       },
@@ -289,7 +290,7 @@ export const Markdown = memo(function Markdown({
         return <DefaultImage {...rest} node={node as never} src={src} alt={alt} />
       },
     }),
-    [mentionMarker, hasImageRenderer, copyCode, phoneTable]
+    [mentionMarker, hasImageRenderer, copyCode, phoneTable, messageChat]
   )
 
   if (!content) return null

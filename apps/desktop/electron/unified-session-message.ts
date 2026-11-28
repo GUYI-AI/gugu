@@ -94,7 +94,7 @@ export async function handleUnifiedSessionMessage(
   const rawTo = record.to
   if (!Array.isArray(rawTo) || !rawTo.length || !rawTo.every((entry) => typeof entry === 'string' && entry.length > 0)) {
     throw new Error(
-      'session_message requires to: a non-empty array of typed addresses — "session:<id>" for a session of yours on any of your machines, "aid:<Agent ID>" or "gugu:<number>" for one of your agents from session_peers ("user:<uuid>" is the older spelling of aid:)',
+      'session_message requires to: a non-empty array of typed addresses — "session:<id>" for a session of yours on any of your machines, "aid:<Agent ID>" or "gugu:<number>" for one of your agents from session_peers ("user:<id>", as a delivery envelope writes it in from_id, is the same as aid:)',
     )
   }
   const text = typeof record.text === 'string' ? record.text : ''
@@ -119,7 +119,7 @@ export async function handleUnifiedSessionMessage(
         : { entry, userId: null, number: address.number })
     } else {
       throw new Error(
-        `session_message: ${JSON.stringify(entry)} is not a typed address — pass "session:<id>" (a typed session id), "aid:<Agent ID>" (from session_peers or a session’s share card; "user:<uuid>" is the older spelling) or "gugu:<number>" (a 咕咕号 from session_peers); bare ids are rejected`,
+        `session_message: ${JSON.stringify(entry)} is not a typed address — pass "session:<id>" (a typed session id), "aid:<Agent ID>" (from session_peers or a session’s share card, or "user:<id>" as an envelope's from_id gives it — the same) or "gugu:<number>" (a 咕咕号 from session_peers); bare ids are rejected`,
       )
     }
   }

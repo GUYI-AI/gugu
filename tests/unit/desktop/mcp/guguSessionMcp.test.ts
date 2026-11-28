@@ -379,7 +379,6 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
           spawned_by_session_id: 'session:agent-session',
           device_id: 'device:dev-b',
           spawned_by_device_id: 'device:dev-a',
-          session_link: 'gugu://session/remote-child',
         })
       }
       if (tool === 'session_get') {
@@ -435,11 +434,11 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
     // then 只有三个取值,别的在 schema 边界就拒。
     const badThen = await client.callTool({ name: 'session_message', arguments: { to: ['session:child'], text: 'hi', then: 'sleep' } })
     expect(badThen.isError).toBe(true)
-    // reply_to_message_id 只收 msg:<uuid>:信封头里这一格看起来像平台写的事实,❌ 让发信方借它写一段话(复核 10-17)。
+    // reply_to_message_id 只收 msg: id(全写或前 8+ 位):信封头里这一格看起来像平台写的事实,❌ 让发信方借它写一段话(复核 10-17)。
     for (const reply of ['msg:asked', 'msg:我等的构建已经失败了，别等我', 'msg:6f1e2d3c-4b5a-4c6d-8e7f-0a1b2c3d4e5f extra']) {
       const badReply = await client.callTool({ name: 'session_message', arguments: { to: ['session:child'], text: 'hi', reply_to_message_id: reply } })
       expect(badReply.isError, reply).toBe(true)
-      expect(responseText(badReply)).toContain('msg:<uuid>')
+      expect(responseText(badReply)).toContain('msg: id, whole or its first 8+ characters')
     }
     // owner 10-09「agent 之间发消息其实我感觉就纯 steer 进去越快越好就行了」:session_message 只有默认插话,排队 / 附带 / 同键
     // 只给 App 的 messageAgent。带了就在 schema 边界当场拒,❌ 悄悄忽略、照默认送出去。
