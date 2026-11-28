@@ -4,6 +4,11 @@ import { platform } from '@/platform'
 // 人眼前的那条会话 = 壳报「摆在屏幕上」∧ App 在前台。选中(activeChatId)在人走开之后仍留着,不能当「在看」。
 // 报的不止一处(对话页、「助理」App 里那条私聊 #7199),同一时刻至多一处摆着;按报的那一方各记一格,❌ 一个全局格互相盖。
 const shownByReporter = new Map<object, string>()
+// The session-page chat blocks on screen, each reported by its own slot (ChatSlot): a block is shown by its slot, not by
+// the same chat being open on the chat page.
+const shownBlocks = new Map<object, string>()
+const blockListeners = new Set<() => void>()
+const notifyBlocks = (): void => { for (const notify of blockListeners) notify() }
 // 首次宿主答复异步到达;答复之前没有「已确认前台」的资格。
 let appActive = false
 const listeners = new Set<() => void>()
@@ -46,6 +51,14 @@ export function isChatOnScreen(chatId: string): boolean {
 export function isChatShown(chatId: string): boolean {
   return [...shownByReporter.values()].includes(chatId)
 }
+/** Whether this chat's session-page block is on screen, re-rendering when its slot is shown or hidden. */
+export function useChatBlockShown(chatId: string): boolean {
+  return useSyncExternalStore(subscribeBlocks, () => [...shownBlocks.values()].includes(chatId))
+}
+function subscribeBlocks(listener: () => void): () => void {
+  blockListeners.add(listener)
+  return () => { blockListeners.delete(listener) }
+}
 /** 与会话是否上报无关的同一份宿主前后台真值,供会话页的项目格子复用。 */
 export function isAppActive(): boolean { return appActive }
 
@@ -69,12 +82,15 @@ export function useWatchAppActive(): void {
 
 /** 壳报此刻摆在屏幕上的会话。只报,不订前后台:要「人此刻在看吗」的组件自己 useAppActive —— 壳根一订,
  * 窗口每回一次前台整个壳连同藏着的通讯录、消息列表都重渲一遍。 */
-export function useReportChatOnScreen(shown: string | null): void {
+export function useReportChatOnScreen(shown: string | null, { block = false }: { block?: boolean } = {}): void {
   const [reporter] = useState(() => ({}))
   useWatchAppActive()
   useEffect(() => {
     if (!shown) return
     shownByReporter.set(reporter, shown)
-    return () => { shownByReporter.delete(reporter) }
-  }, [reporter, shown])
+    if (!block) return () => { shownByReporter.delete(reporter) }
+    shownBlocks.set(reporter, shown)
+    notifyBlocks()
+    return () => { shownByReporter.delete(reporter); shownBlocks.delete(reporter); notifyBlocks() }
+  }, [reporter, shown, block])
 }

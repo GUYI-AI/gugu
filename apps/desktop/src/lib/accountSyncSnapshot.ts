@@ -22,7 +22,6 @@ const schema = z.object({
   account_id: z.string().min(1), revision: z.string().regex(/^(0|[1-9]\d*)$/),
   chats: z.array(row), memberships: z.array(row), identities: z.array(row),
   previews: z.array(row), unread: z.array(row), overrides: z.array(row),
-  presence: z.record(z.string(), z.object({ presence: row })),
 })
 
 /** Decode into the existing projection algebra; there is no second list assembler. */
@@ -55,7 +54,7 @@ export function decodeAccountSnapshot(value: unknown, accountId: string) {
     if (chat.kind === 'group') put('override', `group/${chat.id}`, overrides.get(`group/${chat.id}`) ?? null)
   }
   if (missingDependencies(cells, accountId).length > 0) throw new Error('account snapshot has incomplete identity or conversation closure')
-  return { revision: snapshot.revision, cells: cells as ProjectionCache, presence: snapshot.presence }
+  return { revision: snapshot.revision, cells: cells as ProjectionCache }
 }
 
 export async function initializeAccountSync(repository: AccountImRepository): Promise<void> {
@@ -87,7 +86,6 @@ export async function initializeAccountSync(repository: AccountImRepository): Pr
         transaction.putMembership(member.chat_id, member.user_id, member)
       }
     }
-    for (const [id, payload] of Object.entries(snapshot.presence)) transaction.putPresence(id, payload.presence)
     transaction.putSyncState(ACCOUNT_REVISION_CURSOR_KEY, { revision: snapshot.revision })
   })
   log.info({ revision: snapshot.revision, bytes: new TextEncoder().encode(JSON.stringify(data)).byteLength,

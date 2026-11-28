@@ -17,7 +17,7 @@ import { compareChatsByActivityDesc, fallbackChatName, isRoomChat, mergeConversa
 
 /** 实体族 = 批量取数的单位:一个族一波,该族这一轮要的键按**有界批**放进 `in()`(见 FAMILY_BATCH_KEYS)。 */
 export const ENTITY_FAMILIES = [
-  'chat', 'membership', 'identity', 'unread', 'presence', 'preview', 'override',
+  'chat', 'membership', 'identity', 'unread', 'preview', 'override',
 ] as const
 export type EntityFamily = typeof ENTITY_FAMILIES[number]
 
@@ -33,7 +33,7 @@ const FAMILY_SET: ReadonlySet<string> = new Set(ENTITY_FAMILIES)
  * 所以只能在**规划期**就不越界。完整实测表、仪器与阳控读数在那个常量的注释里,
  * 合同在 spec 的「键空间」一节。
  *
- * 键**不进** URL 的族(`unread` 一发拿回全部、`override` 按 owner 一发取全、`presence` 走 POST body)
+ * 键**不进** URL 的族(`unread` 一发拿回全部、`override` 按 owner 一发取全)
  * 请求大小与键数无关 ⇒ 上界 ∞,分批只会把同一发打两遍。
  * ⇒ 一波的发数 = `Σ ⌈键/K_族⌉`,批间并行 ⇒ **仍是一波**;有界批只放大发数,不放大串行深度。
  */
@@ -44,7 +44,6 @@ export const FAMILY_BATCH_KEYS: Readonly<Record<EntityFamily, number>> = {
   preview: IN_FILTER_CHUNK,
   unread: Number.POSITIVE_INFINITY,
   override: Number.POSITIVE_INFINITY,
-  presence: Number.POSITIVE_INFINITY,
 }
 
 /** 把一族这一轮的键切成有界批(批间并行)。键数为 0 时没有批 —— ❌ 不发空 `in()`。 */
@@ -129,13 +128,12 @@ export type MembershipValue = {
 /** 完整的 display identity 行(装配只用它的**存在性**,消费者要整行)。 */
 export type IdentityValue = { id: string } & Record<string, unknown>
 export type UnreadValue = ChatUnreadLocator & { chat_id: string }
-export type PresenceValue = { id: string; online: boolean }
 /** viewer-scoped 最后一条可见消息:gated 成员看到的活动可能与 chat 行不同。 */
 export type PreviewValue = { chat_id: string; created_at: string | null; preview: string | null; notice: SystemNotice | null }
 export type OverrideValue = { alias: string | null }
 
 export type EntityValue =
-  | ChatValue | MembershipValue | IdentityValue | UnreadValue | PresenceValue | PreviewValue | OverrideValue
+  | ChatValue | MembershipValue | IdentityValue | UnreadValue | PreviewValue | OverrideValue
 
 /**
  * 一格缓存。`value === null` 表示**权威读没有返回该行** —— 那本身就是 tombstone,
@@ -245,9 +243,6 @@ export function operationKeys(operation: ProjectionOperation): EntityKey[] {
       return entityId
         ? [entityKey('membership', membershipId(chatId, entityId)), entityKey('unread', chatId)]
         : [entityKey('unread', chatId)]
-    case 'presence_changed':
-      if (!entityId) throw new Error(`${event} revision requires entity_id`)
-      return [entityKey('presence', entityId)]
     case 'agent_changed':
       if (!entityId) throw new Error(`${event} revision requires entity_id`)
       return [entityKey('identity', entityId)]
@@ -261,6 +256,7 @@ export function operationKeys(operation: ProjectionOperation): EntityKey[] {
     case 'workspace_changed':
     case 'device_changed':
     case 'gugu_decision_event':
+    case 'presence_changed':
       return []
     default:
       throw new Error(`unknown account revision event: ${event}`)

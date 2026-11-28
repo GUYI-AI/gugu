@@ -1,5 +1,5 @@
 {
   "repository": "GUYI-AI/gugu-supabase",
-  "ref": "38f13321dbd0dfa656695bdcc7f04370a7c8d798",
-  "status": "Backend #428 merged on dev (webhook agent delivery fix, #420): contains #425 (group webhooks), #426, #421 and every earlier dev commit; the same commit staging runs."
+  "ref": "829d94b7cb35545dffa4a43adbda35dc9ccc2257",
+  "status": "Backend #447 (agent presence broadcast on presence:owner / presence:chat channels with a per-agent seq; presence_changed journal fan-out and wake budget removed), on top of dev 205a6d33, which contains #428 (38f13321) and every earlier dev commit. Repin to the merge commit once #447 lands."
 }

@@ -75,7 +75,7 @@ let nextChannelId = 1
 let nextPrivateUserEventBusListenerId = 1
 
 const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10000, 30000]
-const SUBSCRIBE_WATCHDOG_MS = 5000
+export const SUBSCRIBE_WATCHDOG_MS = 5000
 // @@@stale-subscription-watchdog (#840) - if a subscribed channel hasn't received any broadcast
 // event for this long, the backend (e.g. a stalled Logflare consumer) may have silently dropped
 // delivery while keeping the WebSocket alive. Force a reconnect to re-establish event flow +

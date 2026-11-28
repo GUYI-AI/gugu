@@ -30,7 +30,6 @@ export const IM_STORE_NAMES = [
   'identity',
   'chat',
   'membership',
-  'presence',
   'outbox',
   'view',
   'sync_state',
@@ -59,7 +58,6 @@ const KEY_PATHS: Record<ImStoreName, string[]> = {
   identity: ['accountId', 'id'],
   chat: ['accountId', 'id'],
   membership: ['accountId', 'chatId', 'identityId'],
-  presence: ['accountId', 'identityId'],
   outbox: ['accountId', 'id'],
   view: ['accountId', 'key'],
   sync_state: ['accountId', 'key'],
@@ -104,6 +102,15 @@ async function openCurrentDatabase(factory: IDBFactory): Promise<IDBDatabase> {
     state = { state: 'verified' }
   }
   if (state?.state === 'verified' && await deleteDatabase(factory, LEGACY_DB_NAME)) await writeMigrationState(current, 'done')
+  // Databases made before agent status moved to its channels still hold a presence store nothing here reads or writes.
+  // The store stays (dropping it is a schema change, which locks out older clients sharing this database); its rows are
+  // cleared once, and an older client writing there again is cleared at the next open.
+  if (current.objectStoreNames.contains('presence')
+    && await requestResult<number>(current.transaction('presence', 'readonly').objectStore('presence').count()) > 0) {
+    const sweep = current.transaction('presence', 'readwrite')
+    sweep.objectStore('presence').clear()
+    await transactionDone(sweep)
+  }
   return current
 }
 
@@ -622,8 +629,6 @@ function validateCurrentRow(store: ImStoreName, raw: unknown, accountId: string)
       const identity = displayIdentityFromRow(raw.value)
       if (identity.id !== raw.id) throw new Error('identity relation')
       return { ...raw, value: identity } as unknown as LocalImRow
-    } else if (store === 'presence') {
-      if (!isRecord(raw.value)) throw new Error('value')
     } else if (store === 'chat') {
       const value = raw.value
       if (!isRecord(value) || value.id !== raw.id

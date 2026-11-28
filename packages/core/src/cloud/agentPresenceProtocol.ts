@@ -11,7 +11,8 @@ import type {
 import { parseAgentStatus, parseAgentStatusDetail, type AgentStatusView } from '../shared/agentStatus'
 import { VALID_AGENT_TYPES } from '../agentTypes'
 
-// @@@agent-presence-protocol - Parse the unified presence payload emitted by identity.broadcast_agent_presence_from_runtime
+// @@@agent-presence-protocol - Parse the unified presence payload: identity.build_agent_presence_payload, carried by the
+// presence channels' broadcasts (identity.publish_agent_presence) and by get_agent_presence_batch.
 
 export type AgentPresencePayload = {
   agentUserId: string
@@ -60,6 +61,11 @@ export type AgentPresencePayload = {
   // @@@2175 连续异常 deliver 回合计数(payload 单源函数 COALESCE 到 0);渲染按阈值派生「异常」态。
   // 缺字段(旧 payload)→ 0 = 不判异常,向后兼容。
   consecutiveDeliverFailures: number
+  /**
+   * The agent's presence sequence: it grows with every broadcast of this agent, in commit order. A reader keeps the
+   * higher one. null = a payload without it (a removed agent, or a backend before the presence channels).
+   */
+  seq: number | null
   updatedAt: string
 }
 
@@ -86,6 +92,7 @@ type RawPresence = {
   device_last_seen_at?: unknown
   host_runtime_capability?: unknown
   consecutive_deliver_failures?: unknown
+  seq?: unknown
   updated_at?: unknown
 }
 
@@ -182,6 +189,7 @@ export function parseAgentPresencePayload(raw: unknown): AgentPresencePayload | 
     // @@@2175 与 #1402 相反这里 `?? 0` 是对的:0 与缺失同义(都 = 无异常证据,不点灯),不存在误报面。
     // 负数/非整(畸形)也归 0——灯只由可信计数点亮。
     consecutiveDeliverFailures: asNonNegativeInt(presence.consecutive_deliver_failures) ?? 0,
+    seq: asNonNegativeInt(presence.seq),
     updatedAt,
   }
 }

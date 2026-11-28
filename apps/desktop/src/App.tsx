@@ -15,7 +15,7 @@ import { Tooltip } from './components/ui/Tooltip'
 import { UnfinishedAgentCreateSweeper } from './components/UnfinishedAgentCreateSweeper'
 import { StarterContinuationHost } from './components/StarterContinuationHost'
 import { ShareIntakeHost } from './mobile/share-intake/ShareIntakeHost'
-import { AgentPresencePrewarm } from './components/AgentPresencePrewarm'
+import { AgentPresenceOwnerChannel } from './components/AgentPresenceOwnerChannel'
 import { AgentStatusFeedBridge } from './components/AgentStatusFeedBridge'
 import { ImagePreviewProvider } from './components/ImagePreviewProvider'
 import { SessionExpiredNotice } from './components/SessionExpiredNotice'
@@ -69,8 +69,7 @@ function AuthenticatedProduct({ user }: { user: AuthUser }) {
 
   useEffect(() => {
     // @@@3839 只交代**身份**。presence 缓存是按账号划界的,换人(含登出)时 store 自己清空;
-    // 「有哪些 agent 值得预热」由真正知道这件事的会话列表去说(prewarmAgentPresence),
-    // ❌ 不再从这里传一个恒为空、且 store 一个字都不读的 ownedAgentIds。
+    // 我的 agent 由主人频道(AgentPresenceOwnerChannel)带,群里的由打开的群的频道带。
     setPresenceBusContext({ currentUserId: effectsActive ? user.id : null })
     return () => {
       setPresenceBusContext({ currentUserId: null })
@@ -89,7 +88,7 @@ function AuthenticatedProduct({ user }: { user: AuthUser }) {
           />
         </ShellErrorBoundary>
         <KeyboardDispatcher />
-        <AgentPresencePrewarm />
+        <AgentPresenceOwnerChannel userId={effectsActive ? user.id : null} />
         <AgentStatusFeedBridge />
         {/* 续建记录由壳持有；未完成创建的继续/删除入口在任务侧栏。 */}
         <StarterContinuationHost active={effectsActive} />

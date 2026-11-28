@@ -293,8 +293,9 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const sourceChat = useChatsWhile(activeChat?.kind === 'topic').find((chat) => chat.id === activeChat?.source_chat_id)
   const composerGroupMembers = useMemo(() => activeChat?.kind !== 'topic' ? roster
     : topicMentionCandidates(roster, sourceChat?.member_user_ids, activeChat.member_user_ids, identitiesById), [roster, activeChat?.kind, activeChat?.member_user_ids, sourceChat?.member_user_ids, identitiesById])
-  // One presence subscription per agent drives headers, roster and profile cards.
-  const groupAgentStatuses = useAgentDisplayStatuses(groupAgentIds)
+  // One presence subscription per agent drives headers, roster and profile cards; the chat's presence channel carries them
+  // while the chat is on screen. Hidden, it holds no channel: shown again, the channel subscribes and reads them once.
+  const groupAgentStatuses = useAgentDisplayStatuses(groupAgentIds, surfaceVisible ? activeChatId : null)
   const shownAgent = useShownAgentStatus() // #7199 画头像 / 状态字用的那一份;在跑、提醒照旧读原读数
   const groupAgentRecentActivity = useAgentRecentActivity(groupAgentIds)
   // 群(话题)的运行 token:输入框上方那一排运行条。

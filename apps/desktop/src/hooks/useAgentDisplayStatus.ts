@@ -7,6 +7,7 @@ import {
   subscribeAgentPresence,
 } from '../lib/agentPresenceStore'
 import { useSelect, type Readable } from '../lib/selectStore'
+import { chatPresenceChannel, useAgentPresenceChannel } from '../lib/agentPresenceChannels'
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
 import { i18n } from '@/i18n'
 
@@ -48,10 +49,13 @@ export function useAgentDisplayStatus(agentUserId: string | null | undefined) {
 }
 
 // @@@batched-presence-hook - One stable subscription per agent ID; aggregated map for surfaces that render N agents.
-// Used by group panel and any future chat-list badges. Re-subscribes only when the ID set changes.
+// Re-subscribes only when the ID set changes. `chatId` = these are the agents of that chat, on screen now: its presence
+// channel is held while the caller passes it, so their status arrives live (agentPresenceChannels); null when hidden.
 export function useAgentDisplayStatuses(
   agentUserIds: readonly string[],
+  chatId?: string | null,
 ): Record<string, AgentDisplayStatus> {
+  useAgentPresenceChannel(chatId ? chatPresenceChannel(chatId) : null, agentUserIds)
   // @@@stable-ids-key (#514) - derive the subscription key from the agent-id VALUES, not the input
   const idsKey = useMemo(
     () => Array.from(new Set(agentUserIds.filter(Boolean))).sort().join(','),

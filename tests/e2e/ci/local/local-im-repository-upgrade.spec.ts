@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test'
 const DB_NAME = 'gugu.localSync.v1'
 // #3967: the legacy database is copied into this one, then deleted once the copy reads back identical.
 const CURRENT_DB_NAME = 'gugu.localSync.v2'
-const CURRENT_STORES = ['chat', 'identity', 'membership', 'migration', 'outbox', 'presence', 'retired_accounts', 'sync_state', 'view']
+const CURRENT_STORES = ['chat', 'identity', 'membership', 'migration', 'outbox', 'retired_accounts', 'sync_state', 'view']
 // Same Vite origin and real IndexedDB/modules, without booting the unrelated renderer for every row shape.
 const FIXTURE_PAGE = '/@fs/' + resolve('tests/fixtures/local-im-repository.html').replaceAll('\\', '/').replace(/^\//, '')
 
@@ -82,7 +82,6 @@ test('real repository API commits, selects, subscribes, hands an older build\'s 
       })
       transaction.putChat('chat-1', { id: 'chat-1', kind: 'group', name: 'A', created_at: '2026-08-09T00:00:00.000Z' })
       transaction.putMembership('chat-1', 'identity-1', { role: 'member' })
-      transaction.putPresence('identity-1', { state: 'online' })
       transaction.putView('active-chat', 'chat-1')
       transaction.putSyncState('cursor', { revision: 1 })
     })
@@ -126,7 +125,7 @@ test('real repository API commits, selects, subscribes, hands an older build\'s 
   expect(result.notifications).toEqual([0, 1])
   expect(result.committedCounts).toMatchObject({
     identity: 1, chat: 1, membership: 1,
-    presence: 1, outbox: 0, view: 1, sync_state: 1,
+    outbox: 0, view: 1, sync_state: 1,
   })
   expect(result.recoveredOutbox).toEqual(['message-1'])
   expect(result.afterAck).toEqual({ outbox: 0 })
@@ -199,7 +198,6 @@ test('v2 upgrade atomically normalizes account rows and removes every legacy sto
     membership: { keyPath: ['accountId', 'chatId', 'identityId'], indexes: [] },
     migration: { keyPath: 'key', indexes: [] },
     outbox: { keyPath: ['accountId', 'id'], indexes: [] },
-    presence: { keyPath: ['accountId', 'identityId'], indexes: [] },
     retired_accounts: { keyPath: 'accountId', indexes: [] },
     sync_state: { keyPath: ['accountId', 'key'], indexes: [] },
     view: { keyPath: ['accountId', 'key'], indexes: [] },
@@ -297,7 +295,7 @@ test('v3 upgrades into the current database by dropping the cached message table
   })
 
   expect(result.version).toBe(1)
-  expect(result.counts).toEqual({ chat: 1, identity: 1, membership: 1, presence: 1, outbox: 1, view: 0, sync_state: 0, retired_accounts: 0, migration: 1 })
+  expect(result.counts).toEqual({ chat: 1, identity: 1, membership: 1, outbox: 1, view: 0, sync_state: 0, retired_accounts: 0, migration: 1 })
 })
 
 for (const version of [1, 2] as const) {
@@ -380,7 +378,7 @@ test('a synchronous DataCloneError aborts earlier requests in the same real IDB 
 
   expect(result.error).toContain('DataCloneError')
   expect(result.notifications).toEqual([0])
-  expect(Object.values(result.counts)).toEqual([0, 0, 0, 0, 0, 0, 0])
+  expect(Object.values(result.counts)).toEqual([0, 0, 0, 0, 0, 0])
 })
 
 // Unsent messages exist nowhere else, so the outbox is the one store that stays strict.
@@ -405,7 +403,7 @@ test('malformed current v4 outbox row fails at repository open', async ({ page }
   expect(result.loaded).toBe(-1)
 })
 
-for (const store of ['identity', 'chat', 'membership', 'presence', 'view', 'sync_state'] as const) {
+for (const store of ['identity', 'chat', 'membership', 'view', 'sync_state'] as const) {
   test(`malformed current v4 ${store} row drops alone and the account snapshot rebuilds it`, async ({ page }) => {
     await seedMalformedCurrentVersion(page, store)
     await expectDroppedAloneThenRebuilt(page, { store, reason: `invalid current ${store} row` })
@@ -761,7 +759,7 @@ async function expectDroppedAloneThenRebuilt(
 
   const healthy = {
     identity: ['identity-ok'], chat: ['chat-ok'], membership: ['chat-ok/identity-ok'],
-    presence: ['identity-ok'], outbox: ['outbox-ok'], view: ['list-scroll'],
+    outbox: ['outbox-ok'], view: ['list-scroll'],
     // The revision cursor is forgotten on any drop: that is what sends this start through the full snapshot.
     sync_state: ['other'],
   } as Record<string, string[]>
@@ -778,7 +776,7 @@ async function expectDroppedAloneThenRebuilt(
 
 async function seedMalformedCurrentVersion(
   page: Page,
-  malformedStore: 'identity' | 'chat' | 'membership' | 'presence' | 'outbox' | 'view' | 'sync_state',
+  malformedStore: 'identity' | 'chat' | 'membership' | 'outbox' | 'view' | 'sync_state',
 ): Promise<void> {
   await page.evaluate(async ({ name, malformedStore, malformedMessage, healthy }) => {
     const keyPaths: Record<string, string[]> = {

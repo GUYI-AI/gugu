@@ -15,7 +15,6 @@ const coordinatorLog = rendererLogger('chat/account-revision')
 
 const OPERATION_VIEW_PREFIX = 'account-revision-operation:'
 const RETRY_DELAYS_MS = [1000, 2000, 5000, 10000, 30000] as const
-export const PRESENCE_TRAILING_DRAIN_MS = 2100
 
 export const ACCOUNT_REVISION_EVENTS = [
   'agent_changed',
@@ -236,7 +235,6 @@ export function createAccountRevisionCoordinator(
   let dispatchPromise: Promise<void> = Promise.resolve()
   let unsubscribeRepository: (() => void) | null = null
   let retryTimer: ReturnType<typeof setTimeout> | null = null
-  let presenceTrailingTimer: ReturnType<typeof setTimeout> | null = null
   const baseline = (imSelectors.syncState('account-revision-cursor')(repository.snapshot()) as { revision: string } | undefined)?.revision ?? '0'
 
   // Inline payloads and recovered bodies share this one commit-then-notify path.
@@ -327,24 +325,6 @@ export function createAccountRevisionCoordinator(
     retryTimer = null
   }
 
-  const clearPresenceTrailingTimer = () => {
-    if (!presenceTrailingTimer) return
-    clearTimeout(presenceTrailingTimer)
-    presenceTrailingTimer = null
-  }
-
-  const schedulePresenceTrailingDrain = () => {
-    if (!active) return
-    clearPresenceTrailingTimer()
-    presenceTrailingTimer = setTimeout(() => {
-      presenceTrailingTimer = null
-      // Presence rows written during the server suppression window have no
-      // realtime wake. Re-read the durable cursor after that window so the
-      // final snapshot is not dependent on another mutation arriving later.
-      runtime.wake()
-    }, PRESENCE_TRAILING_DRAIN_MS)
-  }
-
   // 最早到期的那个退避 registration 到点时再派发一次(派发只叫到期且还有未消费 operation 的)。
   function scheduleRetry() {
     if (!active) return
@@ -367,7 +347,8 @@ export function createAccountRevisionCoordinator(
     if (dispatching) return
     dispatching = true
     const running = (async () => {
-      let firstFailure: { reason: unknown } | null = null
+      // Assigned inside the settlement callback below, which control-flow narrowing does not follow.
+      let firstFailure = null as { reason: unknown } | null
       do {
         dispatchRequested = false
         const ready: PendingOperation[] = []
@@ -433,9 +414,6 @@ export function createAccountRevisionCoordinator(
           for (const registration of registrations) {
             for (const pending of acknowledged) registration.consumed.delete(pending.operation.revision)
           }
-          if (acknowledged.some((pending) => pending.operation.event === 'presence_changed')) {
-            schedulePresenceTrailingDrain()
-          }
         }
         // 失败按 consumer 退避(retryAt),但❌ 在循环里 throw —— 那会把本轮派发期间新到的
         // operation(dispatchRequested)一起拖到失败方的退避定时器才处理;循环跑完再响亮失败。
@@ -467,7 +445,6 @@ export function createAccountRevisionCoordinator(
       if (!active) return
       active = false
       clearRetryTimer()
-      clearPresenceTrailingTimer()
       runtime.stop()
       unsubscribeRepository?.()
       unsubscribeRepository = null

@@ -197,6 +197,10 @@ vi.mock('../../../../apps/desktop/src/lib/agentPresenceStore', () => ({
   },
 }))
 
+vi.mock('../../../../apps/desktop/src/lib/agentPresenceChannels', () => ({
+  ownerPresenceChannel: (userId: string) => `presence:owner:${userId}`,
+  useAgentPresenceChannel: () => undefined,
+}))
 vi.mock('../../../../apps/desktop/src/components/ChatListPanel', () => ({ ChatListPanel: () => null }))
 vi.mock('../../../../apps/desktop/src/components/ChatAreaPanel', () => ({ ChatAreaPanel: () => null }))
 vi.mock('../../../../apps/desktop/src/components/ContactsPanel', () => ({ ContactsPanel: () => null }))
@@ -213,6 +217,7 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({
   useChatStore: () => ({
     activeChatId: null,
     chats: [],
+    identitiesById: {},
     refreshChats: vi.fn(),
     setActiveChatId: vi.fn(),
     upsertChat: vi.fn(),

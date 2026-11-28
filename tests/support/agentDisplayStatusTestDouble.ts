@@ -23,6 +23,7 @@ const fakePayload: AgentPresencePayload = {
   deviceStatus: 'online',
   hostRuntimeCapability: null,
   consecutiveDeliverFailures: 0,
+  seq: null,
   updatedAt: '2026-07-20T00:00:00.000Z',
 }
 
