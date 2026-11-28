@@ -221,8 +221,7 @@ function wireViewer(pswp: PhotoSwipe, view: ViewerWindow, dialogLabel: string, r
     })().catch((error: unknown) => {
       if (!current || pswp.isDestroying || !pswp.isOpen) return
       log.warn({ error: String(error) }, 'image bytes unavailable')
-      // An image laid out by no pixels yet (@@@thumb-is-not-the-size) says so rather than staying an empty black slide; one
-      // over its thumbnail keeps it. Either way the read can be tried again here.
+      // An image laid out by no pixels yet (@@@thumb-is-not-the-size) says so; one over its thumbnail keeps it. Both can read again.
       if (!data.src || !data.sizeKnown) {
         const content = pswp.contentLoader.getContentByIndex(index)
         if (content) { content.state = 'error'; content.displayError() }
@@ -261,7 +260,7 @@ function wireViewer(pswp: PhotoSwipe, view: ViewerWindow, dialogLabel: string, r
   pswp.on('loadComplete', ({ content, isError }) => {
     const data = content.data as ViewerSlide
     const img = content.element
-    if ((data.item.preview || data.item.full) && content.index === pswp.currIndex) redraw()
+    if (content.index === pswp.currIndex) redraw()
     if (data.sizeKnown || pswp.isDestroying || isError || !(img instanceof view.HTMLImageElement)) return
     // @@@thumb-is-not-the-size - a thumbnail's pixels are smaller than its original: laid out by them, the picture opened
     // at thumbnail size and stayed there once the original came. With an original to come and no recorded size, the
@@ -413,8 +412,7 @@ function ImageViewerChrome({ viewer, mobile, onEdit }: { viewer: OpenViewer; mob
   const current = items[index]
   const slide = pswp.currSlide
   const data = slide?.data as ViewerSlide | undefined
-  // Something is still being read for the slide shown: its thumbnail, or the original over the thumbnail it opened from.
-  const reading = data?.item === current && (current.preview || current.full) && !slide?.content.isError()
+  const reading = data?.item === current && !slide?.content.isError()
     && (slide?.content.state !== 'loaded' || (current.full && data.src !== data.original))
   const { copied, confirm } = useCopyConfirmation(current)
 

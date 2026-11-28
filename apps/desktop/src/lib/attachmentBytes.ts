@@ -406,8 +406,7 @@ function attachmentImageItem(source: AttachmentSource, fileName: string, origin?
  * click was on, already drawn: the viewer opens out of it with its pixels, and only the original is read after it.
  * `size`: the original's, as its message knows it: the thumbnail is laid out as the original from the first frame.
  */
-export function openAttachmentImage(source: AttachmentSource, fileName: string, origin?: ImageViewerItem['source'],
-  { picture, size }: { picture?: HTMLImageElement; size?: Size } = {}): void {
+export function openAttachmentImage(source: AttachmentSource, fileName: string, origin?: ImageViewerItem['source'], { picture, size }: { picture?: HTMLImageElement; size?: Size } = {}): void {
   const item = attachmentImageItem(source, fileName, origin)
   if (size) item.size = size
   if (!picture?.complete || !picture.naturalWidth) return openImageViewer([item])
@@ -461,7 +460,6 @@ export async function openViewerFromClick(items: ImageViewerItem[], index: numbe
   if (!clicked?.preview && !clicked?.thumb) throw new Error('The clicked image is not among the images to open')
   const click = ++latestClick
   if (box) clicked.thumbRect = box
-  // A size its caller already knows (the message's) is all the first frame needs from the record.
   const firstFrame = clicked.preview ? clicked.preview().then(async url => {
     if (clicked.size || clicked.full) return { url, size: clicked.size }
     const image = new Image()

@@ -1,4 +1,4 @@
-import { hasAttachmentDeliveryHints, type ChatState, type DeliveryMessagePresentation } from '@gugu/session-chat-ui';
+import { hasAttachmentDeliveryHints, type ChatAttachment, type ChatState, type DeliveryMessagePresentation } from '@gugu/session-chat-ui';
 import type { MessageItem } from '@gugu/core/shared/types/chat';
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels';
@@ -21,7 +21,6 @@ export function originalMessagePresentation(message: MessageItem): DeliveryMessa
   // when the message's file changes.
   const folder = attachment.source.kind === 'item' ? `gugu-file://${attachment.source.itemId}?v=${attachment.source.version}` : undefined;
   const href = attachment.kind === 'image' ? folder : folder ?? sentAttachmentLink(message.id, message.chat_id);
-  // A picture keeps the original's size its message knows, as a chat bubble does: its box and the viewer lay it out by it.
   const size = attachment.kind === 'image' ? originalSize(attachment) : undefined;
   return { text: attachment.caption ?? '', attachments: [{ id: sentAttachmentLink(message.id), name: attachment.fileName,
     kind: attachment.kind === 'image' ? 'image' : 'file', ...(href ? { href } : {}), ...(size ? { imageDimensions: size } : {}) }] };
@@ -75,8 +74,7 @@ function deliveredSource(link: string | undefined): Extract<AttachmentSource, { 
  * by its source; a task's own attachment by `read`, the read that drew its thumbnail. A repeated click while the viewer
  * is opening is the viewer's own to drop (@@@one-viewer).
  */
-export function openTranscriptImage(attachment: { id: string; name: string; href?: string; dataUrl?: string; imageDimensions?: { width: number; height: number } },
-  thumb: HTMLElement | undefined,
+export function openTranscriptImage(attachment: Pick<ChatAttachment, 'id' | 'name' | 'href' | 'dataUrl' | 'imageDimensions'>, thumb: HTMLElement | undefined,
   read: (attachment: { id: string; name: string }) => Promise<string | null>): void {
   const picture = thumb?.tagName === 'IMG' ? thumb as HTMLImageElement : undefined;
   const source = deliveredSource(attachment.href) ?? deliveredSource(attachment.id);
