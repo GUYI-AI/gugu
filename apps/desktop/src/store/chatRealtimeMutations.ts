@@ -36,18 +36,20 @@ export function applyMessageDeletedEvent(
 //
 // 自己的切换也走这条：每次变更都把更早发起的回应读作废（@@@reaction-read-order，chatMessageRevalidation），
 // 乱序到达的旧读数不再盖掉新值，取消的 👍 不会复活；读数被作废时 reactions 缺席，这里什么都不改，等这次变更自己的读数。
-export async function applyReactionChangedEvent(
-  reactedId: string,
+export async function applyReactionChangedEvents(
+  reactedIds: readonly string[],
   userId: string,
   activeChatId: string,
   m: RealtimeMessageMutators,
 ): Promise<void> {
-  const overlays = await chatService.fetchMessageOverlays([{ id: reactedId, chat_id: activeChatId }], userId)
-  const reactions = overlays.get(reactedId)?.reactions
-  if (!reactions) return
-  // The overlay read already patched the stored row (loadMessageOverlays), whose publication normally shows it; patch only views still behind.
-  const patch = (rows: MessageItem[]) => rows.some(msg => msg.id === reactedId && !sameReactions(msg.reactions, reactions))
-    ? rows.map(msg => (msg.id === reactedId ? { ...msg, reactions } : msg))
+  // One read for every message a batch of changes touched: a catch-up page can carry hundreds of them.
+  const overlays = await chatService.fetchMessageOverlays(reactedIds.map(id => ({ id, chat_id: activeChatId })), userId)
+  const reactions = new Map(reactedIds.flatMap(id => { const next = overlays.get(id)?.reactions; return next ? [[id, next] as const] : [] }))
+  if (reactions.size === 0) return
+  // The overlay read already patched the stored rows (loadMessageOverlays), whose publication normally shows them; patch only views still behind.
+  const behind = (msg: MessageItem) => reactions.has(msg.id) && !sameReactions(msg.reactions, reactions.get(msg.id)!)
+  const patch = (rows: MessageItem[]) => rows.some(behind)
+    ? rows.map(msg => (behind(msg) ? { ...msg, reactions: reactions.get(msg.id)! } : msg))
     : rows
   m.setMessagesAndCache(patch, activeChatId)
   // 话题回复上的回应同样活更新（thread 视图不走 L2 持久化，内存 patch 即可）。

@@ -26,7 +26,7 @@ import {
 } from './accountRevisionCoordinator'
 import {
   applyMessageDeletedEvent,
-  applyReactionChangedEvent,
+  applyReactionChangedEvents,
   reconcileMemberReadSeqs,
   type RealtimeMessageMutators,
 } from '../store/chatRealtimeMutations'
@@ -83,8 +83,9 @@ export function subscribeChatLineRevisions(subscribe: SubscribeAccountRevision, 
       for (const { entityId } of keys) if (!entityId) throw new Error('reaction_changed revision requires entity_id')
       // Every change voids reaction reads begun before it, on screen or not (@@@reaction-read-order).
       invalidateReactions(keys.map(({ entityId }) => entityId!))
-      const unique = new Map(keys.filter((key) => key.chatId === line.chatId()).map(({ chatId, entityId }) => [`${chatId}:${entityId}`, { chatId, entityId: entityId! }] as const))
-      await Promise.all([...unique.values()].map(({ chatId, entityId }) => applyReactionChangedEvent(entityId, line.userId, chatId, line)))
+      const chatId = line.chatId()
+      const reacted = [...new Set(keys.filter((key) => key.chatId === chatId).map(({ entityId }) => entityId!))]
+      if (chatId && reacted.length > 0) await applyReactionChangedEvents(reacted, line.userId, chatId, line)
     }),
     subscribe('delivery_changed', applyDeliveryRevisions(line)),
     // @@@5649 已读水位直接来自事件载荷,不再回读 chat_members。
