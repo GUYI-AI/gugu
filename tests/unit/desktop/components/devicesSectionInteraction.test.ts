@@ -360,6 +360,7 @@ describe('DevicesSection interaction', () => {
     })
     await openMenuItem('settings-device-remove-button')
     const dialog = document.body.querySelector('[data-testid="settings-device-remove-dialog"]') as HTMLElement
+    expect(dialog.textContent).toContain('Research Agent')
     const confirmButton = buttonByText(dialog, '移除这台机器')
     expect(confirmButton.disabled).toBe(true)
     const checkbox = dialog.querySelector('input[type="checkbox"]') as HTMLInputElement
@@ -545,11 +546,24 @@ describe('DevicesSection interaction', () => {
     expect(ids).toEqual(['gpu'])
   })
 
-  it('#6264 SSH 装上的 server:菜单里有复制地址,与移除分开的「卸载」', async () => {
-    const invoke = vi.fn(async (channel: string) => (channel === 'server-ssh-machines:describe' ? [{ deviceId: 'srv', display: 'alice@box' }] : null))
+  it('shows the bound agent count and requires cascade consent when uninstalling an SSH server', async () => {
+    const invoke = vi.fn(async (channel: string, _arg?: unknown) => {
+      if (channel === 'server-ssh-machines:describe') return [{ deviceId: 'srv', display: 'alice@box' }]
+      if (channel === 'server-ssh-machines:uninstall-start') {
+        const runId = 'uninstall-1'
+        return { runId, state: { runId, phase: 'confirm', inspection: { installed: true, version: '1.0', accounts: [] } } }
+      }
+      return null
+    })
     ;(window as unknown as { electronAPI: unknown }).electronAPI = { invoke, eventOn: () => () => undefined }
     try {
-      const value = store({ devices: [device({ device_id: 'srv', label: 'Linux 1', capabilities: { terminals: [], runtimes: [], host_kind: 'server' } })] })
+      const value = store({
+        devices: [device({ device_id: 'srv', label: 'Linux 1', capabilities: { terminals: [], runtimes: [], host_kind: 'server' } })],
+        listBoundAgents: vi.fn(async () => [
+          { id: 'agent-1', display_name: 'Research Agent', avatar: null },
+          { id: 'agent-2', display_name: 'Review Agent', avatar: null },
+        ]),
+      })
       await act(async () => {
         root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection)))
       })
@@ -557,7 +571,28 @@ describe('DevicesSection interaction', () => {
       await openMenu(0)
       expect(document.body.querySelector('[data-testid="settings-device-copy-address"]')).not.toBeNull()
       expect(document.body.querySelector('[data-testid="settings-device-remove-button"]')?.textContent).toContain('移除这台机器')
-      expect(document.body.querySelector('[data-testid="settings-device-uninstall-button"]')?.textContent).toContain('卸载咕咕 server')
+      const item = document.body.querySelector<HTMLElement>('[data-testid="settings-device-uninstall-button"]')!
+      expect(item.textContent).toContain('卸载咕咕 server')
+      await act(async () => { item.click() })
+      const dialog = document.body.querySelector<HTMLElement>('[data-testid="settings-device-uninstall-dialog"]')!
+      expect(value.listBoundAgents).toHaveBeenCalledWith('srv')
+      expect(dialog.textContent).toContain('将同时删除这台机器上你的 2 个智能体。')
+      expect(dialog.textContent).toContain('同时永久删除这 2 个智能体')
+      expect(dialog.textContent).not.toContain('Research Agent')
+      expect(dialog.textContent).not.toContain('Review Agent')
+
+      const confirm = buttonByText(dialog, '卸载')
+      const checkbox = dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+      expect(checkbox.checked).toBe(false)
+      expect(confirm.disabled).toBe(true)
+      await act(async () => { checkbox.click() })
+      expect(confirm.disabled).toBe(false)
+      await act(async () => { checkbox.click() })
+      expect(confirm.disabled).toBe(true)
+      await act(async () => { buttonByText(dialog, '取消').click() })
+      expect(invoke).toHaveBeenCalledWith('server-ssh-machines:uninstall-cancel', 'uninstall-1')
+      expect(invoke.mock.calls.map(([channel]) => channel)).not.toContain('server-ssh-machines:uninstall-confirm')
+      expect(value.remove).not.toHaveBeenCalled()
     } finally {
       delete (window as unknown as { electronAPI?: unknown }).electronAPI
     }

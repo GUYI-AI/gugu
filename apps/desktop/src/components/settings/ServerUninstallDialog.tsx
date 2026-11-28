@@ -173,7 +173,7 @@ export function ServerUninstallDialog({
         )}
 
         {(phase === 'confirm' || uninstalling) && (
-          <BoundAgentsConfirm state={agents} onCascadeChange={onCascadeChange} />
+          <BoundAgentsConfirm state={agents} onCascadeChange={onCascadeChange} showAgentNames={false} />
         )}
 
         {uninstalling && <div className={`${body} ${muted}`}>{t('devices.uninstall.uninstalling')}</div>}

@@ -13,15 +13,17 @@ import { Sheet } from '../ui/Sheet'
 
 const body = 'text-[length:var(--font-body)] leading-[1.5]'
 
-/** 这台机器上你的智能体:列出来 + 一个「我确认连同删除」的勾。移除与卸载两个确认页共用。 */
+/** 移除与卸载共用绑定智能体数量和级联确认；移除页还显示姓名。 */
 export function BoundAgentsConfirm({
   state,
   onCascadeChange,
   removesVersion = false,
+  showAgentNames = true,
 }: {
   state: BoundAgentsState
   onCascadeChange: (value: boolean) => void
   removesVersion?: boolean
+  showAgentNames?: boolean
 }) {
   const { t } = useTranslation('settings')
   if (state.loading) return <div className={`${body} text-[var(--muted-fg)]`}>{t('devices.checkingAgents')}</div>
@@ -29,12 +31,13 @@ export function BoundAgentsConfirm({
   return (
     <div className="flex flex-col gap-2">
       <div className={`${body} text-[var(--muted-fg)]`}>{t(removesVersion ? 'devices.remove.version.boundAgents' : 'devices.boundAgents', { count: state.agents.length })}</div>
-      {/* 对话框里的清单:密度面板,❌ 再画一圈框(框套框)。 */}
-      <div className="flex max-h-40 flex-col gap-[5px] overflow-y-auto rounded-[var(--radius-document)] bg-foreground/[0.025] px-[10px] py-2 dark:bg-foreground/[0.04]">
-        {state.agents.map((agent) => (
-          <div key={agent.id} className={`${body} truncate text-[var(--fg)]`}>{agent.display_name}</div>
-        ))}
-      </div>
+      {showAgentNames && (
+        <div className="flex max-h-40 flex-col gap-[5px] overflow-y-auto rounded-[var(--radius-document)] bg-foreground/[0.025] px-[10px] py-2 dark:bg-foreground/[0.04]">
+          {state.agents.map((agent) => (
+            <div key={agent.id} className={`${body} truncate text-[var(--fg)]`}>{agent.display_name}</div>
+          ))}
+        </div>
+      )}
       <label className={`${body} flex cursor-pointer items-start gap-2 text-[var(--fg)]`}>
         <input
           type="checkbox"
