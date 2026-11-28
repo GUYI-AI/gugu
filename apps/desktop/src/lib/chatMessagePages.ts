@@ -1,4 +1,5 @@
 import { messageItemFromRow, type RawMessageRow } from '@gugu/core/cloud/messageItem'
+import { isMessageHidden } from './localMessageHides'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { ingestMessagePage } from './messageIngest'
 import { applyMessageOverlays } from './chatMessageRevalidation'
@@ -11,5 +12,6 @@ export async function ingestFetchedMessagePage(raw: RawMessageRow[], userId: str
   if (page.afterSeq === undefined) rows.reverse()
   if (page.threadRootId) rows = await applyMessageOverlays(rows, userId)
   await ingestMessagePage(userId, rows, page.chatId, page.limit, page.beforeSeq, page.afterSeq, page.threadRootId ?? null, raw.length)
-  return rows
+  // The store refused the rows this device hides (@@@local-hide); the page shown must not bring them back either.
+  return rows.filter(row => !isMessageHidden(userId, row))
 }
