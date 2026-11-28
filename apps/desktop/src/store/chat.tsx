@@ -393,13 +393,13 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
       try {
         // @@@5856 原来这里还并行拉一次 chat.thread_summaries。群 thread 面板退役后没有任何 surface
         // 读它 —— 每开一次会话白跑一次往返。话题是**另一条 chat**,它的摘要不在这条线的聚合里。
-        const [threadSnap, covered, readSeqs] = await Promise.all([
+        // The coverage question is local; only an uncovered tail adds the newest page, in the same round as the rest.
+        const [threadSnap, msgs, readSeqs] = await Promise.all([
           cache.isObserved(chatId) ? fetchOpenThreadSnapshot({ chatId, userId: userId, activeThreadRootId: () => cache.view(chatId).activeThreadRootId }) : null,
-          storedTailCovered(userId, chatId),
+          storedTailCovered(userId, chatId).then(covered => covered ? null : chatService.getMessages(chatId, userId, 'initialLoad', INITIAL_PAGE)),
           chatService.getOtherMembersReadSeqs(chatId, userId),
         ])
-        if (!covered) {
-          const msgs = await chatService.getMessages(chatId, userId, 'initialLoad', INITIAL_PAGE)
+        if (msgs) {
           // R6 被新快照取代的补洞结果不许静默丢:会话仍在屏上就抛错,让修订派发重补。
           commitHealedMessages({ chatId, apply: () => commitNewestPage(chatId, msgs, readSeqs, epoch), stillActive: () => cache.isObserved(chatId) })
         } else if (cache.isObserved(chatId)) reconcileMemberReadSeqs(chatId, readSeqs, memberReadPorts(chatId))
