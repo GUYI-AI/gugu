@@ -60,7 +60,10 @@ export type AccountRevisionRuntime = {
   register: (event: string, handler: RevisionHandler) => void
   start: () => void
   stop: () => void
+  /** There is news (a broadcast, the reconcile interval). Read now, unless a failed read is waiting out its backoff. */
   wake: (head?: string | null) => void
+  /** Conditions changed (back online, back in the foreground): the backoff starts over and the journal is read now. */
+  resume: () => void
   whenIdle: () => Promise<void>
 }
 
@@ -248,13 +251,13 @@ export function createAccountRevisionRuntime(
     if (!active) return
     if (head !== null && isCovered(head, readCursor())) return
     wakePending = true
-    if (draining) {
+    // @@@backoff - news does not shorten a backoff: the retry reads from the cursor and finds it. Only resume() does.
+    if (draining || retryTimer) {
       if (head === null) unknownHeadPending = true
       else pendingHead = pendingHead === null ? head : maxRevision(pendingHead, head)
       return
     }
     draining = true
-    clearRetryTimer()
     const runGeneration = generation
     const running = drain(runGeneration)
     drainPromise = running
@@ -309,6 +312,11 @@ export function createAccountRevisionRuntime(
       unsubscribeWake = null
     },
     wake: scheduleWake,
+    resume() {
+      retryAttempt = 0
+      clearRetryTimer()
+      scheduleWake()
+    },
     whenIdle() {
       return drainPromise
     },

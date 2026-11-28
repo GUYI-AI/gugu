@@ -28,6 +28,7 @@ const { openImRepositoryMock, revisionListeners, revisionCoordinatorMock, coordi
       }
       return () => { for (const event of claimed) revisionListeners.get(event)?.delete(listener) }
     }),
+    resume: vi.fn(),
   },
 }))
 vi.mock('../../../../apps/desktop/src/lib/onScreenChat', async (original) => ({

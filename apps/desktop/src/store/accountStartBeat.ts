@@ -56,10 +56,10 @@ export function useAccountStartBeat(userId: string | null | undefined, ports: {
         })
     }
     open()
-    const beat = () => {
+    const beat = (kind: 'wake' | 'resume' = 'wake') => {
       open()
       const coordinator = coordinatorRef.current
-      if (coordinator) coordinator.wake()
+      if (coordinator) coordinator[kind]()
       else if (registrationsRef.current.size > 0) void getRevisionCoordinator().catch((error) => revisionLog.error({ error }, 'coordinator failed'))
     }
     const stopBeat = watchRendererRevisionReconcile(beat)
@@ -74,7 +74,7 @@ export function useAccountStartBeat(userId: string | null | undefined, ports: {
     const onPhone = (event: Event) => onPublication((event as CustomEvent).detail)
     window.addEventListener(nativePersonalPublicationChannel.name, onPhone)
     // A failed backend write asks for this same beat now; the beat's pull is what tells the backend came back.
-    const unbindProbe = bindBackendProbe(beat)
+    const unbindProbe = bindBackendProbe(() => beat())
     // Reads this account could not write, and wakes it read, are this account's: they never carry over to the next one.
     return () => { cancelled = true; stopBeat(); stopNative?.(); window.removeEventListener(nativePersonalPublicationChannel.name, onPhone); unbindProbe(); forgetMessageAgentWakes() }
   }, [coordinatorRef, getImRepository, getRevisionCoordinator, loadChats, paintLocal, registrationsRef, setChats, setChatsLoad, userId])
