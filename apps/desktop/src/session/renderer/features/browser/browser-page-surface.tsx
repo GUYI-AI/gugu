@@ -1,11 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { rendererLogger } from '@/lib/log';
 import { events, rpc } from '@renderer/lib/ipc';
 import { browserPageEventChannel, type BrowserPageMode } from '@shared/events/browserEvents';
 import { forgetPageFocus, guardHostFocus, notePageFocus } from './browser-host-focus';
 import { BrowserPageHandle } from './browser-page-handle';
 import { isBrowserPageOccluded, type PageRect } from './browser-page-occlusion';
-import { isElementVisible } from '@/lib/elementVisibility';
+import { clippedElementBox, isElementVisible } from '@/lib/elementVisibility';
 import { followBox } from '@renderer/lib/layout/follow-box';
 
 const surfaceLog = rendererLogger('browser/page-surface');
@@ -19,13 +19,15 @@ const OCCLUSION_CHECK_MS = 100;
 const SAMPLE_MS = 250;
 /** 浮层压上来时先换上一张网页截图,最多等它这么久。 */
 const SNAPSHOT_WAIT_MS = 250;
+/** The size a picture of the page is of: the one it was taken at, or the one its box has now. */
+const sizeOf = (element: HTMLElement) => `${element.offsetWidth},${element.offsetHeight}`;
 
 /**
  * #7274 页签里网页那一块:界面里只是一块占位,网页本身是主进程持有的 WebContentsView,摆在这一块的位置上
  * (browser-page-views.ts)。这里负责:
  * - 挂上 / 卸下时请主进程建 / 收那张网页(页签挪位置时主进程接着用原来那张,❌ 重新载入);
  * - 这块占位挪了、缩放了(followBox 看着它),量它在窗口里的位置报过去,网页跟着挪;❌ 常驻逐帧量;
- * - 页签不在屏上(切走、整条会话页藏起来)报 `background`;界面的浮层压上来报 `occluded`,这时占位上换成一张网页截图;
+ * - 页签不在屏上(切走、整条会话页藏起来)报 `background`;界面的浮层压上来、所在格子在动或在淡出报 `occluded`,这时露出占位上常备的那张网页截图(@@@page-picture);
  * - 主进程报来的网页事件交给 handle(地址栏、前进后退据此更新)。
  */
 export function BrowserPageSurface({
@@ -48,13 +50,14 @@ export function BrowserPageSurface({
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const visibleRef = useRef(visible);
-  visibleRef.current = visible;
+  if (!visible) visibleRef.current = false; // shown again: once that frame is painted, below
   const coveredRef = useRef(covered);
   coveredRef.current = covered;
   const onHandleRef = useRef(onHandle);
   onHandleRef.current = onHandle;
   const initialUrlRef = useRef(initialUrl);
   const tickRef = useRef<(() => void) | null>(null);
+  const takenAt = useRef(''); // the size the page's picture was asked for at
 
   useEffect(() => {
     const element = ref.current;
@@ -94,8 +97,10 @@ export function BrowserPageSurface({
       // 超时只放行浮层;截图晚到时仍然显示,不能把迟到的真实画面丢掉。
       let timer = 0;
       const timeout = new Promise<void>((resolve) => { timer = win.setTimeout(resolve, SNAPSHOT_WAIT_MS); });
+      takenAt.current = sizeOf(element); // asked for on screen: what comes is of the page at this size
       const capture = rpc.browser.snapshotPage(browserId).then(({ dataUrl }) => {
-        if (!disposed && token === snapshotToken && dataUrl) element.style.backgroundImage = `url("${dataUrl}")`;
+        if (disposed || token !== snapshotToken || !dataUrl) return;
+        element.style.backgroundImage = `url("${dataUrl}")`;
       }).catch((error: unknown) => {
         if (!disposed) surfaceLog.error({ browserId, error }, 'the browser page snapshot could not be captured');
       });
@@ -107,10 +112,13 @@ export function BrowserPageSurface({
       notify?.();
     };
 
-    const refreshLoadedSnapshot = () => {
-      if (lastSent.startsWith('occluded:')) void showSnapshot(null);
-    };
-    handle.addEventListener('did-stop-loading', refreshLoadedSnapshot);
+    // @@@page-picture — the placeholder keeps the page's last picture under the native view (one per mounted page,
+    // taken again in place while the page rests): when the view cannot be shown as its box is, the picture is there, in
+    // the box.
+    const takePicture = () => { if (!lastSent.startsWith('background:') && lastSent) void showSnapshot(null); };
+    const PICTURE_ON = ['did-stop-loading', 'input-idle', 'blur'] as const;
+    for (const type of PICTURE_ON) handle.addEventListener(type, takePicture);
+    element.ownerDocument.documentElement.addEventListener('pointerenter', takePicture);
 
     const tick = () => {
       if (!mounted) return;
@@ -121,19 +129,26 @@ export function BrowserPageSurface({
         visibleRef.current &&
         rect.width > 0 &&
         rect.height > 0 &&
+        box.right > 0 && // a cell at nothing is moved out of the window
         isElementVisible(element, { opacity: true });
       if (onScreen && (coveredRef.current || now - lastOcclusionCheck >= OCCLUSION_CHECK_MS)) {
         lastOcclusionCheck = now;
         occluded = coveredRef.current || isBrowserPageOccluded(element, rect);
       }
-      const mode: BrowserPageMode = !onScreen ? 'background' : occluded ? 'occluded' : 'shown';
+      // A native view takes no opacity: in a cell fading on its track (a sheet: its content keeps its size) it is its
+      // picture.
+      const riding = onScreen && clippedElementBox(element, rect).opacity < 1;
+      const mode: BrowserPageMode = !onScreen ? 'background' : occluded || riding ? 'occluded' : 'shown';
       const key = `${mode}:${Math.round(rect.left)},${Math.round(rect.top)},${Math.round(rect.width)},${Math.round(rect.height)}`;
       if (key !== lastSent) {
         // 初次挂载或从后台回来也可能已经有浮层:每次进入遮挡态都先换上截图,不能留下纯白占位。
         const enteringOcclusion = mode === 'occluded' && !lastSent.startsWith('occluded:');
+        // fading at another size than its picture's: not this page (as when its tab comes back, below). Under the view
+        // and under a drag it stays, filling the box, till the next is taken at rest.
+        if (riding && takenAt.current !== sizeOf(element)) element.style.backgroundImage = '';
         const wasShown = lastSent.startsWith('shown:');
         lastSent = key;
-        if (enteringOcclusion) {
+        if (enteringOcclusion && !(riding && element.style.backgroundImage)) {
           if (wasShown) {
             // 先截一张、换上,再让网页收起 —— 收起在前,浮层压着的那块会白一下。
             void showSnapshot(() => { if (lastSent === key) void report(mode, rect); });
@@ -145,11 +160,12 @@ export function BrowserPageSurface({
           if (mode !== 'occluded') {
             snapshotToken += 1;
             pendingSnapshotReport = null;
-            element.style.backgroundImage = '';
           }
           void report(mode, rect);
+          if (mode === 'shown' && !wasShown) takePicture();
         }
-        return;
+      } else if (mode === 'shown' && takenAt.current !== sizeOf(element)) {
+        takePicture(); // at rest at a size it has no picture of
       }
     };
 
@@ -167,7 +183,6 @@ export function BrowserPageSurface({
         tick();
       });
     tickRef.current = tick;
-    const stopFollowing = followBox(element, tick);
     // 弹层挂到 body 上、页签自己那一层里的起始页 / 加载失败页挂上或撤下、拖拽开始 / 结束:当场看一眼,❌ 等下一个
     // OCCLUSION_CHECK_MS(菜单在网页底下晚出来一下;起始页闪一下撤掉时,采样落没落进那一两帧决定网页露不露出来)。
     const doc = element.ownerDocument;
@@ -183,23 +198,29 @@ export function BrowserPageSurface({
       disposed = true;
       tickRef.current = null;
       recheck.disconnect();
-      stopFollowing();
       stopEvents();
-      handle.removeEventListener('did-stop-loading', refreshLoadedSnapshot);
+      for (const type of PICTURE_ON) handle.removeEventListener(type, takePicture);
+      element.ownerDocument.documentElement.removeEventListener('pointerenter', takePicture);
       forgetPageFocus(browserId);
       onHandleRef.current(null);
       void rpc.browser.releasePage(browserId);
     };
   }, [browserId, partition]);
 
-  // 切到 / 切走这个页签:当场报;只在屏上时按 SAMPLE_MS 量,后台页签什么都不跑。
-  useEffect(() => {
-    tickRef.current?.();
-    if (!visible) return;
+  // 切走这个页签:画之前就报,原生视图和换上来的那一帧一起撤(❌ 多留一帧)。
+  // 切到:等这一帧画完再报 —— 原生视图先于新布局上屏会盖住旁边还没让开的格子,这一帧占位上是它的画面。
+  // 只在屏上时跟着占位、按 SAMPLE_MS 量,后台页签什么都不跑。
+  useLayoutEffect(() => {
     const win = ref.current?.ownerDocument.defaultView;
-    if (!win) return;
+    if (!visible || !win) return void tickRef.current?.();
+    // its pane was resized while it was away: that picture is not this page
+    if (takenAt.current !== sizeOf(ref.current!)) ref.current!.style.backgroundImage = '';
+    let frame = win.requestAnimationFrame(() => {
+      frame = win.requestAnimationFrame(() => { visibleRef.current = true; tickRef.current?.(); });
+    });
     const timer = win.setInterval(() => tickRef.current?.(), SAMPLE_MS);
-    return () => win.clearInterval(timer);
+    const stopFollowing = followBox(ref.current!, () => tickRef.current?.());
+    return () => { win.cancelAnimationFrame(frame); win.clearInterval(timer); stopFollowing(); };
   }, [visible]);
 
   return (
@@ -209,8 +230,7 @@ export function BrowserPageSurface({
       // 点页签后焦点交给网页(pane-content 的内容聚焦器认这个标记):占位接住 focus、转给网页。
       tabIndex={-1}
       onFocus={() => void rpc.browser.pageCommand({ browserId, command: 'focus' })}
-      className="h-full w-full bg-background bg-no-repeat outline-none"
-      style={{ backgroundSize: '100% 100%' }}
+      className="h-full w-full bg-background bg-[length:100%_100%] bg-no-repeat outline-none"
     />
   );
 }

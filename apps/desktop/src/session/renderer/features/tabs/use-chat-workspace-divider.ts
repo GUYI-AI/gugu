@@ -28,7 +28,7 @@ export function useChatWorkspaceDivider(layout: PaneLayoutStore, splitId: string
 
   const start = (event: ReactPointerEvent<HTMLDivElement>) => {
     const handle = event.currentTarget;
-    const frame = handle.parentElement;
+    const frame = handle.closest<HTMLElement>('[data-track-cut]');
     const view = handle.ownerDocument.defaultView;
     const [left, right] = layout.groups;
     if (!splitId || held.current || event.button !== 0 || !frame || !view || !left || !right) return;

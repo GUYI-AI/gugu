@@ -54,7 +54,7 @@ describe('the sidebar starts expanded', () => {
     writeInterface('gugu.taskpage.sidebarWidth', Number('300'));
     await mount();
     expect(layout.isLeftOpen).toBe(true);
-    expect(layout.leftAnimatedWidth.get()).toBe(300);
+    expect(layout.track.drawn('list')).toBe(300);
   });
 
   it('comes back folded after a restart when the user had folded it', async () => {
@@ -65,7 +65,7 @@ describe('the sidebar starts expanded', () => {
     root = createRoot(host);
     await mount();
     expect(layout.isLeftOpen).toBe(false);
-    expect(layout.leftAnimatedWidth.get()).toBe(SIDEBAR_RAIL_PX);
+    expect(layout.track.drawn('list')).toBe(SIDEBAR_RAIL_PX);
   });
 
   it('zen mode folds it for the moment only: the next start is expanded', async () => {
@@ -78,19 +78,19 @@ describe('the sidebar starts expanded', () => {
   it('starts at the default width when nothing is stored', async () => {
     await mount();
     expect(layout.isLeftOpen).toBe(true);
-    expect(layout.leftAnimatedWidth.get()).toBe(SIDEBAR_DEFAULT_WIDTH_PX);
+    expect(layout.track.drawn('list')).toBe(SIDEBAR_DEFAULT_WIDTH_PX);
   });
 });
 
 describe('collapsing', () => {
   it('it collapses to the rail, never away', async () => {
     await mount();
-    expect(layout.leftAnimatedWidth.get()).toBe(SIDEBAR_DEFAULT_WIDTH_PX);
+    expect(layout.track.drawn('list')).toBe(SIDEBAR_DEFAULT_WIDTH_PX);
     await act(async () => layout.setCollapsed('left', true));
-    expect(layout.leftAnimatedWidth.get()).toBe(SIDEBAR_RAIL_PX);
+    expect(layout.track.drawn('list')).toBe(SIDEBAR_RAIL_PX);
     await act(async () => layout.toggleLeft());
     expect(layout.isLeftOpen).toBe(true);
-    expect(layout.leftAnimatedWidth.get()).toBe(SIDEBAR_DEFAULT_WIDTH_PX);
+    expect(layout.track.drawn('list')).toBe(SIDEBAR_DEFAULT_WIDTH_PX);
   });
 
   it('the occupied width runs from the rail to the full width with the same spring progress', () => {

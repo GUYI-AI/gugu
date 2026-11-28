@@ -1,6 +1,8 @@
 import { action, makeObservable, observable } from 'mobx';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { createContext, useContext, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { ancestorsOf } from '@renderer/lib/layout/follow-box';
+import { onPanelRest, panelRest } from '@renderer/lib/layout/panel-track';
 
 // ── Sink ──────────────────────────────────────────────────────────────────────
 
@@ -49,9 +51,12 @@ export function usePaneDimensions(): PaneDimensionsValue | null {
 
 export function PaneDimensionProvider({
   sink,
+  atRest = false,
   children,
 }: {
   sink: PaneDimensionSink;
+  /** Through a move around it, the width it lands at (PanelTrack's panelRest): narrow or not is decided once. */
+  atRest?: boolean;
   children: ReactNode;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -73,22 +78,32 @@ export function PaneDimensionProvider({
       sink.setDimensions(width, height);
     };
 
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      const { width, height } = entry.contentRect;
-      commitMeasurement(width, height);
+    // how much wider the rows moving around it will leave it when they land (null: none is moving)
+    const toCome = () => {
+      const moving = atRest ? ancestorsOf(el).flatMap((place) => panelRest.get(place) ?? []) : [];
+      return moving.length ? moving.reduce((sum, to) => sum + to.grow, 0) : null;
+    };
+    let last = { width: 0, height: 0 };
+    const measure = () => {
+      last = el.getBoundingClientRect();
+      commitMeasurement(last.width + (toCome() ?? 0), last.height);
+    };
+    // the size it is given, ❌ read again: an observer before it wrote styles this pass, so a read is a forced layout
+    // per frame
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry && toCome() === null) commitMeasurement((last = entry.contentRect).width, last.height);
     });
     observer.observe(el);
-
-    const measure = () => {
-      const { width, height } = el.getBoundingClientRect();
-      commitMeasurement(width, height);
-    };
 
     // 初次测量发生在子组件 passive effect 之前；额外等待两帧，覆盖 provider 挂载后
     // 父级 layout effect 才为固定任务帧设置最终尺寸的情况。
     measure();
+    // a move starting: the resting size from what was last measured, ❌ measured again in the task that started it;
+    // landing changes nothing
+    const unhear = onPanelRest(el, () => {
+      const grow = toCome();
+      if (grow !== null) commitMeasurement(last.width + grow, last.height);
+    });
     let settleFrame: number | null = null;
     const settle = () => {
       settleFrame = requestAnimationFrame(() => {
@@ -102,9 +117,10 @@ export function PaneDimensionProvider({
 
     return () => {
       observer.disconnect();
+      unhear();
       if (settleFrame !== null) cancelAnimationFrame(settleFrame);
     };
-  }, [sink, shown]);
+  }, [sink, shown, atRest]);
 
   return (
     <PaneDimensionContext.Provider value={{ containerRef, sink }}>

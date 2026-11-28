@@ -1139,7 +1139,8 @@
 
   [data-chat-card-head],
   [data-chat-card] {
-    /* The right gap closes as the tools come on or go off the track: written on these two (chat-workspace-chrome @@@card-head-width). */
+    /* The right gap closes with the last pixels of the tools' cell as they come or go: written on these two
+       (chat-workspace-chrome @@@card-gap). */
     margin-right: var(--chat-card-half-gap);
     background: var(--bg);
   }
@@ -1174,7 +1175,8 @@
     --tab-strip-inset-start: calc((var(--chat-tool-strip-height) - 1px - var(--chat-tool-tab-height)) / 2);
     --tab-strip-inset-end: var(--tab-strip-inset-start);
     height: var(--chat-tool-strip-height);
-    margin-left: var(--chat-card-half-gap);
+    margin-left: calc(var(--chat-card-half-gap) - 1px);
+    margin-right: 1px;
     border-radius: 12px 12px 0 0;
     box-shadow: inset 0 -1px 0 var(--border), -0.5px 0 0 var(--chat-card-ring), 0.5px 0 0 var(--chat-card-ring), 0 -0.5px 0 var(--chat-card-ring);
   }
@@ -1207,6 +1209,13 @@
 
   [data-chat-tool-cards] [data-chat-tool-divider] {
     background: transparent;
+  }
+
+  /* The divider is its cell's edge, and the cell holds its strip: it starts under the strips, ❌ across them. */
+  [data-chat-tool-workspace] [data-chat-tool-divider] {
+    top: var(--chat-card-head-height, 56px);
+    height: auto;
+    bottom: 0;
   }
 
   [data-chat-tool-collapse-preview][data-chat-tool-collapse-ready] {
@@ -1646,10 +1655,4 @@ html[data-gugu-dragging] :is(webview, iframe) {
 
 [data-chat-tool-cards] [data-chat-tool-collapse-preview][data-chat-tool-collapse-ready] {
   background: color-mix(in oklab, var(--fg) 15%, transparent);
-}
-
-/* 两张卡片时,工具卡片的正文往上接住它 46 高的页签条,伸进 56 高的头那一行(@@@card-head-width)。页面那层的 clip 只为左右
-   滑进滑出的页面(pane-tree-view @@@leaving-panes),竖直方向没有东西在动:卡片模式下只裁左右,❌ 把正文顶上那 10px 裁掉。 */
-[data-chat-tool-workspace][data-chat-tool-cards] > [data-pane-tree-pages] {
-  overflow-y: visible;
 }

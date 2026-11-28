@@ -4,7 +4,6 @@ import { KEYBOARD_STEP_PX } from '@renderer/lib/layout/panel-resize-handle';
 import { PanelSlot } from '@renderer/lib/layout/panel-slot';
 import { PanelTrack } from '@renderer/lib/layout/panel-track';
 import { cn } from '@renderer/utils/utils';
-import type { CutEdge } from './chat-workspace-edge';
 
 export interface TrackCutChild {
   id: string;
@@ -30,7 +29,6 @@ export function TrackCut({
   onShares,
   onEqualize,
   onLanded,
-  onEdge,
   divider,
   children,
 }: {
@@ -46,8 +44,6 @@ export function TrackCut({
   onEqualize: () => void;
   /** The track came to rest (a move landed, or a jump). */
   onLanded?: () => void;
-  /** Every frame: where the first child's far edge is drawn, and where its move goes from and to (the strip above, @@@strip-on-track). */
-  onEdge?: (edge: CutEdge) => void;
   /** A divider with a gesture of its own (the chat workspace's): its index, ref, pointer and extra attributes. */
   divider?: { at: number; ref: React.RefObject<HTMLDivElement | null>; onPointerDown: (event: PointerEvent<HTMLDivElement>) => void; props: Record<string, unknown> };
   /** Drawn over the cut (the chat workspace's collapse preview). */
@@ -69,7 +65,6 @@ export function TrackCut({
     return { track: next, entering };
   }, [idsKey, axis]);
   const rootRef = useRef<HTMLDivElement>(null);
-  const handles = useRef<(HTMLDivElement | null)[]>([]);
   const dragging = useRef(false);
   // The person moved a divider: the shares that come of it are placed, ❌ moved on the spring.
   const moved = useRef(false);
@@ -107,22 +102,7 @@ export function TrackCut({
 
   const landedRef = useRef(onLanded);
   landedRef.current = onLanded;
-  const edgeRef = useRef(onEdge);
-  edgeRef.current = onEdge;
-  // A write at rest (a slot attaching) is no landing: only the end of a move, or a jump, is.
-  const moving = useRef(false);
-  // The dividers ride the edges as they are drawn.
-  useLayoutEffect(() => track.subscribe((drawn, landed) => {
-    if (landed && moving.current) landedRef.current?.();
-    moving.current = !landed;
-    let edge = 0;
-    ids.slice(0, -1).forEach((id, at) => {
-      edge += drawn.get(id) ?? 0;
-      const handle = handles.current[at];
-      if (handle) handle.style.transform = `translate${axis.toUpperCase()}(${edge - 1}px)`;
-    });
-    if (ids.length > 1) edgeRef.current?.({ drawn: drawn.get(ids[0]) ?? 0, ...track.ends(ids[0]), extent: extent.current });
-  }), [track]);
+  useLayoutEffect(() => track.onLanded(() => landedRef.current?.()), [track]);
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -208,26 +188,22 @@ export function TrackCut({
   };
 
   return (
-    <div ref={rootRef} className={cn('relative flex h-full w-full min-h-0 min-w-0 overflow-clip', axis === 'y' && 'flex-col')} data-track-cut={axis}>
+    // Clipped along the track only, ❌ hidden (a hidden box is scrolled when a page still off the edge takes focus).
+    <div
+      ref={rootRef}
+      className={cn(
+        'relative flex h-full w-full min-h-0 min-w-0', axis === 'y' ? 'flex-col overflow-y-clip' : 'overflow-x-clip'
+      )}
+      data-track-cut={axis}
+    >
       {items.map((item, at) => {
         const fill = at === items.length - 1;
-        return (
-          <PanelSlot key={item.id} track={track} id={item.id} axis={axis} fill={fill}>
-            {/* A slot's last pixel is the divider's. */}
-            <div style={{ display: 'flex', flexDirection: 'column', [size]: fill || edgeless(at) ? '100%' : 'calc(100% - 1px)', [axis === 'x' ? 'height' : 'width']: '100%' }}>{item.node}</div>
-          </PanelSlot>
-        );
-      })}
-      {items.slice(0, -1).map((item, at) => {
         const own = divider?.at === at ? divider : undefined;
-        const inert = disabled || item.fixed || items[at + 1].fixed;
-        return (
+        const inert = fill || disabled || item.fixed || items[at + 1].fixed;
+        // The divider is its slot's far edge, drawn in the slot's place: where the edge is in every frame.
+        const edge = fill ? null : (
           <div
-            key={`divider-${item.id}`}
-            ref={(element) => {
-              handles.current[at] = element;
-              if (own) own.ref.current = element;
-            }}
+            ref={own ? (element) => { own.ref.current = element; } : undefined}
             role="separator"
             tabIndex={inert ? -1 : 0}
             aria-orientation={axis === 'x' ? 'vertical' : 'horizontal'}
@@ -237,10 +213,10 @@ export function TrackCut({
             aria-valuemax={100}
             data-slot="resizable-handle"
             className={cn(
-              'absolute top-0 left-0 bg-[var(--border-subtle)] focus-visible:outline-hidden after:absolute',
+              'absolute bg-[var(--border-subtle)] focus-visible:outline-hidden after:absolute',
               axis === 'x'
-                ? 'h-full w-px cursor-col-resize after:inset-y-0 after:-left-1 after:w-2'
-                : 'h-px w-full cursor-row-resize after:inset-x-0 after:-top-1 after:h-2',
+                ? 'top-0 right-0 h-full w-px cursor-col-resize after:inset-y-0 after:-left-1 after:w-2'
+                : 'bottom-0 left-0 h-px w-full cursor-row-resize after:inset-x-0 after:-top-1 after:h-2',
               own && 'touch-none',
               inert && 'pointer-events-none',
               edgeless(at) && 'invisible'
@@ -252,6 +228,15 @@ export function TrackCut({
             onDoubleClick={own || inert ? undefined : onEqualize}
             {...own?.props}
           />
+        );
+        return (
+          <PanelSlot key={item.id} track={track} id={item.id} axis={axis} fill={fill} edge={edge}>
+            {/* A slot's last pixel is the divider's. */}
+            <div style={{
+              display: 'flex', flexDirection: 'column', [size]: fill || edgeless(at) ? '100%' : 'calc(100% - 1px)',
+              [axis === 'x' ? 'height' : 'width']: '100%'
+            }}>{item.node}</div>
+          </PanelSlot>
         );
       })}
       {children}

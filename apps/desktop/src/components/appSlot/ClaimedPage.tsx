@@ -40,7 +40,8 @@ export function ClaimedPage({ slotId, chatId, resourceChat, kind, itemId, takeOp
     // The same store the session page's slots claim (one module, two React roots): the root layer draws the page here.
     let token: number | null = null
     const visible = () => {
-      if (!element.isConnected || !isElementVisible(element, { opacity: true })) return false
+      // faded is still its place: its opacity is the layer's to follow
+      if (!element.isConnected || !isElementVisible(element)) return false
       const box = element.getBoundingClientRect()
       return box.width > 0 && box.height > 0
     }

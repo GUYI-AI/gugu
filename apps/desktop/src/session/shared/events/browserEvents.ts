@@ -29,7 +29,8 @@ export type BrowserPageEventType =
   | 'page-title-updated'
   | 'page-favicon-updated'
   | 'focus'
-  | 'blur';
+  | 'blur'
+  | 'input-idle';
 export type BrowserPageEvent = {
   browserId: string;
   type: BrowserPageEventType;

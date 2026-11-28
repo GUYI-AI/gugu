@@ -31,14 +31,22 @@ function intersect(a: ElementBox, b: ElementBox): ElementBox {
     height: Math.max(0, Math.min(a.top + a.height, b.top + b.height) - top) }
 }
 
-/** The resident layer and widget ownership measure the same ancestor clipping. */
-export function clippedElementBox(element: HTMLElement, bounds: ElementBox): { full: ElementBox; clip: ElementBox } {
+/**
+ * The resident layer, a native page and widget ownership read the same walk: a box's rectangle, what its ancestors'
+ * clips leave of it, and the opacity they draw it at (a panel fading, mid-move too).
+ */
+export function clippedElementBox(
+  element: HTMLElement,
+  bounds: ElementBox
+): { full: ElementBox; clip: ElementBox; opacity: number } {
   const full = elementBox(element)
   let clip = intersect(full, bounds)
+  let opacity = 1
   let node: Node | null = element.parentNode
   while (node && clip.width > 0 && clip.height > 0) {
     if (node instanceof Element) {
       const style = getComputedStyle(node)
+      opacity *= Number(style.opacity)
       // Each axis clips on its own: overflow-x clip with overflow-y visible (the chat workspace's pages, two cards) cuts
       // only left and right — a page reaching above that box (the tool card's body under its strip) is still drawn there.
       const clipsX = style.overflowX !== 'visible', clipsY = style.overflowY !== 'visible'
@@ -56,5 +64,5 @@ export function clippedElementBox(element: HTMLElement, bounds: ElementBox): { f
     }
     node = node instanceof ShadowRoot ? node.host : node.parentNode
   }
-  return { full, clip }
+  return { full, clip, opacity }
 }
