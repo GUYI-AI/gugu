@@ -19,6 +19,7 @@ const { openImRepositoryMock, revisionListeners, revisionCoordinatorMock, coordi
   revisionListeners: new Map<string, Set<(operations: readonly unknown[]) => void | Promise<void>>>(),
   revisionCoordinatorMock: {
     start: vi.fn(), stop: vi.fn(), wake: vi.fn(), retryPending: vi.fn(), whenIdle: vi.fn().mockResolvedValue(undefined),
+    behind: vi.fn(async () => false),
     subscribe: vi.fn((events: string | readonly string[], listener: (operations: readonly unknown[]) => void | Promise<void>) => {
       const claimed = typeof events === 'string' ? [events] : [...events]
       for (const event of claimed) {
@@ -157,6 +158,7 @@ describe('打开会话的第一帧', () => {
     shell.visibleChat = null
     shell.foreground = null
     coordinatorFactory.mockClear()
+    revisionCoordinatorMock.behind.mockReset().mockResolvedValue(false)
     vi.mocked(topicService.archiveTopic).mockReset().mockResolvedValue(undefined)
     vi.mocked(chatService.archiveChat).mockClear()
     network = deferred<void>()
@@ -220,10 +222,11 @@ describe('打开会话的第一帧', () => {
     network.resolve()
     const harness = await mount()
     try {
+      vi.mocked(chatService.revalidateWindow).mockClear()
       await act(async () => { select('chatA') })
       shell.visibleChat = 'chatA'
       act(() => followCurrent(false))
-      await act(async () => { await Promise.resolve() })
+      await vi.waitFor(() => expect(chatService.revalidateWindow).toHaveBeenCalled(), WAIT) // the open has finished
       vi.mocked(chatService.getMessages).mockClear()
       vi.mocked(chatService.revalidateWindow).mockClear()
       const before = framesOf('chatA').at(-1)?.messages
@@ -300,6 +303,51 @@ describe('打开会话的第一帧', () => {
     expect(first?.loadingMessages).toBe(false)
     network.resolve()
     harness.cleanup()
+  })
+
+  it('opens a stored newest page the journal keeps current without reading messages', async () => {
+    await arrive(msgA1, '1')
+    const harness = await mount()
+    try {
+      await act(async () => { select('chatA') })
+      await vi.waitFor(() => expect(chatService.revalidateWindow).toHaveBeenCalledWith(['msgA1'], 'user1'), WAIT)
+      expect(chatService.getMessages).not.toHaveBeenCalled()
+      expect(framesOf('chatA').at(-1)?.messages.map((row) => row.id)).toEqual(['msgA1'])
+    } finally { network.resolve(); harness.cleanup() }
+  })
+
+  it('reads one newest page when the journal is a longer backlog behind, and does not join it to the stored rows', async () => {
+    await arrive(msgA1, '1')
+    revisionCoordinatorMock.behind.mockResolvedValue(true)
+    const newest = [50, 51].map(seq => message({ id: `newest-${seq}`, chat_id: 'chatA', seq, sender_user_id: 'a1', content: 'newest' }))
+    messagesByChat.chatA = newest
+    network.resolve()
+    const harness = await mount()
+    try {
+      await act(async () => { select('chatA') })
+      await vi.waitFor(() => expect(framesOf('chatA').at(-1)?.messages.map((row) => row.seq)).toEqual([50, 51]), WAIT)
+      const reads = vi.mocked(chatService.getMessages).mock.calls.filter(([id]) => id === 'chatA')
+      expect(reads.map(([, , way]) => way)).toEqual(['initialLoad'])
+    } finally { harness.cleanup() }
+  })
+
+  it('does not repair a line for a committed arrival older than its window', async () => {
+    await arrive(msgA1, '1')
+    const harness = await mount()
+    try {
+      await act(async () => { select('chatA') })
+      await vi.waitFor(() => expect(chatService.revalidateWindow).toHaveBeenCalled(), WAIT)
+      vi.mocked(chatService.getOtherMembersReadSeqs).mockClear()
+      const operation = (messageCommitted: boolean) => ({ event: 'message_created', revision: '9', messageCommitted, payload: {
+        chat_id: 'chatA', entity_id: 'replayed-old', message: { id: 'replayed-old', chat_id: 'chatA', seq: 1, sender_user_id: 'a1',
+          content: 'replayed', content_type: 'text', created_at: '2026-10-23T00:00:00Z' } } })
+      await act(async () => { for (const listener of revisionListeners.get('message_created')!) await listener([operation(true)]) })
+      expect(chatService.getOtherMembersReadSeqs).not.toHaveBeenCalled()
+      // An arrival the account did not commit is a hole: the line repairs, and the covered tail needs no message read.
+      await act(async () => { for (const listener of revisionListeners.get('message_created')!) await listener([operation(false)]) })
+      expect(chatService.getOtherMembersReadSeqs).toHaveBeenCalledTimes(1)
+      expect(chatService.getMessages).not.toHaveBeenCalled()
+    } finally { network.resolve(); harness.cleanup() }
   })
 
   it('uses the current account cache after the committed shell activates effects', async () => {

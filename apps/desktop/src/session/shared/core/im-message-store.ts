@@ -273,19 +273,33 @@ export function messageStoreOperations(store: MessageStoreAdapter, retain: numbe
     if (!newer) rows.reverse()
     const bottom = rows[0]?.seq ?? 1
     const top = rows[rows.length - 1]?.seq ?? after
+    const ranges = store.ranges(options.chatId!, options.threadRootId ?? '')
     const low = newer ? after + 1 : bottom
-    const high = newer ? top : before - 1
-    const range = store.ranges(options.chatId!, options.threadRootId ?? '').find(range => range.fromSeq <= low && range.toSeq >= high)
+    // The newest page (no cursor) reaches as far as the stream is known to go: its newest row, or a range above it.
+    const high = newer ? top : options.beforeSeq === undefined ? Math.max(top, ...ranges.map(range => range.toSeq)) : before - 1
+    const range = ranges.find(range => range.fromSeq <= low && range.toSeq >= high)
     return { rows, covered: !!range && (rows.length === options.limit || (!newer && range.fromSeq === 1)) }
   }
 
   return {
     ingest,
     page,
+    /**
+     * Each chat's newest rows, down to where its verified tail range starts: rows below that are not known to connect
+     * to the tail, so a window never shows them next to it. A stream with no verified range gives its newest rows.
+     */
     windows(chatIds: readonly string[], limit: number): MessageItem[] {
       requireLimit(limit)
       chatIds.forEach(requireId)
-      return store.latest(chatIds, limit)
+      const rows = store.latest(chatIds, limit)
+      const newest = new Map(rows.map(row => [row.chat_id, row.seq]))
+      // The tail range is the one that holds the newest stored row; with that row above every range (a send not yet
+      // confirmed by the journal), the highest one. A range that holds nothing is never the tail.
+      const from = new Map(chatIds.map(chatId => {
+        const held = store.ranges(chatId, '').filter(range => range.fromSeq <= range.toSeq && range.fromSeq <= (newest.get(chatId) ?? 0))
+        return [chatId, held.reduce<SeqRange | null>((tail, range) => !tail || range.toSeq > tail.toSeq ? range : tail, null)?.fromSeq ?? 0]
+      }))
+      return rows.filter(row => row.seq >= from.get(row.chat_id)!)
     },
     throughRevision: () => store.throughRevision(),
     clear: () => store.transaction(() => store.clear()),

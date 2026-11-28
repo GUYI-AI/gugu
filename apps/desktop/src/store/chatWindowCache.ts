@@ -42,6 +42,29 @@ export class ChatWindowCache extends Map<string, MessageItem[]> {
     for (const viewport of this.listeners.get(chatId)?.values() ?? []) viewport.window?.update(merge)
     return this
   }
+  /**
+   * The store's verified tail run (im-message-store `windows`). A window following the tail keeps only rows inside
+   * the run: older rows do not connect to it. A reader's window that lies wholly below the run keeps its rows and
+   * learns there are newer ones; one that reaches into the run is joined with it.
+   */
+  publishTail(chatId: string, rows: MessageItem[]): void {
+    // The run is as long as any window may be (both end at MAX_WINDOW rows), so its first row is the lowest a following
+    // window keeps: a longer verified range below it is reached by paging older, not held here.
+    const from = rows.find(row => row.seq > 0)?.seq ?? 0
+    const visible = rows.filter(this.visible)
+    const join = (previous: MessageItem[]) => mergeMessagesById(previous, visible, chatId)
+    const follow = (previous: MessageItem[]) => join(previous.filter(row => row.seq < 1 || row.seq >= from))
+    const apply = (window: ChatHistoryWindow) => {
+      const held = window.getSnapshot().messages.filter(row => row.seq > 0)
+      if (window.isFollowingTail()) window.update(follow)
+      else if (held.length > 0 && held.every(row => row.seq < from)) window.establishTail(visible)
+      else window.update(join)
+    }
+    const history = this.getHistory(chatId)
+    if (history) apply(history)
+    else { super.set(chatId, trimToMessageWindow(follow(this.get(chatId) ?? []))); this.publish(chatId) }
+    for (const viewport of this.listeners.get(chatId)?.values() ?? []) if (viewport.window) apply(viewport.window)
+  }
   update(chatId: string, updater: MessageItem[] | ((previous: MessageItem[]) => MessageItem[])): this {
     const previous = this.rows(chatId)
     const next = typeof updater === 'function' ? updater(previous) : mergeMessagesById(previous, updater, chatId)

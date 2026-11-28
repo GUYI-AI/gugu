@@ -40,12 +40,8 @@ import { chatOnScreen, isChatOnScreen, isChatShown, isAppActive, useWatchAppActi
 import { useMessageReadFailures, useMessageSnapshotEpochs } from './chatMessageReads'
 import { useChatConversation, type ChatConversationAccess } from './useChatConversation'
 import { useActiveChatTransitionState } from './activeChatTransition'
-import { fetchChatHistoryPage, restoreChatHistoryAnchor, fetchThreadMessages, openCachedChatWindow, useChatWindowCache, type WindowObserver } from './chatWindowPublication'
-import {
-  INITIAL_PAGE,
-  NEWER_PAGE,
-  maxMainlineSeq,
-} from './chatMessageWindow'
+import { fetchChatHistoryPage, restoreChatHistoryAnchor, fetchThreadMessages, journalKeepsCurrent, openCachedChatWindow, storedTailCovered, useChatWindowCache, type WindowObserver } from './chatWindowPublication'
+import { INITIAL_PAGE, maxMainlineSeq } from './chatMessageWindow'
 import { commitHealedMessages } from './chatHealCommit'
 import { seedCacheFromDisk } from './chatDiskWindow'
 import type { ChatItem, MessageItem, NotificationLevel } from '@gugu/core/shared/types/chat'
@@ -342,16 +338,6 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     return true
   }, [applyFreshMessageSnapshot, cache, memberReadPorts, noteCommittedMessages, userId])
 
-  // ── #621 incremental spine ────────────────────────────────────────────────
-  const windowRowsOf = useCallback((chatId: string) => cache.rows(chatId), [cache])
-  // maxSeqOf: the spine cursor ("new messages?" = expectedTail > maxSeq), cache-derived so it can't drift.
-  const maxSeqOf = useCallback((chatId: string): number => maxMainlineSeq(windowRowsOf(chatId)), [windowRowsOf])
-  // expectedTailSeq: the latest seq that should exist = chat.next_message_seq - 1 (seq is 1-BASED per
-  // 004_chat_extensions — DEFAULT 1, RETURNING next-1 — continuous & hole-free; 0 = "no messages yet").
-  const expectedTailSeq = useCallback((chatId: string): number => {
-    const chat = chatsRef.current.find((c) => c.id === chatId)
-    return Math.max(0, (chat?.next_message_seq ?? 0) - 1)
-  }, [chatsRef])
   // @@@msg-cache (#621/P2/#947) — revalidate only cached, settled ids on open/reconnect, bounded by window size.
   // Patch mutable overlays/body fields and remove confirmed missing rows so cold reopen cannot resurrect them.
   // Never query/drop optimistic rows; failed chunks preserve their ids and cannot block opening.
@@ -375,6 +361,12 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     },
     [cache, getMessageSnapshotEpoch, imRepositoryScope, setMessagesAndCache, userId],
   )
+  /** A newest page read from the server replaces a tail it does not connect to. False = a newer snapshot superseded the read. */
+  const commitNewestPage = useCallback((chatId: string, rows: MessageItem[], readSeqs: Record<string, number> | null, epoch: number): boolean => {
+    if (epoch !== getMessageSnapshotEpoch(chatId)) return false
+    cache.establishTail(chatId, rows)
+    return applyMessagesSnapshot(chatId, rows, readSeqs, epoch)
+  }, [applyMessagesSnapshot, cache, getMessageSnapshotEpoch])
   const refreshMessages = useCallback(async (chatId = activeChatIdRef.current ?? undefined) => {
     if (!chatId || !userId) return
     const epoch = getMessageSnapshotEpoch(chatId)
@@ -384,33 +376,33 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
         chatService.getMessages(chatId, userId, 'initialLoad', INITIAL_PAGE),
         chatService.getOtherMembersReadSeqs(chatId, userId),
       ]))
-      applyMessagesSnapshot(chatId, msgs, readSeqs, epoch)
+      commitNewestPage(chatId, msgs, readSeqs, epoch)
       await revalidateWindowOverlays(chatId)
     } finally {
       revalidateInFlightRef.current.delete(chatId)
     }
-  }, [applyMessagesSnapshot, getMessageSnapshotEpoch, trackMessageRead, revalidateWindowOverlays, userId])
+  }, [commitNewestPage, getMessageSnapshotEpoch, trackMessageRead, revalidateWindowOverlays, userId])
 
-  // @@@1888 — query the authoritative delta on reconnect: empty/short = caught up; full = existing #621 degrade.
-  // Do not predict gaps from stale list seqs; cursor/epoch/merge keep bounded reads idempotent under reconnect backoff.
+  // A line asks for this when an arrival did not land in the store whole. Rows the store still covers need no read;
+  // a tail it no longer covers is read as one newest page (@@@open-by-coverage).
   const healMessageGap = useCallback(
     async (chatId: string, throwOnError = false) => {
       if (!userId) return
-      const maxSeq = maxSeqOf(chatId)
       const epoch = getMessageSnapshotEpoch(chatId)
       revalidateInFlightRef.current.add(chatId)
       try {
         // @@@5856 原来这里还并行拉一次 chat.thread_summaries。群 thread 面板退役后没有任何 surface
         // 读它 —— 每开一次会话白跑一次往返。话题是**另一条 chat**,它的摘要不在这条线的聚合里。
+        // The coverage question is local; only an uncovered tail adds the newest page, in the same round as the rest.
         const [threadSnap, msgs, readSeqs] = await Promise.all([
           cache.isObserved(chatId) ? fetchOpenThreadSnapshot({ chatId, userId: userId, activeThreadRootId: () => cache.view(chatId).activeThreadRootId }) : null,
-          chatService.getMessages(chatId, userId, 'loadNewer', NEWER_PAGE, undefined, maxSeq),
+          storedTailCovered(userId, chatId).then(covered => covered ? null : chatService.getMessages(chatId, userId, 'initialLoad', INITIAL_PAGE)),
           chatService.getOtherMembersReadSeqs(chatId, userId),
         ])
-        // R6 被新快照取代的补洞结果不许静默丢:会话仍在屏上就抛错,让修订派发重补。
-        if (msgs.length > 0) commitHealedMessages({ chatId, apply: () => applyMessagesSnapshot(chatId, msgs, readSeqs, epoch), stillActive: () => cache.isObserved(chatId) })
-        else if (cache.isObserved(chatId)) reconcileMemberReadSeqs(chatId, readSeqs, memberReadPorts(chatId))
-        if (msgs.length >= NEWER_PAGE) await refreshMessages(chatId)
+        if (msgs) {
+          // R6 被新快照取代的补洞结果不许静默丢:会话仍在屏上就抛错,让修订派发重补。
+          commitHealedMessages({ chatId, apply: () => commitNewestPage(chatId, msgs, readSeqs, epoch), stillActive: () => cache.isObserved(chatId) })
+        } else if (cache.isObserved(chatId)) reconcileMemberReadSeqs(chatId, readSeqs, memberReadPorts(chatId))
         if (threadSnap) {
           applyThreadSnapshot({ chatId, ...threadSnap, chats: chatsRef.current, setThreadMessages: (update) => setThreadMessagesFor(chatId, update), patchChat,
             activeChatId: () => cache.isObserved(chatId) ? chatId : null, activeThreadRootId: () => cache.view(chatId).activeThreadRootId })
@@ -426,7 +418,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
         healCycleCountRef.current += 1
       }
     },
-    [applyMessagesSnapshot, cache, chatsRef, getMessageSnapshotEpoch, maxSeqOf, memberReadPorts, noteFreshMessageRead, patchChat, refreshMessages, revalidateWindowOverlays, setThreadMessagesFor, userId],
+    [cache, chatsRef, commitNewestPage, getMessageSnapshotEpoch, memberReadPorts, noteFreshMessageRead, patchChat, revalidateWindowOverlays, setThreadMessagesFor, userId],
   )
   const loadHistoryPage = useCallback(async (direction: 'older' | 'newer' | 'latest', chatId = activeChatIdRef.current, viewport?: ConversationViewport) => {
     if (!userId || !chatId) return
@@ -510,24 +502,23 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     if (!userId) return
     const foregroundDone = catchupPriority?.begin()
     const epoch = getMessageSnapshotEpoch(chatId)
-    const chat = chatsRef.current.find((row) => row.id === chatId)
     const current = () => !imRepositoryScope.disposed && epoch === getMessageSnapshotEpoch(chatId) && observer.current()
     revalidateInFlightRef.current.add(chatId)
     try {
       await openCachedChatWindow({
         chatId, userId: userId, cache, getRepository: getImRepository,
         history: cache.history(chatId),
-        expectedTailSeq: chat ? expectedTailSeq(chatId) : null, hasPositiveUnread: (chat?.unread_count ?? 0) > 0,
+        journalCurrent: () => journalKeepsCurrent(chatsRef.current.some((row) => row.id === chatId), getRevisionCoordinator),
         observer: { ...observer, current },
         commit: (rows, replaceTail, hasOlder) => {
-          if (replaceTail) cache.establishTail(chatId, rows)
+          if (replaceTail) commitNewestPage(chatId, rows, null, epoch)
+          else applyMessagesSnapshot(chatId, rows, null, epoch)
           if (hasOlder !== undefined) cache.history(chatId).setHasOlder(hasOlder)
-          applyMessagesSnapshot(chatId, rows, null, epoch)
         },
         revalidate: () => revalidateWindowOverlays(chatId),
       })
     } finally { foregroundDone?.(); revalidateInFlightRef.current.delete(chatId) }
-  }, [applyMessagesSnapshot, cache, catchupPriority, chatsRef, expectedTailSeq, getImRepository, getMessageSnapshotEpoch, imRepositoryScope.disposed, revalidateWindowOverlays, userId])
+  }, [applyMessagesSnapshot, cache, catchupPriority, chatsRef, commitNewestPage, getImRepository, getMessageSnapshotEpoch, getRevisionCoordinator, imRepositoryScope.disposed, revalidateWindowOverlays, userId])
   // One read and revision owner per observed chat, shared by every surface.
   startConversationRef.current = (chatId) => {
     if (!userId) return () => undefined
@@ -551,7 +542,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
       userId: userId!, chatId: () => cancelled ? null : chatId,
       readCommittedMessage: id => (messageWindow(userId!, chatId) ?? cache.rows(chatId)).find(message => message.id === id),
       noteCommittedMessages, threadRootId: () => cache.view(chatId).activeThreadRootId, ownsThread: rootId => !!unreadNavigationRef.current?.ownsThread(chatId, rootId),
-      maxSeqOf, getMessageSnapshotEpoch, applyMessagesSnapshot, healMessageGap, revalidateWindowOverlays,
+      getMessageSnapshotEpoch, applyMessagesSnapshot, healMessageGap, revalidateWindowOverlays,
       setMessagesAndCache, setThreadMessages: (update) => setThreadMessagesFor(chatId, update),
       ...memberReadPorts(chatId),
     })

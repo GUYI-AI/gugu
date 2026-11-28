@@ -44,7 +44,6 @@ export type ChatLine = RealtimeMessageMutators & MemberReadSeqsStore & {
   userId: string
   /** 这条线此刻显示哪条 chat(null = 没开)。事件时刻读,所以换线不必重挂订阅。 */
   chatId: () => string | null
-  maxSeqOf: (chatId: string) => number
   readCommittedMessage: (messageId: string) => MessageItem | undefined
   /** The thread this line shows (null = its main timeline); only that thread's replies reach the line. */
   threadRootId: () => string | null
@@ -194,7 +193,8 @@ function applyMessageCreatedRevisions(line: ChatLine): AccountRevisionListener {
   return async (operations) => {
     const chatId = line.chatId()
     if (!chatId) return
-    const arrivals = operations.map((operation) => readMessageCreatedRevision(operation.payload)).filter((arrival) => arrival.chatId === chatId)
+    const arrivals = operations.map((operation) => ({ ...readMessageCreatedRevision(operation.payload), committed: operation.messageCommitted === true }))
+      .filter((arrival) => arrival.chatId === chatId)
     if (arrivals.length === 0) return
     const main: MessageItem[] = []
     const replies: string[] = []
@@ -205,6 +205,8 @@ function applyMessageCreatedRevisions(line: ChatLine): AccountRevisionListener {
         continue
       }
       const item = line.readCommittedMessage(arrival.messageId)
+      // A committed arrival the window does not hold is older than the window (or was never to be shown): not a hole.
+      if (!item && arrival.committed) continue
       if (!item || item.thread_root_id || item.is_thread_root) return line.healMessageGap(chatId, true)
       main.push(item)
     }

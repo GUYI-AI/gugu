@@ -230,3 +230,29 @@ it('calls a repository subscriber again only when what it selected changed', asy
   await repository.transaction(tx => tx.putIdentity(displayIdentity('peer')))
   expect(seen).toEqual([[], ['peer']])
 })
+
+// A reader asks the journal whether what the account has stored is current, and never waits beyond the page in flight.
+it('answers behind as soon as a page shows a longer backlog, and not behind once the cursor reaches the head', async () => {
+  const repository = await openImRepository('viewer', { adapter: createMemoryLocalSyncDb() })
+  await repository.transaction(tx => tx.putSyncState('account-revision-cursor', { revision: '0' }))
+  const pages = [deferred<void>(), deferred<void>()]
+  let asked = 0
+  const coordinator = createAccountRevisionCoordinator('viewer', repository, {
+    syncSince: async (cursor) => {
+      const page = asked++
+      await pages[page]!.promise
+      return { operations: [arrival(String(BigInt(cursor) + 1n), `backlog-${page}`, row(`backlog-${page}`, page + 1))], hasMore: page === 0 }
+    },
+    subscribeWake: () => () => undefined,
+  }, { recover: vi.fn(async () => null), notify: vi.fn(async () => {}) })
+  stops.push(() => { coordinator.stop(); repository.close() })
+  coordinator.start()
+  const duringFirstPage = coordinator.behind()
+  pages[0]!.resolve()
+  expect(await duringFirstPage).toBe(true)
+  const duringLastPage = coordinator.behind()
+  pages[1]!.resolve()
+  expect(await duringLastPage).toBe(false)
+  await coordinator.whenIdle()
+  expect(await coordinator.behind()).toBe(false)
+})

@@ -13,9 +13,6 @@ export const OLDER_PAGE = 60
 // @@@small-window (#946 回港 #4644/#5b) - cold-open 只取这么多(vs getMessages 默认 60),约束首屏请求+渲染到
 // ~tens。hasMoreOlder 以此为准(取满一整页 ⇒ 还有更旧)。loadOlder/toggleReaction 走默认,不受影响。
 export const INITIAL_PAGE = 30
-// @@@msg-cache-incremental (#621) - max NEW messages fetched in one incremental gap-heal (seq > maxSeq).
-// A chat away for a long time could accrue many; page ceiling matches the older-history page.
-export const NEWER_PAGE = 200
 
 export function trimToMessageWindow(messages: MessageItem[]): MessageItem[] {
   if (messages.length <= MESSAGE_WINDOW) return messages
