@@ -51,6 +51,7 @@ vi.mock('@main/lib/events', () => ({
 }));
 
 import { remotePreviewReadChannel, remotePreviewReadResultChannel } from '@shared/events/appEvents';
+import { REMOTE_WORKSPACE_CHUNK_BYTES } from '@gugu/session-core/session-record/contract';
 import { REMOTE_CHUNK_TIMEOUT_MS, bytesRequestRefused, createBytesPreview, createChatFolderPreview, createDocumentPreview, createPreview, createRemotePreview, handlePreviewRequest, previewAssetsChanged, releasePreview, setPreviewDocument } from './preview-protocol';
 import { resolveWorkspace } from '../projects/utils';
 import { previewDocumentHtml } from '@shared/preview/preview-link-script';
@@ -390,7 +391,7 @@ it('review r2: an expired main-process scan does not start more remote chunks af
   const stop = answerFrom({ [path]: 'old' });
   const reply = (request: {requestId:string;length:number}, error = false) => {
     const result = error ? { requestId: request.requestId, errorCode: 'not_found' } : {
-      requestId: request.requestId, chunk: { size: request.length * 10, etag: 'slow', data: Buffer.alloc(request.length, 'n').toString('base64') },
+      requestId: request.requestId, chunk: { size: REMOTE_WORKSPACE_CHUNK_BYTES * 10, etag: 'slow', data: Buffer.alloc(request.length, 'n').toString('base64') },
     };
     for (const cb of bus.listeners.get(remotePreviewReadResultChannel.name) ?? []) cb(result);
   };
@@ -474,7 +475,7 @@ it('cancels a timed-out served remote stream and removes its pending reply liste
   const reply = (request: { requestId: string; length: number }) => {
     for (const cb of bus.listeners.get(remotePreviewReadResultChannel.name) ?? []) cb({
       requestId: request.requestId,
-      chunk: { size: request.length * 10, etag: 'slow', data: Buffer.alloc(request.length, 'x').toString('base64') },
+      chunk: { size: REMOTE_WORKSPACE_CHUNK_BYTES * 10, etag: 'slow', data: Buffer.alloc(request.length, 'x').toString('base64') },
     });
   };
   const take = () => bus.emitted.shift()!.data as { requestId: string; length: number };
