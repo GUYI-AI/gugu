@@ -39,6 +39,7 @@ export type WorkspaceWriteChunk = {
   data: string;
   total: number;
   final: boolean;
+  abort?: boolean;
   /** 打开时那一版;`WORKSPACE_WRITE_FORCE` = 人确认过覆盖;null = 新文件。 */
   expectedEtag: string | null;
 };
@@ -177,6 +178,12 @@ export function createWorkspaceUploads(options: { idleMs?: number; maxBytes?: nu
     }); },
     write(root: string, request: WorkspaceWriteChunk, validate?: (file: string) => Promise<void>): Promise<WorkspaceWriteResult> { return locked(request.uploadId, async () => {
       const file = await inWorkspace(root, request.path, true);
+      if (request.abort) {
+        const upload = uploads.get(request.uploadId);
+        if (upload && upload.path !== file) throw new WorkspaceTransferError('invalid_payload', 'save parts disagree about the file');
+        if (upload) await drop(request.uploadId, upload);
+        return { received: 0 };
+      }
       if (!Number.isInteger(request.total) || request.total < 0 || request.total > maxBytes) {
         throw new WorkspaceTransferError('too_large', `file too large to save: ${request.total} bytes`);
       }

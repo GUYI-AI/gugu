@@ -72,7 +72,7 @@ class Cancelled extends Error {
 /** 传输要问那台机器的三件事(生产装配在 remote-transfer-wiring.ts,经 rpc 路由到那台机器)。 */
 export type TransferRpc = {
   listWorkspace(deviceId: string, request: { sessionId: string; path?: string }): Promise<{ entries: SessionpageWorkspaceEntry[] }>;
-  writeWorkspaceFile(deviceId: string, request: SessionpageWorkspaceWriteRequest): Promise<unknown>;
+  writeWorkspaceFile(deviceId: string, request: SessionpageWorkspaceWriteRequest & { abort?: boolean }): Promise<unknown>;
   createWorkspaceEntry(
     deviceId: string,
     request: { sessionId: string; dir: string; name: string; kind: 'file' | 'folder'; overwrite?: boolean }
@@ -175,28 +175,41 @@ export class RemoteTransfers {
       for (const item of fits) {
         this.check(transfer);
         const parent = await folderOf(item.segments.slice(0, -1));
+        this.check(transfer);
         const name = item.segments[item.segments.length - 1]!;
-        const { path } = await rpc.createWorkspaceEntry(this.deps.deviceId, { sessionId, dir: parent, name, kind: 'file', overwrite: true });
-        if (item.size === 0) continue;
+        // 收齐后由写入端发布，不先清空已有目标。
+        const path = `${parent.replace(/[\\/]$/, '')}/${name}`;
         const uploadId = (this.deps.newId ?? (() => crypto.randomUUID()))();
         let offset = 0;
-        while (offset < item.size) {
-          this.check(transfer);
-          const end = Math.min(item.size, offset + REMOTE_WORKSPACE_CHUNK_BYTES);
-          const bytes = await item.slice(offset, end);
-          await rpc.writeWorkspaceFile(this.deps.deviceId, {
-            sessionId,
-            path,
-            uploadId,
-            offset,
-            data: bytesToBase64(bytes),
-            total: item.size,
-            final: end >= item.size,
-            // 人已经点过「替换」(或本来没有同名的,刚建的空文件就是它):整份覆盖。
-            expectedEtag: WORKSPACE_WRITE_FORCE,
-          });
-          offset = end;
-          transfer.progress(bytes.length);
+        let started = false;
+        try {
+          do {
+            this.check(transfer);
+            const end = Math.min(item.size, offset + REMOTE_WORKSPACE_CHUNK_BYTES);
+            const bytes = item.size === 0 ? new Uint8Array(0) : await item.slice(offset, end);
+            this.check(transfer);
+            if (bytes.length !== end - offset) throw new Error('The upload source changed');
+            started = true;
+            await rpc.writeWorkspaceFile(this.deps.deviceId, {
+              sessionId,
+              path,
+              uploadId,
+              offset,
+              data: bytesToBase64(bytes),
+              total: item.size,
+              final: end >= item.size,
+              // 人已经点过「替换」或本来没有同名文件。
+              expectedEtag: WORKSPACE_WRITE_FORCE,
+            });
+            this.check(transfer);
+            offset = end;
+            transfer.progress(bytes.length);
+          } while (offset < item.size);
+        } catch (error) {
+          if (started) await rpc.writeWorkspaceFile(this.deps.deviceId, {
+            sessionId, path, uploadId, offset, data: '', total: item.size, final: false, expectedEtag: WORKSPACE_WRITE_FORCE, abort: true,
+          }).catch(() => undefined);
+          throw error;
         }
       }
       this.end(transfer, null);
