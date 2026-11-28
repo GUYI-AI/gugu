@@ -3239,7 +3239,23 @@ if (sshMachineStore) {
     for (const machine of sshMachineStore.list()) if (machine.ownerUserId === userId) void links.open(machine.deviceId)
   }).catch((error: unknown) => createLogger('server/ssh-link').warn({ error: String(error) }, 'ssh link: could not open the links at boot'))
   // 「设置 → 设备 → 从这台机器上卸载咕咕 server」:只对这台桌面用 SSH 装上的机器。
-  registerServerSshUninstallIpc({ ipcMain, getWindow: () => mainWindow, store: sshMachineStore, currentUserId })
+  registerServerSshUninstallIpc({
+    ipcMain, getWindow: () => mainWindow, store: sshMachineStore, currentUserId,
+    changeRegistration: async (action, deviceId, userId, sessionId, signal) => {
+      const auth = await desktopAuthProvider().getAuth()
+      if (auth?.userId !== userId || !auth.accessToken) throw new Error('The desktop account changed during uninstall')
+      const operation = action === 'revoke' ? 'revoke_server_device_session' : 'remove_uninstalled_server_device'
+      const { data, error } = await makeIdentityClient(auth.accessToken).rpc(operation, {
+        p_device_id: deviceId, p_session_id: sessionId,
+      }).abortSignal(signal)
+      if (error) {
+        createLogger('server').warn({ action, code: error.code }, 'could not update the server registration during uninstall')
+        throw error
+      }
+      if (await currentUserId() !== userId) throw new Error('The desktop account changed during uninstall')
+      return data
+    },
+  })
 }
 if (!SERVER_MODE && sshMachineStore) {
   registerServerSshInstallIpc({

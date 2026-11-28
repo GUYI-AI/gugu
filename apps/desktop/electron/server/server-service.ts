@@ -224,6 +224,11 @@ export function stopSystemdService(): void {
   if (!result.ok) throw new Error(`systemd 停止 server 失败:${result.out}`)
 }
 
+/** Prevent a unit that was force-stopped during uninstall from restarting while the login is being revoked. */
+export function stopRegisteredSystemdService(): void {
+  if (process.platform === 'linux' && fs.existsSync(unitPath())) stopSystemdService()
+}
+
 function lingerEnabled(user: string): boolean {
   const r = tryRun('loginctl', ['show-user', user, '-p', 'Linger', '--value'])
   return r.ok && r.out === 'yes'
@@ -324,6 +329,28 @@ function registerCron(executable: string, home: string): boolean {
   }
 }
 
+async function unloadLaunchd(run: (args: string[]) => ReturnType<typeof tryRun>): Promise<void> {
+  const uid = String(os.userInfo().uid)
+  const absent = (r: ReturnType<typeof tryRun>) => !r.ok && /Could not find (?:service|domain)\b/.test(r.stderr)
+  for (const domain of [`gui/${uid}`, `user/${uid}`]) {
+    const target = `${domain}/${names().launchdLabel}`
+    const before = run(['print', target])
+    if (absent(before)) continue
+    if (!before.ok) throw new Error(`Could not inspect the launchd service: ${before.out}`)
+    const seconds = Number(before.stdout.match(/exit timeout\s*=\s*(\d+)/)?.[1])
+    const deadline = Date.now() + (seconds > 0 ? seconds * 1000 + 5000 : CONFIRM_TIMEOUT_MS)
+    const bootout = run(['bootout', target])
+    if (!bootout.ok && !absent(bootout)) throw new Error(`Could not unload the launchd service: ${bootout.out}`)
+    for (;;) {
+      const state = run(['print', target])
+      if (absent(state)) break
+      if (!state.ok) throw new Error(`Could not confirm that the launchd service unloaded: ${state.out}`)
+      if (Date.now() >= deadline) throw new Error('The launchd service did not unload before its exit deadline')
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+  }
+}
+
 async function registerLaunchd(out: Out, executable: string, home: string): Promise<void> {
   const uid = String(os.userInfo().uid)
   const domains = [`gui/${uid}`, `user/${uid}`]
@@ -333,24 +360,10 @@ async function registerLaunchd(out: Out, executable: string, home: string): Prom
     trace.push(`launchctl ${args.join(' ')}: status=${r.status}\nstdout:\n${r.stdout}\nstderr:\n${r.stderr}`)
     return r
   }
-  const fail = (reason: string): never => { throw new Error(`${reason}\n${trace.join('\n')}`) }
-  const absent = (r: ReturnType<typeof tryRun>) => !r.ok && /Could not find (?:service|domain)\b/.test(r.stderr)
-  // Remove every old registration before publishing a new one in either domain.
-  for (const domain of domains) {
-    const target = `${domain}/${names().launchdLabel}`
-    const before = run(['print', target])
-    if (absent(before)) continue
-    if (!before.ok) fail('Could not inspect the existing launchd service')
-    const seconds = Number(before.stdout.match(/exit timeout\s*=\s*(\d+)/)?.[1])
-    const deadline = Date.now() + (seconds > 0 ? seconds * 1000 + 5000 : CONFIRM_TIMEOUT_MS)
-    if (!run(['bootout', target]).ok) fail('Could not unload the existing launchd service')
-    for (;;) {
-      const state = run(['print', target])
-      if (absent(state)) break
-      if (!state.ok) fail('Could not confirm that the launchd service unloaded')
-      if (Date.now() >= deadline) fail('The launchd service did not unload before its exit deadline')
-      await new Promise(resolve => setTimeout(resolve, 100))
-    }
+  try {
+    await unloadLaunchd(run)
+  } catch (error) {
+    throw new Error(`${String(error)}\n${trace.join('\n')}`, { cause: error })
   }
   fs.mkdirSync(path.dirname(plistPath()), { recursive: true })
   fs.writeFileSync(plistPath(), launchdPlist(executable, home, logFile()))
@@ -362,7 +375,7 @@ async function registerLaunchd(out: Out, executable: string, home: string): Prom
       return
     }
   }
-  fail('launchctl bootstrap failed')
+  throw new Error(`launchctl bootstrap failed\n${trace.join('\n')}`)
 }
 
 // ── 此刻在跑的那一个 ─────────────────────────────────────────────────────────────
@@ -636,10 +649,9 @@ export function guardReplacement(home: string, before: RunningServer, target: st
   createServerUpdateStateWriter(home).set('switching', target)
 }
 
-export function uninstallService(out: Out): void {
+export async function uninstallService(out: Out): Promise<void> {
   if (process.platform === 'darwin') {
-    const uid = String(os.userInfo().uid)
-    for (const domain of [`gui/${uid}`, `user/${uid}`]) tryRun('launchctl', ['bootout', `${domain}/${names().launchdLabel}`])
+    await unloadLaunchd((args) => tryRun('launchctl', args))
     fs.rmSync(plistPath(), { force: true })
   } else {
     if (fs.existsSync(unitPath())) {

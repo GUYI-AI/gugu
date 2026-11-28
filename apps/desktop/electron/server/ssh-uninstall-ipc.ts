@@ -23,7 +23,8 @@ type ActiveUninstall = {
   run: UninstallRun
   abort: AbortController
   prompts: SshPromptBroker
-  confirm: ((ok: boolean) => void) | null
+  confirm: ((confirmed: boolean) => void) | null
+  userId: string
 }
 
 export function registerServerSshUninstallIpc(options: {
@@ -32,6 +33,7 @@ export function registerServerSshUninstallIpc(options: {
   store: SshMachineStore
   /** 桌面此刻登着的账号:只卸「这个人用 SSH 装上的」那几台,并在清单里标出「你」。 */
   currentUserId: () => Promise<string | null>
+  changeRegistration: (action: 'revoke' | 'remove', deviceId: string, userId: string, sessionId: string, signal: AbortSignal) => Promise<unknown>
 }): void {
   const runs = new Map<string, ActiveUninstall>()
 
@@ -46,14 +48,14 @@ export function registerServerSshUninstallIpc(options: {
       const deviceId = typeof request?.deviceId === 'string' ? request.deviceId : ''
       const userId = await options.currentUserId().catch(() => null)
       const machine = userId ? options.store.list().find((m) => m.deviceId === deviceId && m.ownerUserId === userId) : undefined
-      if (!machine) return { error: 'unknownMachine' }
+      if (!userId || !machine) return { error: 'unknownMachine' }
       const target = sshTargetOf(machine)
       const runId = crypto.randomUUID()
       const abort = new AbortController()
       const run = new UninstallRun(runId, deviceId, machine.display, push)
       // 与添加机器同一套提问分类(指纹 / 密码 / 口令 / 验证码 / 提醒)与「再试一次」,界面也是同一张卡片。
       const prompts = createSshPromptBroker({ onPrompt: (prompt) => run.setPrompt(prompt), stopped: () => abort.signal.aborted })
-      const active: ActiveUninstall = { run, abort, prompts, confirm: null }
+      const active: ActiveUninstall = { run, abort, prompts, confirm: null, userId }
       runs.set(runId, active)
 
       void (async () => {
@@ -66,18 +68,19 @@ export function registerServerSshUninstallIpc(options: {
             spawnSsh: systemSpawnSsh(env),
             controlPath: workspaceControlPath(workspace.dir),
             currentUserId: userId,
+            changeRegistration: (action, sessionId) => options.changeRegistration(action, deviceId, userId, sessionId, abort.signal),
             waitForConfirm: () =>
               new Promise<boolean>((resolve) => {
                 if (abort.signal.aborted) return resolve(false)
-                active.confirm = (ok) => {
+                active.confirm = (confirmed) => {
                   active.confirm = null
-                  resolve(ok)
+                  resolve(confirmed)
                 }
               }),
             signal: abort.signal,
           })
           // 装的东西都删了:这台桌面也不再记得怎么 SSH 过去(它的「编程」直连随之没有)。
-          if (final.phase === 'done') {
+          if (final.phase === 'done' && !final.registrationRetained && options.store.list().includes(machine)) {
             // 卸掉了:这台机器那条共享连接一并收掉(❌ 留一条认证过的连接挂在后台)。
             void closeMachineMaster(machine)
             options.store.forget(deviceId)
@@ -112,9 +115,10 @@ export function registerServerSshUninstallIpc(options: {
     },
   )
 
-  options.ipcMain.handle(SERVER_SSH_MACHINES_CHANNELS.uninstallConfirm, (_event, runId: unknown) => {
-    const active = runs.get(String(runId))
-    if (!active?.confirm) return false
+  options.ipcMain.handle(SERVER_SSH_MACHINES_CHANNELS.uninstallConfirm, async (_event, runId: unknown) => {
+    if (typeof runId !== 'string') return false
+    const active = runs.get(runId)
+    if (!active?.confirm || await options.currentUserId() !== active.userId || !active.confirm) return false
     active.confirm(true)
     return true
   })

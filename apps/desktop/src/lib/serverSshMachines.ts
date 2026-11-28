@@ -23,7 +23,7 @@ export const SERVER_SSH_MACHINES_CHANNELS = {
   changed: 'server-ssh-machines:changed',
   /** 开始卸载:先连上去看看装了什么、谁登着(invoke,{ deviceId } → ServerUninstallStartResponse)。 */
   uninstallStart: 'server-ssh-machines:uninstall-start',
-  /** 人看过清单、确认卸载(invoke,runId)。 */
+  /** 人确认、任务已归档(invoke,runId)。 */
   uninstallConfirm: 'server-ssh-machines:uninstall-confirm',
   /** 回答 SSH 的提问(invoke,ServerUninstallAnswer)。 */
   uninstallAnswer: 'server-ssh-machines:uninstall-answer',
@@ -62,8 +62,13 @@ export type ServerUninstallAccount = {
 }
 
 export type ServerUninstallInspection = {
-  /** 那台机器上还能找到咕咕 server(程序或数据目录)。 */
+  /** 那台机器上还能找到咕咕 server 程序。 */
   installed: boolean
+  supported: boolean
+  /** The program is already gone and the archived receipt can finish removing the registration. */
+  cleanupPending?: boolean
+  home: string | null
+  archiveReady: boolean
   version: string | null
   accounts: ServerUninstallAccount[]
 }
@@ -74,7 +79,7 @@ export type ServerUninstallInspection = {
  */
 export type ServerUninstallPhase = 'inspecting' | 'confirm' | 'uninstalling' | 'done' | 'failed' | 'cancelled'
 
-export type ServerUninstallFailureReason = ServerSshInstallFailureReason | 'uninstallFailed'
+export type ServerUninstallFailureReason = ServerSshInstallFailureReason | 'uninstallFailed' | 'revokeFailed' | 'registrationFailed' | 'updateRequired'
 
 export type ServerUninstallState = {
   runId: string
@@ -83,6 +88,7 @@ export type ServerUninstallState = {
   phase: ServerUninstallPhase
   prompt: ServerSshInstallPrompt | null
   inspection: ServerUninstallInspection | null
+  registrationRetained?: boolean
   failure: { reason: ServerUninstallFailureReason; detail?: string } | null
 }
 

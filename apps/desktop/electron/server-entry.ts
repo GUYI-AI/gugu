@@ -28,6 +28,7 @@ import { ensurePrivateDir, summarizeChanges, tightenServerTree } from './server/
 import { assertRuntimeBackend, ownPackageIdentity, packageBackend, packageIdentity, prepareInstallation } from './server/server-package-environment.mts'
 import { getSupabaseUrl } from '@gugu/core/cloud/config'
 import { resolveServerHome } from './server/server-installation'
+import { SERVER_LOGIN_FOR_UNINSTALL, SERVER_LOGIN_REVOKED, UNINSTALL_ARCHIVE_RECEIPT } from './server/server-names'
 import { inspectAccountLayout } from './server/server-startup'
 import { homeLockHolder } from './server/server-startup'
 import { installNodeEgress } from './egress/install-node'
@@ -96,6 +97,8 @@ const USAGE = `用法:
   gugu-server prepare-install    安装器核对包与既有安装的环境(不读取账号凭据)
   gugu-server unregister
                                  把这台机器从这个账号里移除并注销登录(卸载时自动调用)
+  gugu-server revoke-login <owner> --session-id | --confirmed-session <id>
+                                卸载时报告账号会话，或在桌面确认撤销后清理本地凭据
   gugu-server link [--adopt-ssh]
                                  把标准输入输出接到这个账号的咕咕 server 上(远程 SSH:桌面经 SSH 自动调用)
   gugu-server agent-home status
@@ -208,12 +211,13 @@ function prepareRuntimeInstallation(): void {
 async function runAccount(userId: string, directory: string): Promise<void> {
   if (!fs.statSync(directory).isDirectory()) throw new Error(`Account directory is unavailable: ${directory}`)
   applyAccountEnv(userId, process.env, directory)
+  fs.rmSync(path.join(serverHome, UNINSTALL_ARCHIVE_RECEIPT), { force: true })
   ensureCaBundleForChildren(path.join(directory, 'data'))
   await import('./main')
 }
 
 async function runCommand(command: string | undefined, args: string[]): Promise<void> {
-  if (['start', 'run-account', 'login', 'logout', 'unregister', 'resume', 'match-version'].includes(command ?? '')
+  if (['start', 'run-account', 'login', 'logout', 'unregister', 'revoke-login', 'resume', 'match-version'].includes(command ?? '')
     || (command === 'service' && args[0] === 'install')) {
     prepareRuntimeInstallation()
   }
@@ -338,7 +342,7 @@ async function runCommand(command: string | undefined, args: string[]): Promise<
         // 非 0 = 结束时在跑的不是这一版(原因与下一步已经打出来了),install.sh 据此不报成功。
         return process.exit((await installService(out)) ? 0 : 1)
       }
-      if (args[0] === 'uninstall') uninstallService(out)
+      if (args[0] === 'uninstall') await uninstallService(out)
       else {
         stderr(`用法:gugu-server service install | uninstall`)
         process.exit(2)
@@ -363,6 +367,17 @@ async function runCommand(command: string | undefined, args: string[]): Promise<
       if (!pid && strays.length === 0) { out('server 没在运行。'); return process.exit(0) }
       out('已停止。')
       out('再次启动请执行 gugu-server start;移除开机自启请执行 gugu-server service uninstall。')
+      return process.exit(0)
+    }
+    case 'revoke-login': {
+      const account = readServerAccount()
+      if (!account || account.userId !== args[0]) throw new Error('The server account changed during uninstall')
+      const inspect = args[1] === '--session-id' && args.length === 2
+      if (!inspect && (args[1] !== '--confirmed-session' || args.length !== 3)) throw new Error('Missing server sign-in revocation confirmation')
+      applyAccountEnv(account.userId)
+      const { revokeStoredServerLogin } = await import('./server/server-revoke-login')
+      const session = await revokeStoredServerLogin(account.userId, path.join(serverHome, UNINSTALL_ARCHIVE_RECEIPT), inspect ? undefined : args[2])
+      out(inspect ? `${SERVER_LOGIN_FOR_UNINSTALL}=${session}` : SERVER_LOGIN_REVOKED)
       return process.exit(0)
     }
     case 'unregister': {

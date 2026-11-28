@@ -6,6 +6,15 @@
  */
 import { tierSuffix } from '@gugu/core/shared/ui/guguLink'
 
+export const UNINSTALL_ARCHIVE_RECEIPT = 'uninstall-archive-ready'
+export const SERVER_LOGIN_REVOKED = '__GUGU_SERVER_LOGIN_REVOKED__'
+export const SERVER_LOGIN_FOR_UNINSTALL = '__GUGU_SERVER_LOGIN_FOR_UNINSTALL__'
+
+export function isServerSessionId(value: string): boolean {
+  return /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value)
+    && value !== '00000000-0000-0000-0000-000000000000'
+}
+
 export type ServerNames = {
   /** 家目录下的数据目录名。 */
   homeDir: string

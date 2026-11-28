@@ -13,7 +13,7 @@ import { Sheet } from '../ui/Sheet'
 
 const body = 'text-[length:var(--font-body)] leading-[1.5]'
 
-/** 这台机器上你的智能体:列出来 + 一个「我确认连同删除」的勾。移除与卸载两个确认页共用。 */
+/** Show which agents are bound to the device before removing it. */
 export function BoundAgentsConfirm({
   state,
   onCascadeChange,
@@ -26,13 +26,13 @@ export function BoundAgentsConfirm({
   const { t } = useTranslation('settings')
   if (state.loading) return <div className={`${body} text-[var(--muted-fg)]`}>{t('devices.checkingAgents')}</div>
   if (state.agents.length === 0) return null
+  const countKey = removesVersion ? 'devices.remove.version.boundAgents' : 'devices.boundAgents'
   return (
     <div className="flex flex-col gap-2">
-      <div className={`${body} text-[var(--muted-fg)]`}>{t(removesVersion ? 'devices.remove.version.boundAgents' : 'devices.boundAgents', { count: state.agents.length })}</div>
-      {/* 对话框里的清单:密度面板,❌ 再画一圈框(框套框)。 */}
+      <div className={`${body} text-[var(--muted-fg)]`}>{t(countKey, { count: state.agents.length })}</div>
       <div className="flex max-h-40 flex-col gap-[5px] overflow-y-auto rounded-[var(--radius-document)] bg-foreground/[0.025] px-[10px] py-2 dark:bg-foreground/[0.04]">
         {state.agents.map((agent) => (
-          <div key={agent.id} className={`${body} truncate text-[var(--fg)]`}>{agent.display_name}</div>
+          <div key={agent.id} className={`${body} shrink-0 truncate text-[var(--fg)]`}>{agent.display_name}</div>
         ))}
       </div>
       <label className={`${body} flex cursor-pointer items-start gap-2 text-[var(--fg)]`}>

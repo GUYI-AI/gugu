@@ -12,9 +12,23 @@ import { SessionLocalizationProvider } from '@/session/renderer/localization/loc
 import { ProjectFolderCard } from '@/session/renderer/features/projects/components/main-panel/project-folder-card'
 import { DevicesContext, type DevicesContextValue } from '@/store/devicesContext'
 import type { Device } from '@gugu/core/shared/types/chat'
+import type { ServerUninstallState } from '@/lib/serverSshMachines'
 const retryMatch = vi.hoisted(() => vi.fn(async (_deviceId: string) => true))
 const restartNow = vi.hoisted(() => vi.fn(async (_deviceId: string, _version: string, _confirmedRpc: boolean) => ({ requested: true })))
 vi.mock('@/lib/serverVersionRetry', () => ({ retryServerVersionMatch: retryMatch, restartServerVersionNow: restartNow, readServerVersionSwitchBusyAgents: async () => undefined }))
+const archiveAgent = vi.hoisted(() => vi.fn())
+const hostSessions = vi.hoisted(() => ({
+  getSessions: vi.fn(),
+  archiveSession: vi.fn(),
+}))
+vi.mock('@/lib/archiveOwnedAgent', async (original) => ({
+  ...await original<typeof import('@/lib/archiveOwnedAgent')>(),
+  archiveOwnedAgent: archiveAgent,
+}))
+vi.mock('@renderer/lib/ipc', async (original) => {
+  const actual = await original<typeof import('@renderer/lib/ipc')>()
+  return { ...actual, rpcOn: (id: string | null | undefined) => id === 'srv' ? { sessions: hostSessions } : actual.rpcOn(id) }
+})
 function device(overrides: Partial<Device> = {}): Device {
   return {
     device_id: 'remote',
@@ -360,6 +374,7 @@ describe('DevicesSection interaction', () => {
     })
     await openMenuItem('settings-device-remove-button')
     const dialog = document.body.querySelector('[data-testid="settings-device-remove-dialog"]') as HTMLElement
+    expect(dialog.textContent).toContain('Research Agent')
     const confirmButton = buttonByText(dialog, '移除这台机器')
     expect(confirmButton.disabled).toBe(true)
     const checkbox = dialog.querySelector('input[type="checkbox"]') as HTMLInputElement
@@ -545,19 +560,93 @@ describe('DevicesSection interaction', () => {
     expect(ids).toEqual(['gpu'])
   })
 
-  it('#6264 SSH 装上的 server:菜单里有复制地址,与移除分开的「卸载」', async () => {
-    const invoke = vi.fn(async (channel: string) => (channel === 'server-ssh-machines:describe' ? [{ deviceId: 'srv', display: 'alice@box' }] : null))
-    ;(window as unknown as { electronAPI: unknown }).electronAPI = { invoke, eventOn: () => () => undefined }
+  it('archives agents and remaining tasks with bounded concurrency before confirming uninstall', async () => {
+    const confirming: ServerUninstallState = {
+      runId: 'uninstall-1', deviceId: 'srv', target: 'alice@box', phase: 'confirm',
+      inspection: {
+        installed: true, supported: true, archiveReady: false, home: '/home/alice/.gugu-server', version: '1.0',
+        accounts: [{ email: null, signedIn: true, you: true }],
+      },
+      prompt: null, failure: null,
+    }
+    let pushState: ((state: ServerUninstallState) => void) | undefined
+    const invoke = vi.fn(async (channel: string, _arg?: unknown) => {
+      if (channel === 'server-ssh-machines:describe') return [{ deviceId: 'srv', display: 'alice@box' }]
+      if (channel === 'server-ssh-machines:uninstall-start') return { runId: confirming.runId, state: confirming }
+      if (channel === 'server-ssh-machines:uninstall-confirm') return true
+      return null
+    })
+    ;(window as unknown as { electronAPI: unknown }).electronAPI = {
+      invoke,
+      eventOn: (channel: string, callback: (state: ServerUninstallState) => void) => {
+        if (channel === 'server-ssh-machines:uninstall-state') pushState = callback
+        return () => undefined
+      },
+    }
+    const agents = Array.from({ length: 8 }, (_, index) => ({ id: `agent-${index + 1}`, display_name: 'Research Agent', avatar: null }))
+    let bound = agents
+    let activeAgents = 0
+    let failFirst = true
+    const firstArchive = Promise.withResolvers<void>()
+    const finishing = Promise.withResolvers<void>()
+    archiveAgent.mockReset().mockImplementation(async (id: string) => {
+      activeAgents += 1
+      try {
+        await (failFirst ? firstArchive.promise : finishing.promise)
+        if (id === 'agent-1' && failFirst) {
+          failFirst = false
+          throw new Error('Host did not respond')
+        }
+        bound = bound.filter(agent => agent.id !== id)
+      } finally {
+        activeAgents -= 1
+      }
+    })
+    const tasks = Array.from({ length: 8 }, (_, index) => ({ id: `task-${index}`, projectId: 'project-1' }))
+    const finishTasks = Promise.withResolvers<void>()
+    hostSessions.getSessions.mockReset().mockResolvedValue(tasks)
+    hostSessions.archiveSession.mockReset().mockImplementation(async () => {
+      await finishTasks.promise
+      return { archived: [], unreached: [] }
+    })
     try {
-      const value = store({ devices: [device({ device_id: 'srv', label: 'Linux 1', capabilities: { terminals: [], runtimes: [], host_kind: 'server' } })] })
+      const value = store({
+        devices: [device({ device_id: 'srv', label: 'Linux 1', capabilities: { terminals: [], runtimes: [], host_kind: 'server' } })],
+        listBoundAgents: vi.fn(async () => bound),
+      })
       await act(async () => {
         root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection)))
       })
       await flush()
-      await openMenu(0)
-      expect(document.body.querySelector('[data-testid="settings-device-copy-address"]')).not.toBeNull()
-      expect(document.body.querySelector('[data-testid="settings-device-remove-button"]')?.textContent).toContain('移除这台机器')
-      expect(document.body.querySelector('[data-testid="settings-device-uninstall-button"]')?.textContent).toContain('卸载咕咕 server')
+      await openMenuItem('settings-device-uninstall-button')
+      const dialog = document.body.querySelector<HTMLElement>('[data-testid="settings-device-uninstall-dialog"]')!
+      expect(value.listBoundAgents).toHaveBeenCalledWith('srv')
+      expect(dialog.textContent).toContain('还有 8 个智能体需要归档')
+      expect(dialog.textContent).toContain('/home/alice/.gugu-server')
+      expect(dialog.textContent).not.toContain('Research Agent')
+      expect(dialog.querySelector('input[type="checkbox"]')).toBeNull()
+
+      const confirms = () => invoke.mock.calls.filter(([channel]) => channel === 'server-ssh-machines:uninstall-confirm')
+      await act(async () => { buttonByText(dialog, '卸载').click() })
+      expect(activeAgents).toBe(6)
+      expect(hostSessions.getSessions).not.toHaveBeenCalled()
+      await act(async () => { firstArchive.resolve(); finishing.resolve() })
+      expect(dialog.textContent).toContain('任务归档未完成')
+      expect(confirms()).toHaveLength(0)
+      expect(bound.map(agent => agent.id)).toEqual(['agent-1'])
+      await act(async () => { buttonByText(dialog, '卸载').click() })
+      expect(archiveAgent).toHaveBeenLastCalledWith('agent-1', { removeSocialIdentity: true })
+      expect(hostSessions.archiveSession).toHaveBeenCalledTimes(6)
+      expect(confirms()).toHaveLength(0)
+      await act(async () => { finishTasks.resolve() })
+      expect(hostSessions.archiveSession).toHaveBeenCalledTimes(8)
+      expect(hostSessions.archiveSession).toHaveBeenCalledWith('project-1', 'task-0', { removeSocialIdentity: true })
+      expect(confirms()).toEqual([['server-ssh-machines:uninstall-confirm', confirming.runId]])
+      expect(value.remove).not.toHaveBeenCalled()
+
+      await act(async () => { pushState!({ ...confirming, phase: 'done' }) })
+      expect(value.remove).not.toHaveBeenCalled()
+      expect(dialog.textContent).toContain('已归档任务保留在原机')
     } finally {
       delete (window as unknown as { electronAPI?: unknown }).electronAPI
     }

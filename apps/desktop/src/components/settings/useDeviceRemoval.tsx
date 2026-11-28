@@ -1,5 +1,5 @@
 import { messageForUser } from '@/lib/userFacingError'
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Device } from '@gugu/core/shared/types/chat'
 import { deviceRowModel, type BoundAgentsState } from '../../lib/deviceRowModel'
@@ -48,6 +48,8 @@ export function useDeviceRemoval(machines: readonly DeviceMachine[], { onRemoved
   const { addresses, forget } = useSshMachines()
   const [dialog, setDialog] = useState<DialogState | null>(null)
   const [agents, setAgents] = useState<BoundAgentsState>({ agents: [], loading: false, cascadeChecked: false })
+  const [agentReadFailed, setAgentReadFailed] = useState(false)
+  const agentRead = useRef(0)
   const addressOf = useCallback((deviceId: string) => (addresses ? addresses.get(deviceId) ?? null : undefined), [addresses])
   const endpoints = useMemo(() => machines.flatMap(machine => machine.configurations), [machines])
   const removable = useMemo(() => endpoints.filter(device => !device.is_current_device), [endpoints])
@@ -57,14 +59,19 @@ export function useDeviceRemoval(machines: readonly DeviceMachine[], { onRemoved
   ), [endpoints, removable])
 
   const loadAgents = useCallback(async (devices: readonly Device[]) => {
+    const read = ++agentRead.current
     setAgents({ agents: [], loading: true, cascadeChecked: false })
+    setAgentReadFailed(false)
     try {
       const lists = await Promise.all(devices.map(device => listBoundAgents(device.device_id)))
+      if (read !== agentRead.current) return
       setAgents({ agents: lists.flat(), loading: false, cascadeChecked: false })
     } catch (err) {
       // 列不出来 ⇒ 按「没有」走非级联移除:真有的话库会拦下(DEVICE_HAS_AGENTS),确认页报「没能移除」,
       // ❌ 不会在没让人看过清单的情况下把智能体一起删掉。
       log.error({ err: String((err as Error)?.message ?? err), deviceIds: devices.map(device => device.device_id) }, 'list bound agents failed')
+      if (read !== agentRead.current) return
+      setAgentReadFailed(true)
       setAgents({ agents: [], loading: false, cascadeChecked: false })
     }
   }, [listBoundAgents])
@@ -99,24 +106,25 @@ export function useDeviceRemoval(machines: readonly DeviceMachine[], { onRemoved
   }, [machines])
 
   /** 移除 = 这个账号不再用这台机器;用 SSH 装上的,这台电脑也不再记得怎么连过去。 */
-  const removeDevice = useCallback(async (device: Device): Promise<void> => {
+  const removeDevice = useCallback(async (device: Device, cascade: boolean): Promise<void> => {
     try {
-      await remove(device.device_id, { cascade: agents.agents.length > 0 })
+      await remove(device.device_id, { cascade })
       await forget(device.device_id)
     } catch (err) {
       log.error({ err: String((err as Error)?.message ?? err), deviceId: device.device_id }, 'remove device failed')
       throw err
     }
     onRemoved?.()
-  }, [remove, forget, agents.agents.length, onRemoved])
+  }, [remove, forget, onRemoved])
 
   const confirmRemove = async () => {
     if (dialog?.kind !== 'remove') return
     const { devices, machineKey } = dialog
+    const cascade = agents.agents.length > 0 && agents.cascadeChecked
     setDialog({ kind: 'remove', devices, removing: true, failed: '', machineKey })
     const left = [...devices]
     try {
-      while (left.length) { await removeDevice(left[0]!); left.shift() }
+      while (left.length) { await removeDevice(left[0]!, cascade); left.shift() }
       back(machineKey)
     }
     // 删到一半失败:已删的不再列,重试只删剩下的。
@@ -175,12 +183,14 @@ export function useDeviceRemoval(machines: readonly DeviceMachine[], { onRemoved
 
     {dialog?.kind === 'uninstall' && (
       <ServerUninstallDialog
+        key={dialog.device.device_id}
         device={dialog.device}
         address={addressOf(dialog.device.device_id) ?? dialog.device.label}
-        agents={agents}
-        onCascadeChange={(value) => setAgents((s) => ({ ...s, cascadeChecked: value }))}
-        onRemove={() => removeDevice(dialog.device)}
-        onRemoveOnly={() => setDialog({ kind: 'remove', devices: [dialog.device], removing: false, failed: '', machineKey: dialog.machineKey })}
+        agentCount={agents.loading || agentReadFailed ? null : agents.agents.length}
+        countError={agentReadFailed}
+        onReloadAgents={() => void loadAgents([dialog.device])}
+        listBoundAgents={listBoundAgents}
+        onRemoveOnly={() => openRemove(dialog.device)}
         onClose={() => back(dialog.machineKey)}
       />
     )}
