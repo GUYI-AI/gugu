@@ -7,7 +7,6 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { RefreshFailed } from '@/components/ui/RefreshFailed'
-import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client'
 import { Check, Copy, ExternalLink, Eye, EyeOff } from '@/lib/icons'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { platform } from '@/platform'
@@ -100,8 +99,6 @@ export function PhoneConnectorSetupPage({
     void openAuthorizationLink(url).catch((error) => setBrowserFailed(messageForUser(error)))
   }, [])
   const connected = (displayName?: string) => {
-    if (rpc) void reportAssistantAppChange({ rpc }, assistant.id, { resource: 'integrations', operation: 'saved', id,
-      deviceId: homeDeviceId ?? undefined, after: { name: view?.item.name ?? id } })
     // Clear the shared snapshot too; an immediate read must not reuse pre-authorization state.
     if (machine.state === 'ready') machine.machine.panel?.invalidate()
     integrations.retry()

@@ -17,7 +17,6 @@ import {
 } from './repo';
 import { markRunFailed, markRunSkipped, updateRunOrThrow, type OnStepCompleted } from './run-transitions';
 import { runQueuedAutomation, type AutomationRunExecutor } from './runtime';
-import { prepareAgentScheduleChanges } from './assistant-panel-schedule-preparation';
 
 const TICK_MS = 60_000;
 // 每分钟整点之后这么久扫一次:排定的时刻都落在整分钟上(cron 最细到分;一次性的 `at` 默认也是),
@@ -113,11 +112,9 @@ export class AutomationScheduler {
   }
 
   private scanNow(): void {
-    void prepareAgentScheduleChanges().then(blocked => {
-      this.tickTail = Promise.all([this.tickTail, this.tick(blocked)]).then(() => undefined);
-      return this.tickTail;
-    }).then(() => this.armDueWake())
-      .catch(error => log.error('Automation preparation failed',{ error: String(error) }));
+    this.tickTail = Promise.all([this.tickTail, this.tick()]).then(() => undefined);
+    void this.tickTail.then(() => this.armDueWake())
+      .catch(error => log.error('Automation scan failed',{ error: String(error) }));
   }
 
   /**
@@ -143,8 +140,7 @@ export class AutomationScheduler {
 
   async reload(): Promise<void> {
     await this.recoveryTail;
-    const blocked = await prepareAgentScheduleChanges();
-    const run = this.bootstrapTail.then(() => this.bootstrapDueRuns(blocked));
+    const run = this.bootstrapTail.then(() => this.bootstrapDueRuns());
     this.bootstrapTail = run.catch((error) => {
       log.error('AutomationScheduler bootstrap failed', { error: String(error) });
     });
@@ -237,7 +233,7 @@ export class AutomationScheduler {
     }
   }
 
-  private async bootstrapDueRuns(blocked: Map<string, Error>): Promise<void> {
+  private async bootstrapDueRuns(): Promise<void> {
     const now = Date.now();
 
     // Ensure every enabled automation has a scheduled cron run (self-healing).
@@ -278,10 +274,10 @@ export class AutomationScheduler {
         });
     }
 
-    await this.drainQueue(blocked);
+    await this.drainQueue();
   }
 
-  private async tick(blocked: Map<string, Error>): Promise<void> {
+  private async tick(): Promise<void> {
     if (this.ticking) return;
     this.ticking = true;
     try {
@@ -304,7 +300,7 @@ export class AutomationScheduler {
       }
 
       // Phase 2: drain the queue.
-      await this.drainQueue(blocked);
+      await this.drainQueue();
     } catch (error) {
       log.error('AutomationScheduler tick failed', { error: String(error) });
     } finally {
@@ -312,24 +308,23 @@ export class AutomationScheduler {
     }
   }
 
-  async drainQueue(prepared?: Map<string, Error>): Promise<void> {
+  async drainQueue(): Promise<void> {
     await this.recoveryTail;
-    const blocked = prepared ?? await prepareAgentScheduleChanges();
-    const run = this.drainTail.then(() => this.pumpQueue(blocked));
+    const run = this.drainTail.then(() => this.pumpQueue());
     this.drainTail = run.catch((error) => {
       log.error('AutomationScheduler queue drain failed', { error: String(error) });
     });
     await this.drainTail;
   }
 
-  private async pumpQueue(blocked: Map<string, Error>): Promise<void> {
+  private async pumpQueue(): Promise<void> {
     const attempted = new Set<string>();
     for (const [id,after] of this.deliveryRetryAfter) {
       if (after > Date.now()) attempted.add(id); else this.deliveryRetryAfter.delete(id);
     }
     while (this.slotPool.availableSlots > 0) {
       const capacity = this.slotPool.availableSlots;
-      const batch = await listQueuedRuns(capacity,[...blocked.keys()],[...attempted]);
+      const batch = await listQueuedRuns(capacity,[...attempted]);
       if (batch.length === 0) return;
 
       let madeProgress = false;

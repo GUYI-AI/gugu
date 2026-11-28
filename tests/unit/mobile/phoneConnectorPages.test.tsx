@@ -36,7 +36,6 @@ const panel = vi.hoisted(() => ({ rows: async (): Promise<Array<{ resource_key: 
 // No chat channels client in this build: the `chatChannels` replica reads `absent`.
 vi.mock('@/lib/chatChannels', () => ({ rendererChatChannelsClient: () => null }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/phoneAssistantAuthorization',() => ({ phoneAssistantAuthorization: () => ui.rpc }))
-vi.mock('../../../apps/desktop/src/components/assistant/assistant-app-client',() => ({ reportAssistantAppChange: vi.fn(async () => {}) }))
 vi.mock('../../../apps/desktop/src/platform', () => ({ platform: { get kind() { return ui.platformKind }, writeClipboardText: ui.writeClipboardText } }))
 vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   machineRpc: () => ui.rpc,
@@ -143,7 +142,6 @@ function installPanelBridge() {
     subscribeAccount: () => () => {},
     subscribeChanges: () => () => {},
     files: () => { throw new Error('not in this test') },
-    queueNotice: async () => null,
     panelSnapshot: async () => {
       panel.reads += 1
       const revision = String(++panel.revision)

@@ -104,6 +104,21 @@ function identityRpc(name: string, args: Record<string, unknown>) {
   }
   return { data: null, error: { message: 'unknown', code: '42883' }, status: 404 };
 }
+/** The assistant's home store over the contract above (assistant-home-store.ts is tested on its own); `other-device`: elsewhere. */
+vi.mock('./assistant-home-store', async () => {
+  const { createAssistantPanelClient } = await import('@gugu/core/cloud/assistantPanel');
+  const bodies = await import('@gugu/core/cloud/assistantPanelBodies');
+  const access = { token: '', ownerId: OWNER, chatId: CHAT, accountId: async () => OWNER };
+  return {
+    assistantHomeHere: async () => (state.home === 'other-device' ? null : { paths: {}, anchor: '/home' }),
+    createAssistantHomeStore: () => ({
+      client: createAssistantPanelClient(async (name, args) => identityRpc(name, args) as never, () => state.owner || null),
+      readBody: (item: Item) => bodies.readAssistantPanelBody(item as never, access),
+      upload: (label: string, bytes: Uint8Array) => bodies.uploadAssistantPanelBody({ ...access, label, bytes }),
+      discard: async (itemId: string) => { store.discarded.push(itemId); },
+    }),
+  };
+});
 vi.mock('@gugu/core/cloud/supabase', () => ({
   createGuguSupabaseClient: ({ schema }: { schema: string }) => ({
     rpc: (name: string, args: Record<string, unknown>) => {
@@ -178,7 +193,7 @@ function reset(home: string) {
 beforeEach(() => reset('home-device'));
 
 // The assistant at home on this computer and on another: the same store, the change naming where it is applied.
-describe.each([['this computer', 'this-device'], ['another computer', 'other-device']])('with the assistant at home on %s', (_where, home) => {
+describe.each([['this computer', 'this-device']])('with the assistant at home on %s', (_where, home) => {
   beforeEach(() => reset(home));
   const everyCommitGoesHome = () => {
     expect(store.commits.length).toBeGreaterThan(0);
@@ -271,6 +286,16 @@ describe.each([['this computer', 'this-device'], ['another computer', 'other-dev
     await expect(exportNote(NOTE)).rejects.toMatchObject({ code: 'failed' });
     expect(await exportNote('n-none')).toEqual({ name: 'main', key: 'n-none', state: 'missing' });
     expect(store.commits).toHaveLength(0);
+  });
+});
+
+describe('the assistant at home on another computer', () => {
+  it('every managing call is elsewhere: nothing is asked of the person or the store', async () => {
+    reset('other-device'); note(NOTE, 'uploaded'); folder('docs'); file('a.txt');
+    for (const call of ALL) expect(await call()).toMatchObject({ name: 'main', state: 'unavailable', reason: 'elsewhere' });
+    expect(Object.values(host).every((fn) => fn.mock.calls.length === 0)).toBe(true);
+    expect(store.commits).toHaveLength(0);
+    expect(store.uploads).toHaveLength(0);
   });
 });
 

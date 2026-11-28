@@ -16,7 +16,6 @@ vi.mock('../../../apps/desktop/src/platform', () => ({ platform: { kind: 'electr
 vi.mock('../../../apps/desktop/src/mobile/phone-device/PhonePermissionsList', () => ({ PhonePermissionsList: () => null }))
 vi.mock('../../../apps/desktop/src/platform/desktopIpc', () => ({ desktopIpc: () => ({ invoke: mocks.invoke }) }))
 vi.mock('../../../apps/desktop/src/hooks/useThisDeviceActions', () => ({ useThisDeviceState: () => ({ state: mocks.state, reload: mocks.reload }) }))
-vi.mock('../../../apps/desktop/src/components/assistant/assistant-app-client', () => ({ reportAssistantAppChange: vi.fn(async () => {}) }))
 
 let h: ReturnType<typeof createReactHarness>
 beforeEach(() => { h = createReactHarness(); vi.clearAllMocks(); mocks.state.groups = []; mocks.state.denyAll = false; mocks.invoke.mockResolvedValue(undefined) })

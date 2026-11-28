@@ -1,5 +1,4 @@
 import { readAssistantPanelBody, uploadAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies'
-import { withAssistantPanelReadDeadline } from '@gugu/core/cloud/assistantPanelRead'
 import { ASSISTANT_APP_ID, pickAssistant } from '@gugu/core/shared/assistantProvision'
 import { userIdFromSupabaseAccessToken } from '@gugu/core/cloud/runtimeAuthProvider'
 import type { AssistantPanelClient } from '@gugu/core/cloud/assistantPanel'
@@ -25,8 +24,6 @@ const lazyPanelClient = {
   snapshot: async (assistant: string) => (await panelCloud()).snapshot(assistant),
   resource: async (...args: Parameters<AssistantPanelClient['resource']>) => (await panelCloud()).resource(...args),
   commit: async (...args: Parameters<AssistantPanelClient['commit']>) => (await panelCloud()).commit(...args),
-  notice: async (...args: Parameters<AssistantPanelClient['notice']>) => (await panelCloud()).notice(...args),
-  pending: async (...args: Parameters<AssistantPanelClient['pending']>) => (await panelCloud()).pending(...args),
 } as unknown as AssistantPanelClient
 
 /** The App as installed on this phone (phoneApps.ts), a one-moment answer. */
@@ -98,20 +95,6 @@ export function phoneBindingPorts(files: ReturnType<typeof createAppFiles>): Pho
       if (!actions) throw failed('The assistant is not open on this phone now: try again in a moment')
       await actions.rename(agentId, name)
     },
-    // The phone's own picker inside the person's gesture, as `appFiles` uploads pick (phoneAppHost.ts). Cancelled: null.
-    pickFiles: () => new Promise((resolve) => {
-      const input = document.createElement('input')
-      input.type = 'file'
-      input.multiple = true
-      input.addEventListener('cancel', () => resolve(null), { once: true })
-      input.addEventListener('change', () => {
-        const picked = [...(input.files ?? [])]
-        resolve(picked.length === 0 ? null : picked.map((file) => ({
-          name: file.name, size: file.size, contentType: file.type, read: async () => new Uint8Array(await file.arrayBuffer()),
-        })))
-      }, { once: true })
-      input.click()
-    }),
     async confirmRemoval(question) {
       const actions = phoneAssistantLayer.actions()
       if (!actions) throw failed('The assistant is not open on this phone now: try again in a moment')
@@ -119,9 +102,6 @@ export function phoneBindingPorts(files: ReturnType<typeof createAppFiles>): Pho
     },
     panel: {
       client: lazyPanelClient,
-      snapshot: (_ownerId, agentId) => withAssistantPanelReadDeadline(() => lazyPanelClient.snapshot(agentId)),
-      resource: (_ownerId, agentId, domain, key) => withAssistantPanelReadDeadline(() => lazyPanelClient.resource(agentId, domain, key)),
-      commit: (_ownerId, agentId, change) => lazyPanelClient.commit(agentId, change),
       readBody: (item, access) => readAssistantPanelBody(item, { ...access, accountId: () => phoneAccountId() }),
       uploadBody: (access) => uploadAssistantPanelBody({ ...access, accountId: () => phoneAccountId() }),
       async discard(_token, ownerId, itemId) {
@@ -131,10 +111,6 @@ export function phoneBindingPorts(files: ReturnType<typeof createAppFiles>): Pho
     },
     layer: phoneAssistantLayer,
     randomUUID: () => crypto.randomUUID(),
-    async sha256(bytes) {
-      const digest = await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>)
-      return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
-    },
   }
 }
 

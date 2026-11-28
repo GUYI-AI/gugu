@@ -23,7 +23,6 @@ vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: 
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({
   remoteHostsStore: { connectionState: () => 'connected', accountFolders: () => null, accountUnread: () => false, accountIsNewer: () => false },
 }))
-vi.mock('@/components/assistant/assistant-app-client', () => ({ reportAssistantAppChange: vi.fn() }))
 
 const { followRendererSession } = await import('@/lib/replica')
 const { projectFolders, useProjectFolders } = await import('@renderer/features/projects/components/main-panel/project-folders')

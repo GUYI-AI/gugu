@@ -17,7 +17,6 @@ import { watchSessionSendQueues } from '@/lib/sessionSendQueueHost'
 import { watchPhoneSessionSendQueues } from '@/components/session-watch/phone-send-queue-host'
 import { ensureKind, outbox } from '@/lib/outbox'
 import { readOutboxKind } from '@/lib/outbox/kinds/read'
-import { assistantNoticeOutboxKind } from '@/lib/outbox/kinds/assistantNotice'
 import { importLegacyWrites } from '@/lib/outbox/legacy'
 import { nativeInputFailureNotice, runNativeInputAction } from '@/lib/nativeInputFailureNotice'
 import { sessionInputFailureText } from '@/lib/pendingSessionInput'
@@ -60,7 +59,6 @@ export function OutboxHost({ accountId }: { accountId: string }) {
     }
     // Static kinds stay registered: what a previous run queued drains from the start.
     ensureKind(box, readOutboxKind)
-    ensureKind(box, assistantNoticeOutboxKind)
     const stops = [
       box.register(sessionInputKind({
         // A queued file sent to an old host keeps its caption and explains what was omitted.
