@@ -4,14 +4,20 @@ import { useEffect } from 'react'
 import { createNode, createReactHarness } from '../../../support/testHarness'
 
 type Opened = { name: string; onSubscribed: () => void; onStatus: (status: string) => void; closed: boolean }
-const realtime = vi.hoisted(() => ({ opened: [] as Opened[] }))
+// A leave finishes when the test says so (`leaves`), or at once.
+const realtime = vi.hoisted(() => ({ opened: [] as Opened[], leaves: null as null | Array<{ name: string; finish: () => void }> }))
 vi.mock('../../../../apps/desktop/src/lib/realtimeChannel', () => ({
+  SUBSCRIBE_WATCHDOG_MS: 50,
   subscribeAuthenticatedRealtimeChannel: (_open: unknown, name: string, options: { onSubscribed: () => void; onStatus: (status: string) => void }) => {
     const opened = { name, onSubscribed: options.onSubscribed, onStatus: options.onStatus, closed: false }
     realtime.opened.push(opened)
     return opened
   },
-  unsubscribeAuthenticatedRealtimeChannel: async (handle: Opened) => { handle.closed = true },
+  unsubscribeAuthenticatedRealtimeChannel: (handle: Opened) => new Promise<void>((resolve) => {
+    handle.closed = true
+    if (realtime.leaves) realtime.leaves.push({ name: handle.name, finish: resolve })
+    else resolve()
+  }),
 }))
 // Each batch read waits until the test answers it with the agents' server state at that moment.
 type Read = { ids: string[]; answer: (seqs: Record<string, number>) => void }
@@ -44,7 +50,8 @@ function signIn() {
   store.setPresenceBusContext({ currentUserId: `me-${++account}` })
 }
 beforeEach(() => { harness = createReactHarness() })
-afterEach(() => { harness.cleanup(); realtime.opened = []; server.reads = [] })
+afterEach(() => { harness.cleanup(); realtime.opened = []; realtime.leaves = null; server.reads = [] })
+const closeDelay = () => new Promise((resolve) => setTimeout(resolve, 1100))
 
 function Panel({ chatId, agents }: { chatId: string | null; agents: string[] }) {
   useAgentPresenceChannel(chatId ? chatPresenceChannel(chatId) : null, agents)
@@ -77,6 +84,7 @@ describe('agent presence channels', () => {
     expect(server.reads).toHaveLength(1)
 
     await harness.render(createNode('div', null, createNode(Dot, { id: 'a2' }), createNode(Panel, { chatId: 'c2', agents: ['a2'] })))
+    await settle()
     realtime.opened[0]!.onSubscribed()
     await settle()
     // The change committed between the first read and the join (seq 4 → 5) is only in a read sent after the join.
@@ -95,6 +103,7 @@ describe('agent presence channels', () => {
       createNode(Panel, { chatId: first, agents: ['a3'] }),
       createNode(Panel, { chatId: second, agents: ['a3'] }))
     await harness.render(both('c3', 'c3'))
+    await settle()
     expect(realtime.opened.map((opened) => opened.name)).toEqual(['presence:chat:c3'])
     realtime.opened[0]!.onSubscribed()
     await settle()
@@ -109,7 +118,7 @@ describe('agent presence channels', () => {
     expect(seqOf('a3')).toBe(7)
 
     await harness.render(both(null, null))
-    await settle()
+    await closeDelay()
     expect(realtime.opened[0]!.closed).toBe(true)
     expect(realtime.opened).toHaveLength(1)
   })
@@ -127,5 +136,61 @@ describe('agent presence channels', () => {
     realtime.opened[0]!.onStatus('CHANNEL_ERROR')
     await settle()
     expect(server.reads).toHaveLength(1)
+  })
+
+  it('keeps the channel when it is let go and held again in adjacent commits', async () => {
+    signIn()
+    const view = (chatId: string | null) => createNode('div', null, createNode(Dot, { id: 'a5' }), createNode(Panel, { chatId, agents: ['a5'] }))
+    await harness.render(view('c5'))
+    await settle()
+    realtime.opened[0]!.onSubscribed()
+    await settle()
+    server.reads[0]!.answer({ a5: 2 })
+    await settle()
+
+    await harness.render(view(null))
+    await harness.render(view('c5'))
+    await closeDelay()
+    expect(realtime.opened).toHaveLength(1)
+    expect(realtime.opened[0]!.closed).toBe(false)
+    // Still subscribed and carrying: no new join, no new read, broadcasts land.
+    expect(server.reads).toHaveLength(1)
+    store.applyAgentPresenceBroadcast('presence:chat:c5', { presence: presence('a5', 3) })
+    await settle()
+    expect(seqOf('a5')).toBe(3)
+  })
+
+  it('joins a topic again only after its previous leave finished', async () => {
+    signIn()
+    realtime.leaves = []
+    const view = (chatId: string | null) => createNode(Panel, { chatId, agents: ['a6'] })
+    await harness.render(view('c6'))
+    await settle()
+    realtime.opened[0]!.onSubscribed()
+    await harness.render(view(null))
+    await closeDelay()
+    expect(realtime.opened[0]!.closed).toBe(true)
+
+    await harness.render(view('c6'))
+    await settle()
+    expect(realtime.opened).toHaveLength(1)
+    // An earlier case's channel may close meanwhile too: finish this topic's leave.
+    realtime.leaves.find((leave) => leave.name === 'presence:chat:c6')!.finish()
+    await settle()
+    expect(realtime.opened.map((opened) => opened.name)).toEqual(['presence:chat:c6', 'presence:chat:c6'])
+  })
+
+  it('reads once when the channel does not subscribe in time, as when realtime auth fails without a status', async () => {
+    signIn()
+    await harness.render(createNode('div', null, createNode(Dot, { id: 'a7' }), createNode(Panel, { chatId: 'c7', agents: ['a7'] })))
+    await settle()
+    expect(server.reads).toHaveLength(0)
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    expect(server.reads.map((read) => read.ids)).toEqual([['a7']])
+    // Subscribing later covers it again with a read after the join.
+    server.reads[0]!.answer({ a7: 1 })
+    realtime.opened[0]!.onSubscribed()
+    await settle()
+    expect(server.reads).toHaveLength(2)
   })
 })
