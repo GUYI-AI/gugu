@@ -1,7 +1,9 @@
 // R2 — 修订流的对账触发器。realtime 广播是「有新东西」的提示,不是投递保证:桌面端的私有事件通道
 // 关了空闲重连(reconnectWhenIdle:false),睡眠、断网、后台节流期间丢掉的 wake 不会重发 ⇒ 新消息要等
 // 下一条广播才出现。这里补上与广播无关的拉取时机:定时对账 + 回到前台 / 页面可见 / 联网 / 系统唤醒。
-// 每次触发都是一次 head 未知的 wake(runtime 照常合并并发、按游标增量拉),代价是一次有界的 sync_since。
+// 定时对账是一次 head 未知的 wake(runtime 照常合并并发、按游标增量拉),代价是一次有界的读。
+// 回到前台 / 页面可见 / 联网是「条件变了」(resume):上一次读失败留下的退避从头算,立刻读一次 —— 联网那一刻发出的
+// 读常常还连不上,它失败后 1 秒重试,而不是等完离线期间涨到 30 秒的退避。
 
 import { platform } from '../platform'
 import { rendererLogger } from './log'
@@ -24,12 +26,13 @@ export interface RevisionReconcileSignals {
 }
 
 export function watchRevisionReconcile(
-  wake: () => void,
+  advance: (kind: 'wake' | 'resume') => void,
   signals: RevisionReconcileSignals,
   intervalMs = REVISION_RECONCILE_INTERVAL_MS,
 ): Unsubscribe {
-  const timer = signals.setInterval(wake, intervalMs)
-  const stops = [signals.onVisible(wake), signals.onOnline(wake), signals.onForeground(wake)]
+  const resume = () => advance('resume')
+  const timer = signals.setInterval(() => advance('wake'), intervalMs)
+  const stops = [signals.onVisible(resume), signals.onOnline(resume), signals.onForeground(resume)]
   return () => {
     signals.clearInterval(timer)
     for (const stop of stops) stop()
@@ -59,7 +62,7 @@ function rendererReconcileSignals(): RevisionReconcileSignals {
   }
 }
 
-/** The renderer's reconcile beat (interval + visible / online / foreground). */
-export function watchRendererRevisionReconcile(advance: () => void): Unsubscribe {
+/** The renderer's reconcile beat: the interval wakes, visible / online / foreground resume. */
+export function watchRendererRevisionReconcile(advance: (kind: 'wake' | 'resume') => void): Unsubscribe {
   return watchRevisionReconcile(advance, rendererReconcileSignals())
 }
