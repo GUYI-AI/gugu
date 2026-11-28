@@ -230,8 +230,8 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   const move = useCallback(() => {
     innerCrowded.set(crowded());
     track.to(targets());
-    read();
-  }, [track, innerCrowded, read]);
+    leftRailLayout.set(leftRailLayout.get() && sidebarRailLayout(listTarget().content!)); // ❌ read() here: it lays the page out in the click's own task. Opening from the rail the rows are rows from the first frame; folding, until it lands
+  }, [track, innerCrowded, leftRailLayout]);
   const jump = useCallback(() => {
     innerCrowded.set(crowded());
     track.jump(targets());

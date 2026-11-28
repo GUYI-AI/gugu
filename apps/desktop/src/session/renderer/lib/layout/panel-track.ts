@@ -97,16 +97,16 @@ export class PanelTrack {
     return this.move.length > 0;
   }
 
-  /** Where a slot is drawn now (px): its box, measured (its target before it has one). */
+  /** Where a slot is drawn now (px): through a move its box, measured; at rest where it was put (❌ a read of the layout: asked right after a write it lays the page out again). */
   drawn(id: string): number {
     const slot = this.slot(id);
-    return slot.nodes ? this.sizeOf(slot.nodes.place) : slot.target.size;
+    return this.moving && slot.nodes ? this.sizeOf(slot.nodes.place) : slot.target.size;
   }
 
   /** The size a slot's content is laid out at now (px). */
   content(id: string): number {
-    const slot = this.slot(id);
-    return slot.nodes ? this.sizeOf(slot.nodes.content) : (slot.target.content ?? slot.target.size);
+    const { nodes, target } = this.slot(id);
+    return (nodes && heldPx(nodes.content, this.sides[0])) || (this.moving && nodes ? this.sizeOf(nodes.content) : (target.content ?? target.size));
   }
 
   /** `rider`'s animations go with every move of this slot from here on — the one under way too, from where it is (what mounts as a move starts rides it). */
@@ -138,7 +138,7 @@ export class PanelTrack {
   private restFill(): void {
     const fill = this.fillBox();
     if (fill) this.rest(fill, { size: this.left((slot) => slot.target.size) }, 'fill', this.extent);
-    else if (this.fill?.place.dataset.panelRest) delete this.fill.place.dataset.panelRest;
+    else if (this.fill?.place.dataset[this.mark]) delete this.fill.place.dataset[this.mark];
   }
 
   private fillBox(): PanelSlotNodes | null {
@@ -156,7 +156,7 @@ export class PanelTrack {
     if (this.slots.every((slot) => !targets[slot.id] || same(slot.target, targets[slot.id]))) return;
     const [size] = this.sides;
     // Where each is drawn now: mid-move measured, at rest where it was put.
-    const from = new Map(this.slots.map((slot) => [slot.id, this.moving ? this.drawn(slot.id) : slot.target.size]));
+    const from = new Map(this.slots.map((slot) => [slot.id, this.drawn(slot.id)]));
     const fillFrom = this.left((slot) => from.get(slot.id)!);
     this.stop();
     this.starts = from;
@@ -178,7 +178,7 @@ export class PanelTrack {
     const fill = this.fillBox();
     const fillTo = this.left((slot) => slot.target.size);
     if (fill) this.sheet(fill, fillFrom, { size: fillTo, reflows: true }, 'fill', move);
-    else if (this.fill && this.extent > 0) this.fill.place.dataset.panelRest = `${fillTo} ${fillTo - fillFrom}`;
+    else if (this.fill && this.extent > 0) this.fill.place.dataset[this.mark] = `${fillTo} ${fillTo - fillFrom}`;
     if (move.length === 0) return this.jump(targets, true); // nothing to move on screen: it has landed all the same
     for (const animation of move) animation.pause();
     this.move = move;
@@ -210,7 +210,7 @@ export class PanelTrack {
     const held = faded ? (target.content ?? (end >= PANEL_LANDED_PX ? end : now)) : target.reflows && target.content === undefined ? null : Math.max(now, target.content ?? end);
     nodes.content.style[size] = held === null ? '100%' : `${held}px`;
     const rest = faded ? held! : (target.content ?? end);
-    nodes.place.dataset.panelRest = `${rest} ${rest - (held ?? start)}`;
+    nodes.place.dataset[this.mark] = `${rest} ${rest - (held ?? start)}`;
     nodes.content.style[near] = faded && role === 'slot' ? 'auto' : '';
     nodes.content.style[far] = faded && role === 'slot' ? '0' : '';
     nodes.window.style.maskImage = faded && role !== 'held' ? SOFT_EDGE[this.axis][role] : '';
@@ -225,7 +225,7 @@ export class PanelTrack {
     const gone = target.size < PANEL_LANDED_PX;
     const kept = gone && target.content === undefined ? heldPx(nodes.content, size) || open : 0; // at nothing: the size it was open at
     if (role === 'slot') nodes.place.style[size] = `${target.size}px`;
-    if (nodes.place.dataset.panelRest) delete nodes.place.dataset.panelRest;
+    if (nodes.place.dataset[this.mark]) delete nodes.place.dataset[this.mark];
     if (target.content !== undefined) nodes.content.style[size] = `${target.content}px`;
     else if (!gone) nodes.content.style[size] = role === 'slot' ? '100%' : '';
     else if (kept > 0) nodes.content.style[size] = `${kept}px`;
@@ -235,6 +235,7 @@ export class PanelTrack {
     nodes.window.inert = gone;
   }
 
+  private get mark() { return this.axis === 'x' ? 'panelRest' : 'panelRestY'; } // a row's mark is what widths are decided from, once (pane-dimension-provider, the chat strip): a column has its own
   private get sides() {
     return this.axis === 'x' ? (['width', 'left', 'right'] as const) : (['height', 'top', 'bottom'] as const);
   }

@@ -88,10 +88,9 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
   // The followers come and go with the render that starts the move (the lane's button mounts, the strip takes the class): their rider is registered after that render, and joins the move under way.
   useLayoutEffect(() => {
     const fill = fillNode.current;
-    const rest = () => {
-      const open = track.drawn('inner') > PANEL_LANDED_PX;
-      for (const follower of all(fill, RESTORE_LANE_FOLLOWER)) follower.style.setProperty('--shell-restore-lane-shown', open ? '0' : '1');
-      fill?.toggleAttribute('data-inner-column', innerSidebarShown || open);
+    const rest = () => { // ❌ the column's box read here: in the render that starts its move it would lay the page out again; while it moves, its rider holds the mark
+      for (const follower of all(fill, RESTORE_LANE_FOLLOWER)) follower.style.setProperty('--shell-restore-lane-shown', innerSidebarShown ? '0' : '1');
+      fill?.toggleAttribute('data-inner-column', innerSidebarShown);
     };
     rest();
     const off = [track.onLanded(rest), track.ride('inner', (from, to, content) => !moves(from, to, content) ? [] : (fill?.toggleAttribute('data-inner-column', true),

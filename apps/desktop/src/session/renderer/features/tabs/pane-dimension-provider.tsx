@@ -79,16 +79,17 @@ export function PaneDimensionProvider({
 
     const places = atRest ? ancestorsOf(el).filter((node): node is HTMLElement => node instanceof HTMLElement && node.matches('[data-panel-slot], [data-panel-fill]')) : [];
     const toCome = () => { // how much wider the rows moving around it will leave it when they land (null: none is moving)
-      const moving = places.filter((place) => place.dataset.panelRest && getComputedStyle(place.parentElement!).flexDirection !== 'column');
+      const moving = places.filter((place) => place.dataset.panelRest);
       return moving.length ? moving.reduce((sum, place) => sum + Number(place.dataset.panelRest!.split(' ')[1]), 0) : null;
     };
+    let last = { width: 0, height: 0 };
     const measure = () => {
-      const { width, height } = el.getBoundingClientRect();
-      commitMeasurement(width + (toCome() ?? 0), height);
+      last = el.getBoundingClientRect();
+      commitMeasurement(last.width + (toCome() ?? 0), last.height);
     };
     const observer = new ResizeObserver(() => { if (toCome() === null) measure(); });
     observer.observe(el);
-    const told = places.length ? new MutationObserver(measure) : undefined;
+    const told = places.length ? new MutationObserver(() => { const grow = toCome(); if (grow !== null) commitMeasurement(last.width + grow, last.height); }) : undefined; // a move starting: the resting size from what was last measured, ❌ measured again in the task that started it; landing changes nothing
     for (const place of places) told!.observe(place, { attributeFilter: ['data-panel-rest'] });
 
     // 初次测量发生在子组件 passive effect 之前；额外等待两帧，覆盖 provider 挂载后
