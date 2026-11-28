@@ -1,4 +1,4 @@
-import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { observer } from 'mobx-react-lite';
 import type { ResolvedTab, TabBarItemProps, TabCloseRequest, TabEntry, TabHandle, TabProvider, TabViewContext } from '@renderer/features/tabs/core/tab-provider';
@@ -31,7 +31,6 @@ export const AcpChatTabBarItem = observer(function AcpChatTabBarItem({
   host,
   ctx,
 }: TabBarItemProps<AcpChatTabResource>) {
-  const { translate } = useSessionMessages();
   const store = tab.resource.store;
   const session = sessionRegistry
     .get(store.sessionId)
@@ -60,7 +59,7 @@ export const AcpChatTabBarItem = observer(function AcpChatTabBarItem({
           : [
               {
                 id: 'session:rename',
-                label: translate('task.rename'),
+                label: translateSessionMessage('task.rename'),
                 group: 'edit',
                 shortcut: 'session.tabRename',
                 run: () => host.requestRename(tab.tabId),
