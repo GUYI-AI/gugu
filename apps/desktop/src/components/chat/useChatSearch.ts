@@ -13,6 +13,6 @@ export function useChatSearch(chatId: string | null, enabled: boolean, surface: 
     scopeId: 'app',
     surface: 'shell',
     isActive: (element) => enabled && !!chatId && isChatSearchTarget(surface.current, chatId, element),
-    getCommands: () => !chatId ? [] : [{ id: 'app.find', hideFromPalette: true, execute: () => searchInChat(chatId) }],
+    getCommands: () => !chatId ? [] : [{ id: 'app.find', execute: () => searchInChat(chatId) }],
   })
 }

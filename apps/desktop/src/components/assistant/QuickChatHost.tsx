@@ -1,3 +1,5 @@
+import { notify } from '@/lib/notices'
+import { messageForUser } from '@/lib/userFacingError'
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -92,8 +94,13 @@ export function QuickChatHost({
 
   useCommandProvider({
     scopeId: 'app', surface: 'shell',
-    getCommands: () => [{ id: 'app.quickChat', enabled: !!mounted && !!state?.supported,
-      execute: () => { void ipc?.invoke(QUICK_CHAT_CHANNELS.show) } }],
+    getCommands: () => [{ id: 'app.quickChat', enabled: !!mounted && !!ipc && !!state?.supported,
+      execute: () => {
+        if (!ipc) return false
+        void ipc.invoke(QUICK_CHAT_CHANNELS.show).then(shown => {
+          if (!shown) notify({ tier: 'error', title: t('quickChat.openFailed') })
+        }, error => notify({ tier: 'error', title: t('quickChat.openFailed'), description: messageForUser(error) }))
+      } }],
   })
 
   // Subscribe before window.open: adoption can show a pending shortcut window immediately.

@@ -1,6 +1,6 @@
 import { makeAutoObservable, observable } from 'mobx';
 import { COMMANDS, type CommandId } from '@shared/commands';
-import { SCOPE_LEVELS, type AppCommand, type CommandProvider, type ScopeId } from './types';
+import { SCOPE_LEVELS, type AppCommand, type CommandProvider } from './types';
 
 const isHostCommand = (id: string): id is CommandId => Object.hasOwn(COMMANDS, id);
 
@@ -42,12 +42,6 @@ export class CommandRegistry {
 
   setSessionPageVisible(visible: boolean): void {
     this.sessionPageVisible = visible;
-  }
-
-  unregister(scopeId: ScopeId): void {
-    for (const provider of this.providers) {
-      if (provider.scopeId === scopeId) this.providers.delete(provider);
-    }
   }
 
   setContext(element: HTMLElement): void {

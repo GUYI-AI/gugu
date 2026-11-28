@@ -1,5 +1,5 @@
 import { normalizeHotkey, type Hotkey } from '@tanstack/hotkeys';
-import { COMMANDS, type CommandId } from './commands';
+import { COMMANDS, type CommandAlias, type CommandId } from './commands';
 import { detectShortcutPlatform, resolveDefaultHotkey, sharesChordIntentionally } from './shortcuts';
 
 type Overrides = Partial<Record<CommandId, string | null>>;
@@ -22,10 +22,8 @@ function userOwnsChord(key: CommandId, chord: string, custom?: Overrides | null)
     normalizeHotkey(assigned, platform) === normalizeHotkey(chord, platform));
 }
 
-export function effectiveAliases(key: CommandId, custom?: Overrides | null): readonly Hotkey[] {
+export function effectiveAliases(key: CommandId, custom?: Overrides | null): readonly CommandAlias[] {
   const aliases = COMMANDS[key].aliases;
   if (!aliases || custom === null || custom?.[key] === null) return [];
-  const tabNavigation = key === 'session.tabNext' || key === 'session.tabPrev';
-  if (!tabNavigation && custom?.[key] !== undefined) return [];
-  return aliases.filter(chord => !userOwnsChord(key, chord, custom)) as Hotkey[];
+  return aliases.filter(alias => !userOwnsChord(key, typeof alias === 'string' ? alias : alias.character, custom));
 }

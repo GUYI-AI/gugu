@@ -554,10 +554,15 @@ function getBrowserShortcuts(
     }
 
     const hotkey = getEffectiveHotkey(commandId, keyboard);
-    const keys = [hotkey, ...effectiveAliases(commandId, keyboard).filter(key => String(key) !== 'Shift+/')];
-    const parsed = keys.flatMap(key => key ? parseShortcut(key) ?? [] : []);
+    const parsed: ParsedShortcut[] = [];
+    for (const binding of [hotkey, ...effectiveAliases(commandId, keyboard)]) {
+      // Browser content cannot own a navigation-region alias.
+      if (!binding || typeof binding !== 'string' && binding.region === 'navigation') continue;
+      const shortcut = parseShortcut(typeof binding === 'string' ? binding : binding.character);
+      if (shortcut) parsed.push(shortcut);
+      else log.warn('Invalid browser app shortcut', { commandId, shortcut: binding });
+    }
     if (parsed.length) shortcuts.set(commandId, parsed);
-
   }
   return shortcuts;
 }

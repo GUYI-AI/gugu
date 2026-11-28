@@ -115,7 +115,7 @@ export function useFindBar({
     scopeId: 'session-sub',
     isActive: (element) => enabled && !!element && !!rootRef.current?.contains(element) && (!isActive || isActive(element)),
     getCommands: () => !backend ? [] : [{
-      id: 'app.find', hideFromPalette: true,
+      id: 'app.find',
       execute: () => {
         if (latest.current.isOpen) return focusInput();
         returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;

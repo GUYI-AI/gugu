@@ -81,17 +81,15 @@ function dispatchIn(event: KeyboardEvent, source: KeySource): boolean {
     // focus (CodeMirror stops the keys its keymaps bind) except what the editor keeps for itself.
     if (source === 'capture' && !def.capture && !(inEditor && !def.ignoreWhenCodeEditorFocused)) continue;
     if (source === 'bubble' && (def.capture || (inEditor && !def.ignoreWhenCodeEditorFocused))) continue;
-    const hotkeys = [getEffectiveHotkey(id, overrides), ...effectiveAliases(id, overrides)].filter((h): h is Hotkey => !!h);
-    const hotkey = hotkeys.find((h) => {
-      if (id === 'app.showKeyboardShortcuts' && String(h) === 'Shift+/') {
-        return event.key === '?' && !event.altKey && !event.ctrlKey && !event.metaKey;
-      }
-      return matchesKeyboardEvent(event, h, PLATFORM);
+    const bindings = [getEffectiveHotkey(id, overrides), ...effectiveAliases(id, overrides)];
+    const match = bindings.find(binding => {
+      if (!binding) return false;
+      if (typeof binding === 'string') return matchesKeyboardEvent(event, binding as Hotkey, PLATFORM);
+      return binding.region === 'navigation' && !!start?.closest('[data-region="left-sidebar"]') &&
+        event.key === binding.character && !event.metaKey && (!event.ctrlKey || event.getModifierState('AltGraph'));
     });
-    if (!hotkey) continue;
-    if (id === 'app.showKeyboardShortcuts' && String(hotkey) === 'Shift+/' &&
-        (typing || !start?.closest('[data-region="left-sidebar"]'))) continue;
-    if (typing && !def.capture && !inEditor && yieldsToText(id, hotkey)) continue;
+    if (!match) continue;
+    if (typing && !def.capture && !inEditor && (typeof match !== 'string' || yieldsToText(id, match as Hotkey))) continue;
     // @@@native-editor-find — CodeMirror owns replacement, regex and selection search; only app.find yields.
     if (id === 'app.find' && start?.closest('.cm-editor, [cmdk-root], [role=menu]')) continue;
     if (!commandRegistry.sessionPageVisible && def.whenSessionPageHidden === 'reveal') {

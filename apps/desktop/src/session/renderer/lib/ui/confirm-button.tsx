@@ -17,7 +17,7 @@ export function ConfirmButton({ disabled, children, ...props }: ConfirmButtonPro
       const dialog = ref.current?.closest('[role="dialog"]');
       return !dialog || (!!element && dialog.contains(element));
     },
-    getCommands: () => [{ id: 'app.confirm', enabled: !disabled, hideFromPalette: true, execute: () => { ref.current?.click(); } }],
+    getCommands: () => [{ id: 'app.confirm', enabled: !disabled, execute: () => { ref.current?.click(); } }],
   });
 
   return (

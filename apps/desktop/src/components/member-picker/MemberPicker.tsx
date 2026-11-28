@@ -40,13 +40,18 @@ export const MEMBER_PICKER_SHEET = { desktopWidth: 'min(740px, 100%)', desktopHe
 
 type Row = { entry: PickerEntry; hit?: ContactSearchHit<ContactUser> }
 
-export interface MemberPickerProps {
+type PickerSelection = {
+  onPick: (contact: ContactUser) => void | Promise<void>
+  onConfirm?: never
+} | {
+  onPick?: never
+  onConfirm: (ids: string[]) => Promise<readonly string[] | void> | void
+}
+
+export type MemberPickerProps = PickerSelection & {
   title: string
   confirmLabel: (count: number) => string
-  /** 返回一组 id = 换成这组继续选(添加成员时没加进去的那几个);不返回 = 照旧。 */
-  onConfirm: (ids: string[]) => Promise<readonly string[] | void> | void
   onClose: () => void
-  singleSelection?: boolean
   initialSelectedIds?: readonly string[]
   /** 已经在群里的:勾着、不能取消,不进已选。 */
   lockedIds?: ReadonlySet<string>
@@ -65,7 +70,7 @@ export interface MemberPickerProps {
   underlineMobileSources?: boolean
 }
 
-export function MemberPicker({ title, confirmLabel, onConfirm, onClose, singleSelection, initialSelectedIds = [], lockedIds, peopleDenied, agentNote, busy = false, busyLabel, footer, actions, empty, underlineMobileSources = false }: MemberPickerProps) {
+export function MemberPicker({ title, confirmLabel, onConfirm, onPick, onClose, initialSelectedIds = [], lockedIds, peopleDenied, agentNote, busy = false, busyLabel, footer, actions, empty, underlineMobileSources = false }: MemberPickerProps) {
   usePhoneTaskDirectory()
   const { t } = useTranslation('contacts')
   const mobile = useMobileShell()
@@ -139,10 +144,15 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, singleSe
   const isLocked = (id: string) => lockedIds?.has(id) ?? false
   const toggle = (id: string) => {
     if (isLocked(id)) return
-    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : singleSelection ? [id] : [...prev, id]))
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : onPick ? [id] : [...prev, id]))
   }
   const confirm = async () => {
     if (!canConfirm) return
+    if (onPick) {
+      const entry = entryOf.get(selected[0]!)!
+      await onPick(entry.contact)
+      return
+    }
     const keep = await onConfirm(selected.filter((id) => !isLocked(id)))
     if (keep) setSelected([...keep])
   }

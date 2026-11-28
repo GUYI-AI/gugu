@@ -3,6 +3,8 @@ import { sessionActionDefault, type ShortcutPlatform } from './shortcuts';
 export const COMMAND_CATEGORIES = ['Create', 'Navigation', 'Current Conversation', 'View', 'Tab Navigation', 'Git', 'Browser', 'Apps', 'Diagnostics'] as const;
 export type CommandCategory = (typeof COMMAND_CATEGORIES)[number];
 
+export type CommandAlias = string | { character: string; region: 'navigation' };
+
 /** The single catalog for built-in command labels and key bindings. */
 export interface CommandDef {
   id: string;
@@ -14,8 +16,8 @@ export interface CommandDef {
   iconKey?: string;
   category: CommandCategory;
   defaultHotkey?: string | ((platform: ShortcutPlatform) => string);
-  /** Further fixed chords for the same command (browser-style Ctrl+Tab next to the configurable one). Not rebindable. */
-  aliases?: readonly string[];
+  /** Aliases stay bound when the primary key changes. Clearing the command disables its aliases too. */
+  aliases?: readonly CommandAlias[];
   hideFromSettings?: boolean;
   hideFromPalette?: boolean;
   ignoreInputs?: boolean;
@@ -163,7 +165,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.showKeyboardShortcuts': {
-    aliases: ['Shift+/'],
+    aliases: [{ character: '?', region: 'navigation' }],
     whenSessionPageHidden: 'reveal',
     label: 'Keyboard Shortcuts',
     description: 'Show the keyboard shortcuts cheat sheet',
@@ -534,6 +536,7 @@ export const COMMANDS = defineCommands({
     ignoreWhenBrowserFocused: true,
   },
   'app.find': {
+    hideFromPalette: true,
     capture: true,
     label: 'Find in Current View',
     description: 'Search the focused terminal or chat',

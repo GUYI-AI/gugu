@@ -1238,10 +1238,8 @@ function InnerLayout({
       <CustomModelRouteRepairHost />
       {chooseDmContact && (
         <Sheet {...MEMBER_PICKER_SHEET} onClose={() => setChooseDmContact(false)} ariaLabel={commandLabel('chat.newDirect')}>
-          <MemberPicker title={commandLabel('chat.newDirect')} singleSelection onClose={() => setChooseDmContact(false)}
-            confirmLabel={() => t('contacts:common.sendMessage')} onConfirm={async ([id]) => {
-              const person = readContacts().contacts.find(contact => contact.id === id)
-              if (!person) return
+          <MemberPicker title={commandLabel('chat.newDirect')} onClose={() => setChooseDmContact(false)}
+            confirmLabel={() => t('contacts:common.sendMessage')} onPick={async person => {
               setChooseDmContact(false)
               await contactsSwitchToChat(person)
             }} />

@@ -1,11 +1,11 @@
 import type { Hotkey } from '@tanstack/react-hotkeys';
 import { COMMANDS, type CommandId } from '@shared/commands';
 import { getEffectiveHotkey } from '@shared/effective-hotkey';
-export { getEffectiveHotkey };
 import { resolveDefaultHotkey } from '@shared/shortcuts';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { platform } from '@/platform';
 
+export { getEffectiveHotkey };
 export type { CommandDef, CommandId } from '@shared/commands';
 export { COMMANDS } from '@shared/commands';
 export { resolveDefaultHotkey, sharesChordIntentionally } from '@shared/shortcuts';
