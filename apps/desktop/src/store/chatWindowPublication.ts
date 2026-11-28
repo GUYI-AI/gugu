@@ -31,6 +31,14 @@ export async function storedTailCovered(userId: string, chatId: string): Promise
 }
 
 /**
+ * Whether the account journal keeps a conversation's stored tail current: it delivers the conversation's arrivals (an
+ * observer's topic has no list row and gets none) and is not a longer backlog behind.
+ */
+export function journalKeepsCurrent(listed: boolean, journal: () => Promise<{ behind(): Promise<boolean> }>): Promise<boolean> {
+  return listed ? journal().then(coordinator => coordinator.behind()).then(behind => !behind, () => false) : Promise.resolve(false)
+}
+
+/**
  * @@@open-by-coverage - one rule opens every conversation, topic and block: paint what is stored; when the stored
  * newest page is a verified range that the account journal keeps current, that is the tail and nothing is read.
  * Otherwise one newest page is read and establishes the tail. Older pages are the reader's to ask for.
