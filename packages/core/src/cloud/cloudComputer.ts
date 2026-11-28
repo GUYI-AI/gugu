@@ -141,7 +141,7 @@ export type CloudComputerClient = {
   wake(input?: CloudComputerWakeInput, signal?: AbortSignal): Promise<void>
   destroy(): Promise<void>
   /** 删除身份之前，核对清理接口可用且仍是确认框里这一位。 */
-  prepareAssistantClose(input: { deviceId: string; assistantId: string }): Promise<void>
+  prepareAssistantClose(input: { deviceId: string; assistantId: string }, signal?: AbortSignal): Promise<void>
   /** 身份与自己的会话已关闭后，只清助理资料并等待存档完成；保留宿主。 */
   closeAssistant(input: { deviceId: string; assistantId: string }, signal?: AbortSignal): Promise<void>
 }
@@ -223,8 +223,8 @@ export function createCloudComputerClient(options: {
     async destroy() {
       await request('DELETE', '/')
     },
-    async prepareAssistantClose(input) {
-      const raw = await request('GET', `/assistant/close?${new URLSearchParams(input).toString()}`)
+    async prepareAssistantClose(input, signal) {
+      const raw = await request('GET', `/assistant/close?${new URLSearchParams(input).toString()}`, undefined, signal)
       let parsed: { status?: unknown }
       try { parsed = JSON.parse(raw) as { status?: unknown } } catch { throw new CloudComputerError(200, 'bad_response', 'assistant close check returned non-JSON') }
       if (parsed?.status !== 'ready') throw new CloudComputerError(409, 'stale_assistant', 'assistant close is not ready for this identity')

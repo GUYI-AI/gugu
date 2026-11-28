@@ -12,7 +12,10 @@ import { Sheet } from '../ui/Sheet'
 import { cn } from '../../lib/cn'
 import { notify } from '../../lib/notices'
 import { listDevicesOnceIdentified } from '../../lib/listDevicesOnceIdentified'
-import { wakeCloudComputerUntilOnline } from '@gugu/core/cloud/cloudComputer'
+import { withAssistantPanelReadDeadline } from '@gugu/core/cloud/assistantPanelRead'
+import { withBoundedOperation } from '@gugu/core/cloud/boundedOperation'
+import { anySignal } from '@gugu/core/shared/anySignal'
+import { CLOUD_COMPUTER_WAKE_TIMEOUT_MS, CloudComputerWakeError, wakeCloudComputerUntilOnline } from '@gugu/core/cloud/cloudComputer'
 import { rendererCloudComputerClient } from '../../lib/cloudComputerClient'
 import { useAssistantHome } from '../../lib/useAssistantHome'
 import { myAssistant } from '../../lib/myAssistant'
@@ -79,24 +82,38 @@ export function AssistantCloseHost() {
     const server = open?.kind === 'server' ? open : null
     const target = server?.deviceId ?? cloud?.deviceId ?? null
     const remote = () => server ? machineRpc(server.deviceId) : rpcOn(target)
-    const checkCloud = async () => {
+    const check = async (signal?: AbortSignal) => {
       if (server) {
-        const row = (await listDevicesOnceIdentified()).find(device => device.device_id === server.deviceId)
-        if (!row?.is_online || row.capabilities.assistant_home_setup !== 1) throw new Error('assistant server is offline or needs updating')
-        const checked = await machineRpc(server.deviceId).assistantHome.checkClose({ ownerUserId, deviceId: server.deviceId, assistantId: server.assistantId })
-        if (!checked.ok) throw new Error(`assistant server close check failed: ${checked.error.code}`)
-        return
+        return withAssistantPanelReadDeadline(async deadline => {
+          const active = anySignal([signal, deadline])
+          const devices = await listDevicesOnceIdentified()
+          active.throwIfAborted()
+          const row = devices.find(device => device.device_id === server.deviceId)
+          if (!row?.is_online || row.capabilities.assistant_home_setup !== 1) throw new Error('assistant server is offline or needs updating')
+          const checked = await machineRpc(server.deviceId).assistantHome.checkClose({ ownerUserId, deviceId: server.deviceId, assistantId: server.assistantId })
+          if (!checked.ok) throw new Error(`assistant server close check failed: ${checked.error.code}`)
+        })
       }
       if (!cloud) return
       const client = rendererCloudComputerClient()
       if (!client) throw new Error('cloud computer is not configured')
-      const result = await wakeCloudComputerUntilOnline({ client, deviceId: cloud.deviceId, purpose: 'close', isOnline: async (id) => (await listDevicesOnceIdentified()).some((device) => device.device_id === id && device.is_online) })
+      const result = await withBoundedOperation(
+        CLOUD_COMPUTER_WAKE_TIMEOUT_MS,
+        () => new CloudComputerWakeError('timeout', 'Cloud home did not come online'),
+        deadline => wakeCloudComputerUntilOnline({
+          client, deviceId: cloud.deviceId, purpose: 'close', signal: anySignal([signal, deadline]),
+          isOnline: async id => (await listDevicesOnceIdentified()).some(device => device.device_id === id && device.is_online),
+        }),
+      )
+      signal?.throwIfAborted()
       if (result !== 'online') throw new Error('the cloud home changed before close')
-      await client.prepareAssistantClose({ deviceId: cloud.deviceId, assistantId: cloud.assistantId })
+      await withAssistantPanelReadDeadline(deadline => client.prepareAssistantClose(
+        { deviceId: cloud.deviceId, assistantId: cloud.assistantId }, anySignal([signal, deadline]),
+      ))
     }
     return {
-      check: checkCloud,
-      listSessions: async () => (await remote().sessionTimeline.sessionsList()).sessions,
+      check,
+      listSessions: () => withAssistantPanelReadDeadline(async () => (await remote().sessionTimeline.sessionsList()).sessions),
       listAutomations: () => remote().automations.listAutomations(),
       deleteAutomation: (id) => remote().automations.deleteAutomation(id),
       removeAgent: (agentUserId) => removeOwnedAgent(agentUserId),
@@ -151,30 +168,38 @@ export function AssistantCloseHost() {
   }
 
   if (!localDeps) return null
-  return <LocalCloseDialog assistantId={open.assistantId} name={name} deps={localDeps} onClose={close} />
+  return <LocalCloseDialog key={`${ownerUserId}/${open.assistantId}/${open.kind}/${open.kind === 'local' ? '' : open.deviceId}`} assistantId={open.assistantId} name={name} deps={localDeps} onClose={close} />
 }
 
 function LocalCloseDialog({ assistantId, name, deps, onClose }: { assistantId: string; name: string; deps: LocalCloseDeps; onClose: () => void }) {
   const { t } = useTranslation('assistant')
-  const [plan, setPlan] = useState<LocalClosePlan | 'loading' | 'unreadable'>('loading')
+  const [attempt, setAttempt] = useState(0)
+  const [read, setRead] = useState<{ deps: LocalCloseDeps; attempt: number; plan: LocalClosePlan | 'check-failed' | 'unreadable' } | null>(null)
+  const plan = read?.deps === deps && read.attempt === attempt ? read.plan : 'loading'
   const [deleteStarted, setDeleteStarted] = useState(false)
   const [closing, setClosing] = useState(false)
   const [failure, setFailure] = useState<AssistantCloseError | null>(null)
 
   useEffect(() => {
-    let cancelled = false
-    Promise.resolve(deps.check?.())
-      .then(() => deps.listSessions())
-      .then((listed) => !cancelled && setPlan(planLocalClose(assistantId, listed)))
-      .catch((error: unknown) => {
-        // 读不到它开过哪些会话 = 不知道那个勾在说什么、也不知道它自己的会话在哪:❌ 照着空清单关。
-        log.warn({ error: String(error) }, 'list sessions for closing the assistant failed')
-        if (!cancelled) setPlan('unreadable')
-      })
-    return () => {
-      cancelled = true
+    const controller = new AbortController()
+    const { signal } = controller
+    let checked = false
+    const readPlan = async () => {
+      try {
+        await deps.check?.(signal)
+        signal.throwIfAborted()
+        checked = true
+        const sessions = await deps.listSessions()
+        if (!signal.aborted) setRead({ deps, attempt, plan: planLocalClose(assistantId, sessions) })
+      } catch (error) {
+        if (signal.aborted) return
+        log.warn({ stage: checked ? 'listSessions' : 'check', error: String(error) }, 'assistant close preview failed')
+        setRead({ deps, attempt, plan: checked ? 'unreadable' : 'check-failed' })
+      }
     }
-  }, [assistantId, deps])
+    void readPlan()
+    return () => controller.abort()
+  }, [assistantId, deps, attempt])
 
   const confirm = async () => {
     if (typeof plan !== 'object') return
@@ -207,7 +232,12 @@ function LocalCloseDialog({ assistantId, name, deps, onClose }: { assistantId: s
         <div className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">{t('closeDialog.title', { name })}</div>
         <div className={cn(text, 'text-[var(--muted-fg)]')}>{t('closeDialog.body')}</div>
         {plan === 'loading' && <div className={cn(text, 'text-[var(--muted-fg)]')}>{t('closeDialog.checking')}</div>}
-        {plan === 'unreadable' && <div className={cn(text, 'text-[var(--danger-fg)]')} role="alert">{t('closeDialog.unreadable')}</div>}
+        {(plan === 'unreadable' || plan === 'check-failed') && (
+          <div>
+            <p className={cn(text, 'text-[var(--danger-fg)]')} role="alert">{t(plan === 'unreadable' ? 'closeDialog.unreadable' : 'closeDialog.failedAt.check')}</p>
+            <Button size="sm" data-testid="assistant-close-retry" onClick={() => setAttempt(value => value + 1)}>{t('setup.retry')}</Button>
+          </div>
+        )}
         {started.length > 0 && (
           <div className="flex flex-col gap-2">
             <label className={cn(text, 'flex cursor-pointer items-start gap-2 text-[var(--fg)]')}>

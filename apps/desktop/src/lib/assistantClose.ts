@@ -33,7 +33,7 @@ export type LocalClosePlan = {
 
 export type LocalCloseDeps = {
   /** 云端清理能力与目标仍有效；在撤任何定时任务、删任何身份之前复核。 */
-  check?: () => Promise<void>
+  check?: (signal?: AbortSignal) => Promise<void>
   listSessions: () => Promise<readonly CloseSession[]>
   listAutomations: () => Promise<readonly { id: string; agentSessionId?: string | null }[]>
   deleteAutomation: (id: string) => Promise<void>
