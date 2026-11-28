@@ -43,7 +43,7 @@ export function decodeAccountSnapshot(value: unknown, accountId: string) {
   }
   for (const identity of snapshot.identities) put('identity', identity.id, displayIdentityFromRow(identity))
   for (const preview of snapshot.previews) put('preview', preview.chat_id, {
-    chat_id: preview.chat_id, created_at: preview.created_at,
+    chat_id: preview.chat_id, id: typeof preview.id === 'string' ? preview.id : null, created_at: preview.created_at,
     preview: sendGroupPreview(preview.send_group_size) ?? (typeof preview.preview === 'string' ? composerCardLine(preview.preview) : null),
     notice: parseSystemNotice(preview as Parameters<typeof parseSystemNotice>[0]),
   })

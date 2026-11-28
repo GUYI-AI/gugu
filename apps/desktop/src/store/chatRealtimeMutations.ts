@@ -17,9 +17,9 @@ export type RealtimeMessageMutators = {
   setThreadMessages: Dispatch<SetStateAction<MessageItem[]>>
 }
 
-// #1729 — 全局删除实时到达：对齐发起端 deleteMessage 的本地处理（窗口 filter + L2 同步，防 IndexedDB 冷启
-// 复活）。thread 回复的删除同样清 threadMessages。列表行预览由 recompute_chat_last_message + chats
-// `chat_changed` revision 独立刷新列表，此处只处理消息窗口。
+// #1729 — 服务端的删除实时到达（现在只有旧版客户端的撤回 / 为自己删除还会产生；本版删除只在本机隐藏，不走这里）：
+// 从消息窗口和 threadMessages 里滤掉这条。列表行预览由 recompute_chat_last_message + chats `chat_changed`
+// revision 独立刷新列表，此处只处理消息窗口。
 export function applyMessageDeletedEvent(
   messageId: string,
   activeChatId: string,

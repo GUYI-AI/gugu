@@ -1,7 +1,7 @@
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { mergeMessageState } from '@gugu/core/shared/ui/messageState'
 import { historyMessageVisible, historyTime } from '@gugu/core/shared/conversationHistoryTime'
-import type { ImChatAccess, ImMessageBatch, ImMessagePage, ImMessagePageResult, ImMessageRange, ImMessageWrite } from './im-messages'
+import type { ImChatAccess, ImMessageBatch, ImMessagePage, ImMessagePageResult, ImMessageRange, ImMessageWrite, MessageRef } from './im-messages'
 
 // @@@client-state-model - one IM message storage contract. Every rule about which rows exist, which sequence
 // ranges are verified contiguous and how a stored row merges with an arrival lives here, once. A platform supplies
@@ -117,7 +117,7 @@ export function messageStoreOperations(store: MessageStoreAdapter, retain: numbe
       fromSeq: tail !== null && tail < message.seq ? tail + 1 : message.seq, toSeq: message.seq })
   }
 
-  function historyCleared(message: MessageItem): boolean {
+  function historyCleared(message: Pick<MessageItem, 'chat_id' | 'created_at'>): boolean {
     const seen = new Set<string>()
     for (let chatId: string | null = message.chat_id; chatId && !seen.has(chatId);) {
       seen.add(chatId)
@@ -288,6 +288,9 @@ export function messageStoreOperations(store: MessageStoreAdapter, retain: numbe
       return store.latest(chatIds, limit)
     },
     throughRevision: () => store.throughRevision(),
+    /** The given messages this device hides: deleted here, or before the chat's history cutoff. */
+    hidden: (messages: readonly MessageRef[]): string[] =>
+      messages.filter(message => store.tombstoned(message.chat_id, message.id) || historyCleared(message)).map(message => message.id),
     clear: () => store.transaction(() => store.clear()),
   }
 }

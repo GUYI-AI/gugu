@@ -254,11 +254,10 @@ export function createAccountRevisionCoordinator(
     }
   }
 
-  // null = never materialize (deleted / imported root); undefined = incomplete payload, recover the body.
+  // null = never materialize (imported root); undefined = incomplete payload, recover the body.
   const decodeArrival = (operation: AccountRevisionOperation): MessageItem | null | undefined => {
-    const raw = readMessageCreatedRevision(operation.payload).message as (RawMessageRow & { deleted_at?: unknown; deleted_for_user_ids?: unknown; is_imported_history_root?: unknown }) | null
-    if (raw?.deleted_at || raw?.is_imported_history_root === true
-      || (Array.isArray(raw?.deleted_for_user_ids) && raw.deleted_for_user_ids.includes(accountId))) return null
+    const raw = readMessageCreatedRevision(operation.payload).message as (RawMessageRow & { is_imported_history_root?: unknown }) | null
+    if (raw?.is_imported_history_root === true) return null
     if (!raw || typeof raw.created_at !== 'string' || !Object.hasOwn(raw, 'content')
       || !Object.hasOwn(raw, 'to_user_ids') || !Object.hasOwn(raw, 'content_type')) return undefined
     const message = messageItemFromRow(raw, accountId)

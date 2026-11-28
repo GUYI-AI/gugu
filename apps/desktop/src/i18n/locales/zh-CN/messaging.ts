@@ -148,7 +148,7 @@ export default {
     "management": {
       "actionFailed": "{{action}}失败：{{reason}}",
       "clear": "清空",
-      "clearConfirm": "确认清空所有聊天记录？",
+      "clearConfirm": "确认清空所有聊天记录？只在这台设备上清空，无法恢复；你的其它设备和其他成员仍能看到。",
       "clearHistory": "清空聊天记录",
       "dissolve": "解散群聊",
       "dissolveConfirm": "解散后所有成员将退出，确认解散群聊？",
@@ -916,7 +916,7 @@ export default {
       "openLinkSystem": "在系统浏览器中打开",
       "selectText": "选择文本",
       "delete": "删除",
-      "deleteConfirm": "删除这条消息？删除后无法恢复。",
+      "deleteConfirm": "删除这条消息？只在这台设备上隐藏，无法恢复；你的其它设备和其他成员仍能看到。",
       "deleteTitle": "删除消息",
       "forward": "转发",
       "more": "更多",

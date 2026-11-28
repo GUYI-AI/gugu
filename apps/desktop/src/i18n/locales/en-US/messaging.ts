@@ -149,7 +149,7 @@ export default {
     "management": {
       "actionFailed": "{{action}} failed: {{reason}}",
       "clear": "Clear",
-      "clearConfirm": "Clear all chat history?",
+      "clearConfirm": "Clear all chat history? It is cleared on this device only and cannot be undone. Your other devices and other members still see it.",
       "clearHistory": "Clear chat history",
       "dissolve": "Dissolve group",
       "dissolveConfirm": "Dissolving this group removes every member. Continue?",
@@ -919,7 +919,7 @@ export default {
       "openLinkSystem": "Open in system browser",
       "selectText": "Select text",
       "delete": "Delete",
-      "deleteConfirm": "Delete this message? It cannot be restored.",
+      "deleteConfirm": "Delete this message? It is hidden on this device only and cannot be undone. Your other devices and other members still see it.",
       "deleteTitle": "Delete message",
       "forward": "Forward",
       "more": "More",

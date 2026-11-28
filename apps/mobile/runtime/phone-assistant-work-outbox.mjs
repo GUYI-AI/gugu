@@ -55,7 +55,7 @@ export function createPhoneAssistantWorkOutbox({ cloud, ownerId, deviceId, insta
       visible: async (_ctx, post, signal) => {
         const {data, error} = await cloud.chat.from('messages_view').select('id')
           .eq('id', post.messageId).eq('chat_id', post.chatId).eq('sender_user_id', post.assistantId)
-          .is('deleted_at', null).is('retracted_at', null).not('deleted_for_user_ids', 'cs', JSON.stringify([ownerId]))
+          .is('retracted_at', null)
           .abortSignal(signal).maybeSingle()
         if (error) throw error
         return data?.id === post.messageId

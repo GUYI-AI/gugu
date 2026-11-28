@@ -44,7 +44,7 @@ vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({
     return delayedIdentities ?? ids.map((id) => displayIdentity(id, { display_name: `name-${id}`, type: 'human' }))
   },
 }))
-vi.mock('../../../../apps/desktop/src/lib/messageIngest', () => ({ ingestMessages: async () => undefined, initializeMessages: () => undefined, retireClosedMessageAccount: async () => undefined }))
+vi.mock('../../../../apps/desktop/src/lib/messageIngest', () => ({ ingestMessages: async () => undefined, initializeMessages: () => undefined, retireClosedMessageAccount: async () => undefined, localMessageQueries: () => ({ hidden: async () => [] }) }))
 const { createChatProjection, toProjectionOperations } = await import('../../../../apps/desktop/src/lib/chatProjection')
 
 const VIEWER = 'u-viewer'

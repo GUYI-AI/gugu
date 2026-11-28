@@ -153,7 +153,6 @@ export interface ChatContextValue {
   setFollowingTail: (following: boolean | undefined) => void
   createGroupChat: (name: string, memberIds: string[], groupPrompt?: string | null) => Promise<string>
   clearMessages: () => Promise<void>
-  removeMessage: (messageId: string) => void
   deleteMessage: (messageId: string) => Promise<void>
   appendMessage: (msg: MessageItem) => void
   upsertChat: (chat: ChatItem) => void
@@ -229,7 +228,6 @@ const EMPTY_CHAT_STORE: ChatContextValue = {
   setFollowingTail: () => {},
   createGroupChat: async () => '',
   clearMessages: async () => {},
-  removeMessage: () => {},
   deleteMessage: async () => {},
   appendMessage: () => {},
   upsertChat: () => {},

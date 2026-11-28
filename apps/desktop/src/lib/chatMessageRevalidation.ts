@@ -230,9 +230,7 @@ async function loadWindowBodyMutations(
       .from('messages_view')
       .select(MESSAGES_VIEW_SELECT)
       .in('id', chunk)
-      .is('deleted_at', null)
       .eq('is_imported_history_root', false)
-      .not('deleted_for_user_ids', 'cs', JSON.stringify([userId]))
     if (error) {
       console.warn(
         `[chat] window body revalidation failed (offset ${i}/${messageIds.length}): ${error.message}`

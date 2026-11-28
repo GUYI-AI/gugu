@@ -1,6 +1,6 @@
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { projectMessageSearchText } from '@gugu/core/shared/ui/messageSearchText'
-import type { ImMessageBatch, ImMessagePage } from '@shared/core/im-messages'
+import type { ImMessageBatch, ImMessagePage, MessageRef } from '@shared/core/im-messages'
 import { messageStoreOperations, requireId, type ChatAccessRow, type MessageStoreAdapter } from '@shared/core/im-message-store'
 import { dropMessages, encodeRest, restore, reusingStatements, type MessageSqlDatabase, type StoredMessage } from './message-row'
 import { searchMessages } from './search'
@@ -133,6 +133,7 @@ export function createImMessageStore(database: MessageSqlDatabase) {
     windows: (accountId: string, chatIds: string[], limit: number): MessageItem[] => account(accountId).windows(chatIds, limit),
     page: (accountId: string, options: ImMessagePage) => account(accountId).page(options),
     throughRevision: (accountId: string) => account(accountId).throughRevision(),
+    hidden: (accountId: string, messages: MessageRef[]) => account(accountId).hidden(messages),
     clearAccount: (accountId: string) => account(accountId).clear(),
     search: (accountId: string, chatId: string, query: string, limit: number, fromUserId?: string) =>
       searchMessages(connection, accountId, chatId, query, limit, fromUserId),

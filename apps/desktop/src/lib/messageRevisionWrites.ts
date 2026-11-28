@@ -15,10 +15,8 @@ export function messageRevisionWrites(accountId: string, operations: readonly Ac
         // Old payloads name no sequence. No interval can safely bridge this unknown arrival.
         writes.push({ type: 'truncateRange', chatId })
       } else {
-        const row = message as typeof message & { deleted_at?: unknown; deleted_for_user_ids?: unknown; is_imported_history_root?: unknown }
-        if (row.deleted_at || (Array.isArray(row.deleted_for_user_ids) && row.deleted_for_user_ids.includes(accountId))) {
-          writes.push({ type: 'delete', chatId, id: messageId })
-        } else if (row.is_imported_history_root !== true) {
+        const row = message as typeof message & { is_imported_history_root?: unknown }
+        if (row.is_imported_history_root !== true) {
           const item = messageItemFromRow(row, accountId)
           if (item) writes.push({ type: 'put', message: item })
           else {
@@ -43,13 +41,9 @@ export function messageRevisionWrites(accountId: string, operations: readonly Ac
         const refreshed = readMessageRefreshRevision(operation.payload)
         if (refreshed && !refreshed.message) writes.push({ type: 'delete', chatId, id: refreshed.messageId })
         else if (refreshed?.message) {
-          const row = refreshed.message as typeof refreshed.message & { deleted_at?: unknown; deleted_for_user_ids?: unknown }
-          if (row.deleted_at || (Array.isArray(row.deleted_for_user_ids) && row.deleted_for_user_ids.includes(accountId))) writes.push({ type: 'delete', chatId, id: refreshed.messageId })
-          else {
-            const item = messageItemFromRow(row, accountId)
-            if (!item) throw new Error('Refreshed message body is malformed')
-            writes.push({ type: 'put', message: item })
-          }
+          const item = messageItemFromRow(refreshed.message, accountId)
+          if (!item) throw new Error('Refreshed message body is malformed')
+          writes.push({ type: 'put', message: item })
         }
       }
     }

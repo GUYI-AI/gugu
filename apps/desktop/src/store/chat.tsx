@@ -24,6 +24,8 @@ import {
 } from '../lib/imRepository'
 import { closeImRepository, completeWindowIdentities } from '../lib/chatMessageWindowPublication'
 import { messageWindow } from '../lib/messageWindows'
+import { ingestMessages } from '../lib/messageIngest'
+import { clearChatWrites, hideMessageWrites, newestShown } from '../lib/localMessageHides'
 import { paintLocalChats, publishLocalFirstFrame } from '../lib/chatSnapshotPublication'
 import { createChatListProjectionLedger, useChatProjectionBinding, notifyForIngestedMessage } from './chatListProjection'
 import { adoptOptimisticChatRow } from '../lib/optimisticChatIdentity'
@@ -708,30 +710,20 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
 
   const createGroupChat = useGroupCreation({ userId, loadChats, setChats, toast })
 
+  // @@@local-hide - delete and clear hide on this device only; the store applies them like any other write.
   const clearMessages = useCallback(async (chatId = activeChatIdRef.current) => {
-    if (!chatId) return
-    // @@@mutation-window - first invalidate older snapshots, then invalidate snapshots started while the RPC was in flight.
+    const through = chatId && newestShown(cache.rows(chatId), chatsRef.current.find(chat => chat.id === chatId)?.last_message_at)
+    if (!chatId || !userId || !through) return
     invalidateMessageSnapshots(chatId)
-    await chatService.clearMessagesForMe(chatId)
-    invalidateMessageSnapshots(chatId)
-    // The store drops the cleared rows when the membership's cleared_at arrives (the chat access write).
-    cache.delete(chatId)
-  }, [cache, invalidateMessageSnapshots])
+    await ingestMessages(userId, { writes: clearChatWrites(chatId, through), revisions: [] })
+  }, [cache, chatsRef, invalidateMessageSnapshots, userId])
 
-  const removeMessage = useCallback((messageId: string, chatId = activeChatIdRef.current) => {
-    if (chatId) setMessagesAndCache((rows) => rows.filter((row) => row.id !== messageId), chatId)
-  }, [setMessagesAndCache])
-  const deleteMessage = useCallback(async (messageId: string, targetChatId = activeChatIdRef.current) => {
-    if (targetChatId) invalidateMessageSnapshots(targetChatId)
-    if (outboxRef.current?.outbox.has(messageId)) {
-      await outboxRef.current.outbox.discard(messageId)
-      return
-    }
-    const { chatId } = await chatService.deleteMessage(messageId)
+  const deleteMessage = useCallback(async (messageId: string, chatId = activeChatIdRef.current) => {
+    if (!chatId || !userId) return
     invalidateMessageSnapshots(chatId)
-    removeMessage(messageId, chatId)
-    await loadChats()
-  }, [invalidateMessageSnapshots, loadChats, removeMessage])
+    if (outboxRef.current?.outbox.has(messageId)) return outboxRef.current.outbox.discard(messageId)
+    await ingestMessages(userId, { writes: hideMessageWrites(chatId, messageId), revisions: [] })
+  }, [invalidateMessageSnapshots, userId])
 
   const appendMessage = useCallback((msg: MessageItem) => {
     // @@@threads (#1114) — route replies only to their open thread; realtime owns reply counts, mainline stays separate.
@@ -833,12 +825,12 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     loadOlderMessages: () => loadHistoryPage('older', chatId, viewport), loadNewerMessages: () => loadHistoryPage('newer', chatId, viewport),
     loadMessageAnchor: (id, commit) => loadMessageAnchor(id, chatId, viewport, commit), returnToLatestMessages: () => loadHistoryPage('latest', chatId, viewport),
     markMessageVisible,
-    clearMessages: () => clearMessages(chatId), removeMessage: (id) => removeMessage(id, chatId),
+    clearMessages: () => clearMessages(chatId),
     deleteMessage: (id) => deleteMessage(id, chatId), appendMessage, openThread: (rootId) => openThread(rootId, chatId),
     openUnreadChat, unreadEntry: entryFor(chatId),
     jumpToUnreadEntry: (viewport) => jumpToUnreadEntry(chatId, viewport),
   }), [cache, sendAttachmentsToChat, sendMessageToChat, toggleReaction, refreshMessages, loadHistoryPage, loadMessageAnchor,
-    markMessageVisible, clearMessages, removeMessage, deleteMessage, appendMessage, openThread, openUnreadChat, entryFor, jumpToUnreadEntry])
+    markMessageVisible, clearMessages, deleteMessage, appendMessage, openThread, openUnreadChat, entryFor, jumpToUnreadEntry])
   const conversations = useMemo<ChatConversationAccess>(() => ({
     read: (id, viewport) => {
       readChatWindow(id)

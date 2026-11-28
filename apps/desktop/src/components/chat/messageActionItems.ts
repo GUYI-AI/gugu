@@ -94,7 +94,7 @@ export function messageActionItems(input: MessageActionTarget, t: TFunction<'mes
     // 更多 — how long one's own attachment is kept: set once in a while, most files keep the default.
     !!target.onKeep && { key: 'keep-temporary', icon: Clock, label: t('message.actions.keepTemporary'), onSelect: () => target.onKeep!('temporary'), disabled: target.isRetracted, fold: true },
     !!target.onKeep && { key: 'keep-permanent', icon: Pin, label: t('message.actions.keepPermanent'), onSelect: () => target.onKeep!('permanent'), disabled: target.isRetracted, fold: true },
-    // 更多, last — delete: rare and destructive. It cannot be undone (it may delete for everyone), so it asks first,
+    // 更多, last — delete: rare and destructive. It cannot be undone (it hides the message on this device), so it asks first,
     // from every surface this table serves.
     !!target.onDelete && { key: 'delete', icon: Trash, label: t('message.actions.delete'), danger: true, fold: true, onSelect: () => {
       void confirmDanger({ title: t('message.actions.deleteTitle'), description: t('message.actions.deleteConfirm'), confirmLabel: t('message.actions.delete') })

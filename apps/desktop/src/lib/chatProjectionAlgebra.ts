@@ -131,7 +131,8 @@ export type IdentityValue = { id: string } & Record<string, unknown>
 export type UnreadValue = ChatUnreadLocator & { chat_id: string }
 export type PresenceValue = { id: string; online: boolean }
 /** viewer-scoped 最后一条可见消息:gated 成员看到的活动可能与 chat 行不同。 */
-export type PreviewValue = { chat_id: string; created_at: string | null; preview: string | null; notice: SystemNotice | null }
+/** `hidden`: the message is deleted or cleared on this device (@@@local-hide): the row keeps its place without its text. */
+export type PreviewValue = { chat_id: string; id?: string | null; created_at: string | null; preview: string | null; notice: SystemNotice | null; hidden?: boolean }
 export type OverrideValue = { alias: string | null }
 
 export type EntityValue =
@@ -513,6 +514,7 @@ export function assembleChat(source: AssembleSource, viewerId: string, chatId: s
   const messageAt = preview ? preview.created_at : chat.last_message_at
   const nativeAt = own.native_personal_activity_at
   const messageVisible = messageAt && historyMessageVisible(messageAt, own.conversation_cleared_at)
+  const previewHidden = !!preview?.hidden
   const nativeVisible = nativeAt && historyMessageVisible(nativeAt, own.conversation_cleared_at)
   const nativeNewer = nativeVisible && (!messageVisible || historyTime(nativeAt) > historyTime(messageAt))
   return {
@@ -532,8 +534,8 @@ export function assembleChat(source: AssembleSource, viewerId: string, chatId: s
     name: isRoomChat(chat.kind) ? (chat.name ?? fallbackChatName(chat.kind)) : '',
     created_at: chat.created_at,
     last_message_at: nativeNewer ? nativeAt : messageVisible ? messageAt : null,
-    last_message_preview: nativeNewer || !messageVisible ? null : preview ? preview.preview : chat.last_message_preview,
-    last_message_notice: messageVisible && !nativeNewer ? preview?.notice ?? null : null,
+    last_message_preview: nativeNewer || !messageVisible || previewHidden ? null : preview ? preview.preview : chat.last_message_preview,
+    last_message_notice: messageVisible && !nativeNewer && !previewHidden ? preview?.notice ?? null : null,
     unread_count: locator?.unread_count ?? 0,
     unread_locator: locator,
     pinned_message_id: chat.pinned_message_id,

@@ -14,6 +14,7 @@
 
 import type { ChatItem, ChatUnreadLocator, GroupMemberRole, NotificationLevel } from '@gugu/core/shared/types/chat'
 import { mergeConversationVisibility } from '@gugu/core/shared/ui/chatModels'
+import { historyMessageVisible } from '@gugu/core/shared/conversationHistoryTime'
 import { isPendingDelivery, parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import {
   assemble,
@@ -46,6 +47,7 @@ import {
   type EntityFamily,
   type EntityKey,
   type PlannerState,
+  type PreviewValue,
   type ProjectionBatch,
   type ProjectionOperation,
 } from './chatProjectionAlgebra'
@@ -63,11 +65,12 @@ import type { DisplayIdentity } from './displayIdentity'
 import { rendererLogger } from './log'
 import { chatDb, identityDb } from './supabase'
 import { composerCardLine } from './composerCardCopy'
-import { ingestMessages } from './messageIngest'
+import { ingestMessages, localMessageQueries } from './messageIngest'
 import { messageAccessWrites } from './messageRevisionWrites'
 import { forgetArchivedGroups, noteGroupArchived } from './archivedGroupsRead'
 import { messagePreviewLines } from './messagePreviews'
 import { sendGroupPreview } from './sendGroupPreview'
+import type { LocalHide } from './localMessageHides'
 
 const log = rendererLogger('chat/projection')
 /** A stored value adopted at warm start: known, freshness unknown — older than any revision, so an operation naming it reads it. */
@@ -102,6 +105,8 @@ export type ChatProjectionLedgerEntry = {
 export type ChatProjection = {
   /** Versioned list maintenance; a newer cleared membership supersedes a delayed hide receipt. */
   confirmPersonalHiding: (receipt: import('./hideListedConversation').PersonalConversationStateReceipt, signal?: AbortSignal) => Promise<ChatItem[]>
+  /** A hide on this device changed what the conversation's row shows (@@@local-hide). */
+  republishLocalHide: (hide: LocalHide) => ChatItem[]
   /** RPC receipt has no revision stamp; retain this monotonic list fact until account reset. */
   confirmPersonalDeletion: (receipt: import('./deleteListedConversation').PersonalConversationDeletion) => void
   /**
@@ -384,9 +389,14 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
         preview: typeof row.preview === 'string' ? row.preview : null,
         source: typeof row.preview_source === 'string' ? row.preview_source : null,
       })), signal, onReferenceRead)
+      // The server does not know what this device hides (@@@local-hide); the store does.
+      const hidden = new Set(await localMessageQueries().hidden(viewerId, selected.flatMap(row => typeof row.id === 'string'
+        ? [{ id: row.id, chat_id: row.chat_id, created_at: String(row.created_at) }] : [])))
       for (const [index, row] of selected.entries()) {
         byChat.set(row.chat_id, {
           chat_id: row.chat_id,
+          id: typeof row.id === 'string' ? row.id : null,
+          hidden: hidden.has(String(row.id)),
           created_at: String(row.created_at),
           // 只有带引用的行才有原文:先按同一份 AST 把引用块换成摘要再截;其它行照用库里截好的 preview。
           preview: sendGroupPreview(row.send_group_size) ?? (previews[index] == null ? null : composerCardLine(previews[index])),
@@ -663,6 +673,16 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       }
       return await owner.advance([{ revision: receipt.account_revision, event: 'chat_members_changed',
         chatId: receipt.chat_id, entityId: viewerId, own: true }], receipt.account_revision, signal) ?? rows
+    },
+    republishLocalHide({ chatId, ids, clearedAt }) {
+      const key = entityKey('preview', chatId)
+      const cell = cache.get(key)
+      const preview = cell?.value as PreviewValue | undefined
+      if (cell && preview?.created_at && (ids.includes(preview.id ?? '') || !historyMessageVisible(preview.created_at, clearedAt))) {
+        cache.set(key, { ...cell, value: { ...preview, hidden: true } })
+      }
+      unpublished.add(entityKey('chat', chatId))
+      return republish()
     },
     confirmPersonalDeletion({ chat_id, deleted_at }) {
       confirmedDeletions.set(chat_id, deleted_at)

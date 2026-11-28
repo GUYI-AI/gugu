@@ -95,7 +95,7 @@ if (!turns.every((turn) => Number.isFinite(turn.startedAt) && Number.isFinite(tu
 
 // The group's messages from the card until the last frozen turn ended: the card, and what the agent posted.
 const messages = (await rows(chatDb.from('messages').select('*').eq('chat_id', chatId).gte('seq', card.row.seq).order('seq'), 'the group messages'))
-  .filter((row) => Date.parse(row.created_at) <= endedAt && !row.deleted_at && !row.retracted_at)
+  .filter((row) => Date.parse(row.created_at) <= endedAt && !row.retracted_at)
 if (!messages.some((row) => row.id === card.row.id)) fail('the task card is not among the messages up to the end of the run')
 
 // Files in the frozen messages — posted as file cards, or linked from text: one sample id each, and the bytes that

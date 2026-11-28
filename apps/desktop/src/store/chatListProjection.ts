@@ -23,6 +23,7 @@ import { compareStamp, shareRows } from '../lib/chatProjectionAlgebra'
 import { presentChatMessage } from '../lib/chatNotificationPresentation'
 import { unknownMemberName } from '../lib/memberFallbackName'
 import { rendererLogger } from '@/lib/log'
+import { subscribeLocalHides } from '../lib/localMessageHides'
 import type { ChatWindowCache } from './chatWindowCache'
 
 // @@@selection-is-intent (#4314) — 一次刷新没提到某条会话，含义取决于这一发相对「最后一次看见它」有多新：
@@ -324,7 +325,7 @@ export function useChatProjectionBinding(deps: {
 
   const attach = useCallback((accountId: string, subscribe: ChatProjectionAttachment['subscribe']) => {
     const owner = ownerFor(accountId)
-    return owner.attach({
+    const detach = owner.attach({
       subscribe,
       cursor: () => readProjectionCursor(repositoryRef.current),
       signal: currentAuthSessionSignal,
@@ -333,6 +334,10 @@ export function useChatProjectionBinding(deps: {
         preserveMissingActive: false, revokedMembership: owner.isMembershipRevoked,
       }),
     })
+    const stopHides = subscribeLocalHides((hider, hide) => {
+      if (hider === accountId) void publish(owner.republishLocalHide(hide), owner.identities, { requestSeq: ++requestSeqRef.current, notify: false, preserveMissingActive: true })
+    })
+    return () => { detach(); stopHides() }
   }, [ownerFor, publish, repositoryRef, requestSeqRef])
 
   // ⚠️ 必须**稳定**:返回新字面量 ⇒ 依赖它的 effect 与 useCallback 每渲染都重建 ⇒ 订阅/渲染循环

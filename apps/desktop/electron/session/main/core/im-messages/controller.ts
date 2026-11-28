@@ -1,5 +1,5 @@
 import { createRPCController } from '@shared/lib/ipc/rpc'
-import type { ImMessageBatch, ImMessagePage } from '@shared/core/im-messages'
+import type { ImMessageBatch, ImMessagePage, MessageRef } from '@shared/core/im-messages'
 import { sqlite } from '@main/db/client'
 import { createImMessageStore } from './store'
 
@@ -11,6 +11,7 @@ export const imMessagesController = createRPCController({
   windows: (accountId: string, chatIds: string[], limit: number) => localStore().windows(accountId, chatIds, limit),
   page: (accountId: string, options: ImMessagePage) => localStore().page(accountId, options),
   throughRevision: (accountId: string) => localStore().throughRevision(accountId),
+  hidden: (accountId: string, messages: MessageRef[]) => localStore().hidden(accountId, messages),
   clearAccount: (accountId: string) => localStore().clearAccount(accountId),
   search: (accountId: string, chatId: string, query: string, limit: number, fromUserId?: string) =>
     localStore().search(accountId, chatId, query, limit, fromUserId),

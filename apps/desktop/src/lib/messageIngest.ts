@@ -6,6 +6,7 @@ import { desktopIpc } from '../platform/desktopIpc'
 import { createLocalMessageStore } from './localMessageStore'
 import { acceptMessageWrites, clearMessageWindows, initializeMessageWindows, messageAccountClosed, messageWindow, messageWindowGeneration, setMessageWindow } from './messageWindows'
 import { MAX_WINDOW } from '../store/chatMessageWindow'
+import { announceLocalHides, localHidesOf } from './localMessageHides'
 const commits = new Map<string, Promise<unknown>>()
 /** One store per IndexedDB factory: the page has exactly one (unit tests hand each case a fresh one). */
 let phoneStore: { factory: IDBFactory; store: ReturnType<typeof createLocalMessageStore> } | undefined
@@ -36,8 +37,8 @@ export async function retireClosedMessageAccount(accountId: string): Promise<voi
 
 /** Read-only access cannot acquire either renderer write method. */
 export function localMessageQueries(): Omit<MessageStore, 'ingest' | 'clearAccount'> {
-  const { windows, page, search, throughRevision } = store()
-  return { windows, page, search, throughRevision }
+  const { windows, page, search, throughRevision, hidden } = store()
+  return { windows, page, search, throughRevision, hidden }
 }
 
 export function initializeMessages(accountId: string): void {
@@ -69,6 +70,7 @@ async function commitMessages(accountId: string, batch: ImMessageBatch | 'clear'
   // A page arriving after explicit logout must not recreate the just-cleared local history.
   if (messageAccountClosed(accountId)) throw new DOMException('Local message account is closed', 'AbortError')
   const accepted = await imMessages.ingest(accountId, batch)
+  announceLocalHides(accountId, localHidesOf(batch.writes))
   // Windows rebuilt since (the account opened again) were read from the store; they are not this write's to change.
   if (messageWindowGeneration(accountId) !== target.generation) return accepted
   const reads = acceptMessageWrites(accountId, accepted)
@@ -95,10 +97,10 @@ export function readMessagePage(accountId: string, page: ImMessagePage): Promise
 }
 
 export async function ingestMessagePage(accountId: string, rows: MessageItem[], chatId: string,
-  limit: number, beforeSeq?: number, afterSeq?: number, threadRootId: string | null = null, rawCount = rows.length): Promise<void> {
+  limit: number, beforeSeq?: number, afterSeq?: number, threadRootId: string | null = null, rawCount = rows.length): Promise<ImMessageWrite[]> {
   const fromSeq = afterSeq !== undefined ? afterSeq + 1 : rawCount < limit ? 1 : rows[0]?.seq
   const toSeq = beforeSeq !== undefined ? beforeSeq - 1 : rows[rows.length - 1]?.seq
-  await ingestMessages(accountId, { writes: rows.map(message => ({ type: 'put', message })), revisions: [],
+  return ingestMessages(accountId, { writes: rows.map(message => ({ type: 'put', message })), revisions: [],
     ranges: fromSeq !== undefined && toSeq !== undefined && fromSeq <= toSeq
       ? [{ chatId, threadRootId, fromSeq, toSeq }] : [] })
 }

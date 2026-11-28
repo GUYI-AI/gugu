@@ -76,6 +76,7 @@ export function chatProjectionModuleStub(read: () => ChatProjectionStub) {
       identities: () => read().identityRows,
       isMembershipRevoked: (chatId: string) => read().revoked.has(chatId),
       memberReadSeqs: () => undefined,
+      republishLocalHide: () => read().rows,
       isConversationDeleted: () => false,
       ledger: () => [],
       reset: () => undefined,
