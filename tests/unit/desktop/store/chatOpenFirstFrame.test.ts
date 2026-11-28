@@ -19,7 +19,7 @@ const { openImRepositoryMock, revisionListeners, revisionCoordinatorMock, coordi
   revisionListeners: new Map<string, Set<(operations: readonly unknown[]) => void | Promise<void>>>(),
   revisionCoordinatorMock: {
     start: vi.fn(), stop: vi.fn(), wake: vi.fn(), retryPending: vi.fn(), whenIdle: vi.fn().mockResolvedValue(undefined),
-    behind: vi.fn(async () => false),
+    behind: vi.fn(async () => false), resume: vi.fn(),
     subscribe: vi.fn((events: string | readonly string[], listener: (operations: readonly unknown[]) => void | Promise<void>) => {
       const claimed = typeof events === 'string' ? [events] : [...events]
       for (const event of claimed) {

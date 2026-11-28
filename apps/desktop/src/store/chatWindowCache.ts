@@ -48,6 +48,8 @@ export class ChatWindowCache extends Map<string, MessageItem[]> {
    * learns there are newer ones; one that reaches into the run is joined with it.
    */
   publishTail(chatId: string, rows: MessageItem[]): void {
+    // The run is as long as any window may be (both end at MAX_WINDOW rows), so its first row is the lowest a following
+    // window keeps: a longer verified range below it is reached by paging older, not held here.
     const from = rows.find(row => row.seq > 0)?.seq ?? 0
     const visible = rows.filter(this.visible)
     const join = (previous: MessageItem[]) => mergeMessagesById(previous, visible, chatId)

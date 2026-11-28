@@ -33,7 +33,8 @@ async function rig(initial: AccountRevisionOperation[] = [], recover = vi.fn(asy
   let wake!: (head?: string | null) => void
   const notify = vi.fn(async (_item: ReturnType<typeof message>) => {})
   const coordinator: AccountRevisionCoordinator = createAccountRevisionCoordinator('viewer', repository, {
-    syncSince: async cursor => ({ operations: operations.filter(op => BigInt(op.revision) > BigInt(cursor)), hasMore: false }),
+    syncSince: async () => { throw new Error('the drain reads through catchUp') },
+    catchUp: async cursor => ({ operations: operations.filter(op => BigInt(op.revision) > BigInt(cursor)), hasMore: false }),
     subscribeWake: (_account, onWake) => { wake = onWake; return () => undefined },
   }, { recover, notify })
   stops.push(() => { coordinator.stop(); repository.close() })
@@ -238,7 +239,8 @@ it('answers behind as soon as a page shows a longer backlog, and not behind once
   const pages = [deferred<void>(), deferred<void>()]
   let asked = 0
   const coordinator = createAccountRevisionCoordinator('viewer', repository, {
-    syncSince: async (cursor) => {
+    syncSince: async () => { throw new Error('the drain reads through catchUp') },
+    catchUp: async (cursor) => {
       const page = asked++
       await pages[page]!.promise
       return { operations: [arrival(String(BigInt(cursor) + 1n), `backlog-${page}`, row(`backlog-${page}`, page + 1))], hasMore: page === 0 }
@@ -257,24 +259,70 @@ it('answers behind as soon as a page shows a longer backlog, and not behind once
   expect(await coordinator.behind()).toBe(false)
 })
 
-it('asks the journal again at once when its last read failed, instead of answering from the stale cursor', async () => {
+it('keeps a backoff through news and starts it over when conditions change', async () => {
+  vi.useFakeTimers()
   const repository = await openImRepository('viewer', { adapter: createMemoryLocalSyncDb() })
   await repository.transaction(tx => tx.putSyncState('account-revision-cursor', { revision: '0' }))
   let reachable = false, asked = 0
+  let wake!: (head?: string | null) => void
   const coordinator = createAccountRevisionCoordinator('viewer', repository, {
-    syncSince: async (cursor) => {
+    syncSince: async () => { throw new Error('the drain reads through catchUp') },
+    catchUp: async (cursor) => {
       asked += 1
       if (!reachable) throw new TypeError('Network request failed')
-      return { operations: [arrival(String(BigInt(cursor) + 1n), `backlog-${asked}`, row(`backlog-${asked}`, asked))], hasMore: BigInt(cursor) < 1n }
+      return { operations: [arrival(String(BigInt(cursor) + 1n), `row-${asked}`, row(`row-${asked}`, asked))], hasMore: false }
     },
-    subscribeWake: () => () => undefined,
+    subscribeWake: (_account, onWake) => { wake = onWake; return () => undefined },
   }, { recover: vi.fn(async () => null), notify: vi.fn(async () => {}) })
   stops.push(() => { coordinator.stop(); repository.close() })
   coordinator.start()
-  await coordinator.whenIdle().catch(() => undefined)
-  expect(await coordinator.behind()).toBe(false) // still unreachable: no evidence of a backlog
-  expect(asked).toBe(2)
+  // Three failed reads grow the backoff to 5 s (1 s, 2 s, 5 s).
+  await vi.advanceTimersByTimeAsync(1000 + 2000 + 100)
+  expect(asked).toBe(3)
+  // News during the backoff is not a read: a channel that still delivers broadcasts must not turn into a retry storm.
+  for (let head = 1; head <= 20; head += 1) wake(String(head))
+  coordinator.wake()
+  await vi.advanceTimersByTimeAsync(100)
+  expect(asked).toBe(3)
+  expect(await coordinator.behind()).toBe(false) // a question, not a read
+  expect(asked).toBe(3)
+  // Back online: read now. The read issued in that instant may still fail; the next one comes after the first delay.
+  coordinator.resume()
+  await vi.advanceTimersByTimeAsync(10)
+  expect(asked).toBe(4)
   reachable = true
-  expect(await coordinator.behind()).toBe(true)
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(asked).toBe(5)
   await coordinator.whenIdle()
+  expect(stored()).toEqual(['row-5'])
+})
+
+it('accepts a compacted page: its window is the cursor, a gap voids the stream and nothing is recovered', async () => {
+  const repository = await openImRepository('viewer', { adapter: createMemoryLocalSyncDb() })
+  await repository.transaction(tx => tx.putSyncState('account-revision-cursor', { revision: '0' }))
+  const recover = vi.fn(async () => null)
+  let wake!: (head?: string | null) => void
+  const pages: Record<string, { operations: AccountRevisionOperation[]; hasMore: boolean; through?: string }> = {
+    0: { operations: [arrival('1', 'held-1', row('held-1', 1)), arrival('2', 'held-2', row('held-2', 2))], hasMore: false },
+    2: { operations: [{ revision: '700', event: 'message_created', payload: { chat_id: 'room', entity_id: 'newest', gap: true, tombstone: false } },
+      { revision: '880', event: 'chat_changed', payload: { chat_id: 'room', tombstone: false } }], hasMore: false, through: '900' },
+    900: { operations: [arrival('901', 'after-gap', row('after-gap', 480))], hasMore: false },
+  }
+  const coordinator = createAccountRevisionCoordinator('viewer', repository, {
+    syncSince: async () => { throw new Error('the drain reads through catchUp') },
+    catchUp: async cursor => pages[cursor] ?? { operations: [], hasMore: false },
+    subscribeWake: (_account, onWake) => { wake = onWake; return () => undefined },
+  }, { recover, notify: vi.fn(async () => {}) })
+  stops.push(() => { coordinator.stop(); repository.close() })
+  coordinator.start()
+  await coordinator.whenIdle()
+  expect((await readMessagePage('viewer', { chatId: 'room', beforeSeq: 3, limit: 2 })).covered).toBe(true)
+  wake('900'); await coordinator.whenIdle()
+  expect((imSelectors.syncState('account-revision-cursor')(repository.snapshot()) as { revision: string }).revision).toBe('900')
+  expect((await readMessagePage('viewer', { chatId: 'room', beforeSeq: 3, limit: 2 })).covered).toBe(false)
+  expect(recover).not.toHaveBeenCalled()
+  // An arrival after the gap starts a new range: it does not bridge back to the rows held before it.
+  wake('901'); await coordinator.whenIdle()
+  expect(stored()).toEqual(['after-gap'])
+  expect((await readMessagePage('viewer', { chatId: 'room', beforeSeq: 481, limit: 3 })).covered).toBe(false)
 })

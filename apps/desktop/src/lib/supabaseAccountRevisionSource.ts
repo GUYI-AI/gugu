@@ -12,18 +12,20 @@ import { dataClient } from './supabase'
 import { noteBackendAnswer } from '@gugu/core/cloud/backendReachability'
 
 export function createSupabaseAccountRevisionSource(): AccountRevisionSource {
+  const read = async (rpc: 'sync_since' | 'sync_since_compact', cursor: string, limit: number, signal: AbortSignal) => {
+    // 这一拉是「后端能不能用」的唯一读数(backendReachability);被中止的不算。
+    const { data, error } = await dataClient
+      .schema('chat')
+      .rpc(rpc, { p_after_revision: cursor, p_limit: limit })
+      .abortSignal(signal)
+      .then(answer => answer, (thrown: unknown) => ({ data: null, error: thrown }))
+    if (!signal.aborted) noteBackendAnswer(!error)
+    if (error) throw error
+    return parseRevisionPage(data)
+  }
   return {
-    async syncSince(cursor, limit, signal) {
-      // 这一拉是「后端能不能用」的唯一读数(backendReachability);被中止的不算。
-      const { data, error } = await dataClient
-        .schema('chat')
-        .rpc('sync_since', { p_after_revision: cursor, p_limit: limit })
-        .abortSignal(signal)
-        .then(answer => answer, (thrown: unknown) => ({ data: null, error: thrown }))
-      if (!signal.aborted) noteBackendAnswer(!error)
-      if (error) throw error
-      return parseRevisionPage(data)
-    },
+    syncSince: (cursor, limit, signal) => read('sync_since', cursor, limit, signal),
+    catchUp: (cursor, limit, signal) => read('sync_since_compact', cursor, limit, signal),
     subscribeWake(accountId, onWake, onSubscribed) {
       const handle: PrivateUserEventBusHandle = subscribePrivateUserEventBus(
         accountId,

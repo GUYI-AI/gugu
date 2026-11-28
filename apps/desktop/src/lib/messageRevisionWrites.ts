@@ -12,7 +12,7 @@ export function messageRevisionWrites(accountId: string, operations: readonly Ac
     if (operation.event === 'message_created') {
       const { chatId, messageId, message } = readMessageCreatedRevision(operation.payload)
       if (!message) {
-        // Old payloads name no sequence. No interval can safely bridge this unknown arrival.
+        // A stream gap, or an old payload that names no sequence: no interval can safely bridge what was not delivered.
         writes.push({ type: 'truncateRange', chatId })
       } else {
         const row = message as typeof message & { deleted_at?: unknown; deleted_for_user_ids?: unknown; is_imported_history_root?: unknown }
