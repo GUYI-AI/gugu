@@ -201,11 +201,11 @@ export class PanelTrack {
   }
 
   private fillBox(): PanelSlotNodes | null {
-    return this.fill && !(this.fill instanceof HTMLElement) && this.extent > 0 ? this.fill : null;
+    return this.fill && 'place' in this.fill && this.extent > 0 ? this.fill : null;
   }
 
   private fillPlace(): HTMLElement {
-    return this.fill instanceof HTMLElement ? this.fill : this.fill!.place;
+    return 'place' in this.fill! ? this.fill.place : this.fill!;
   }
 
   private left(size: (slot: Slot) => number): number {
