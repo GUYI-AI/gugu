@@ -76,11 +76,24 @@ export type AgentPresenceListener = (state: AgentPresenceState) => void
 // subscribed since the value was read (agentPresenceChannels: the owner's channel, an open chat's channel). The
 // server broadcasts every change of the agent to those channels, so a covered entry needs no question. Anything else
 // (never covered, or its channel closed, errored or reconnected) is asked once when someone looks at it again.
-// Channel → the agents it has carried since it last subscribed.
-const coverage = new Map<string, Set<string>>()
+// A held channel that is still subscribing will read its agents itself once subscribed: a look meanwhile waits for it.
+type HeldChannel = {
+  /** The agents its holders know to be in it (my agents; the chat's agents). */
+  scope: Set<string>
+  /** The agents it has carried since it last subscribed; null = not subscribed. */
+  carried: Set<string> | null
+  /** It closed, errored or timed out and has not subscribed again: it vouches for nothing and reads nothing. */
+  down: boolean
+}
+const channels = new Map<string, HeldChannel>()
 
 function isCovered(agentUserId: string): boolean {
-  for (const ids of coverage.values()) if (ids.has(agentUserId)) return true
+  for (const held of channels.values()) if (held.carried?.has(agentUserId)) return true
+  return false
+}
+
+function awaitsChannel(agentUserId: string): boolean {
+  for (const held of channels.values()) if (!held.carried && !held.down && held.scope.has(agentUserId)) return true
   return false
 }
 
@@ -124,7 +137,7 @@ export function setPresenceBusContext(ctx: { currentUserId: string | null }): vo
   // `null → 某个身份` 是**激活**,不是换人:那一刻屏上已经确认过的状态仍然是这个人自己的,
   // 把它打回 pending 只会在启动时白闪一次(shell 提交发生在会话列表已经订阅之后)。
   const leftAnIdentity = previousUserId !== null
-  if (leftAnIdentity) coverage.clear()
+  if (leftAnIdentity) channels.clear()
   for (const entry of [...entries.values()]) {
     if (leftAnIdentity) {
       // 没人看的直接丢。有人看的退回 pending —— 这正是 pending 唯一合法的场合:
@@ -151,39 +164,58 @@ export async function refetchAgentPresence(agentUserIds: readonly string[]): Pro
   }))
 }
 
-/**
- * A presence channel subscribed (again): from now on it carries every change of these agents. Read their current
- * values once, after subscribing, so no change between the read and the subscription is missed.
- */
-export function coverAgentPresence(channel: string, agentUserIds: readonly string[]): void {
-  const ids = coverage.get(channel) ?? new Set<string>()
-  coverage.set(channel, ids)
-  extendAgentPresenceCoverage(channel, agentUserIds)
+/** A channel is held for these agents (first hold, or its holders' agents changed). Subscribed, it reads new ones. */
+export function holdAgentPresenceChannel(channel: string, agentUserIds: readonly string[]): void {
+  const held = channels.get(channel) ?? { scope: new Set<string>(), carried: null, down: false }
+  channels.set(channel, held)
+  held.scope = new Set(agentUserIds.filter(Boolean))
+  if (held.carried) readAfterSubscribe(held.carried, [...held.scope].filter((id) => !held.carried!.has(id)))
 }
 
-/** More agents came into a subscribed channel's scope (a new agent of mine, a new member): read those once. */
-export function extendAgentPresenceCoverage(channel: string, agentUserIds: readonly string[]): void {
-  const ids = coverage.get(channel)
-  if (!ids || !accountContext.currentUserId) return
+/** Nobody holds the channel any more. */
+export function releaseAgentPresenceChannel(channel: string): void {
+  channels.delete(channel)
+}
+
+/**
+ * A presence channel subscribed (again): from now on it carries every change of its agents. Read their current values
+ * now, after subscribing, so no change between the read and the subscription is missed.
+ */
+export function coverAgentPresence(channel: string): void {
+  const held = channels.get(channel)
+  if (!held) return
+  held.down = false
+  held.carried = new Set<string>()
+  readAfterSubscribe(held.carried, [...held.scope])
+}
+
+/** The channel closed, errored or timed out: what it carried is no longer known to be current. */
+export function uncoverAgentPresence(channel: string): void {
+  const held = channels.get(channel)
+  if (!held) return
+  held.carried = null
+  held.down = true
+  // Nothing will read these for whoever is looking at them: read them once, as for any agent outside a channel.
+  for (const id of held.scope) {
+    const entry = entries.get(id)
+    if (entry && entry.listeners.size > 0 && !isCovered(id) && !awaitsChannel(id)) void fetchSnapshot(entry)
+  }
+}
+
+function readAfterSubscribe(carried: Set<string>, agentUserIds: readonly string[]): void {
+  if (!accountContext.currentUserId) return
   for (const id of agentUserIds) {
-    if (!id || ids.has(id)) continue
-    ids.add(id)
-    const entry = entries.get(id) ?? createCooledEntry(id)
-    void fetchSnapshot(entry)
+    carried.add(id)
+    void fetchFreshSnapshot(entries.get(id) ?? createCooledEntry(id))
   }
   evictCooledEntries()
-}
-
-/** The channel closed, errored or is reconnecting: what it carried is no longer known to be current. */
-export function uncoverAgentPresence(channel: string): void {
-  coverage.delete(channel)
 }
 
 /** One broadcast from a presence channel. The channel carries this agent from now on. */
 export function applyAgentPresenceBroadcast(channel: string, raw: unknown): void {
   const payload = parseAgentPresencePayload(raw)
   if (!payload) throw new Error('Malformed agent presence broadcast')
-  const ids = coverage.get(channel)
+  const ids = channels.get(channel)?.carried
   if (!ids || !accountContext.currentUserId) return
   ids.add(payload.agentUserId)
   const entry = entries.get(payload.agentUserId) ?? createCooledEntry(payload.agentUserId)
@@ -352,7 +384,7 @@ function ensureEntry(agentUserId: string): Entry {
   const existing = entries.get(agentUserId)
   if (existing) return existing
   const entry = createEntry(agentUserId)
-  void fetchSnapshot(entry)
+  lookUp(entry)
   return entry
 }
 
@@ -360,8 +392,17 @@ function ensureEntry(agentUserId: string): Entry {
 // 全程不碰 status:'pending' —— 这个 agent 已经被观测过了。
 function revive(entry: Entry): void {
   entry.cooledAt = null
-  if (!entry.state.payload || isCovered(entry.agentUserId)) return
-  void fetchSnapshot(entry)
+  if (entry.state.payload) lookUp(entry)
+}
+
+// Read an agent someone looks at, unless a channel answers for it: one that carries it, or one still subscribing
+// that will read it once subscribed. Decided after this commit's effects, which are where channels are held.
+function lookUp(entry: Entry): void {
+  queueMicrotask(() => {
+    if (entries.get(entry.agentUserId) !== entry || awaitsChannel(entry.agentUserId)) return
+    if (entry.state.payload && isCovered(entry.agentUserId)) return
+    void fetchSnapshot(entry)
+  })
 }
 
 // @@@3839 最后一个订阅者离开:停下为它花网络,但**留着已知的事实**。
@@ -494,6 +535,15 @@ function fetchSnapshot(entry: Entry, throwOnError = false): Promise<void> {
   }
   void promise.then(clear, clear)
   return promise
+}
+
+// A read that starts now. One already in flight may have been sent before a channel subscribed, and miss a change
+// committed since: wait for it, then read again.
+function fetchFreshSnapshot(entry: Entry): Promise<void> {
+  const inFlight = entry.snapshotPromise
+  if (!inFlight) return fetchSnapshot(entry)
+  const read = () => fetchSnapshot(entry)
+  return inFlight.then(read, read)
 }
 
 function flushSnapshotBatch(): void {
