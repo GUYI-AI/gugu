@@ -977,6 +977,10 @@ export default {
     "title": "Send to"
   },
   "topic": {
+    "inviteTitle": "Invite to topic",
+    "noInviteCandidates": "No more members are available to invite.",
+    "sendInvitation": "Send invitation",
+    "invitationText": "Join me in this topic.",
     "untitled": "Topic",
     "leave": "Leave topic",
     "leaveHint": "You can still read it, but will not get notifications from this topic",
