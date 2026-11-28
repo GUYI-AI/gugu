@@ -161,13 +161,6 @@ export function cloudFileProviders(deps: {
   endpoint(context: FileContext): Promise<AttachmentsEndpoint>
   sink(size: number, context: FileContext): Promise<FileSink>
   cache: FileChunkCache; fetch?: typeof globalThis.fetch
-  /**
-   * Where this platform reads a signed object's bytes from, when not from the address itself: the desktop renderer reads
-   * them through main (`cloudObjectUrl`). The mapped address is read with `fetch`, which such a platform gives too (main's
-   * address is not the network's). A `<video>` is handed the signed address itself: Chromium's media loader is the
-   * platform's reader for it, with Chromium's own proxy and certificates.
-   */
-  objectUrl?(signed: string): string
   downloadSession?: FileDownloadSession
   metadata?(context: FileContext): Promise<unknown>
   imageCache?: Pick<Cache, 'match' | 'put'>
@@ -196,8 +189,7 @@ export function cloudFileProviders(deps: {
     context.signal?.throwIfAborted()
     const fetcher = deps.fetch ?? (await deps.endpoint(context)).fetch ?? egress.fetch
     context.signal?.throwIfAborted()
-    const objectUrl = deps.objectUrl
-    return objectUrl ? ((input: RequestInfo | URL, init?: RequestInit) => fetcher(objectUrl(String(input)), init)) as typeof globalThis.fetch : fetcher
+    return fetcher
   }
   const read = async (revision: FileRevision, context: FileContext, encrypted: boolean, destination?: FileSink): Promise<FileBytes> => {
     const ref = 'item_id' in context.ref ? { ...context.ref, version: revision.version } : context.ref
