@@ -12,7 +12,9 @@ export function isDownloadConnectionError(error: unknown): boolean {
 }
 export function isTransientFileReadError(error: unknown): boolean {
   if ((error as { name?: unknown } | null)?.name === 'AbortError') return false
-  const status = (error as { status?: unknown } | null)?.status
+  const { status, code } = (error ?? {}) as { status?: unknown; code?: unknown }
+  // A quota that is used up (429 `account_download_full`…) is a refusal, not a busy server: asking again changes nothing.
+  if (status === 429 && typeof code === 'string' && code.endsWith('_full')) return false
   return typeof status === 'number' ? status === 408 || status === 429 || status >= 500 && status < 600 : isDownloadConnectionError(error)
 }
 const safeMessage = (error: unknown) => String(error instanceof Error ? error.message : error)

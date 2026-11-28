@@ -279,6 +279,18 @@ describe('downloads consume one file and leave no cached chunks behind', () => {
     expect(ranges).toEqual([0, 2 * 512 * 1024])
     expect(await chunksLeft()).toEqual([])
   })
+  it('does not ask again when the account\'s download quota is used up', async () => {
+    const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).endsWith('/file-resolve')) return Response.json({ status: 'ready', ...revision, source: 'managed-object' })
+      if (String(url).endsWith('/file-download')) return Response.json({ error: 'account_download_full', message: 'File transfer account download quota is exhausted' }, { status: 429 })
+      throw new Error('Unexpected file request')
+    })
+    const resolve = createNodeFileResolver(tempRoot, async () => ({ supabaseUrl: 'https://files.invalid', anonKey: 'public', token: 'test', fetch: fetcher as typeof fetch }))
+    const file = await resolve(ref, actor)
+    if (file.status !== 'ready') throw new Error('Missing fixture')
+    await expect(saveFileHandle(file, join(home, 'attachments'), 'file.bin')).rejects.toMatchObject({ status: 429, code: 'account_download_full' })
+    expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith('/file-download'))).toHaveLength(1)
+  })
   it('removes the partial on a digest mismatch and never publishes corrupted content', async () => {
     const { resolve } = remote(Buffer.alloc(bytes.length, 9))
     const file = await resolve(ref, actor)
