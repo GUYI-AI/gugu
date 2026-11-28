@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import 'fake-indexeddb/auto'
+import { IDBFactory } from 'fake-indexeddb'
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query'
 import type { Session as RendererSession } from '@supabase/supabase-js'
 import { publishRendererSession } from '@/lib/sessionPublication'
@@ -24,6 +26,8 @@ import { displayIdentity } from '../../../../../../../tests/support/testHarness'
 import { sessionAgentBindings } from '../sessions/stores/session-agent-bindings'
 import { installPhoneImeDismiss } from '@/mobile/usePhoneImeDismiss'
 import { viewStateCache } from '@renderer/lib/stores/view-state-cache'
+import { ingestMessages } from '@/lib/messageIngest'
+import { hideMessageWrites } from '@/lib/localMessageHides'
 
 const remote = vi.hoisted(() => ({ opened: [] as unknown[], turns: vi.fn(), indexStatus: vi.fn(), messages: vi.fn(), firstOfDay: vi.fn(), viewFilters: [] as unknown[][], local: vi.fn(), desktop: false }))
 vi.mock('@/lib/guguLinks', () => ({ followLink: (target: unknown) => { remote.opened.push(target); return true } }))
@@ -39,7 +43,8 @@ vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: remote.messages, from: (table:
   return chain
 } } }))
 vi.mock('@/platform/desktopIpc', () => ({ desktopIpc: () => remote.desktop
-  ? { invoke: remote.local, eventOn: () => () => {} } : null }))
+  // Which results this device hides is the store's other read; nothing here is hidden.
+  ? { invoke: async (method: string, ...args: unknown[]) => method === 'imMessages.hidden' ? [] : remote.local(method, ...args), eventOn: () => () => {} } : null }))
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string, params?: object) => params ? `${key} ${JSON.stringify(params)}` : key }) }))
 
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver
@@ -71,6 +76,7 @@ beforeEach(() => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   // Debounce, query notifications and indexing polls keep their real intervals on a virtual clock.
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] })
+  globalThis.indexedDB = new IDBFactory()
   remote.opened = []
   remote.desktop = false
   remote.local.mockReset().mockResolvedValue([])
@@ -113,8 +119,10 @@ afterEach(async () => {
   }
 })
 
-// The typed text settles after the panel's debounce; the two queries answer on the next turns.
-const settle = async () => { for (let round = 0; round < 3; round++) await act(async () => { await vi.advanceTimersByTimeAsync(120) }) }
+// The typed text settles after the panel's debounce; the two queries answer on the next turns. The phone's message
+// store (fake IndexedDB, steps on the real setImmediate) answers which results this device hides in between.
+const storeTurns = async () => { for (let step = 0; step < 20; step++) await new Promise(resolve => setImmediate(resolve)) }
+const settle = async () => { for (let round = 0; round < 3; round++) await act(async () => { await vi.advanceTimersByTimeAsync(120); await storeTurns() }) }
 async function render(text: string, tasks = true, names = false) {
   await act(async () => root.render(<QueryClientProvider client={replicaClient}><GlobalSearch tasks={tasks} names={names} onClose={() => {}} onOpen={() => { closed++ }} /><SessionProbe /></QueryClientProvider>))
   await act(async () => updateSearchSession({ text }))
@@ -147,6 +155,15 @@ it('drops a freshly cached message search after personal deletion while retainin
   expect(host.textContent).not.toContain(rows[0].content)
   expect(host.textContent).toContain('回滚方案.pdf')
   expect(remote.messages.mock.calls.length).toBeGreaterThan(calls)
+})
+
+it('drops a message this device deleted from a search already shown, without asking the cloud to forget it', async () => {
+  await render('回滚', false)
+  expect(host.textContent).toContain(rows[0].content)
+  await act(async () => { await ingestMessages('me-1', { writes: hideMessageWrites(GROUP, rows[0].id), revisions: [] }) })
+  await settle()
+  expect(host.textContent).not.toContain(rows[0].content)
+  expect(host.textContent).toContain('回滚方案.pdf')
 })
 
 it('does not reuse another account message search when both accounts have no clear boundary', async () => {
@@ -389,7 +406,7 @@ describe('global search panel', () => {
     remote.desktop = true
     setNetwork(false)
     await render('orchid', false)
-    expect(replicaClient.getQueryCache().find({ queryKey: ['messageSearch', 'me-1', 'orchid', null, '[]'] })?.state.fetchStatus).toBe('paused')
+    expect(replicaClient.getQueryCache().find({ queryKey: ['messageSearch', 'me-1', 'orchid', null, '[[],0]'] })?.state.fetchStatus).toBe('paused')
     expect(remote.messages).not.toHaveBeenCalled()
     expect(remote.local).not.toHaveBeenCalled()
     // Said, ❌ three placeholder rows for as long as the network is away.
