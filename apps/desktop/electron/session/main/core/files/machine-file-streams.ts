@@ -37,8 +37,9 @@ export function machineFileStreams(): MachineFileStreams | null {
 type Version = { size: number; etag: string };
 /** The stream request the machine's streamer takes; `etag` = the version it must be of (absent: the one on disk). */
 export type StreamRequest = (offset: number, stream: string, etag?: string) => Record<string, unknown>;
-type Open = Version & { next: number; bytes: FileStreamBytes; idle: ReturnType<typeof setTimeout> };
+type Open = Version & { next: number; bytes: FileStreamBytes; idle?: ReturnType<typeof setTimeout> };
 const reads = new Map<string, Open>();
+const operations = new Map<string, Promise<void>>();
 /** A stream nobody read on for this long is let go (and its link hold with it). */
 const IDLE_MS = 30_000;
 
@@ -66,7 +67,17 @@ export function streamGoesOn(key: string, offset: number): boolean {
  * the file for one reader; `pin` is the version the reader has (null: whichever its open stream is of, or the one on disk
  * when none is open); `request` is the stream request the machine's streamer takes.
  */
-export async function streamedRange(key: string, deviceId: string, pin: Version | null, request: StreamRequest,
+export function streamedRange(key: string, deviceId: string, pin: Version | null, request: StreamRequest,
+  offset: number, length: number): Promise<Version & { bytes: Uint8Array }> {
+  // 同一条流只能从前往后读，打开和读取都排队；别的文件不受影响。
+  const running = (operations.get(key) ?? Promise.resolve()).then(() => readRange(key, deviceId, pin, request, offset, length));
+  const settled = running.then(() => undefined, () => undefined);
+  operations.set(key, settled);
+  void settled.then(() => { if (operations.get(key) === settled) operations.delete(key); });
+  return running;
+}
+
+async function readRange(key: string, deviceId: string, pin: Version | null, request: StreamRequest,
   offset: number, length: number): Promise<Version & { bytes: Uint8Array }> {
   const using = streams;
   if (!using) throw new Error('File streams are not ready');
@@ -79,10 +90,11 @@ export async function streamedRange(key: string, deviceId: string, pin: Version 
   if (known && offset >= known.size) return { size: known.size, etag: known.etag, bytes: new Uint8Array(0) };
   if (!read) {
     const bytes = await using.open(deviceId, MACHINE_FILE_STREAM, request, { etag: pin?.etag }, offset);
-    read = { size: bytes.size, etag: bytes.etag, next: offset, bytes, idle: setTimeout(() => drop(key), IDLE_MS) };
-    read.idle.unref?.();
+    read = { size: bytes.size, etag: bytes.etag, next: offset, bytes };
     reads.set(key, read);
   }
+  // 等字节到来属于活跃读取，不能让上一段的空闲计时器提前断开它。
+  clearTimeout(read.idle);
   const version = { size: read.size, etag: read.etag };
   const want = Math.max(0, Math.min(length, read.size - offset));
   let bytes: Uint8Array;
@@ -94,7 +106,11 @@ export async function streamedRange(key: string, deviceId: string, pin: Version 
   }
   read.next = offset + bytes.length;
   if (read.next >= read.size) drop(key);
-  else read.idle.refresh();
+  else {
+    const current = read;
+    read.idle = setTimeout(() => { if (reads.get(key) === current) drop(key); }, IDLE_MS);
+    read.idle.unref?.();
+  }
   return { ...version, bytes };
 }
 
