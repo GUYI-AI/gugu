@@ -15,23 +15,25 @@ export function TopicViewport({ children, all, total, label }: { children: React
   useLayoutEffect(() => {
     const menu = viewport.current;
     const stack = menu?.closest<HTMLElement>('[data-region="inner-sidebar-scroll"]');
-    const row = menu?.querySelector<HTMLElement>('[role="listitem"]');
+    const content = menu?.firstElementChild;
+    const section = menu?.parentElement;
     const header = menu?.previousElementSibling;
-    if (all || !stack || !header || !row) return;
+    if (all || !stack || !header || !content || !section) return;
     const measure = () => {
-      const height = row.getBoundingClientRect().height;
+      const height = content.querySelector('[role="listitem"]')?.getBoundingClientRect().height;
       if (!height) return;
       // Both module headings, their section margins, and one agent row stay within reach.
-      const gap = parseFloat(getComputedStyle(menu!.parentElement!).marginBottom) || 0;
+      const gap = parseFloat(getComputedStyle(section).marginBottom) || 0;
       const reserved = 2 * (header.getBoundingClientRect().height + gap) + height;
       setGeometry({ row: height, capacity: Math.max(1, Math.floor((stack.clientHeight - reserved) / height)) });
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(stack);
-    observer.observe(row);
+    // The shell portal can populate the slot after this layout effect, including when unfolding.
+    observer.observe(content);
     return () => observer.disconnect();
-  }, [all, total]);
+  }, [all]);
 
   const max = Math.max(1, Math.min(total, geometry.capacity));
   const clamp = (rows: number) => Math.min(max, Math.max(1, rows));
@@ -41,7 +43,7 @@ export function TopicViewport({ children, all, total, label }: { children: React
   return (
     <>
       <SidebarMenu ref={viewport} id={id} data-inner-rows="" data-topic-viewport={all ? undefined : ''}
-        className={all ? undefined : 'overflow-x-hidden overflow-y-auto overscroll-y-contain'}
+        className={all ? undefined : 'overflow-x-hidden overflow-y-auto overscroll-y-contain [overflow-anchor:none]'}
         style={all ? undefined : { maxHeight: Math.max(1, Math.min(geometry.capacity, preview ?? preferred)) * geometry.row }}>
         {children}
       </SidebarMenu>
