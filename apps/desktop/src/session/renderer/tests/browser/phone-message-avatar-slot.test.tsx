@@ -63,7 +63,7 @@ it.each(['light', 'dark'].flatMap(theme => [360, 390].map(width => ({ theme, wid
     for (const row of rows) expect(row.getBoundingClientRect().width).toBeGreaterThan(300)
     for (const slot of slots) { expect(slot.width).toBe(48); expect(slot.height).toBe(48); expect(slot.x).toBe(slots[0].x) }
     for (const title of titles) expect(title.x).toBe(slots[0].right + 16)
-    const art = rows.map(row => row.querySelector<HTMLElement>('canvas, svg[viewBox="0 0 36 36"], [data-avatar-empty]')!.getBoundingClientRect())
+    const art = rows.map(row => row.querySelector<HTMLElement>('canvas, img[data-face], [data-avatar-empty]')!.getBoundingClientRect())
     art.forEach((rect, i) => {
       expect(rect.width).toBe(48); expect(rect.height).toBe(48)
       expect(rect.x + rect.width / 2).toBe(slots[i].x + slots[i].width / 2)
