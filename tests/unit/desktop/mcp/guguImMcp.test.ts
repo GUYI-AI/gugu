@@ -26,7 +26,7 @@ vi.hoisted(() => {
   process.env.GUGU_ACCESS_TOKEN = `x.${Buffer.from(JSON.stringify({ sub: 'owner-1' })).toString('base64url')}.x`
 })
 // @ts-expect-error — 注入式 MCP server 是无类型 .mjs；运行时 import 可用。
-import { assertAgentMessageText, createGuguImServer as createGuguImServerImpl, callTool as callToolImpl, reconcileMentionExpression, resolveRecipientAddresses, restRpc as restRpcImpl, restWriteError, sendExtensionCardOf, groupDataFileOf, workspaceFileLink, TOOL_DEFS, IN_LIST_BATCH, serveToolsList } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
+import { assertAgentMessageText, createGuguImServer as createGuguImServerImpl, callTool as callToolImpl, reconcileMentionExpression, resolveRecipientAddresses, restRpc as restRpcImpl, restWriteError, RpcHttpError, sendExtensionCardOf, groupDataFileOf, workspaceFileLink, TOOL_DEFS, IN_LIST_BATCH, serveToolsList } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
 import {
   dollarRunBoundaryFixtures,
   markdownStructureBoundaryFixtures,
@@ -1050,6 +1050,56 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(sent.content).toBe('hello')
     await client.close()
   })
+  test.each([
+    ['timeout', new Error('receipt timed out')],
+    ['401', new RpcHttpError(401, { accessToken: 'expired' })],
+  ])('a post-commit receipt %s keeps the text message ID without another insert', async (_, failure) => {
+    const h = harness(['agent-1', 'alice'])
+    const rpc = h.deps.restRpc
+    const get = h.deps.restGet
+    const order: string[] = []
+    h.deps.restRpc = async (name, body, profile) => {
+      if (name === 'agent_send_receipt') {
+        order.push('receipt started')
+        await Promise.resolve()
+        order.push('receipt failed')
+        throw failure
+      }
+      const result = await rpc(name, body, profile)
+      return name === 'chat_facts' && Array.isArray(result) ? [{ ...result[0], agent_send_receipt: true }] : result
+    }
+    h.deps.restGet = async path => {
+      if (path.startsWith('messages?chat_id=') && path.includes('created_at=gte.')) order.push('flood started')
+      return get(path)
+    }
+    const client = await connect(h.deps)
+    const result = await client.callTool({ name: 'message_send', arguments: {
+      chat_id: '00000000-0000-4000-8000-000000000001', to_user_ids: ['user:alice'], text: 'hello',
+    } })
+    expect(result.isError).not.toBe(true)
+    expect(h.calls.inserts).toHaveLength(1)
+    const { id } = h.calls.inserts[0][1] as { id: string }
+    expect(text(result)).toBe(`sent (id=msg:${id}); The message was sent, but recipient delivery could not be verified. Do not send it again.`)
+    expect(order).toEqual(['receipt started', 'flood started', 'receipt failed'])
+    await client.close()
+  })
+
+  test('a refused text insert keeps the write error and never reads a receipt', async () => {
+    const h = harness(['agent-1', 'alice'])
+    const insert = vi.fn(async () => { throw restWriteError('INSERT messages', 403, 'write rejected') })
+    const rpc = vi.fn(h.deps.restRpc)
+    const get = vi.fn(h.deps.restGet)
+    const client = await connect({ ...h.deps, restInsert: insert, restRpc: rpc, restGet: get })
+    const result = await client.callTool({ name: 'message_send', arguments: {
+      chat_id: '00000000-0000-4000-8000-000000000001', text: 'hello',
+    } })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('INSERT messages → 403 write rejected')
+    expect(insert).toHaveBeenCalledTimes(1)
+    expect(rpc.mock.calls.map(([name]) => name)).not.toContain('agent_send_receipt')
+    expect(get.mock.calls.some(([path]) => path.startsWith('message_agent_delivery_blocks?'))).toBe(false)
+    await client.close()
+  })
   test('an older database receives only the original refusal read, even on the first send', async () => {
     const h = harness(['agent-1', 'alice'])
     const rpc = h.deps.restRpc
@@ -1208,7 +1258,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect((h.calls.inserts[0][1] as Record<string, unknown>)).toMatchObject({ chat_id: 'c2', content: '@Alice cross-chat' })
     await client.close()
   })
-  test('contact_friend reuses the exact social group and posts through the message_send path', async () => {
+  test.each([false, true])('contact_friend reuses the exact social group and returns JSON (receipt unavailable: %s)', async (unavailable) => {
     const friendId = '11111111-1111-4111-8111-111111111111'
     const h = harness(['agent-1', friendId])
     // @@@5856 kind 与成员名单现在也走 restRpc(chat_facts / list_member_ids),所以这里不能整个顶掉
@@ -1222,6 +1272,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     h.deps.restRpc = rpc
     const originalRestGet = h.deps.restGet
     h.deps.restGet = async (path: string) => {
+      if (unavailable && path.startsWith('message_agent_delivery_blocks?')) throw new RpcHttpError(401, { accessToken: 'expired' })
       // @@@5856 kind / 成员 / 群规都改走按 actor 的 chat_facts / list_member_ids(桩在下面的 restRpc)。
       // A newly created social group has no prompt, so its first message passes the shared rules-read gate.
       // If social groups gain a template prompt later, the first contact will intentionally be refused once.
@@ -1246,7 +1297,13 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
       p_message: '请看这份进展',
     })
     expect(result).toMatchObject({ chat_id: 'social-group-1', name: 'Agent、Bob', created: false })
-    expect(result.message_id).toMatch(/^msg:/)
+    expect(result.message_id).toBe(`msg:${(h.calls.inserts[0][1] as { id: string }).id}`)
+    if (unavailable) {
+      expect(result.delivery_status).toBe('unverified')
+      expect(result.delivery_note).toContain('Do not send it again.')
+    } else {
+      expect(result).not.toHaveProperty('delivery_status')
+    }
     expect(h.calls.inserts).toHaveLength(1)
     expect(h.calls.inserts[0]).toMatchObject([
       'messages',

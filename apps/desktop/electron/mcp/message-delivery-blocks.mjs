@@ -10,20 +10,34 @@ const REFUSALS = {
 
 /** Reuse the send's room facts to choose exactly one post-commit read on both old and new databases. */
 export async function readSendReceipt(deps, chatId, messageId, includeNotice) {
-  if (includeNotice && deps.state.chatFacts?.get(chatId)?.agent_send_receipt === true) {
-    const result = await deps.restRpc('agent_send_receipt', { p_as: deps.context.agentId, p_message_id: messageId })
-    return { blocks: refusalRows(result?.blocks), notice: exceptionNote(result?.exception) }
+  let rows, notice
+  try {
+    if (includeNotice && deps.state.chatFacts?.get(chatId)?.agent_send_receipt === true) {
+      const result = await deps.restRpc('agent_send_receipt', { p_as: deps.context.agentId, p_message_id: messageId })
+      rows = refusalRows(result?.blocks)
+      notice = exceptionNote(result?.exception)
+    } else {
+      const result = await deps.restGet(`message_agent_delivery_blocks?message_id=eq.${encodeURIComponent(messageId)}&select=agent_user_id,reason`, 'chat')
+      rows = refusalRows(result)
+    }
+  } catch {
+    return { delivery_status: 'unverified', delivery_note: 'The message was sent, but recipient delivery could not be verified. Do not send it again.' }
   }
-  const rows = await deps.restGet(`message_agent_delivery_blocks?message_id=eq.${encodeURIComponent(messageId)}&select=agent_user_id,reason`, 'chat')
-  return { blocks: refusalRows(rows), notice: null }
+  return {
+    ...(rows.length ? { not_delivered_to: rows, delivery_note: deliveryRefusalNotes(rows).join('; ') } : {}),
+    ...(notice ? { recipient_note: notice } : {}),
+  }
 }
 
 function exceptionNote(exception) {
   if (!exception) return null
-  const host = exception.host_label ? `Host ${JSON.stringify(exception.host_label)}` : 'Host'
-  const note = exception.kind === 'offline'
-    ? agentReceiptNote(null, false, exception.last_seen_at, host)
-    : agentReceiptNote(exception.kind)
+  let note = agentReceiptNote(exception.kind)
+  if (exception.kind === 'offline') {
+    const host = exception.host_label ? `Host ${JSON.stringify(exception.host_label)}` : 'Host'
+    const lastSeen = Date.parse(exception.last_seen_at)
+    const time = Number.isFinite(lastSeen) ? new Date(lastSeen).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : null
+    note = `${host} offline${time ? ` (last seen ${time})` : ''}`
+  }
   if (!note) return null
   const recipient = exception.agent_user_id ? `user:${exception.agent_user_id}: ` : ''
   const others = exception.others > 0 ? ` (+${exception.others} other affected)` : ''

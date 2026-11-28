@@ -1956,9 +1956,7 @@ async function sendSessionMessage(
       const current = db.select({ archivedAt: sessions.archivedAt, agentStatus: sessions.agentStatus }).from(sessions).where(eq(sessions.id, target.id)).get();
       if (!current) throw new Error(`Session not found: ${target.id}`);
       if (current.archivedAt) throw new SessionArchivedError();
-      let note: string | null = null;
-      try { note = agentReceiptNote(sessionStatus({ ...target, ...current })); }
-      catch (error) { log.warn('recipient status unavailable for send receipt', { sessionId: target.id, error: String(error) }); }
+      const note = agentReceiptNote(sessionStatus({ ...target, ...current }));
       // 附带:目标已经在运行中就当场按普通发送投出;否则存下来(不叫醒),等它进入运行中那一刻再投(session-deferred-messages.ts)。
       if (plan && 'defer' in plan && !sessionIsWorking(target.id)) {
         storeDeferredMessage({ sessionId: target.id, id: messageId, text: envelope(messageId, text), ...plan.defer });
