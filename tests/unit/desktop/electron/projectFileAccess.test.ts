@@ -617,7 +617,7 @@ describe('the owner’s already-held SSH link', () => {
 
 describe('the host’s on-demand client-encrypted transfer', () => {
   function fixture(options: { denied?: boolean; changed?: boolean; late?: boolean; bothFail?: boolean } = {}) {
-    const calls: string[] = [], commitBodies: Record<string, unknown>[] = []
+    const calls: string[] = [], commitBodies: Record<string, unknown>[] = [], declines: Record<string, unknown>[] = []
     let uploaded: Uint8Array | undefined
     const read = vi.fn(async (request: Parameters<ReturnType<typeof createProjectFileReader>>[0]) => reader()(request, 'owner'))
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -652,11 +652,12 @@ describe('the host’s on-demand client-encrypted transfer', () => {
         commitBodies.push(body)
         return Response.json({ status: 'ready' })
       }
+      if (route === 'file-decline') { declines.push(body); return Response.json({}) }
       throw Error(`Unexpected fake route ${route}`)
     })
     let late: Promise<void> | undefined
     const drain = createProjectTransferHost({ identity, read, tempRoot, env, later: noRecord, endpoint: async () => ({ supabaseUrl: 'https://api.invalid', anonKey: 'test-anon', token: 'test-token', fetch: fetcher as typeof fetch }) })
-    return { drain, calls, read, commitBodies, uploaded: () => uploaded, late: () => late }
+    return { drain, calls, read, commitBodies, declines, uploaded: () => uploaded, late: () => late }
   }
   it('reserves before disk/bytes, uses one upload executor, transfers the key only in commit and removes staging', async () => {
     const f = fixture()
@@ -697,11 +698,14 @@ describe('the host’s on-demand client-encrypted transfer', () => {
     expect(failure).toMatch(/^1 project file transfer\(s\) failed; .*\(transfer: \w+\)$/)
     expect(failure).not.toContain(root)
   })
-  it.each(['quota', 'revision', 'source-sha'])('does not upload or commit when %s fails', async failure => {
+  it.each(['quota', 'revision', 'source-sha'])('declines without uploading or committing when %s fails', async failure => {
     const f = fixture({ denied: failure === 'quota', changed: failure === 'revision' })
     if (failure === 'source-sha') await writeFile(join(root, 'file.bin'), Buffer.alloc(bytes.length, 9))
-    await expect(f.drain()).rejects.toThrow(failure === 'quota' ? '(transfer: file-accept 403 quota: Quota exhausted)' : failure === 'revision' ? '(transfer: Transfer revision changed)' : '(transfer: integrity_failed)')
+    const reason = failure === 'quota' ? 'file-accept 403 quota: Quota exhausted' : failure === 'revision' ? 'Transfer revision changed' : 'integrity_failed'
+    await expect(f.drain()).rejects.toThrow(`(transfer: ${reason})`)
     expect(f.calls).not.toContain('object'); expect(f.calls).not.toContain('file-commit')
+    // The reader's next poll ends with this cause instead of waiting out its whole bound.
+    expect(f.declines).toEqual([{ transfer_id: 'transfer', reason }])
     if (failure !== 'source-sha') expect(f.read).not.toHaveBeenCalled()
     expect(await readdir(tempRoot).catch(() => [])).toEqual([])
   })

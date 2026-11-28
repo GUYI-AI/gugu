@@ -49,7 +49,13 @@ export function createProjectTransferHost(deps: {
         await uploadAttachmentPlan(endpoint, permit, { bytes: await sink.blob(), name: 'file.enc', contentType: 'application/octet-stream' })
         // Key travels over the authenticated API only, never the object form, a device event or a log.
         await attachmentRequest(endpoint, 'file-commit', { transfer_id: row.id, ciphertext_bytes: size, ciphertext_sha256: encrypted.ciphertextSha256, key: Buffer.from(key).toString('base64') })
-      } catch (error) { failed.push(`${row.id}: ${failureReason(error)}`) } finally { key?.fill(0); await sink?.abort() }
+      } catch (error) {
+        // The reader sees the cause at its next poll instead of waiting out its whole bound.
+        const reason = failureReason(error).slice(0, 300)
+        failed.push(`${row.id}: ${reason}`)
+        await attachmentRequest(endpoint, 'file-decline', { transfer_id: row.id, reason })
+          .catch((declined: unknown) => failed.push(`${row.id} decline: ${failureReason(declined)}`))
+      } finally { key?.fill(0); await sink?.abort() }
     }
     return failed
   }
