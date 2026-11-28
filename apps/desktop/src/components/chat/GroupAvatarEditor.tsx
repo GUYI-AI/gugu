@@ -30,16 +30,15 @@ export function GroupAvatarControl({ chatId, name, settings, fallbackUrl, size, 
   const face = <Avatar variant="group" seed={chatId} name={name} avatarUrl={url} size={size} still={still} />
   if (!canEdit) return <span data-testid={testId}>{face}</span>
   return <>
-    <button type="button" data-testid={testId} aria-label={t('group.settings.changeAvatar')} title={t('group.settings.changeAvatar')}
+    <Button variant="ghost" data-testid={testId} aria-label={t('group.settings.changeAvatar')} title={t('group.settings.changeAvatar')}
       disabled={avatarUploading} onClick={() => setEditing(true)}
       onDragOver={(event) => { event.preventDefault(); setDragging(true) }}
       onDragLeave={() => setDragging(false)}
       onDrop={(event) => { event.preventDefault(); setDragging(false); void handleAvatarFile(event.dataTransfer.files[0]) }}
-      style={{ width: size, height: size }}
-      className={`relative grid shrink-0 cursor-pointer place-items-center overflow-hidden border-0 bg-transparent p-0 disabled:cursor-default ${square ? 'rounded-[var(--radius-2xl)]' : 'rounded-full'} ${dragging ? 'outline-1 outline-dashed outline-[var(--primary)]' : ''}`}>
+      className={`relative grid h-fit min-h-0 w-fit shrink-0 cursor-pointer max-[719px]:min-h-0 place-items-center overflow-hidden border-0 bg-transparent p-0 disabled:cursor-default ${square ? 'rounded-[var(--radius-2xl)]' : 'rounded-full'} ${dragging ? 'outline-1 outline-dashed outline-[var(--primary)]' : ''}`}>
       {face}
       {avatarUploading && <span className="absolute inset-0 grid place-items-center bg-[var(--bg-overlay-modal)] text-[length:var(--font-caption)] text-[var(--color-white)]">{t('group.settings.uploading')}</span>}
-    </button>
+    </Button>
     {editing && <GroupAvatarEditor chatId={chatId} groupName={name} avatarUrl={url ?? null} busy={avatarUploading}
       onFile={handleAvatarFile} onReset={handleAvatarReset} onClose={() => setEditing(false)} />}
   </>
