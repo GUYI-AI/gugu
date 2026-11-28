@@ -2210,9 +2210,36 @@ function groupAdmin(deps) {
   return createGroupAdmin({ rpc: async (name, body) => ({ data: await deps.restRpc(name, body), error: null }) }, deps.context.agentId)
 }
 
+const webhookFields = z.object({
+  chat_id: chatIdSchema.describe('Group for list, create, or address.'),
+  webhook_id: z.string().uuid().describe('Webhook for update, address, rotate, disable, or delete.'),
+  name: z.string().trim().min(1).max(32).describe('Sender name for create or update.'),
+  targets: z.array(z.string().trim().min(1)).max(20).describe('Member addresses for create or update. An empty list clears targeting.'),
+  disabled: z.boolean().describe('For disable: true disables and false re-enables.'),
+}).strict()
+
+const webhookActions = {
+  list: webhookFields.pick({ chat_id: true }),
+  create: webhookFields.pick({ chat_id: true, name: true, targets: true }).partial({ targets: true }),
+  update: webhookFields.pick({ webhook_id: true, name: true, targets: true }).partial({ name: true, targets: true })
+    .refine((args) => args.name !== undefined || args.targets !== undefined, 'Pass name, targets, or both'),
+  address: webhookFields.pick({ chat_id: true, webhook_id: true }),
+  rotate: webhookFields.pick({ webhook_id: true }),
+  disable: webhookFields.pick({ webhook_id: true, disabled: true }),
+  delete: webhookFields.pick({ webhook_id: true }),
+}
+const webhookAction = z.enum(Object.keys(webhookActions))
+
 // #3934 群 Webhook,以 agent 自己的身份(owner 11-26 21:39:当群主或管理员的 agent 跟人一样能建)。数据库判权限。
 // 地址是口令:列表里不给;只有点名一个 Webhook 取地址、新建、重置时才返回,说明里写明别发群里。
-async function handleWebhook(args, deps) {
+async function handleWebhook({ action, ...fields }, deps) {
+  if (!webhookAction.safeParse(action).success) throw new Error(`group_webhook: action must be one of ${webhookAction.options.join(', ')}`)
+  const parsed = webhookActions[action].safeParse(fields)
+  if (!parsed.success) {
+    const detail = parsed.error.issues.map((issue) => [...issue.path, issue.message].join(': ')).join('; ')
+    throw new Error(`group_webhook ${action}: ${detail}`)
+  }
+  const args = parsed.data
   const hooks = createGroupWebhooks({ rpc: async (name, body) => ({ data: await deps.restRpc(name, body), error: null }) }, deps.context.agentId)
   const shown = (hook) => ({
     webhook_id: hook.id, chat_id: hook.chatId, name: hook.name,
@@ -2225,27 +2252,27 @@ async function handleWebhook(args, deps) {
     slack_address: `${groupWebhookUrl(deps.context.supabaseUrl, hook.token)}/slack` })
   const targets = async () => args.targets === undefined ? undefined
     : await resolveRecipientAddresses(decodeRecipientList(args.targets, 'targets'), deps, 'targets')
-  if (args.action === 'list' || args.action === 'address') {
+  if (action === 'list' || action === 'address') {
     const chatId = await requireChat(args, deps)
     const rows = await hooks.list(chatId)
-    if (args.action === 'list') return JSON.stringify(rows.map(shown))
+    if (action === 'list') return JSON.stringify(rows.map(shown))
     const hook = rows.find((row) => row.id === args.webhook_id)
-    if (!hook) throw new Error('group_webhook_address: no such webhook in this group')
+    if (!hook) throw new Error('group_webhook address: no such webhook in this group')
     return JSON.stringify(withAddress(hook))
   }
-  if (args.action === 'create') {
+  if (action === 'create') {
     const chatId = await requireChat(args, deps)
     return JSON.stringify(withAddress(await hooks.create(chatId, args.name, (await targets()) ?? [])))
   }
-  if (args.action === 'update') {
+  if (action === 'update') {
     const resolved = await targets()
     return JSON.stringify(shown(await hooks.update(args.webhook_id, { ...(args.name !== undefined ? { name: args.name } : {}),
       ...(resolved !== undefined ? { targetUserIds: resolved } : {}) })))
   }
-  if (args.action === 'rotate') return JSON.stringify(withAddress(await hooks.rotate(args.webhook_id)))
-  if (args.action === 'disable') return JSON.stringify(shown(await hooks.setDisabled(args.webhook_id, args.disabled)))
-  if (args.action === 'delete') return JSON.stringify(shown(await hooks.remove(args.webhook_id)))
-  throw new Error(`group webhook: unknown action ${args.action}`)
+  if (action === 'rotate') return JSON.stringify(withAddress(await hooks.rotate(args.webhook_id)))
+  if (action === 'disable') return JSON.stringify(shown(await hooks.setDisabled(args.webhook_id, args.disabled)))
+  if (action === 'delete') return JSON.stringify(shown(await hooks.remove(args.webhook_id)))
+  throw new Error(`group webhook: unknown action ${action}`)
 }
 
 async function handleGroup(args, deps) {
@@ -3192,53 +3219,10 @@ export const TOOL_DEFS = [
     handler: (args, deps) => handleGroup({ ...args, action: 'join-decide' }, deps),
   },
   {
-    name: 'group_webhooks',
-    description: 'List a group’s webhooks as its owner or an admin: name, targets, enabled, creator, last use. Addresses are not listed; group_webhook_address gives one.',
-    schema: z.object({ chat_id: chatIdSchema }),
-    handler: (args, deps) => handleWebhook({ ...args, action: 'list' }, deps),
-  },
-  {
-    name: 'group_webhook_create', writer: true,
-    description: 'Create a group webhook as its owner or an admin: an address outside systems POST {"text": Markdown} to, posting into the group without an account. Its messages point at targets; without targets they reach Agents in active listen mode. Returns its address, a secret: never post it in a group; hand it privately to whoever configures the sender.',
-    schema: z.object({
-      chat_id: chatIdSchema, name: z.string().trim().min(1).max(32).describe('Shown as the sender name, 1–32 characters.'),
-      targets: z.array(z.string().trim().min(1)).max(20).optional()
-        .describe('Members its messages point at, as user:<uuid>, gugu:<number>, aid:<Agent ID>, or session:<id> on this machine.'),
-    }),
-    handler: (args, deps) => handleWebhook({ ...args, action: 'create' }, deps),
-  },
-  {
-    name: 'group_webhook_update', writer: true,
-    description: 'Rename a group webhook or change its targets as the group’s owner or an admin. targets [] makes it untargeted.',
-    schema: z.object({
-      webhook_id: z.string().uuid(), name: z.string().trim().min(1).max(32).optional(),
-      targets: z.array(z.string().trim().min(1)).max(20).optional().describe('The new targets, replacing the old ones; same forms as group_webhook_create.'),
-    }).refine((args) => args.name !== undefined || args.targets !== undefined, 'Pass name, targets or both'),
-    handler: (args, deps) => handleWebhook({ ...args, action: 'update' }, deps),
-  },
-  {
-    name: 'group_webhook_address',
-    description: 'Read one group webhook’s full address (and its Slack-format address) as the group’s owner or an admin. The address is a secret: never post it in a group; hand it privately to whoever configures the sender.',
-    schema: z.object({ chat_id: chatIdSchema, webhook_id: z.string().uuid() }),
-    handler: (args, deps) => handleWebhook({ ...args, action: 'address' }, deps),
-  },
-  {
-    name: 'group_webhook_rotate', writer: true,
-    description: 'Reset a group webhook’s address as the group’s owner or an admin; the old address stops working at once. Returns the new address, a secret like the old one.',
-    schema: z.object({ webhook_id: z.string().uuid() }),
-    handler: (args, deps) => handleWebhook({ ...args, action: 'rotate' }, deps),
-  },
-  {
-    name: 'group_webhook_set_disabled', writer: true,
-    description: 'Disable a group webhook (posts to its address are refused, the address is kept) or enable it again, as the group’s owner or an admin.',
-    schema: z.object({ webhook_id: z.string().uuid(), disabled: z.boolean() }),
-    handler: (args, deps) => handleWebhook({ ...args, action: 'disable' }, deps),
-  },
-  {
-    name: 'group_webhook_delete', writer: true,
-    description: 'Delete a group webhook as the group’s owner or an admin. Its address stops working; messages it already posted stay.',
-    schema: z.object({ webhook_id: z.string().uuid() }),
-    handler: (args, deps) => handleWebhook({ ...args, action: 'delete' }, deps),
+    name: 'group_webhook', writer: true,
+    description: 'Only the group owner or an admin can manage webhooks, and a webhook address is a secret that must never be posted in a group.',
+    schema: webhookFields.partial().extend({ action: webhookAction }),
+    handler: handleWebhook,
   },
   {
     name: 'group_info', description: 'Read group settings, your role and whether you may manage it. Management uses your own role, not your owner’s.',

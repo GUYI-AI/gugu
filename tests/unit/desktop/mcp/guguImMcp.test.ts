@@ -628,11 +628,11 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(liveBadArgs).not.toMatch(/not found|unknown tool/i)
     await client.close()
   })
-  test('tools/list 暴露 23 个原子工具;胖工具与 action 参数已退役(#4191;#4562 删 message_send_local;#5856 加 topic_;#6492 加 group_;#6698 加 group_update;message_reply 并入 message_send;群文件夹的工具搬进群文件夹 App,workspace_* 一组整个删掉)', async () => {
+  test('tools/list advertises the IM tools and the seven group webhook actions', async () => {
     const client = await connect(harness().deps)
     const { tools } = await client.listTools()
     expect(tools.map((t) => t.name).sort()).toEqual([
-      'activity_chat_list', 'contact_friend', 'file_put', 'group_add_agent', 'group_announcement_delete', 'group_announcement_post', 'group_announcement_update', 'group_avatar_set', 'group_create', 'group_info', 'group_join_decide', 'group_join_requests', 'group_leave', 'group_list', 'group_remove_member', 'group_set_role', 'group_update', 'group_webhook_address', 'group_webhook_create', 'group_webhook_delete', 'group_webhook_rotate', 'group_webhook_set_disabled', 'group_webhook_update', 'group_webhooks', 'message_conversations', 'message_download_file', 'message_history', 'message_invitations', 'message_invite', 'message_members',
+      'activity_chat_list', 'contact_friend', 'file_put', 'group_add_agent', 'group_announcement_delete', 'group_announcement_post', 'group_announcement_update', 'group_avatar_set', 'group_create', 'group_info', 'group_join_decide', 'group_join_requests', 'group_leave', 'group_list', 'group_remove_member', 'group_set_role', 'group_update', 'group_webhook', 'message_conversations', 'message_download_file', 'message_history', 'message_invitations', 'message_invite', 'message_members',
       'message_rules', 'message_search', 'message_send', 'message_send_as_owner',
       'owner_friends_list', 'profile_lookup', 'profile_update', 'profile_whoami', 'session_peers',
       'topic_delete', 'topic_invite', 'topic_list', 'topic_members', 'topic_open',
@@ -641,7 +641,11 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
       expect(tool.inputSchema.type, tool.name).toBe('object')
       expect(tool.inputSchema.oneOf, tool.name).toBeUndefined()
       expect(tool.inputSchema.anyOf, tool.name).toBeUndefined()
-      expect((tool.inputSchema.properties as Record<string, unknown> | undefined)?.action, tool.name).toBeUndefined()
+      const action = (tool.inputSchema.properties as Record<string, unknown> | undefined)?.action
+      if (tool.name === 'group_webhook') {
+        expect(action).toMatchObject({ enum: ['list', 'create', 'update', 'address', 'rotate', 'disable', 'delete'] })
+        expect(tool.inputSchema.required).toEqual(['action'])
+      } else expect(action, tool.name).toBeUndefined()
     }
     const contactFriend = TOOL_DEFS.find((def: { name: string }) => def.name === 'contact_friend')
     expect(contactFriend?.schema?.shape?.chat_id, 'contact_friend resolves its chat through the social-group RPC').toBeUndefined()
@@ -3130,8 +3134,8 @@ describe('write tools refuse unknown keys (#6840)', () => {
     const writers = (TOOL_DEFS as Array<{ name: string; writer?: boolean }>).filter((def) => def.writer).map((def) => def.name)
     // One writer for text and files (message_send, message_send_as_owner; MCP surface review 11-16), and file_put for a chat
     // folder's file by path (owner 11-26); renaming and moving live in the folder App.
-    // #3934 adds five group-webhook writers (create, update, rotate, set_disabled, delete); listing and reading an address do not write.
-    expect(writers).toHaveLength(25)
+    // One registered writer covers the webhook lifecycle.
+    expect(writers).toHaveLength(21)
     for (const name of writers) {
       expect(tools.find((tool) => tool.name === name)?.inputSchema, name).toMatchObject({ additionalProperties: false })
     }
