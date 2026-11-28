@@ -3219,7 +3219,7 @@ export const TOOL_DEFS = [
   },
   {
     name: 'group_webhook', writer: true,
-    description: 'Group owners and admins manage incoming webhooks for external systems to POST {"text": Markdown}, with create/address/rotate returning a secret address to keep out of group chats and rotate immediately invalidating the old address.',
+    description: 'Group owners and admins manage incoming webhooks for external systems to POST {"text": Markdown}, with create/address/rotate returning a secret address to keep out of group chats and rotation invalidating the old address as soon as it completes.',
     schema: webhookFields.partial().extend({ action: webhookAction }),
     handler: handleWebhook,
   },
