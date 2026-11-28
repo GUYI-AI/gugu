@@ -28,9 +28,9 @@ it.each(['image', 'file'] as const)('updates a mounted transcript from the autho
   let finish: (message: MessageItem) => void = () => {};
   const load = vi.fn(() => new Promise<MessageItem>(resolve => { finish = resolve; }));
   const stop = connectDeliveredMessagePresentation(state, load, vi.fn());
-  const open = vi.fn();
+  const open = vi.fn(), viewAttachment = vi.fn();
   const view = createChatView({ context, state, parent: host, commands: {
-    resolveAttachment: async () => 'data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=', onOpenLink: open,
+    resolveAttachment: async () => 'data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA=', onOpenLink: open, onViewAttachment: viewAttachment,
   } });
   dispose = () => { stop(); view.dispose(); state.dispose(); context.dispose(); host.remove(); };
   state.transcript.history.seed([turn]);
@@ -42,9 +42,14 @@ it.each(['image', 'file'] as const)('updates a mounted transcript from the autho
   expect(host.textContent).toContain('Look at this');
   expect(host.textContent).not.toContain('Folder file');
   expect(host.textContent).not.toContain('/private/agent');
+  if (kind === 'image') await expect.poll(() => host.querySelector('[data-attachment-chip] img')).not.toBeNull();
   host.querySelector<HTMLButtonElement>('[data-attachment-chip]')!.click();
-  // A picture opens from its message over this conversation; a file that is not a picture opens where it lives.
-  expect(open).toHaveBeenCalledWith(kind === 'image' ? `gugu-message-file://${id}` : 'gugu-file://proof?v=2');
+  // A picture opens in the viewer over this conversation, by its message; a file that is not a picture opens where it lives.
+  if (kind === 'image') {
+    expect(viewAttachment).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ attachment: expect.objectContaining({ id: `gugu-message-file://${id}`, href: 'gugu-file://proof?v=2' }),
+      thumb: host.querySelector('[data-attachment-chip] img') }));
+    expect(open).not.toHaveBeenCalled();
+  } else expect(open).toHaveBeenCalledWith('gugu-file://proof?v=2');
   expect(state.transcript.history.get()[0].items[0]).toMatchObject({ text: raw });
 });
 

@@ -6,19 +6,22 @@ import { createEffect, createRoot } from 'solid-js';
 import { parseSentAttachmentLink, sentAttachmentLink } from '@gugu/session-core/session-record/send-receipt';
 import { parseGroupFileLink } from '@gugu/core/shared/ui/guguLink';
 import { sentFileCopy } from '@/lib/sentFileCopies';
+import { openImageViewer } from '@/lib/imageViewer';
+import type { AttachmentSource } from '@gugu/core/shared/ui/attachmentModels';
+import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { keptDataUrl } from './kept-data-urls';
 
 export function originalMessagePresentation(message: MessageItem): DeliveryMessagePresentation | null {
   if (message.content_type !== 'attachment' || message.retracted_at) return null;
   const attachment = parseAttachmentContent(message.content, message);
   if (!attachment) return null;
-  // A picture opens from its message, over the conversation it is drawn in (openMessageAttachment → the image viewer), as
-  // every message thumbnail does. A folder file's own link opens it in the chat that holds it, so only a file that is not a
-  // picture keeps that link: it opens where it lives.
-  const href = attachment.kind !== 'image' && attachment.source.kind === 'item' ? `gugu-file://${attachment.source.itemId}?v=${attachment.source.version}`
-    : sentAttachmentLink(message.id, message.chat_id);
-  return { text: attachment.caption ?? '', attachments: [{ id: `gugu-message-file://${message.id}`, name: attachment.fileName,
-    kind: attachment.kind === 'image' ? 'image' : 'file', href }] };
+  // A picture opens in the viewer over the conversation it is drawn in (`openTranscriptImage`), by its folder version when it
+  // has one; a file that is not a picture opens where its link says. The id names the message: its thumbnail is read again
+  // when the message's file changes.
+  const folder = attachment.source.kind === 'item' ? `gugu-file://${attachment.source.itemId}?v=${attachment.source.version}` : undefined;
+  const href = attachment.kind === 'image' ? folder : folder ?? sentAttachmentLink(message.id, message.chat_id);
+  return { text: attachment.caption ?? '', attachments: [{ id: sentAttachmentLink(message.id), name: attachment.fileName,
+    kind: attachment.kind === 'image' ? 'image' : 'file', ...(href ? { href } : {}) }] };
 }
 
 /** The task page and both DM hosts resolve the same source ID with the current person's permissions. */
@@ -56,11 +59,37 @@ export function resolveDeliveredAttachment(id: string): Promise<string | null> {
   return keptDataUrl(id, () => readDeliveredAttachment(id));
 }
 
+/** The file a transcript row's link names: a message's file or a chat-folder version, read as the chat reads it. */
+function deliveredSource(link: string | undefined): Extract<AttachmentSource, { kind: 'message' | 'item' }> | null {
+  const messageId = link ? parseSentAttachmentLink(link)?.messageId : undefined;
+  const file = messageId || !link ? null : parseGroupFileLink(link);
+  return messageId ? { kind: 'message', messageId } : file?.version !== undefined ? { kind: 'item', itemId: file.itemId, version: file.version } : null;
+}
+
+/**
+ * A picture on a transcript row opens in the shared viewer at once, as a chat message's picture does: out of the
+ * thumbnail the row drew, its original read after with the viewer's loading. A message's file or a folder version opens
+ * by its source; a task's own attachment by `read`, the read that drew its thumbnail. A repeated click while the viewer
+ * is opening is the viewer's own to drop (@@@one-viewer).
+ */
+export function openTranscriptImage(attachment: { id: string; name: string; href?: string; dataUrl?: string }, thumb: HTMLElement | undefined,
+  read: (attachment: { id: string; name: string }) => Promise<string | null>): void {
+  const picture = thumb?.tagName === 'IMG' ? thumb as HTMLImageElement : undefined;
+  const source = deliveredSource(attachment.href) ?? deliveredSource(attachment.id);
+  if (source) {
+    void import('@/lib/attachmentBytes').then(({ openAttachmentImage }) => openAttachmentImage(source, attachment.name, undefined, picture));
+    return;
+  }
+  const preview = async () => {
+    const url = await read(attachment);
+    if (!url) throw new Error(translateSessionMessage('attachmentViewer.unavailable'));
+    return url;
+  };
+  openImageViewer([{ url: attachment.dataUrl ?? '', ...(attachment.dataUrl ? {} : { preview }), alt: attachment.name, file: { name: attachment.name }, thumb }]);
+}
+
 async function readDeliveredAttachment(id: string): Promise<string | null> {
-  const messageId = parseSentAttachmentLink(id)?.messageId;
-  const file = messageId ? null : parseGroupFileLink(id);
-  const source = messageId ? { kind: 'message' as const, messageId }
-    : file?.version !== undefined ? { kind: 'item' as const, itemId: file.itemId, version: file.version } : null;
+  const source = deliveredSource(id);
   if (!source) return null;
   // Sent from here: read on this device, even before the folder has it (`holdSentItem`).
   const blob = sentFileCopy(source) ?? await thumbOf(source);
@@ -73,8 +102,17 @@ async function readDeliveredAttachment(id: string): Promise<string | null> {
   });
 }
 
+/**
+ * The bubble's thumbnail read (`sessionThumb`), so a task draws what a chat draws: an expired file's kept preview, and a
+ * picture whose bytes are still coming from its sender once they arrive (`nextAttachmentChange`), not a broken image.
+ */
 async function thumbOf(source: Parameters<typeof sentFileCopy>[0]): Promise<Blob | null> {
-  const { attachmentBytes } = await import('@/lib/attachmentBytes');
-  const result = await attachmentBytes(source, 'thumb');
-  return result.status === 'ready' ? result.blob : null;
+  const [{ sessionThumb }, { nextAttachmentChange }] = await Promise.all([import('@/lib/attachmentBytes'), import('@/lib/attachmentChanges')]);
+  for (;;) {
+    const bytes = await sessionThumb(source);
+    if (bytes.status === 'ready') return bytes.blob;
+    if (bytes.status === 'expired') return bytes.thumb ?? null;
+    if (bytes.status !== 'pending' || source.kind !== 'message') return null;
+    await nextAttachmentChange(source.messageId);
+  }
 }

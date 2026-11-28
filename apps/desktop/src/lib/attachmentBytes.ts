@@ -5,7 +5,7 @@ import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCac
 import { onAccountChange, replica } from './replica'
 import { offlineHolder, type OfflineHolder } from './fileHost'
 import { platform } from '../platform'
-import { openImageViewer, registerFullImage, takeDrawnPicture, type ImageViewerItem, type Size } from './imageViewer'
+import { openImageViewer, registerFullImage, type ImageViewerItem, type Size } from './imageViewer'
 import type { ViewBox, ViewedImage } from '@/session/shared/extensions/app-runtime-protocol'
 import { rendererLogger } from './log'
 import { sentFileCopy, sentFileOf } from './sentFileCopies'
@@ -250,7 +250,7 @@ const immutableSource = (source: AttachmentSource) => source.kind === 'message' 
  * 不记的话,每次重新挂载(切会话回来、120 行窗口换回来)都先等一个网络来回(实测 0.9–1.4 s 空占位)才画得出本地已有的图。
  * 不可变来源在本次运行里不再重问:被删 / 过期的文件这次运行内仍显示旧缩略图,打开原图照旧完整校验(attachmentBytes 'full')。
  */
-async function sessionThumb(source: AttachmentSource, metadata?: FileMetadata): Promise<AttachmentBytes> {
+export async function sessionThumb(source: AttachmentSource, metadata?: FileMetadata): Promise<AttachmentBytes> {
   const sourceKey = sourceKeyOf(source)
   const model = immutableSource(source) ? immutableThumb : liveThumb
   const args = [sourceKey, metadata?.status === 'ready' ? metadata.revision.sha256 : metadata?.status ?? null, source, metadata ?? null] as const
@@ -401,34 +401,27 @@ function attachmentImageItem(source: AttachmentSource, fileName: string, origin?
   return item
 }
 
-/** Open the shared viewer now; use the bubble's thumbnail cache and verified lazy original. */
-export function openAttachmentImage(source: AttachmentSource, fileName: string, origin?: ImageViewerItem['source']): void {
+/**
+ * Open the shared viewer now; use the bubble's thumbnail cache and verified lazy original. `picture`: the thumbnail the
+ * click was on, already drawn: the viewer opens out of it with its pixels, and only the original is read after it.
+ */
+export function openAttachmentImage(source: AttachmentSource, fileName: string, origin?: ImageViewerItem['source'], picture?: HTMLImageElement): void {
   const item = attachmentImageItem(source, fileName, origin)
-  if (withDrawnPicture(item)) void openViewerFromClick([item], 0)
-  else openImageViewer([item])
-}
-
-/** A drawn picture noted for this file (`noteDrawnPicture`) stands in for its thumbnail variant: only the original is read after it. */
-const recordSizes = new WeakMap<ImageViewerItem, Promise<Size | null>>()
-function withDrawnPicture(item: ImageViewerItem): boolean {
-  const target = item.resource?.target
-  const drawn = target?.kind === 'file' ? takeDrawnPicture(target.itemId, target.version) : null
-  if (!drawn) return false
-  item.url = drawn.picture.currentSrc || drawn.picture.src
-  item.thumb = drawn.picture
+  if (!picture?.complete || !picture.naturalWidth) return openImageViewer([item])
+  item.url = picture.currentSrc || picture.src
+  item.thumb = picture
   delete item.preview
-  if (drawn.size) recordSizes.set(item, drawn.size)
-  return true
+  void openViewerFromClick([item], 0)
 }
 
 /** The file record's size: the picture is laid out as its original from the first frame (@@@thumb-is-not-the-size). */
-export async function recordedSize(itemId: string, version?: number): Promise<Size | null> {
+async function recordedSize(itemId: string, version?: number): Promise<Size | null> {
   const file = await fileMetadata(itemId, version)
   return file.status === 'ready' && file.revision.width && file.revision.height ? { width: file.revision.width, height: file.revision.height } : null
 }
 function recordedSizeOf(item: ImageViewerItem): Promise<Size | null> {
   const target = item.resource?.target
-  return recordSizes.get(item) ?? (target?.kind === 'file' ? recordedSize(target.itemId, target.version) : Promise.resolve(null))
+  return target?.kind === 'file' ? recordedSize(target.itemId, target.version) : Promise.resolve(null)
 }
 
 /** A mounted bubble lends a retryable original reader and owns the URLs until it unmounts. */
@@ -454,7 +447,6 @@ export const VIEWER_THUMB_WAIT_MS = 120
  */
 export function openAttachmentImages(images: readonly ViewedImage[], index: number, origin?: ImageViewerItem['source'], box?: ViewBox): Promise<void> {
   const items = images.map((image) => attachmentImageItem({ kind: 'item', itemId: image.itemId, version: image.version }, image.name, origin))
-  if (items[index]) withDrawnPicture(items[index])
   return openViewerFromClick(items, index, box)
 }
 

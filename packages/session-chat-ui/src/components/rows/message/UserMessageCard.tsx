@@ -349,9 +349,8 @@ function AttachmentChip(props: { attachment: ChatAttachment; itemId: string; ava
       )}
       onClick={(e) => {
         e.stopPropagation();
-        if (props.attachment.href) {
-          const picture = isImage() ? e.currentTarget.querySelector('img') : null;
-          if (picture) commands().onDrawnPictureLink?.(props.attachment.href, picture);
+        // A file opens where its link says; a picture opens in the viewer at once, out of the thumbnail drawn here.
+        if (props.attachment.href && !isImage()) {
           commands().onOpenLink?.(props.attachment.href);
           return;
         }
