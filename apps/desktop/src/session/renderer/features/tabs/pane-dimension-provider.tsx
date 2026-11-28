@@ -87,7 +87,7 @@ export function PaneDimensionProvider({
       last = el.getBoundingClientRect();
       commitMeasurement(last.width + (toCome() ?? 0), last.height);
     };
-    const observer = new ResizeObserver(() => { if (toCome() === null) measure(); });
+    const observer = new ResizeObserver(([entry]) => { if (entry && toCome() === null) commitMeasurement((last = entry.contentRect).width, last.height); }); // the size it is given, ❌ read again: an observer before it wrote styles this pass, so a read is a forced layout per frame
     observer.observe(el);
 
     // 初次测量发生在子组件 passive effect 之前；额外等待两帧，覆盖 provider 挂载后
