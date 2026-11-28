@@ -133,7 +133,7 @@
   touch-action: none;
   user-select: none;
 }
-[data-topic-resize]:is(:hover, :focus-visible)::after {
+[data-topic-resize]:is(:hover, :focus-visible:not([data-pointer-focus]))::after {
   content: '';
   position: absolute;
   inset: 5px 0 auto;
