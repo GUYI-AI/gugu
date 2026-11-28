@@ -8,7 +8,7 @@
 //   forward → a new-kind attachment message forwarded (the server makes the target's item);
 //   urls   → signed links for items' versions or whisper messages.
 import { egress } from '../shared/egress'
-import { FileDownloadFailure, isDownloadConnectionError, isTransientFileReadError, retryFileDownload } from './fileDownloadRetry'
+import { FileDownloadFailure, isDownloadConnectionError, isTransientFileReadError, retryableStatus, retryFileDownload } from './fileDownloadRetry'
 import { AttachmentDeadlineError, runAttachmentStage, waitForAttachmentRetry } from './attachmentDeadline'
 import { serverNow } from '../shared/serverClock'
 import type { FileKeep } from '../shared/fileStorage'
@@ -249,10 +249,9 @@ type SignedPart = { n: number; bytes: number; url: string; headers: Record<strin
 type PartAttempts = Map<number, { used: number; resigned: boolean }>
 const PART_CONCURRENCY = 3
 const MAX_STORAGE_ATTEMPTS = 3
-const retryableStatus = (status: number) => status === 408 || status === 429 || status >= 500
 
 function isTransientStorageError(error: unknown): boolean {
-  if (error instanceof AttachmentsError) return retryableStatus(error.status) && !error.code.endsWith('_full')
+  if (error instanceof AttachmentsError) return retryableStatus(error.status, error.code)
   const chromium = error instanceof Error && /^net::ERR_(?:CONNECTION_(?:RESET|CLOSED|ABORTED|REFUSED|FAILED|TIMED_OUT)|EMPTY_RESPONSE|TIMED_OUT|INTERNET_DISCONNECTED|NETWORK_CHANGED|CONTENT_LENGTH_MISMATCH)$/.test(error.message)
   return error instanceof AttachmentDeadlineError || chromium || isDownloadConnectionError(error)
 }
