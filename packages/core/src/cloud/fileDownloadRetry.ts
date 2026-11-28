@@ -10,12 +10,16 @@ export function isDownloadConnectionError(error: unknown): boolean {
   return isTransientNetworkError(error) || transientNetworkErrorCode(error) === 'UND_ERR_SOCKET' ||
     error instanceof TypeError && /failed to fetch|load failed|networkerror/i.test(error.message)
 }
+/**
+ * A status worth asking again: a timeout, a busy or failing server. A quota that is used up (429 with a code ending in
+ * `_full`, as `account_download_full`) is a refusal: asking again changes nothing.
+ */
+export const retryableStatus = (status: number, code?: unknown) =>
+  status === 408 || status >= 500 || status === 429 && !(typeof code === 'string' && code.endsWith('_full'))
 export function isTransientFileReadError(error: unknown): boolean {
   if ((error as { name?: unknown } | null)?.name === 'AbortError') return false
   const { status, code } = (error ?? {}) as { status?: unknown; code?: unknown }
-  // A quota that is used up (429 `account_download_full`…) is a refusal, not a busy server: asking again changes nothing.
-  if (status === 429 && typeof code === 'string' && code.endsWith('_full')) return false
-  return typeof status === 'number' ? status === 408 || status === 429 || status >= 500 && status < 600 : isDownloadConnectionError(error)
+  return typeof status === 'number' ? retryableStatus(status, code) : isDownloadConnectionError(error)
 }
 const safeMessage = (error: unknown) => String(error instanceof Error ? error.message : error)
   .replace(/https?:\/\/[^\s"'<>]+/gi, url => { try { return new URL(url).host } catch { return '[URL]' } })
