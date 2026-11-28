@@ -81,6 +81,7 @@ const enUSCoreMessages = {
   // #2548 内层侧栏(打开一个群 / 项目时列表右边那一列)。
   'sidebar.topics': 'My topics',
   'sidebar.expandTopics': 'Expand topics',
+  'sidebar.resizeTopics': 'Resize topic list',
   'sidebar.collapseTopics': 'Collapse topics',
   'sidebar.allTopics': 'All',
   'sidebar.noTopics': 'No topics yet',
@@ -1479,6 +1480,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'sidebar.unreadCount': '{count} 条未读',
   'sidebar.topics': '我的话题',
   'sidebar.expandTopics': '展开话题',
+  'sidebar.resizeTopics': '调整话题列表高度',
   'sidebar.collapseTopics': '收起话题',
   'sidebar.allTopics': '全部',
   'sidebar.noTopics': '暂无话题',

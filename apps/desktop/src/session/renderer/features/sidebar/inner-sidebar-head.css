@@ -122,3 +122,21 @@
 /* Row hover actions (pin, archive …): the design's two 14px icons 6px apart, flush with the row's 8px end padding. */
 [data-region='inner-sidebar'] [data-inner-rows] [data-row-hover-actions] > * { gap: 6px; }
 [data-region='inner-sidebar'] [data-inner-rows] [data-row-hover-actions] button { width: 14px; min-width: 14px; height: 14px; padding: 0; }
+
+/* Use the existing gap between sections for the hit target, leaving row clicks and native topic drags independent. */
+[data-inner-sidebar-section='topics'] { position: relative; }
+[data-topic-resize] {
+  position: absolute;
+  inset: 100% 8px auto;
+  height: 12px;
+  cursor: row-resize;
+  touch-action: none;
+  user-select: none;
+}
+[data-topic-resize]:is(:hover, :focus-visible:not([data-pointer-focus]))::after {
+  content: '';
+  position: absolute;
+  inset: 5px 0 auto;
+  height: 1px;
+  background: var(--border-color);
+}
