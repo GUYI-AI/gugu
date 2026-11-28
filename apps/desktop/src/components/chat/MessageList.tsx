@@ -254,7 +254,7 @@ function rowViewsOf(rows: readonly ChatListRowItem[], props: MessageListRowProps
 type SeenRows = Map<string, () => void>
 
 const MessageListRow = memo(function MessageListRow({ id, seenRows }: { id: string; seenRows: SeenRows }) {
-  // The row is memoized: the language is one of its inputs, so a switch redraws it (and the bubble under it).
+  // The row is memoized: the language is one of its inputs, so a switch redraws it.
   const { resolvedLocale } = useLocale()
   const store = useContext(RowStoreContext)!
   const view = useSelect(store, (list) => list.rows.get(id), Object.is)
