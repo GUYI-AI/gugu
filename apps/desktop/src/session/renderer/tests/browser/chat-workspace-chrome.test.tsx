@@ -300,9 +300,15 @@ it('a move held back by a long frame goes on from where it was drawn, ❌ skippe
 });
 
 it('the conversation keeps its look through a move: a title, narrow or not by its width at rest, ❌ as drawn mid-move', async () => {
-  const { inside, width, mode, chat, tool } = await mountWorkspace();
+  const { inside, width, mode, chat, tool, draw } = await mountWorkspace();
   await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
   await mode('split');
+  await untilStable('the split comes to rest', () => width(chat()));
+  // Drawn again from nothing with the tools beside it (the way into a chat that has them open): the strip's host is put in its
+  // cell after the strip is mounted.
+  await act(() => draw(false));
+  await new Promise(requestAnimationFrame);
+  await act(() => draw());
   await untilStable('the split comes to rest', () => width(chat()));
   const bar = () => inside('[data-chat-workspace-chat-header] .session-tab-bar');
   // At rest beside the tools the conversation strip is narrow (under 600 px here), alone it is not.

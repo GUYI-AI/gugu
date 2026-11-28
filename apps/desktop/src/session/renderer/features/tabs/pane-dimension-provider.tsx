@@ -2,7 +2,7 @@ import { action, makeObservable, observable } from 'mobx';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { createContext, useContext, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { ancestorsOf } from '@renderer/lib/layout/follow-box';
-import { PANEL_REST, panelRest } from '@renderer/lib/layout/panel-track';
+import { onPanelRest, panelRest } from '@renderer/lib/layout/panel-track';
 
 // ── Sink ──────────────────────────────────────────────────────────────────────
 
@@ -78,9 +78,8 @@ export function PaneDimensionProvider({
       sink.setDimensions(width, height);
     };
 
-    const places = atRest ? ancestorsOf(el).filter((node): node is HTMLElement => node instanceof HTMLElement && node.matches('[data-panel-slot], [data-panel-fill]')) : [];
     const toCome = () => { // how much wider the rows moving around it will leave it when they land (null: none is moving)
-      const moving = places.flatMap((place) => panelRest.get(place) ?? []);
+      const moving = atRest ? ancestorsOf(el).flatMap((place) => panelRest.get(place) ?? []) : [];
       return moving.length ? moving.reduce((sum, to) => sum + to.grow, 0) : null;
     };
     let last = { width: 0, height: 0 };
@@ -90,8 +89,7 @@ export function PaneDimensionProvider({
     };
     const observer = new ResizeObserver(() => { if (toCome() === null) measure(); });
     observer.observe(el);
-    const told = () => { const grow = toCome(); if (grow !== null) commitMeasurement(last.width + grow, last.height); }; // a move starting: the resting size from what was last measured, ❌ measured again in the task that started it; landing changes nothing
-    for (const place of places) place.addEventListener(PANEL_REST, told);
+    const unhear = onPanelRest(el, () => { const grow = toCome(); if (grow !== null) commitMeasurement(last.width + grow, last.height); }); // a move starting: the resting size from what was last measured, ❌ measured again in the task that started it; landing changes nothing
 
     // 初次测量发生在子组件 passive effect 之前；额外等待两帧，覆盖 provider 挂载后
     // 父级 layout effect 才为固定任务帧设置最终尺寸的情况。
@@ -109,7 +107,7 @@ export function PaneDimensionProvider({
 
     return () => {
       observer.disconnect();
-      for (const place of places) place.removeEventListener(PANEL_REST, told);
+      unhear();
       if (settleFrame !== null) cancelAnimationFrame(settleFrame);
     };
   }, [sink, shown, atRest]);

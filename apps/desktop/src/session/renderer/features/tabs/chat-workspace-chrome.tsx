@@ -3,7 +3,7 @@ import { observer } from 'mobx-react-lite';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { SurfaceBox } from '@renderer/lib/layout/place-in';
-import { PANEL_REST, panelRest } from '@renderer/lib/layout/panel-track';
+import { onPanelRest, panelRest } from '@renderer/lib/layout/panel-track';
 import { PanelToggleIcon } from '@/components/PanelToggleIcon';
 import { Maximize2, Minimize2 } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
@@ -104,12 +104,11 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   // @@@strip-in-cells — the strip's columns are rendered once each, into hosts: side by side each is the head of its pane's
   // cell, laid out, clipped and faded with the page beneath it; in full view and narrow they are in the row above the pages.
   useLayoutEffect(() => {
-    const cell = chatColumn.current?.closest<HTMLElement>('[data-panel-slot], [data-panel-fill]');
-    if (!cell || !divided) return setChatRestNarrow(undefined);
-    const read = () => { const to = panelRest.get(cell); setChatRestNarrow(to && Math.min(to.rest, to.rest - to.grow) < TAB_STRIP_NARROW_PX); };
+    const column = chatColumn.current;
+    if (!column || !divided) return setChatRestNarrow(undefined);
+    const read = () => { const to = panelRest.get(column.closest('[data-panel-slot], [data-panel-fill]') ?? column); setChatRestNarrow(to && Math.min(to.rest, to.rest - to.grow) < TAB_STRIP_NARROW_PX); };
     read();
-    cell.addEventListener(PANEL_REST, read);
-    return () => cell.removeEventListener(PANEL_REST, read);
+    return onPanelRest(column, read);
   }, [divided, inCells]);
   // @@@card-gap — the conversation's half of the gutter closes with the last pixels of the tools' cell. Written on the two
   // boxes (❌ an inherited variable on the workspace: it restyled the whole conversation, owner 11-26「刚弹出来一点点的那一瞬间卡顿」).

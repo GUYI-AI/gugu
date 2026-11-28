@@ -12,9 +12,14 @@ import { playSpring } from './panel-clock';
  *  · Between two open sizes content is its drawn size in every frame; one that does not reflow keeps the wider until it lands.
  */
 
-/** What a row's box will rest at through a move — its content's resting size, and how much wider that is than where it last rested (a move turned round part-way has not rested) — and the event the box fires (a microtask on) as that is set or cleared. ❌ An attribute on the box: it restyles all that is in it (a `:has()` above), in the task that starts the move. */
-export const PANEL_REST = 'panelrest';
+/** What a row's box will rest at through a move — its content's resting size, and how much wider that is than where it last rested (a move turned round part-way has not rested) — and the event the box fires (a microtask on) as that is set or cleared. ❌ An attribute on the box: it restyles all that is in it (a `:has()` above), in the task that starts the move. `onPanelRest` hears it for the boxes around an element as they are when it fires: a placed surface (place-in.tsx) changes boxes without a render, so ❌ the boxes found when subscribing. */
+const PANEL_REST = 'panelrest';
 export const panelRest = new WeakMap<Element, { rest: number; grow: number } | undefined>();
+export function onPanelRest(element: Element, listener: () => void): () => void {
+  const root = element.ownerDocument, heard = (event: Event) => { if ((event.composedPath()[0] as Node).contains(element)) listener(); };
+  root.addEventListener(PANEL_REST, heard, true);
+  return () => root.removeEventListener(PANEL_REST, heard, true);
+}
 /** A size this close to nothing is nothing. */
 export const PANEL_LANDED_PX = 0.5;
 /** A fading slot's soft edge: transparent at its drawn edge, opaque this far in. */
@@ -236,7 +241,7 @@ export class PanelTrack {
     const grow = rest === undefined ? undefined : rest - (was ? was.rest - was.grow : now);
     if (this.axis !== 'x' || (was?.rest === rest && was?.grow === grow)) return;
     panelRest.set(place, rest === undefined ? undefined : { rest, grow: grow! });
-    queueMicrotask(() => place.dispatchEvent(new Event(PANEL_REST)));
+    queueMicrotask(() => place.dispatchEvent(new Event(PANEL_REST, { composed: true })));
   }
   private get sides() {
     return this.axis === 'x' ? (['width', 'left', 'right'] as const) : (['height', 'top', 'bottom'] as const);
