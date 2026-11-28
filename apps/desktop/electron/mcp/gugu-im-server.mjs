@@ -2214,7 +2214,7 @@ const webhookFields = z.object({
   chat_id: chatIdSchema.describe('Group for list, create, or address.'),
   webhook_id: z.string().uuid().describe('Webhook for update, address, rotate, disable, or delete.'),
   name: z.string().trim().min(1).max(32).describe('Sender name for create or update.'),
-  targets: z.array(z.string().trim().min(1)).max(20).describe('Member addresses for create or update. An empty list clears targeting.'),
+  targets: z.array(z.string().trim().min(1)).max(20).describe('Member addresses for create or update: user:<uuid>, gugu:<number>, aid:<Agent ID>, or session:<id> on this machine. An empty list clears targeting.'),
   disabled: z.boolean().describe('For disable: true disables and false re-enables.'),
 }).strict()
 
@@ -2272,7 +2272,6 @@ async function handleWebhook({ action, ...fields }, deps) {
   if (action === 'rotate') return JSON.stringify(withAddress(await hooks.rotate(args.webhook_id)))
   if (action === 'disable') return JSON.stringify(shown(await hooks.setDisabled(args.webhook_id, args.disabled)))
   if (action === 'delete') return JSON.stringify(shown(await hooks.remove(args.webhook_id)))
-  throw new Error(`group webhook: unknown action ${action}`)
 }
 
 async function handleGroup(args, deps) {
@@ -3220,7 +3219,7 @@ export const TOOL_DEFS = [
   },
   {
     name: 'group_webhook', writer: true,
-    description: 'Only the group owner or an admin can manage webhooks, and a webhook address is a secret that must never be posted in a group.',
+    description: 'Group owners and admins manage incoming webhooks for external systems to POST {"text": Markdown}, with create/address/rotate returning a secret address to keep out of group chats and rotate immediately invalidating the old address.',
     schema: webhookFields.partial().extend({ action: webhookAction }),
     handler: handleWebhook,
   },

@@ -628,7 +628,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(liveBadArgs).not.toMatch(/not found|unknown tool/i)
     await client.close()
   })
-  test('tools/list advertises the IM tools and the seven group webhook actions', async () => {
+  test('tools/list advertises the IM tools and one group webhook tool', async () => {
     const client = await connect(harness().deps)
     const { tools } = await client.listTools()
     expect(tools.map((t) => t.name).sort()).toEqual([

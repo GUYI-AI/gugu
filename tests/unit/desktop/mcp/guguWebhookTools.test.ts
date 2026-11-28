@@ -1,8 +1,11 @@
 // #3934 The webhook tool an owner or admin Agent uses (owner 11-26 21:39): the same six database functions as the app,
 // acting as the session's own Agent. The list carries no address; create, address and rotate return it.
-import { describe, expect, it } from 'vitest'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { describe, expect, it, vi } from 'vitest'
+import { registerGuguCatalogTools } from '../../../../apps/desktop/electron/mcp/gugu-catalog-tools'
 // @ts-expect-error — the injected MCP server is an untyped .mjs; the runtime import works.
-import { callTool as callToolImpl } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
+import { callTool as callToolImpl, createGuguImServer } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
 
 const CONTEXT = {
   supabaseUrl: 'https://db.example.test', anonKey: '', agentId: 'agent-1', threadRootId: null,
@@ -33,12 +36,35 @@ describe('group_webhook', () => {
     ['address', { chat_id: GROUP }, /address:.*webhook_id/],
     ['rotate', { webhook_id: HOOK, disabled: true }, /rotate:.*disabled/],
     ['disable', { webhook_id: HOOK }, /disable:.*disabled/],
-    ['delete', { webhook_id: 'bad' }, /delete:.*webhook_id/],
-    ['unknown', {}, /action must be one of/],
   ] as const)('rejects invalid %s arguments before any RPC', async (action, args, error) => {
     const h = harness()
     await expect(h.call(action, args)).rejects.toThrow(error)
     expect(h.calls).toEqual([])
+  })
+
+  it('reports invalid actions and fields through both registered MCP entry points', async () => {
+    const restRpc = vi.fn()
+    const server = createGuguImServer(() => CONTEXT, { restRpc, trackRequest: (work: Promise<unknown>) => work })
+    registerGuguCatalogTools(server, () => [])
+    const client = new Client({ name: 'webhook-test', version: '1' })
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair()
+    await Promise.all([client.connect(clientSide), server.connect(serverSide)])
+    try {
+      for (const name of ['group_webhook', 'catalog_call']) {
+        for (const [args, error] of [
+          [{ action: 'delete', webhook_id: 'bad' }, /group_webhook delete:.*webhook_id:.*uuid/i],
+          [{ action: 'unknown' }, /group_webhook:.*action:.*list.*delete/i],
+        ] as const) {
+          const result = await client.callTool({ name, arguments: name === 'catalog_call' ? { tool: 'group_webhook', args } : args })
+          expect(result.isError).toBe(true)
+          expect(result.content).toEqual([expect.objectContaining({ type: 'text', text: expect.stringMatching(error) })])
+        }
+      }
+      expect(restRpc).not.toHaveBeenCalled()
+    } finally {
+      await client.close()
+      await server.close()
+    }
   })
 
   it('lists without addresses, acting as the session’s Agent', async () => {
