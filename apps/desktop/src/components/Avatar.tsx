@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { labelOfDisplayStatus } from '@gugu/core/shared/ui/agentConversationStatusModels'
 import type { AgentStatusLabel } from '@gugu/core/shared/agentStatusPresentation'
-import { reportInvalidAvatarUrl } from '@gugu/core/shared/ui/avatarUrl'
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
 import { groupAvatarColorIndex, groupAvatarDefaultText, groupAvatarSvg, groupAvatarThemeColors } from '@gugu/core/shared/ui/groupAvatar'
 import { faceImageUrl, identityFace } from '../lib/identityFace'
@@ -80,8 +79,7 @@ export function Avatar({
   const face = identityFace({ id: identityKey, avatar: avatarUrl, type: variant === 'group' ? 'group' : agent === undefined ? undefined : agent ? 'agent' : 'human', assistant })
   const url = face.kind === 'picture' || face.kind === 'human' || face.kind === 'agent' ? faceImageUrl(face, 'avatar', theme) : null
   // @@@1482 url 变化时在 render 期重置加载失败态（React 官方「按 prop 变化调整 state」模式，非 useEffect）：
-  // useEffect 在 render 之后才跑，下方 DEV throw 守卫会在同一帧用旧 imgFailed 对新有效 url 误抛。
-  // render 期重置确保新 url 进来即 imgFailed=false，throw 守卫不会对有效新头像误触。
+  // 新 url 的第一帧就不带上一张图的失败态，不会先闪一下空态。
   const [trackedUrl, setTrackedUrl] = useState(url)
   if (url !== trackedUrl) {
     setTrackedUrl(url)
@@ -91,10 +89,12 @@ export function Avatar({
   // Every identity uses the same circular picture, matte and unavailable state.
   const radius = '50%'
 
-  // Missing/null and failed canonical URLs stay local explicit empty states; onError records the diagnostic.
+  // An unavailable face (dirty sentinel, missing id) is an explicit empty state; faceImageUrl logs why, once per change.
+  // A picture that fails to load is logged by onError below.
+  const unavailable = face.kind === 'unavailable' ? face.reason : null
   useEffect(() => {
-    reportInvalidAvatarUrl(avatarUrl, `main avatar "${name || 'unknown'}"`)
-  }, [avatarUrl, name])
+    if (unavailable) faceImageUrl({ kind: 'unavailable', reason: unavailable, avatar: avatarUrl }, `main avatar "${name || 'unknown'}"`)
+  }, [unavailable, avatarUrl, name])
 
   // The frame anchors the corner mark and leaves it room to paint. The portrait below owns any circular crop.
   const frameStyle: React.CSSProperties = {
@@ -148,11 +148,6 @@ export function Avatar({
   const groupFace = face.kind === 'group'
   const groupFaceMarkup = useMemo(() => (groupFace ? { __html: groupAvatarSvg({ ...groupAvatarThemeColors(groupAvatarColorIndex(identityKey)), text: groupAvatarDefaultText(name), px, label: name }) } : undefined), [groupFace, identityKey, name, px])
   const animatedAssistant = face.kind === 'assistant' && !still
-  const missingIdentityKey = face.kind === 'unavailable' && face.reason === 'missing-id'
-  useEffect(() => {
-    if (!missingIdentityKey) return
-    console.error(`[Avatar] missing identity key for "${name}" — a generated default face needs a stable id; display name must never seed it`)
-  }, [missingIdentityKey, name])
 
   // 脸(上传图 / 默认脸 / 空态)一律不挂原生 title:头像常被放进别人的悬停浮层(账号 Hint、
   // 运行中 agent 的预览卡),名字由外层自己说,挂了就是两个浮层叠在一起。读屏的名字在 alt。
