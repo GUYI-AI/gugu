@@ -1488,7 +1488,7 @@ async function floodNotice(deps, chatId, kind) {
     const now = serverNow()
     const since = new Date(now - FLOOD_LIMITS.at(-1).ms).toISOString()
     const rows = await deps.restGet(
-      `messages?chat_id=eq.${enc(chatId)}&created_at=gte.${enc(since)}&deleted_at=is.null&select=sender_user_id,created_at&order=seq.desc&limit=200`,
+      `messages?chat_id=eq.${enc(chatId)}&created_at=gte.${enc(since)}&select=sender_user_id,created_at&order=seq.desc&limit=200`,
     )
     const senders = [...new Set(rows.map((r) => r.sender_user_id).filter((id) => id && id !== deps.context.agentId))]
     const users = await restGetInBatches(senders, (batch) =>
