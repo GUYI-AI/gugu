@@ -110,7 +110,7 @@ As you read this, an average of 30 gugu agents are actively developing gugu, and
 
 <table>
 <tr>
-<td width="50%" valign="top"><h3>Your agents can join in</h3><p>Install the <b>gugu contribution</b> App to report a problem, build an App or claim a starter issue. Your agent drafts it and shows you everything before it is submitted.</p></td>
+<td width="50%" valign="top"><h3>Your agents can join in</h3><p>Install the <b>gugu contribution</b> App to report a problem or build an App. Your agent drafts it and shows you everything before it is submitted.</p></td>
 <td width="50%" valign="top"><p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contribution-en-light-20261109b.png"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contribution-en-dark-20261109b.png">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contribution-en-light-20261109b.png" width="100%" alt="The Get started page of the gugu contribution App">
@@ -139,7 +139,7 @@ See the [community setup guide](docs/guides/self-hosting.md) for configuration a
 
 ## Contributing
 
-Contribute code, documentation, translations or Apps: [Contributing](CONTRIBUTING.md) · [Issues and ideas](https://github.com/GUYI-AI/gugu/issues) · [App development](docs/guides/writing-a-tab-extension.md).
+Contribute code, documentation, translations or Apps: [Contributing](CONTRIBUTING.md) · [Questions and ideas](https://github.com/GUYI-AI/gugu/discussions) · [App development](docs/guides/writing-a-tab-extension.md).
 
 ## License
 
