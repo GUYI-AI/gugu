@@ -1,7 +1,7 @@
 import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { Maximize2, Minimize2 } from '@/lib/icons';
 import type { TabHost } from '@renderer/features/tabs/core/tab-host';
 import type { ResolvedTab, TabViewContext } from '@renderer/features/tabs/core/tab-provider';
@@ -116,16 +116,26 @@ export const GenericTabItem = observer(function GenericTabItem({
   const [cardOpen, setCardOpen] = useState(false);
   // 第 16 版:有名片的页签(我的 agent),它的动作在名片和详情里;页签菜单(⋯ / 右键)只留单独成窗、关闭页签这些页签自己的事。
   const menuCommands = card ? [] : kindCommands;
-  const cardPopover = card ? (
+  // @@@card-trigger - The card opens from a Popover.Trigger, as the group's capsule does (ChatBlockHead): Base UI then
+  // owns the toggle and does not count a press on the trigger as a press outside. A plain onClick toggle did: pressing
+  // the capsule of an open card closed it on pointerdown and the click reopened it, so it flashed instead of closing.
+  const withCard = (node: ReactNode) => card ? (
     <Popover.Root open={cardOpen} modal={false} onOpenChange={setCardOpen}>
+      {node}
       {cardOpen ? <Popover.Portal><Popover.Positioner side="bottom" align={workspaceRole === 'capsule' ? 'center' : 'start'} sideOffset={workspaceRole === 'capsule' ? 3 : 8} collisionPadding={8}
         anchor={() => document.querySelector(`[data-tabid="${CSS.escape(tab.tabId)}"]`)}>
         <Popover.Popup aria-label={label}>{card(() => setCardOpen(false))}</Popover.Popup>
       </Popover.Positioner></Popover.Portal> : null}
     </Popover.Root>
-  ) : null;
-  /** A tab already showing opens its card on click (the 第 16 版 capsule); any other click selects it. */
-  const openCardOr = (select: () => void) => () => { if (card && tab.isActive) setCardOpen((open) => !open); else select(); };
+  ) : node;
+  /** The header (capsule, title) is the card's trigger itself. */
+  const cardTrigger = (element: ReactElement) => card ? <Popover.Trigger nativeButton={false} render={element} /> : element;
+  /** A tab chip opens its card only once it is showing; a click on any other tab selects it (and never opens the card). */
+  const chipCardTrigger = (chip: ReactElement) => card ? (
+    <Popover.Trigger nativeButton={false} tabIndex={-1} render={<div className="contents" />}
+      onClick={(event) => { if (!tab.isActive) event.preventBaseUIHandler(); }}>{chip}</Popover.Trigger>
+  ) : chip;
+  const selectUnlessCard = (select: () => void) => (card && tab.isActive ? undefined : select);
 
   const handleSelect = () => {
     host.setActiveTab(tab.tabId);
@@ -188,53 +198,45 @@ export const GenericTabItem = observer(function GenericTabItem({
     return (
       // 第 16 版:胶囊栏里只有这一颗胶囊(❌ ⋯):它的动作在名片和详情里(单独成窗是详情的一格);页签自己的事(单独成窗、
       // 关闭)仍在右键里,和别的页签一样,只是不画出一颗钮。
-      <>
+      withCard(
       <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={menuCommands}>
         {/* 按整张卡居中(设计稿 .capbar 整卡宽):相对页签条的 padding box 绝对居中,左边留白、右边按钮都不挤偏它。 */}
         <div className={CONVERSATION_CAPSULE_LAYER_CLASS}>
-          <div role="button" tabIndex={0} data-testid="conversation-capsule" data-chat-workspace-title="" data-tabid={tab.tabId} title={tooltip ?? label}
+          {cardTrigger(<div role="button" tabIndex={0} data-testid="conversation-capsule" data-chat-workspace-title="" data-tabid={tab.tabId} title={tooltip ?? label}
             className={`${CONVERSATION_CAPSULE_CLASS} pointer-events-auto`}
-            onClick={card ? () => setCardOpen((open) => !open) : undefined}
-            onKeyDown={card ? (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setCardOpen((open) => !open); } } : undefined}
             onDoubleClick={renameOnDoubleClick && !isEditing && !card ? startRename : undefined}>
             {editableTitle ?? <span className="truncate">{label}</span>}
-          </div>
+          </div>)}
         </div>
-      </TabContextMenu>
-      {cardPopover}
-    </>
+      </TabContextMenu>)
     );
   }
 
   if (workspaceRole === 'title') {
     return (
-      <>
+      withCard(
       <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={menuCommands} titleMenu>
-        <div className="flex h-full min-w-0 flex-1 items-center gap-2 px-1 text-sm font-medium" data-chat-workspace-title="" data-tabid={card ? tab.tabId : undefined}
-          onClick={card ? () => setCardOpen((open) => !open) : undefined}
+        {cardTrigger(<div className="flex h-full min-w-0 flex-1 items-center gap-2 px-1 text-sm font-medium" data-chat-workspace-title="" data-tabid={card ? tab.tabId : undefined}
           onDoubleClick={renameOnDoubleClick && !isEditing ? startRename : undefined}>
           {preSlot}
           {editableTitle ?? <span className="truncate" title={tooltip ?? label}>{label}</span>}
           {statusSlot}
-        </div>
-      </TabContextMenu>
-      {/* Outside the title: React bubbles a click in the portaled card up to its parent, which would reopen it. */}
-      {cardPopover}
-    </>
+        </div>)}
+      </TabContextMenu>)
     );
   }
 
   if (workspace?.role === 'conversation') {
     const select = () => { workspace.layout.showChatWorkspaceConversation(); pane.focusActiveContent(); };
-    return <><TabSlot data-chat-workspace-conversation-tab="" data-tabid={tab.tabId}>
+    return withCard(<TabSlot data-chat-workspace-conversation-tab="" data-tabid={tab.tabId}>
       {/* With a card its actions are in the card and Details: a plain tab, ❌ the ⋯ of a title menu. */}
       <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={menuCommands} titleMenu={!card}>
-        <TabChip isActive={tab.isActive} isFocusedPane={isFocusedPane} label={label} title={tooltip ?? label}
-          preSlot={conversationMark ?? preSlot} labelSlot={editableTitle} statusSlot={statusSlot} onClick={openCardOr(select)}
+        {chipCardTrigger(<TabChip isActive={tab.isActive} isFocusedPane={isFocusedPane} label={label} title={tooltip ?? label}
+          preSlot={conversationMark ?? preSlot} labelSlot={editableTitle} statusSlot={statusSlot} onClick={selectUnlessCard(select)}
           onDoubleClick={renameOnDoubleClick && !isEditing ? startRename : undefined}
-          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(); } }} />
+          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(); } }} />)}
       </TabContextMenu>
-    </TabSlot>{cardPopover}</>;
+    </TabSlot>);
   }
 
   const base = tooltip ?? label;
@@ -246,15 +248,14 @@ export const GenericTabItem = observer(function GenericTabItem({
   // flex 设定 = `0 1 auto`,缩不到内容以下),那条宽度规矩整条失效:页签按内容撑开、不肯让位,
   // 把「+」顶出滚动区裁掉(owner:「这个也得修,还挺严重」);同时 .session-tab-slot 之间的
   // 短分隔线是**相邻兄弟**选择器(index.css),被 trigger 隔开后从来没画出来过。
-  return (
-    <>
+  return withCard(
     <DraggableTab id={tab.tabId} pairRole={tab.pairRole}>
       {/* 并排的一对:两枚中间那根线指上去就是「拆开」(spec session-page「并排」)。 */}
       {tab.pairRole === 'end' ? (
         <PairSeparator label={translate('tabs.separatePair')} onSeparate={() => host.separatePair()} />
       ) : null}
       <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={menuCommands}>
-        <TabChip
+        {chipCardTrigger(<TabChip
           isActive={tab.isActive}
           // 并排时两枚都亮着,点着的那一边标题深、另一边浅 —— 与「哪一格握着焦点」同一种明暗(spec session-page「并排」)。
           isFocusedPane={isFocusedPane && (tab.isFocused ?? true)}
@@ -271,7 +272,7 @@ export const GenericTabItem = observer(function GenericTabItem({
           closeLabel={translate('task.closeTab', { label })}
           onClose={closeDisabled ? undefined : () => host.requestCloseTab(tab.tabId)}
           onMouseEnter={() => host.signalActivateIntent(tab.tabId)}
-          onClick={openCardOr(handleSelect)}
+          onClick={selectUnlessCard(handleSelect)}
           onDoubleClick={() => fill?.toggle()}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -291,14 +292,12 @@ export const GenericTabItem = observer(function GenericTabItem({
             }
           }}
           data-tabid={tab.tabId}
-        />
+        />)}
         {/* ❌ 这里原本焊了一根通高的 <Separator>：每个页签后面一条到顶到底的竖线，读起来是
             表格而不是页签。Chrome 的分隔线是 16px 短竖线、且自己或邻居被选中/悬浮时消失 ——
             判据在兄弟节点上，只能用 CSS 表达，见 index.css 的 .session-tab-slot。 */}
       </TabContextMenu>
     </DraggableTab>
-    {cardPopover}
-    </>
   );
 });
 
