@@ -404,9 +404,11 @@ function attachmentImageItem(source: AttachmentSource, fileName: string, origin?
 /**
  * Open the shared viewer now; use the bubble's thumbnail cache and verified lazy original. `picture`: the thumbnail the
  * click was on, already drawn: the viewer opens out of it with its pixels, and only the original is read after it.
+ * `size`: the original's, as its message knows it: the thumbnail is laid out as the original from the first frame.
  */
-export function openAttachmentImage(source: AttachmentSource, fileName: string, origin?: ImageViewerItem['source'], picture?: HTMLImageElement): void {
+export function openAttachmentImage(source: AttachmentSource, fileName: string, origin?: ImageViewerItem['source'], { picture, size }: { picture?: HTMLImageElement; size?: Size } = {}): void {
   const item = attachmentImageItem(source, fileName, origin)
+  if (size) item.size = size
   if (!picture?.complete || !picture.naturalWidth) return openImageViewer([item])
   item.url = picture.currentSrc || picture.src
   item.thumb = picture
@@ -427,8 +429,8 @@ function recordedSizeOf(item: ImageViewerItem): Promise<Size | null> {
 /** A mounted bubble lends a retryable original reader and owns the URLs until it unmounts. */
 export function registerAttachmentImage(thumb: HTMLImageElement, source: AttachmentSource, file: NonNullable<ImageViewerItem['file']>,
   origin?: ImageViewerItem['source'], size?: Size): () => void {
-  const reader = createImageRead(async () => {
-    const bytes = await attachmentBytes(source, 'full')
+  const reader = createImageRead(async (progress) => {
+    const bytes = await attachmentBytes(source, 'full', undefined, undefined, progress)
     if (bytes.status !== 'ready') throw new Error(bytes.status)
     return bytes.blob
   })
@@ -458,13 +460,13 @@ export async function openViewerFromClick(items: ImageViewerItem[], index: numbe
   if (!clicked?.preview && !clicked?.thumb) throw new Error('The clicked image is not among the images to open')
   const click = ++latestClick
   if (box) clicked.thumbRect = box
-  const firstFrame = !clicked.preview ? recordedSizeOf(clicked).then(size => size && { url: clicked.url, size }).catch(() => null) : clicked.preview().then(async url => {
+  const firstFrame = clicked.preview ? clicked.preview().then(async url => {
     if (clicked.size || clicked.full) return { url, size: clicked.size }
     const image = new Image()
     image.src = url
     await image.decode()
     return { url, size: { width: image.naturalWidth, height: image.naturalHeight } }
-  }).catch(() => null)
+  }).catch(() => null) : clicked.size ? null : recordedSizeOf(clicked).then(size => size && { url: clicked.url, size }).catch(() => null)
   const ready = await Promise.race([firstFrame, new Promise<null>((done) => setTimeout(done, VIEWER_THUMB_WAIT_MS, null))])
   if (click !== latestClick) return items.forEach(item => item.release?.())
   if (ready) Object.assign(clicked, ready)

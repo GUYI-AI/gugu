@@ -221,26 +221,21 @@ function wireViewer(pswp: PhotoSwipe, view: ViewerWindow, dialogLabel: string, r
     })().catch((error: unknown) => {
       if (!current || pswp.isDestroying || !pswp.isOpen) return
       log.warn({ error: String(error) }, 'image bytes unavailable')
-      // An image laid out by no pixels yet (@@@thumb-is-not-the-size) says so rather than staying an empty black slide.
-      if (data.item.preview || !data.sizeKnown) {
-        if (!data.src || !data.sizeKnown) {
-          const content = pswp.contentLoader.getContentByIndex(index)
-          if (content) { content.state = 'error'; content.displayError() }
-        }
-        if (data.item.preview) {
-          data.retry = () => {
-            data.retry = undefined
-            data.upgraded = false
-            data.fraction = undefined
-            data.stalled = false
-            pswp.refreshSlideContent(index)
-            upgrade(index)
-            redraw()
-          }
-          if (index === pswp.currIndex) redraw()
-        }
-        if (index === pswp.currIndex) onFileError(data.item, error)
+      // An image laid out by no pixels yet (@@@thumb-is-not-the-size) says so; one over its thumbnail keeps it. Both can read again.
+      if (!data.src || !data.sizeKnown) {
+        const content = pswp.contentLoader.getContentByIndex(index)
+        if (content) { content.state = 'error'; content.displayError() }
       }
+      data.retry = () => {
+        data.retry = undefined
+        data.upgraded = false
+        data.fraction = undefined
+        data.stalled = false
+        pswp.refreshSlideContent(index)
+        upgrade(index)
+        redraw()
+      }
+      if (index === pswp.currIndex) { redraw(); onFileError(data.item, error) }
     })
   }
   const upgradeAround = () => {
@@ -265,7 +260,7 @@ function wireViewer(pswp: PhotoSwipe, view: ViewerWindow, dialogLabel: string, r
   pswp.on('loadComplete', ({ content, isError }) => {
     const data = content.data as ViewerSlide
     const img = content.element
-    if (data.item.preview && content.index === pswp.currIndex) redraw()
+    if (content.index === pswp.currIndex) redraw()
     if (data.sizeKnown || pswp.isDestroying || isError || !(img instanceof view.HTMLImageElement)) return
     // @@@thumb-is-not-the-size - a thumbnail's pixels are smaller than its original: laid out by them, the picture opened
     // at thumbnail size and stayed there once the original came. With an original to come and no recorded size, the
@@ -417,7 +412,7 @@ function ImageViewerChrome({ viewer, mobile, onEdit }: { viewer: OpenViewer; mob
   const current = items[index]
   const slide = pswp.currSlide
   const data = slide?.data as ViewerSlide | undefined
-  const reading = data?.item === current && current.preview && !slide?.content.isError()
+  const reading = data?.item === current && !slide?.content.isError()
     && (slide?.content.state !== 'loaded' || (current.full && data.src !== data.original))
   const { copied, confirm } = useCopyConfirmation(current)
 

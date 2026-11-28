@@ -1,4 +1,4 @@
-import { hasAttachmentDeliveryHints, type ChatState, type DeliveryMessagePresentation } from '@gugu/session-chat-ui';
+import { hasAttachmentDeliveryHints, type ChatAttachment, type ChatState, type DeliveryMessagePresentation } from '@gugu/session-chat-ui';
 import type { MessageItem } from '@gugu/core/shared/types/chat';
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels';
@@ -9,6 +9,7 @@ import { sentFileCopy } from '@/lib/sentFileCopies';
 import { openImageViewer } from '@/lib/imageViewer';
 import type { AttachmentSource } from '@gugu/core/shared/ui/attachmentModels';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
+import { originalSize } from '@/components/chat/originalSize';
 import { keptDataUrl } from './kept-data-urls';
 
 export function originalMessagePresentation(message: MessageItem): DeliveryMessagePresentation | null {
@@ -20,8 +21,9 @@ export function originalMessagePresentation(message: MessageItem): DeliveryMessa
   // when the message's file changes.
   const folder = attachment.source.kind === 'item' ? `gugu-file://${attachment.source.itemId}?v=${attachment.source.version}` : undefined;
   const href = attachment.kind === 'image' ? folder : folder ?? sentAttachmentLink(message.id, message.chat_id);
+  const size = attachment.kind === 'image' ? originalSize(attachment) : undefined;
   return { text: attachment.caption ?? '', attachments: [{ id: sentAttachmentLink(message.id), name: attachment.fileName,
-    kind: attachment.kind === 'image' ? 'image' : 'file', ...(href ? { href } : {}) }] };
+    kind: attachment.kind === 'image' ? 'image' : 'file', ...(href ? { href } : {}), ...(size ? { imageDimensions: size } : {}) }] };
 }
 
 /** The task page and both DM hosts resolve the same source ID with the current person's permissions. */
@@ -72,12 +74,12 @@ function deliveredSource(link: string | undefined): Extract<AttachmentSource, { 
  * by its source; a task's own attachment by `read`, the read that drew its thumbnail. A repeated click while the viewer
  * is opening is the viewer's own to drop (@@@one-viewer).
  */
-export function openTranscriptImage(attachment: { id: string; name: string; href?: string; dataUrl?: string }, thumb: HTMLElement | undefined,
+export function openTranscriptImage(attachment: Pick<ChatAttachment, 'id' | 'name' | 'href' | 'dataUrl' | 'imageDimensions'>, thumb: HTMLElement | undefined,
   read: (attachment: { id: string; name: string }) => Promise<string | null>): void {
   const picture = thumb?.tagName === 'IMG' ? thumb as HTMLImageElement : undefined;
   const source = deliveredSource(attachment.href) ?? deliveredSource(attachment.id);
   if (source) {
-    void import('@/lib/attachmentBytes').then(({ openAttachmentImage }) => openAttachmentImage(source, attachment.name, undefined, picture));
+    void import('@/lib/attachmentBytes').then(({ openAttachmentImage }) => openAttachmentImage(source, attachment.name, undefined, { picture, size: attachment.imageDimensions }));
     return;
   }
   const preview = async () => {

@@ -180,14 +180,36 @@ describe('ImagePreviewProvider', () => {
       await waitForCondition(() => !pswp.opener.isOpening && full.mock.calls.length === 1, 'the original never started')
     })
     const slide = pswp.currSlide!
+    // Over the thumbnail it opened from, the viewer says the original is still coming (after a short delay: data-preview).
+    await waitForCondition(() => !!document.querySelector('.gg-image-viewer__read[role=status][data-preview]'), 'no loading while the original is read')
     await act(async () => finish('blob:original'))
     await waitForCondition(() => document.querySelector('img.pswp__img[src="blob:original"]') !== null, 'original bytes were not displayed')
     const image = slide.content.element as HTMLImageElement
     Object.defineProperties(image, { naturalWidth: { value: 3000 }, naturalHeight: { value: 2000 } })
     await act(async () => image.dispatchEvent(new Event('load')))
+    await waitForCondition(() => !document.querySelector('.gg-image-viewer__read'), 'loading stayed after the original arrived')
     expect(slide.width).toBe(3000)
     expect(slide.currZoomLevel).toBe(slide.zoomLevels.initial)
     await act(async () => pswp.destroy())
+    thumb.remove()
+  })
+
+  it('an original that cannot be read over the thumbnail it opened from keeps the thumbnail and can be read again', async () => {
+    const full = vi.fn(async () => 'blob:original').mockRejectedValueOnce(new Error('original unavailable')), toast = vi.fn()
+    const thumb = document.body.appendChild(document.createElement('img'))
+    Object.defineProperties(thumb, { complete: { value: true }, naturalWidth: { value: 300 }, naturalHeight: { value: 200 } })
+    await openViewer({ toast, images: [{ url: 'blob:thumbnail', alt: 'small', thumb, full, size: { width: 3000, height: 2000 } }] })
+    const retry = await vi.waitFor(() => {
+      const button = document.querySelector<HTMLButtonElement>('.gg-image-viewer__read button')
+      if (!button) throw new Error('no way to read the original again')
+      return button
+    }, 5000)
+    expect(document.querySelector('img.pswp__img[src="blob:thumbnail"]'), 'the thumbnail stays').not.toBeNull()
+    expect(document.querySelector('.pswp__error-msg')).toBeNull()
+    expect(toast).toHaveBeenCalledTimes(1)
+    await clickElement(retry)
+    await waitForCondition(() => !!document.querySelector('img.pswp__img[src="blob:original"]'), 'reading again did not bring the original')
+    expect(full).toHaveBeenCalledTimes(2)
     thumb.remove()
   })
 
