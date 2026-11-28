@@ -80,8 +80,8 @@ export function PaneDimensionProvider({
 
     const places = atRest ? ancestorsOf(el).filter((node): node is HTMLElement => node instanceof HTMLElement && node.matches('[data-panel-slot], [data-panel-fill]')) : [];
     const toCome = () => { // how much wider the rows moving around it will leave it when they land (null: none is moving)
-      const moving = places.filter((place) => panelRest.get(place));
-      return moving.length ? moving.reduce((sum, place) => sum + Number(panelRest.get(place)!.split(' ')[1]), 0) : null;
+      const moving = places.flatMap((place) => panelRest.get(place) ?? []);
+      return moving.length ? moving.reduce((sum, to) => sum + to.grow, 0) : null;
     };
     let last = { width: 0, height: 0 };
     const measure = () => {

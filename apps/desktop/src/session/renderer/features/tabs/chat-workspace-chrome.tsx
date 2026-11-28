@@ -106,7 +106,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   useLayoutEffect(() => {
     const cell = chatColumn.current?.closest<HTMLElement>('[data-panel-slot], [data-panel-fill]');
     if (!cell || !divided) return setChatRestNarrow(undefined);
-    const read = () => { const [rest, grow] = (panelRest.get(cell) ?? '').split(' ').map(Number); setChatRestNarrow(panelRest.get(cell) ? Math.min(rest, rest - grow) < TAB_STRIP_NARROW_PX : undefined); };
+    const read = () => { const to = panelRest.get(cell); setChatRestNarrow(to && Math.min(to.rest, to.rest - to.grow) < TAB_STRIP_NARROW_PX); };
     read();
     cell.addEventListener(PANEL_REST, read);
     return () => cell.removeEventListener(PANEL_REST, read);
