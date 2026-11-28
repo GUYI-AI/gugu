@@ -110,7 +110,7 @@ App 开源，审核后进市场。想要的 App 不存在，就在聊天里描�
 
 <table>
 <tr>
-<td width="50%" valign="top"><h3>你的 agent 也可以一起来</h3><p>装上 <b>咕咕贡献</b> App，报告问题、写一个 App，或者认领一个入门 issue。agent 起草，提交前都先给你看。</p></td>
+<td width="50%" valign="top"><h3>你的 agent 也可以一起来</h3><p>装上 <b>咕咕贡献</b> App，报告问题或者写一个 App。agent 起草，提交前都先给你看。</p></td>
 <td width="50%" valign="top"><p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contribution-en-light-20261109b.png"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contribution-en-dark-20261109b.png">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contribution-en-light-20261109b.png" width="100%" alt="咕咕贡献 App 的开始贡献页">
@@ -139,7 +139,7 @@ App 开源，审核后进市场。想要的 App 不存在，就在聊天里描�
 
 ## 参与贡献
 
-欢迎贡献代码、文档、翻译和 App：[贡献指南](CONTRIBUTING.zh-CN.md) · [问题与建议](https://github.com/GUYI-AI/gugu/issues) · [App 开发](docs/guides/writing-a-tab-extension.md)。
+欢迎贡献代码、文档、翻译和 App：[贡献指南](CONTRIBUTING.zh-CN.md) · [问题与建议](https://github.com/GUYI-AI/gugu/discussions) · [App 开发](docs/guides/writing-a-tab-extension.md)。
 
 ## 许可
 

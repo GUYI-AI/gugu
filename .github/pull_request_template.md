@@ -1,6 +1,6 @@
 ## Change
 
-Describe the concrete problem and resulting behavior. Link the issue; use Closes only after the issue is fully resolved and accepted.
+Describe the concrete problem and resulting behavior.
 
 ## Verification
 
