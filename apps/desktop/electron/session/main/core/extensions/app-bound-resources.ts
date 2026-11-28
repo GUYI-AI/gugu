@@ -302,19 +302,50 @@ export async function appResourceWatch(
   }
   const bound = await boundAgent(extensionId, name, ['resources'], null);
   if (!bound) return { name, state: 'unbound' };
+  // The home this watch last found (its device) and, while that home is this computer, the feed of its files.
+  let home: string | null = null;
+  let feed: AbortController | null = null;
+  let turn = 0;
+  const lifetime = new AbortController();
+  lifetime.signal.addEventListener('abort', () => feed?.abort(), { once: true });
+  /** Follows the assistant's home under the same authority; true when what the page reads may have changed. */
+  async function follow(found: Bound | null, mine: number): Promise<boolean> {
+    if (mine !== turn || lifetime.signal.aborted) return false;
+    if (!found || found.agentId !== watch.agentId || found.handle !== watch.handle) throw denied('Conversation binding changed');
+    const moved = found.deviceId !== home;
+    // Still where it was, and heard: nothing to do. Not heard yet (its session here may have appeared since): look again.
+    if (!moved && feed) return false;
+    feed?.abort();
+    feed = null;
+    home = found.deviceId;
+    const next = new AbortController();
+    try {
+      const store = await found.store();
+      await store.watch(next.signal, () => { void notifyResourceWatch(watch); });
+    } catch (error) {
+      next.abort();
+      if (codeOf(error) !== 'elsewhere') throw error;
+      return moved;
+    }
+    if (mine !== turn || lifetime.signal.aborted) { next.abort(); return false; }
+    feed = next;
+    await found.recheck();
+    return true;
+  }
   const watch: ResourceWatch = {
-    lifetime: new AbortController(),
-    pageId, watchId, extensionId, name, ownerId: bound.ownerId, handle: bound.handle, agentId: bound.agentId,
+    lifetime, pageId, watchId, extensionId, name, ownerId: bound.ownerId, handle: bound.handle, agentId: bound.agentId,
     hear: (event) => hear(watchId, event),
+    rehome: async () => {
+      const mine = ++turn;
+      return follow(await boundAgent(extensionId, name, ['resources'], null), mine);
+    },
   };
   if (!addResourceWatch(watch)) throw denied('Conversation binding changed');
   try {
-    const store = await bound.store();
-    await store.watch(watch.lifetime.signal, () => { void notifyResourceWatch(watch); });
-    await bound.recheck();
+    await follow(bound, ++turn);
   } catch (error) {
-    // An away binding has no disk subscription here. Keep its existing grant/account lifetime.
-    if (codeOf(error) !== 'elsewhere') { forgetResourceWatch(watch); throw error; }
+    forgetResourceWatch(watch);
+    throw error;
   }
   return { name, state: 'watching' };
 }

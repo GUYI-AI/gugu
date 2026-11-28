@@ -124,6 +124,7 @@ function identityRpc(name: string, args: Record<string, unknown>) {
  * same whether its home answers them or the cloud did): the host reads and changes it through `bound.store()`. Its home on
  * another computer (`state.home` false) is `elsewhere`. The real home store is tested in assistant-home-store.test.ts.
  */
+const diskSignals = vi.hoisted(() => [] as AbortSignal[]);
 vi.mock('./assistant-home-store', async () => {
   const { createAssistantPanelClient } = await import('@gugu/core/cloud/assistantPanel');
   const bodies = await import('@gugu/core/cloud/assistantPanelBodies');
@@ -131,7 +132,7 @@ vi.mock('./assistant-home-store', async () => {
     isHomeBody: () => false,
     assistantHomeHere: async () => (state.home ? { paths: {}, anchor: '/home' } : null),
     createAssistantHomeStore: () => ({
-      watch: async () => undefined,
+      watch: async (signal: AbortSignal) => { diskSignals.push(signal); },
       client: createAssistantPanelClient(async (name, args) => identityRpc(name, args), () => state.owner || null),
       readBody: (item: Item, maxBytes?: number) => bodies.readAssistantPanelBody(item as never, { token: state.owner, ownerId: OWNER, chatId: CHAT, maxBytes, accountId: async () => OWNER }),
       upload: (label: string, bytes: Uint8Array) => bodies.uploadAssistantPanelBody({ token: state.owner, ownerId: OWNER, chatId: CHAT, label, bytes, accountId: async () => OWNER }),
@@ -183,7 +184,7 @@ function put(domain: string, key: string, text: string, data: Record<string, unk
 }
 
 const { appResourceList, appResourceRead, appResourceSave, appResourceRemove, appResourceWatch, savedData } = await import('./app-bound-resources');
-const { addResourceWatch, heldResourceWatches, notifyAgentResourcesChanged, stopResourceWatches } = await import('./app-resource-watches');
+const { addResourceWatch, heldResourceWatches, notifyAgentResourcesChanged, rehomeResourceWatches, stopResourceWatches } = await import('./app-resource-watches');
 
 const read = (domain: string, key: string) => appResourceRead('assistant', { name: 'main', domain, key });
 const list = (domain: string) => appResourceList('assistant', { name: 'main', domain });
@@ -507,7 +508,7 @@ describe('hearing that the agent\'s resources changed', () => {
     await notifyAgentResourcesChanged(['99000000-0000-4000-8000-000000000009']);
     expect(heard).toEqual([['1', { name: 'main', state: 'changed' }]]);
     await appResourceWatch('assistant', 41, { watchId: '1', name: 'main', on: false }, () => undefined);
-    await notifyAgentResourcesChanged('all');
+    await notifyAgentResourcesChanged([AGENT]);
     expect(heard).toHaveLength(1);
     expect(heldResourceWatches()).toBe(0);
   });
@@ -522,7 +523,7 @@ describe('hearing that the agent\'s resources changed', () => {
       await vi.waitFor(() => expect(heard).toEqual([['2', { name: 'main', state: 'ended' }]]));
       expect(heldResourceWatches()).toBe(0);
       // Nothing more reaches it, and the service is no longer listened to.
-      await notifyAgentResourcesChanged('all');
+      await notifyAgentResourcesChanged([AGENT]);
       expect(heard).toHaveLength(1);
       expect(state.listeners.size).toBe(0);
     }
@@ -531,7 +532,7 @@ describe('hearing that the agent\'s resources changed', () => {
   it('torn down on sign-out or an account switch; never started unbound, without the grant or for another account\'s agent', async () => {
     const { heard } = await watch('3');
     state.owner = OTHER;
-    await notifyAgentResourcesChanged('all');
+    await rehomeResourceWatches();
     expect(heard).toEqual([['3', { name: 'main', state: 'ended' }]]);
     state.owner = OWNER;
     const second = await watch('4');
@@ -549,10 +550,57 @@ describe('hearing that the agent\'s resources changed', () => {
     expect(heldResourceWatches()).toBe(0);
   });
 
+  it('follows the assistant while the page stays open: its files heard only while it lives here, the page told when it moved', async () => {
+    diskSignals.length = 0;
+    const { heard } = await watch('move');
+    expect(diskSignals.map(s => s.aborted)).toEqual([false]);
+    // Asked again where it lives, and it has not moved: nothing changes, nothing is told.
+    await rehomeResourceWatches();
+    expect(diskSignals.map(s => s.aborted)).toEqual([false]);
+    expect(heard).toEqual([]);
+    state.provisions = [{ ...ASSISTANT, device_id: 'remote' }];
+    state.home = false;
+    await rehomeResourceWatches();
+    expect(diskSignals.map(s => s.aborted)).toEqual([true]);
+    expect(heard).toEqual([['move', { name: 'main', state: 'changed' }]]);
+    state.provisions = [ASSISTANT];
+    state.home = true;
+    await rehomeResourceWatches();
+    expect(diskSignals.map(s => s.aborted)).toEqual([true, false]);
+    expect(heard).toHaveLength(2);
+    stopResourceWatches(41);
+    expect(diskSignals.map(s => s.aborted)).toEqual([true, true]);
+  });
+
+  it('an assistant that comes to live here after the page began watching is heard from its files', async () => {
+    diskSignals.length = 0;
+    state.home = false;
+    const { heard } = await watch('arrive');
+    expect(diskSignals).toEqual([]);
+    // Same home device, its session here only now: looked for again, though it did not move.
+    state.home = true;
+    await rehomeResourceWatches();
+    expect(diskSignals.map(s => s.aborted)).toEqual([false]);
+    expect(heard).toEqual([['arrive', { name: 'main', state: 'changed' }]]);
+  });
+
+  it('ends when the assistant is no longer the conversation\'s; a check that could not be made keeps it', async () => {
+    const { heard } = await watch('gone');
+    state.provisionsError = true;
+    await rehomeResourceWatches();
+    expect(heard).toEqual([]);
+    expect(heldResourceWatches()).toBe(1);
+    state.provisionsError = false;
+    state.provisions = [{ ...ASSISTANT, member_key: 'researcher' }];
+    await rehomeResourceWatches();
+    expect(heard).toEqual([['gone', { name: 'main', state: 'ended' }]]);
+    expect(heldResourceWatches()).toBe(0);
+  });
+
   it('a grant withdrawn between the last check and holding the watch: not held', async () => {
     const hear = vi.fn();
     state.handle = 'h5';
-    expect(addResourceWatch({ lifetime: new AbortController(), pageId: 41, watchId: '8', extensionId: 'assistant', name: 'main', ownerId: OWNER, handle: 'h1', agentId: AGENT, hear })).toBe(false);
+    expect(addResourceWatch({ lifetime: new AbortController(), rehome: async () => false, pageId: 41, watchId: '8', extensionId: 'assistant', name: 'main', ownerId: OWNER, handle: 'h1', agentId: AGENT, hear })).toBe(false);
     expect(heldResourceWatches()).toBe(0);
     expect(state.listeners.size).toBe(0);
     expect(hear).not.toHaveBeenCalled();
