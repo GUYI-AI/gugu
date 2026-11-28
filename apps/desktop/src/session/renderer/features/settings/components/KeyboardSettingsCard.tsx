@@ -1,7 +1,6 @@
 import { useHotkeyRecorder, type Hotkey } from '@tanstack/react-hotkeys';
-import { useQuickChatState } from '@/components/assistant/useQuickChatState';
 import { useStableHandler } from '@/hooks/useStableHandler';
-import { QUICK_CHAT_CHANNELS, registeredQuickChatAccelerator } from '@/lib/quickChatIpc';
+import { QUICK_CHAT_CHANNELS } from '@/lib/quickChatIpc';
 import { rendererLogger } from '@/lib/log';
 import { desktopIpc } from '@/platform/desktopIpc';
 import { RotateCcw, X } from '@/lib/icons'
@@ -39,8 +38,6 @@ const KeyboardSettingsCard: React.FC = () => {
 
 const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: AppSettingsKeyApi<'keyboard'> }> = ({ keyboard, api }) => {
   const terminalEnabled = terminalShown(useTerminalEnabled());
-  const quickChat = useQuickChatState();
-  const systemChord = registeredQuickChatAccelerator(quickChat.available && quickChat.reading.state === 'value' ? quickChat.reading.value : undefined);
   const { update, isSaving: saving, resetField } = api;
   const { translate } = useSessionMessages();
 
@@ -60,7 +57,7 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
     onRecord: (hotkey: Hotkey) => {
       if (!editingKey) return;
 
-      const conflictKey = shortcutConflict(editingKey, hotkey, keyboard, systemChord);
+      const conflictKey = shortcutConflict(editingKey, hotkey, keyboard);
       if (conflictKey) {
         rejectConflict(conflictKey);
         return;
@@ -91,7 +88,7 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
 
   const rejectSystemShortcut = useStableHandler(() => rejectConflict('app.quickChat'));
   useEffect(() => {
-    if (!recorder.isRecording || !systemChord) return;
+    if (!recorder.isRecording) return;
     const ipc = desktopIpc();
     if (!ipc) return;
     const off = ipc.eventOn(QUICK_CHAT_CHANNELS.shortcutRecorded, rejectSystemShortcut);
@@ -101,7 +98,7 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
     };
     setRecording(true);
     return () => { off(); setRecording(false); };
-  }, [recorder.isRecording, systemChord, rejectSystemShortcut]);
+  }, [recorder.isRecording, rejectSystemShortcut]);
 
   const handleReset = (key: CommandId) => {
     const owner = defaultShortcutOwner(key, keyboard);
