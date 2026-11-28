@@ -32,7 +32,7 @@ export type AgentSourceListProps = {
   managed: Installation | undefined;
   custom: Installation | undefined;
   canInstall: boolean;
-  installInHeader?: boolean;
+  sourceOnly?: boolean;
   canUninstall: boolean;
   installDocs?: string | null;
   onSelect: (kind: SourceKind) => void;
@@ -52,7 +52,7 @@ export const AgentSourceList = observer(function AgentSourceList({
   managed,
   custom,
   canInstall,
-  installInHeader,
+  sourceOnly,
   canUninstall,
   installDocs,
   onSelect,
@@ -121,18 +121,16 @@ export const AgentSourceList = observer(function AgentSourceList({
         {translate(!vm.lastInstallError && vm.lastUpdateError && onUpdate ? 'agentsPage.updateAction' : 'agentsPage.reinstall')}
       </Button>
     ) : (!available && canInstall) || (companionMissing && canInstall) ? (
-      installInHeader ? null : (
-        <Button size="sm" variant="outline" onClick={onInstall} disabled={busy}>
-          {installLabel}
-        </Button>
-      )
+      <Button size="sm" variant="outline" onClick={onInstall} disabled={busy}>
+        {installLabel}
+      </Button>
     ) : needsUpdate && (managedUpdate || canInstall) ? (
       <Button size="sm" variant="outline" onClick={managedUpdate || onInstall} disabled={busy}>
         {managedUpdate
           ? translate('agentsPage.updateAction')
           : translate('agentsPage.installAndSwitch')}
       </Button>
-    ) : !canInstall && !available && installDocs && !installInHeader ? (
+    ) : !canInstall && !available && installDocs ? (
       <a
         href={installDocs}
         target="_blank"
@@ -142,8 +140,8 @@ export const AgentSourceList = observer(function AgentSourceList({
         {translate('agentsPage.installDocsLink')}
       </a>
     ) : null;
-  return (
-    <SettingsGroup>
+  const installation = (
+    <>
       {confirmation}
       <SettingsRow
         title={translate('agentsPage.installation')}
@@ -210,6 +208,11 @@ export const AgentSourceList = observer(function AgentSourceList({
           </>
         )}
       </SettingsRow>
+    </>
+  );
+  return (
+    <SettingsGroup>
+      {!sourceOnly && installation}
       {!vm.isInstalling && !vm.isUpdating && (
         <SettingsRow
           title={translate('agentsPage.sourceHeading')}
@@ -275,7 +278,7 @@ export const AgentSourceList = observer(function AgentSourceList({
           {customEditor}
         </SettingsRow>
       )}
-      {managedVersions}
+      {!sourceOnly && managedVersions}
     </SettingsGroup>
   );
 });

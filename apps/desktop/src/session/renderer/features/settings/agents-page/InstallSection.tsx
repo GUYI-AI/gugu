@@ -297,7 +297,7 @@ export const InstallSection = observer(function InstallSection({
         managed={managedCopy}
         custom={customCopy}
         canInstall={!!managedInstall}
-        installInHeader={!!renderPage && !installed}
+        sourceOnly={!!renderPage}
         canUninstall={canUninstall}
         installDocs={installDocs}
         onSelect={onSelect}
@@ -313,6 +313,7 @@ export const InstallSection = observer(function InstallSection({
   const ready = runnable && state !== 'installing' && !vm.isUninstalling && !vm.lastInstallError && !vm.lastUpdateError;
   const advanced = (panel: boolean) => (
     <AgentAdvancedSection compact panel={panel} agentId={agentId} registries={registries} registry={selectedSource.registry} onRegistryChange={onRegistryChange}>
+      {panel && sources}
       {/* The sources' versions could not be read (again): said where they are listed. */}
       {registries.length > 0 ? <RefreshFailed reading={sourceVersions} /> : null}
     </AgentAdvancedSection>

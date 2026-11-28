@@ -8,8 +8,7 @@ import type { AgentInstallationStatus, AgentPayload } from '@shared/core/agents/
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { until } from '../../../../../../../../tests/support/awaitCondition';
-import { MarketDetailDialog } from './market-detail-dialog';
-import { MarketAgentDetail } from './market-detail-agent';
+import { AgentAppDetailDialog } from '@renderer/features/apps/agent-app-detail-dialog';
 
 const f = vi.hoisted(() => ({ install: vi.fn(), installed: false }));
 const codex = { id: 'codex', name: 'Codex', status: 'missing', reading: 'not-detected', command: 'codex',
@@ -55,7 +54,7 @@ it('says why the install failed and lets the person retry from the dialog', asyn
   f.install.mockResolvedValue({ success: false, error: { type: 'command-failed', message: 'Managed installation failed.',
     output: 'error sending request for url (https://registry.npmmirror.com/@openai/codex): connection reset', stage: 'download' } });
   await act(async () => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>
-    <MarketDetailDialog onClose={() => {}}><MarketAgentDetail agentId='codex' onCreate={() => {}} /></MarketDetailDialog>
+    <AgentAppDetailDialog agentId='codex' onClose={() => {}} onCreate={() => {}} />
   </SessionLocalizationProvider></QueryClientProvider>));
   const install = translateSessionMessage('extensions.installAction');
   const button = () => [...document.querySelectorAll('button')].find(b => b.textContent === install);
@@ -77,7 +76,7 @@ it('says why the install failed and lets the person retry from the dialog', asyn
 it('opens 高级设置 in place of the details for an installed agent, and goes back', async () => {
   f.installed = true;
   await act(async () => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>
-    <MarketDetailDialog onClose={() => {}}><MarketAgentDetail agentId='codex' onCreate={() => {}} /></MarketDetailDialog>
+    <AgentAppDetailDialog agentId='codex' onClose={() => {}} onCreate={() => {}} />
   </SessionLocalizationProvider></QueryClientProvider>));
   const toggle = () => document.querySelector<HTMLButtonElement>('[data-testid=agent-advanced-settings]');
   const panel = () => document.querySelector<HTMLElement>('[data-testid=agent-advanced-panel]')!.parentElement!;
@@ -91,6 +90,7 @@ it('opens 高级设置 in place of the details for an installed agent, and goes 
   await act(async () => toggle()!.click());
   expect(toggle()!.getAttribute('aria-pressed')).toBe('true');
   expect(panel().hasAttribute('inert')).toBe(false);
+  expect(panel().querySelector('[role=combobox][aria-label="Source"]')).not.toBeNull();
   expect(details().hasAttribute('inert')).toBe(true);
   await until('the stored extra arguments are shown', () => document.querySelector<HTMLInputElement>('#agent-extraArgs')?.value === '--search');
 
@@ -101,7 +101,7 @@ it('opens 高级设置 in place of the details for an installed agent, and goes 
 
 it('offers no 高级设置 before the agent is installed', async () => {
   await act(async () => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>
-    <MarketDetailDialog onClose={() => {}}><MarketAgentDetail agentId='codex' onCreate={() => {}} /></MarketDetailDialog>
+    <AgentAppDetailDialog agentId='codex' onClose={() => {}} onCreate={() => {}} />
   </SessionLocalizationProvider></QueryClientProvider>));
   await until('the Install button is offered', () => [...document.querySelectorAll('button')].some(b => b.textContent === translateSessionMessage('extensions.installAction')));
   expect(document.querySelector('[data-testid=agent-advanced-settings]')).toBeNull();
