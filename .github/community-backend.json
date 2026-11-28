@@ -1,5 +1,5 @@
 {
   "repository": "GUYI-AI/gugu-supabase",
-  "ref": "497873bf4b647b039417dc1e481d296cb77665ac",
-  "status": "Backend #426 merged on dev: identity.purge_owned_agent_history(p_agent_user_ids text[]) for permanently deleting archived sessions; two ahead of the #422 pin (35baf6a5), so it also carries #424 (attachment GC lease reclaim), #422 (a document name without a text suffix is refused), #421 and #413."
+  "ref": "2c00dafdbfc4c553cb241856760e31eea019ad3c",
+  "status": "Backend #447 (agent presence broadcast on presence:owner / presence:chat channels with a per-agent seq; presence_changed journal fan-out and wake budget removed), on top of dev 205a6d33. Repin to the merge commit once #447 lands."
 }
