@@ -16,7 +16,8 @@ export const chatPresenceChannel = (chatId: string) => `presence:chat:${chatId}`
 // Let go of, it closes a moment later: React lets go and holds again in adjacent commits (switching back to a chat, a
 // panel hidden while a block of the same chat shows, StrictMode), and a topic re-joined before its leave finished
 // lands on the leaving channel (realtimeChannel.ts unsubscribeAuthenticatedRealtimeChannel). A reopen still waits for
-// that leave.
+// that leave on this side: the client lets go of the old channel object first. The realtime client settles a leave as
+// soon as it is sent, and the server's answer follows on the same socket, ahead of the new join.
 const CLOSE_DELAY_MS = 1000
 type Holding = {
   holders: Map<object, readonly string[]>
