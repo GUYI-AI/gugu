@@ -16,7 +16,7 @@ import type { DeviceConnectVia } from '../shared/types/deviceHost'
 
 export const SERVER_CONNECT_VIA_FILE = 'connect-via.json'
 
-/** name:经远程 SSH 装上时人填的那台机器的名字(SSH 别名 / 主机,见 ssh-install machineNameFromTarget);没有就不记。 */
+/** name:桌面带来的 SSH 别名或隧道登录的显式 --name;没有就不记。 */
 export type ServerConnectVia = { via: DeviceConnectVia; at: string; name?: string }
 
 export function parseServerConnectVia(text: string | null): ServerConnectVia | null {

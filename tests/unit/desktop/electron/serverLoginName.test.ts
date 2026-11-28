@@ -117,11 +117,15 @@ describe('gugu-server login --name(链接 + 短码那条路)', () => {
     expect(devices.adoptDeviceName).not.toHaveBeenCalled()
   })
 
-  it.each(['resolveLocalDeviceId', 'renameDevice'] as const)('reports %s failure and leaves login retryable', async (operation) => {
+  it.each([
+    ['resolveLocalDeviceId', '无法登记设备：device write refused'],
+    ['renameDevice', '无法设置设备名 "Research runner"：device write refused'],
+  ] as const)('reports %s failure and leaves login retryable', async (operation, message) => {
     devices[operation].mockRejectedValueOnce(new Error('device write refused'))
     const lines: string[] = []
     expect(await login(['--name', 'Research runner'], lines)).toBe(1)
-    expect(lines.at(-1)).toContain('无法设置设备名 "Research runner"：device write refused')
+    expect(lines.at(-1)).toContain(message)
+    if (operation === 'resolveLocalDeviceId') expect(devices.renameDevice).not.toHaveBeenCalled()
     expect(writeStoredServerSession).not.toHaveBeenCalled()
     expect(devices.restartServerAfterLogin).not.toHaveBeenCalled()
   })
@@ -133,10 +137,22 @@ describe('gugu-server login --name(链接 + 短码那条路)', () => {
     expect(devices.renameDevice).not.toHaveBeenCalled()
   })
 
-  it('rejects an empty explicit name before requesting authorization', async () => {
+  it.each([
+    { kind: 'blank', args: ['--name', ' '] },
+    { kind: 'missing', args: ['--name'] },
+    { kind: 'followed by an option', args: ['--name', '--json'] },
+  ])('rejects a name that is $kind before requesting authorization', async ({ args }) => {
     const lines: string[] = []
-    expect(await login(['--name', ' '], lines)).toBe(2)
+    expect(await login(args, lines)).toBe(2)
     expect(lines).toEqual(['请在 --name 后填写设备名。'])
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { kind: 'Unicode', name: '研究节点🌿' },
+    { kind: '4096-character', name: 'a'.repeat(4096) },
+  ])('passes a $kind name through to the rename RPC without truncation', async ({ name }) => {
+    expect(await login(['--name', name])).toBe(0)
+    expect(devices.renameDevice).toHaveBeenCalledWith(expect.anything(), 'dev-1', name)
   })
 })
