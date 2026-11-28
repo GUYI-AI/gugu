@@ -34,9 +34,9 @@ const digest = async (file: string) => {
   return hash.digest('hex')
 }
 /**
- * Every send is a project-owned copy, so a version's bytes never change when its original is edited. Copies are kept by
- * content (`.gugu/attachments/<sha256>/<name>`): an earlier send of the same bytes, or an attempt whose publication
- * failed, is found there and reused after re-verification.
+ * Every send is a copy in this device's store (`root`), so a version's bytes never change when its original is edited and
+ * nothing is written into the person's folders. Copies are kept by content (`.gugu/attachments/<sha256>/<name>`): an
+ * earlier send of the same bytes, or an attempt whose publication failed, is found there and reused after re-verification.
  */
 export async function importProjectFile(root: string, file: { path: string; name: string; size: number }) {
   await requireAgentFileTreeAccess(root)
