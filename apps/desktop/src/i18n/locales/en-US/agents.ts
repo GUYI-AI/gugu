@@ -324,7 +324,6 @@ export default {
       "summary": "{{color}} {{face}}",
       "tabColor": "Color",
       "tabFace": "Face",
-      "takenBy": "{{names}} already use this color",
       "tryState": "Preview state",
       "tryStateAria": "Preview the next state (current: {{state}})",
       "unsaved": "Unsaved"

@@ -144,10 +144,10 @@ export function AssistantLookEditor({
     if (!editable) return
     if (tab === 'outfit') {
       // 装扮页签里的骰子只换装扮:颜色、表情不动
-      pick({ ...draft, wear: rollWear(draft.color, [], Math.random) })
+      pick({ ...draft, wear: rollWear(draft.color, Math.random) })
       return
     }
-    const final = rollLook([], draft, Math.random)
+    const final = rollLook(draft, Math.random)
     if (prefersReducedMotion()) {
       setDraft(final)
       setPulse((n) => n + 1)

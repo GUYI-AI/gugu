@@ -324,7 +324,6 @@ export default {
       "summary": "{{color}} {{face}}",
       "tabColor": "颜色",
       "tabFace": "表情",
-      "takenBy": "{{names}} 在用这个颜色",
       "tryState": "预览状态",
       "tryStateAria": "预览下一个状态（当前：{{state}}）",
       "unsaved": "未保存"

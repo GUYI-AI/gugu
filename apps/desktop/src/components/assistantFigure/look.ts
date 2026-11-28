@@ -121,35 +121,16 @@ function pickOne<T>(items: readonly T[], rng: Rng): T {
 }
 
 /**
- * 掷骰子 / 出生:挑一个和兄弟们(同一个主人的其它 agent)尽量不撞的形象。
- *  · 颜色:在被用得最少的那几格里随机(12 只以内就是谁都没用过的颜色);avoid 那一格(眼下这只的样子)能避就避,保证骰子一定换个样;
- *  · 表情:日常 6 种里随机,优先同色兄弟没用过的,同样避开 avoid。
+ * 掷骰子:换一个颜色、一种日常休息表情(都避开眼下 avoid 那一格,保证骰子一定换个样),再抽一身装扮(engine/outfitPick.ts)。
+ * 结果带着明确的 wear,存下去就是这一身。
  */
-export function pickDistinctLook(taken: readonly AssistantLook[], avoid: AssistantLook | null, rng: Rng): AssistantLook {
-  const used = new Array<number>(BODY_COLORS.length).fill(0)
-  for (const look of taken) used[look.color]++
-  const colors = BODY_COLORS.map((_, i) => i).filter((i) => i !== avoid?.color)
-  const least = Math.min(...colors.map((i) => used[i]))
-  const color = pickOne(colors.filter((i) => used[i] === least), rng)
-  const sameColorFaces = new Set(taken.filter((look) => look.color === color).map((look) => look.rest))
-  const faces = REST_FACES.filter((f) => f !== avoid?.rest)
-  const fresh = faces.filter((f) => !sameColorFaces.has(f))
-  return { color, rest: pickOne(fresh.length ? fresh : faces, rng) }
-}
-
-/**
- * 掷骰子:颜色、表情照 pickDistinctLook;再抽一身装扮(engine/outfitPick.ts),主件尽量不和兄弟们撞。
- * 结果带着明确的 wear,存下去就是这一身。taken 里兄弟的 wear 由调用方先按 wornOf 定下来。
- */
-export function rollLook(taken: readonly AssistantLook[], avoid: AssistantLook | null, rng: Rng, month = new Date().getMonth()): AssistantLook {
-  const look = pickDistinctLook(taken, avoid, rng)
-  return { ...look, wear: rollWear(look.color, taken, rng, month) }
+export function rollLook(avoid: AssistantLook | null, rng: Rng, month = new Date().getMonth()): AssistantLook {
+  const color = pickOne(BODY_COLORS.map((_, i) => i).filter((i) => i !== avoid?.color), rng)
+  const rest = pickOne(REST_FACES.filter((f) => f !== avoid?.rest), rng)
+  return { color, rest, wear: rollWear(color, rng, month) }
 }
 
 /** 只换装扮(DIY 页签里的骰子):颜色、表情不动 */
-export function rollWear(color: number, taken: readonly AssistantLook[], rng: Rng, month = new Date().getMonth()): WearItem[] {
-  // 兄弟的主件 = 它身上在主件池里的那件(DIY 搭过的,主件不一定排第一)
-  const pool = new Set(ROLL_RULES.pool.flatMap((g) => g.ids))
-  const mains = taken.flatMap((t) => t.wear?.find((w) => pool.has(w.id))?.id ?? [])
-  return pickWear(color, rng, ROLL_RULES, { taken: mains, month })
+export function rollWear(color: number, rng: Rng, month = new Date().getMonth()): WearItem[] {
+  return pickWear(color, rng, ROLL_RULES, { month })
 }
