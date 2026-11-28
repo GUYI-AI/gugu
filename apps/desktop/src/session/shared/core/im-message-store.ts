@@ -38,6 +38,8 @@ export interface MessageStoreAdapter {
   /** root '' is the main stream. */
   ranges(chatId: string, root: string): SeqRange[]
   setRanges(chatId: string, root: string, ranges: readonly SeqRange[]): void
+  /** The streams of a chat that have ranges ('' is the main stream). */
+  rangeRoots(chatId: string): string[]
   dropRanges(chatId: string): void
   /** messageId '' is the conversation departure, which also hides every message of the chat. */
   tombstoned(chatId: string, messageId: string): boolean
@@ -104,6 +106,22 @@ export function messageStoreOperations(store: MessageStoreAdapter, retain: numbe
       } else kept.push(existing)
     }
     store.setRanges(range.chatId, root, [...kept, { fromSeq: from, toSeq: to }].sort((a, b) => a.fromSeq - b.fromSeq))
+  }
+
+  /**
+   * @@@stream-gap - arrivals up to `throughSeq` were not delivered. Each stream that holds ranges ending below it gets
+   * an empty range (throughSeq + 1, throughSeq): it covers nothing, the next arrival's range starts after it instead of
+   * bridging from the old tail, and a page that fills the hole absorbs it. Ranges already verified are untouched.
+   */
+  function gap(chatId: string, throughSeq: number): void {
+    requireId(chatId)
+    if (!Number.isSafeInteger(throughSeq) || throughSeq < 1) throw new Error('Invalid message gap')
+    for (const root of store.rangeRoots(chatId)) {
+      const ranges = store.ranges(chatId, root)
+      if (ranges.every(range => range.toSeq < throughSeq)) {
+        store.setRanges(chatId, root, [...ranges.filter(range => range.fromSeq <= range.toSeq), { fromSeq: throughSeq + 1, toSeq: throughSeq }])
+      }
+    }
   }
 
   /**
@@ -218,6 +236,10 @@ export function messageStoreOperations(store: MessageStoreAdapter, retain: numbe
     requireId(operation.chatId)
     if (operation.type === 'truncateRange') {
       store.dropRanges(operation.chatId)
+      return []
+    }
+    if (operation.type === 'gap') {
+      gap(operation.chatId, operation.throughSeq)
       return []
     }
     if (operation.type === 'delete') {

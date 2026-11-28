@@ -71,6 +71,8 @@ function sqliteAdapter(connection: MessageSqlDatabase, accountId: string): Messa
       run('DELETE FROM im_message_ranges WHERE account_id=? AND chat_id=? AND thread_root_id=?', chatId, root)
       for (const range of ranges) run('INSERT INTO im_message_ranges VALUES(?,?,?,?,?)', chatId, root, range.fromSeq, range.toSeq)
     },
+    rangeRoots: chatId => (all('SELECT DISTINCT thread_root_id FROM im_message_ranges WHERE account_id=? AND chat_id=?', chatId) as
+      { thread_root_id: string }[]).map(row => row.thread_root_id),
     dropRanges: chatId => { run('DELETE FROM im_message_ranges WHERE account_id=? AND chat_id=?', chatId) },
     tombstoned: (chatId, messageId) => !!get(`SELECT 1 FROM im_message_tombstones
       WHERE account_id = ? AND chat_id = ? AND message_id IN ('', ?) LIMIT 1`, chatId, messageId),

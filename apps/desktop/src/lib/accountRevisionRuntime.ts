@@ -7,7 +7,8 @@ import type { ImMessageWrite } from '../session/shared/core/im-messages'
 
 export const ACCOUNT_REVISION_CURSOR_KEY = 'account-revision-cursor'
 const ACCOUNT_REVISION_SKIPPED_KEY = 'account-revision-skipped'
-const DEFAULT_PAGE_SIZE = 100
+// The server's page limit: a backlog that fits it arrives whole, with its message bodies.
+const DEFAULT_PAGE_SIZE = 500
 // R1 — drain 失败(网络、服务端报错、页序号不连续)后从已提交游标整体重拉的退避节拍。
 export const DRAIN_RETRY_DELAYS_MS = [1000, 2000, 5000, 10000, 30000] as const
 const runtimeLog = rendererLogger('chat/account-revision-runtime')
@@ -21,15 +22,27 @@ export type AccountRevisionOperation = {
 export type AccountRevisionPage = {
   operations: AccountRevisionOperation[]
   hasMore: boolean
+  /**
+   * A compacted catch-up page (chat.sync_since_compact): its revisions increase without being consecutive, and it
+   * covers the journal up to this revision, the next cursor.
+   */
+  through?: string
 }
 
 type RawRevisionPage = {
   operations?: unknown
   has_more?: unknown
+  compacted?: unknown
+  through_revision?: unknown
 }
 
 export type AccountRevisionSource = {
-  syncSince: (cursor: string, limit: number, signal: AbortSignal) => Promise<AccountRevisionPage>
+  /**
+   * The journal after the cursor, a page at a time. `compact`: the reader is catching up to the head, and a backlog
+   * longer than the page may come compacted (chat.sync_since_compact). Without it every revision is replayed, for a
+   * replay up to a revision the caller already holds.
+   */
+  syncSince: (cursor: string, limit: number, signal: AbortSignal, compact?: boolean) => Promise<AccountRevisionPage>
   /**
    * `onWake` 收到的是广播里**服务端此刻的 head revision**(十进制字符串),
    * 拿不到时为 `null` = head 未知。head 是这条通知的全部信息量,也是它的用途:
@@ -172,7 +185,7 @@ export function createAccountRevisionRuntime(
     if (page.operations.length === 0) return cursor
     if (!active || generation !== runGeneration) return cursor
 
-    const lastRevision = page.operations[page.operations.length - 1]!.revision
+    const lastRevision = page.through ?? page.operations[page.operations.length - 1]!.revision
     const accepted = await ingestMessages(accountId, () => messageRevisionWrites(accountId, page.operations, lastRevision))
     const arrived = storedMessages(accepted)
     if (!active || generation !== runGeneration) return cursor
@@ -228,7 +241,7 @@ export function createAccountRevisionRuntime(
         if (!signal) return
         if (scheduling) await scheduling.beforeRequest(signal)
         if (!active || generation !== runGeneration) return
-        const page = await source.syncSince(cursor, pageSize, signal)
+        const page = await source.syncSince(cursor, pageSize, signal, true)
         if (!active || generation !== runGeneration) return
         if (scheduling) await scheduling.beforeApply(signal)
         if (!active || generation !== runGeneration) return
@@ -319,17 +332,15 @@ export function validatePage(page: AccountRevisionPage, cursor: string): void {
   if (!Array.isArray(page.operations) || typeof page.hasMore !== 'boolean') {
     throw new Error('account revision page is malformed')
   }
+  // An ordinary page is consecutive from the cursor. A compacted one only increases, inside the window it names.
+  const through = page.through === undefined ? null : BigInt(page.through)
+  if (through !== null && through <= BigInt(cursor)) throw new Error(`account revision window ends at ${through}, not after ${cursor}`)
   let expected = BigInt(cursor) + 1n
   for (const operation of page.operations) {
-    if (
-      !isDecimalRevision(operation.revision, false)
-      || BigInt(operation.revision) !== expected
-      || typeof operation.event !== 'string'
-      || !operation.event
-    ) {
-      throw new Error(`account revision sequence is invalid at ${operation.revision}; expected ${expected}`)
-    }
-    expected += 1n
+    const valid = isDecimalRevision(operation.revision, false) && typeof operation.event === 'string' && !!operation.event
+      && (through === null ? BigInt(operation.revision) === expected : BigInt(operation.revision) >= expected && BigInt(operation.revision) <= through)
+    if (!valid) throw new Error(`account revision sequence is invalid at ${operation.revision}; expected ${expected}`)
+    expected = BigInt(operation.revision) + 1n
   }
 }
 
@@ -341,7 +352,9 @@ export function parseRevisionPage(value: unknown): AccountRevisionPage {
   if (!Array.isArray(raw.operations) || typeof raw.has_more !== 'boolean') {
     throw new Error('sync_since returned a malformed page')
   }
-  return { operations: raw.operations.map(parseOperation), hasMore: raw.has_more }
+  if (raw.compacted !== true) return { operations: raw.operations.map(parseOperation), hasMore: raw.has_more }
+  if (!isDecimalRevision(raw.through_revision, false)) throw new Error('sync_since returned a compacted page without its window')
+  return { operations: raw.operations.map(parseOperation), hasMore: raw.has_more, through: raw.through_revision }
 }
 
 function parseOperation(value: unknown): AccountRevisionOperation {

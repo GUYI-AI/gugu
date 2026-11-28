@@ -10,9 +10,10 @@ export function messageRevisionWrites(accountId: string, operations: readonly Ac
   return { writes: [], throughRevision, revisions: operations.map(operation => {
     const writes: ImMessageWrite[] = []
     if (operation.event === 'message_created') {
-      const { chatId, messageId, message } = readMessageCreatedRevision(operation.payload)
-      if (!message) {
-        // Old payloads name no sequence. No interval can safely bridge this unknown arrival.
+      const { chatId, messageId, message, gap } = readMessageCreatedRevision(operation.payload)
+      if (gap?.throughSeq) writes.push({ type: 'gap', chatId, throughSeq: gap.throughSeq })
+      else if (!message) {
+        // An old payload names no sequence: no interval can safely bridge this unknown arrival.
         writes.push({ type: 'truncateRange', chatId })
       } else {
         const row = message as typeof message & { deleted_at?: unknown; deleted_for_user_ids?: unknown; is_imported_history_root?: unknown }
