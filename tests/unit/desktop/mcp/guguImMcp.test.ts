@@ -785,6 +785,21 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect((h.calls.inserts[0][1] as Record<string, unknown>).to_user_ids).toEqual([CHILD_USER_ID])
     await client.close()
   })
+  // @all is "*" in to_user_ids, as the composer's @all writes it; the text says it, and a text @all without it is refused.
+  test('message_send addresses everyone with "*" and writes @all; a text @all without "*" is refused', async () => {
+    const h = peersHarness()
+    const client = await connect({ ...h.deps, callSessionHost: async () => [childPeer] })
+    const sent = await client.callTool({ name: 'message_send', arguments: { chat_id: '00000000-0000-4000-8000-000000000001', text: '开会了', to_user_ids: ['*'] } })
+    expect(text(sent)).toMatch(/^sent/)
+    const row = h.calls.inserts[0][1] as Record<string, unknown>
+    expect(row.to_user_ids).toEqual(['*'])
+    expect(row.content).toBe('@all 开会了')
+    const refused = await client.callTool({ name: 'message_send', arguments: { chat_id: '00000000-0000-4000-8000-000000000001', text: '@all 开会了', to_user_ids: [] } })
+    expect(refused.isError).toBe(true)
+    expect(text(refused)).toContain('@all ("*")')
+    expect(h.calls.inserts).toHaveLength(1)
+    await client.close()
+  })
   test('message_send says which chat a short address matched no member of, and sends nothing', async () => {
     const h = peersHarness()
     const client = await connect({ ...h.deps, callSessionHost: async () => [childPeer] })
@@ -2104,6 +2119,8 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     writeFileSync(plan, '# brief')
     const chat_id = '00000000-0000-4000-8000-000000000001'
     await expect(callTool('file_put', { chat_id, file_path: plan, file: `gugu-file://${W_DOC}` }, h.deps)).rejects.toThrow(/^file_put: file_path as the next version of .* needs the version you started from/)
+    // A file is named by its link, the one form list and history give: a bare id is refused with that form.
+    await expect(callTool('file_put', { chat_id, file_path: plan, file: W_DOC }, h.deps)).rejects.toThrow(/file is a gugu-file:\/\/<item_id>\?v=<n> link/)
     await expect(callTool('file_put', { chat_id, file_path: plan, file: `gugu-file://${W_DOC}?v=1`, folder: 'x' }, h.deps)).rejects.toThrow(/^file_put: folder places a new file/)
     // Someone stored a newer one since: said as the next step, nothing written.
     h.deps.restRpc = (async (name: string, body: Record<string, unknown>) => name === 'workspace_get_as'
@@ -2757,10 +2774,10 @@ describe('MCP 工具对外声明的入参 schema', () => {
     const recipientSchema = properties.to_user_ids as Record<string, unknown>
     const recipientItems = recipientSchema.items as Record<string, unknown>
     expect(recipientSchema.type).toBe('array')
-    expect(String(recipientSchema.description)).toContain('multiple recipients')
+    expect(String(recipientSchema.description)).toContain('"*" is @all')
     expect(recipientItems).toMatchObject({ type: 'string' })
     // 上下文工程第一批 P5:地址三种写法在数组外层说一次,元素上不再重复。
-    expect(String(recipientSchema.description)).toContain('user:<uuid>')
+    expect(String(recipientSchema.description)).toContain('user:<id>')
     expect(String(recipientSchema.description)).toContain('session:<id>')
     expect(String(recipientSchema.description)).toContain('gugu:<number>')
     expect(recipientItems.description).toBeUndefined()
