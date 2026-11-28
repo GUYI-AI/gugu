@@ -723,6 +723,7 @@ export class RemoteHostsStore {
         }),
       ]);
       if (read && !read.current()) return;
+      read?.received();
       if (home) this.rememberHomeDir(deviceId, home);
       if (catalog?.sessions.length) appState.projects.syncMachineProjects(deviceId, projects, catalog.sessions);
       else appState.projects.syncMachineProjects(deviceId, projects);
@@ -735,7 +736,7 @@ export class RemoteHostsStore {
     } catch (error) {
       log.warn('[machines] 读那台机器的项目清单失败', { deviceId, error: String(error) });
     } finally {
-      read?.finish();
+      read?.cancel();
     }
   }
 
@@ -748,7 +749,7 @@ export class RemoteHostsStore {
     this.listSyncs.set(
       deviceId,
       startSessionListSync(machineSessionListClient, deviceId, {
-        watchFirstSnapshot: () => watchInventoryRead(deviceId, 'sessions snapshot')?.finish,
+        watchFirstSnapshot: () => watchInventoryRead(deviceId, 'sessions snapshot'),
         onList: (result) => {
           updateDeviceSessions(deviceId, { projects: result.projects, sessions: result.sessions, cached: false });
           this.bannerWaits(deviceId, result.sessions);

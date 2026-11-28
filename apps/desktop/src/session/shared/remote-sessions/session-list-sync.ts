@@ -19,7 +19,7 @@ export type SessionpageSessionListClient = {
 
 export type SessionListSyncHandlers = {
   /** Start waiting for this subscription’s first full list. Completing the subscribe RPC alone does not deliver it. */
-  watchFirstSnapshot?: () => (() => void) | undefined
+  watchFirstSnapshot?: () => { received(): void; cancel(): void } | undefined
   /** 拿到那台机器此刻的一份(首列、推送、补列都走这里)。没读到之前画什么见 deviceSessionsOf(它上报过的那份)。 */
   onList: (result: SessionpageSessionsListResult) => void
   onLoading?: (loading: boolean) => void
@@ -84,7 +84,7 @@ export function startSessionListSync(
   const startRound = () => {
     let cancelled = false
     const subscriptionId = newSubscriptionId()
-    const finishFirstRead = handlers.watchFirstSnapshot?.()
+    const firstRead = handlers.watchFirstSnapshot?.()
     handlers.onLoading?.(true)
     // 上一轮的错误留到这一轮真列出来再清:每轮重试开头就清的话,连不上的机器会在「出错」与「读取中」之间来回闪,
     // 界面上看就是永远停在「正在读取」。
@@ -96,7 +96,7 @@ export function startSessionListSync(
      * 那台机器此刻够不着(unreachable,离线)也不重试 —— 线开了(onLinkChange)再重来。
      */
     const failRound = (err: unknown) => {
-      finishFirstRead?.()
+      firstRead?.cancel()
       handlers.onError?.(err instanceof Error ? err.message : String(err))
       const code = err && typeof err === 'object' ? (err as { code?: unknown }).code : undefined
       if (code === 'server_outdated' || code === 'client_outdated' || code === 'unreachable' || stopped || retryTimer) return
@@ -113,7 +113,7 @@ export function startSessionListSync(
       try {
         const first = current === null
         current = applySessionListEvent(current, event)
-        if (first) finishFirstRead?.()
+        if (first) firstRead?.received()
       } catch (err) {
         cancelled = true
         failRound(err)
@@ -138,7 +138,7 @@ export function startSessionListSync(
 
     return () => {
       cancelled = true
-      finishFirstRead?.()
+      firstRead?.cancel()
       stopEvents()
       void client.unsubscribeSessionsList(deviceId, subscriptionId).catch(() => undefined)
     }
