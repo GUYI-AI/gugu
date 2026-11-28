@@ -185,7 +185,7 @@ export function installQuickChat({ mainWindow, focusMain, supported }: { mainWin
   }
   ipcMain.handle(QUICK_CHAT_CHANNELS.recordShortcut, (event, active: unknown) => {
     const main = mainWindow()
-    if (!supported || !main || main.isDestroyed() || event.sender !== main.webContents || event.senderFrame !== event.sender.mainFrame) return
+    if (!supported || !main || main.isDestroyed() || event.sender !== main.webContents) return
     stopRecording()
     if (active === true) {
       recordingContents = event.sender

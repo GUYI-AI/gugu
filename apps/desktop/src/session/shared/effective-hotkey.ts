@@ -82,8 +82,7 @@ export function effectiveAliases(id: CommandId, custom?: Overrides | null): read
   return custom === null ? [] : bindings(custom).aliases.get(id) ?? [];
 }
 
-export function shortcutConflict(id: CommandId, chord: string, custom: Overrides, quickChatAccelerator?: string): CommandId | undefined {
-  if (quickChatAccelerator && sameShortcut(chord, quickChatAccelerator)) return 'app.quickChat';
+export function shortcutConflict(id: CommandId, chord: string, custom: Overrides): CommandId | undefined {
   return otherOwner(bindings(custom).active, id, chord);
 }
 

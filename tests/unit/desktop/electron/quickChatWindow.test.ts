@@ -103,7 +103,14 @@ describe('Quick Chat native visibility', () => {
     main.focused = true
     const [accelerator, press] = native.register.mock.calls[0]!
     const record = native.handlers.get(QUICK_CHAT_CHANNELS.recordShortcut)!
+    record({ sender: child.webContents }, true)
+    press()
+    expect(child.show).toHaveBeenCalledOnce()
+    child.hide()
+    child.show.mockClear()
+
     record({ sender: main.webContents }, true)
+    record({ sender: child.webContents }, false)
     press()
     expect(native.send).toHaveBeenCalledWith(QUICK_CHAT_CHANNELS.shortcutRecorded, accelerator)
     expect(child.show).not.toHaveBeenCalled()

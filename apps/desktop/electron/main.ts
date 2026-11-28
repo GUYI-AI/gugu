@@ -1695,6 +1695,7 @@ function createWindow(loadContents = true): void {
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
+      nodeIntegrationInSubFrames: false, // Only the shell document receives its IPC preload.
       webviewTag: true,
       // @@@renderer-is-auth-server — the renderer is not just UI: it holds the Supabase session and the
       // main-process device-runtime gets owner tokens only from what it pushes (human-auth-session:write, refreshed
