@@ -117,24 +117,6 @@ describe.each(subjects)('IM message store contract (%s)', (_name, open) => {
     expect((await store.page(account, { chatId: 'chat-a', beforeSeq: 10, limit: 4 })).covered).toBe(false)
   })
 
-  it('keeps verified ranges through a gap, starts the next arrival after it, and closes it when a page fills the hole', async () => {
-    await setup()
-    await store.ingest(account, { ...batch(message('m1', 'a', 1), message('m2', 'b', 2)), ranges: [{ chatId: 'chat-a', fromSeq: 1, toSeq: 2 }] })
-    await store.ingest(account, { writes: [], revisions: [{ revision: '1', writes: [{ type: 'gap', chatId: 'chat-a', throughSeq: 40 }] }], throughRevision: '1' })
-    // What was held is still verified.
-    expect((await store.page(account, { chatId: 'chat-a', beforeSeq: 3, limit: 2 })).covered).toBe(true)
-    await store.ingest(account, { writes: [], revisions: [{ revision: '2', writes: [{ type: 'put', message: message('m45', 'live', 45) }] }], throughRevision: '2' })
-    expect((await store.page(account, { chatId: 'chat-a', beforeSeq: 46, limit: 3 })).covered).toBe(false)
-    // A newest page read from the server, then the older page below it: one range again.
-    await store.ingest(account, { ...batch(message('m39', 'x', 39), message('m40', 'y', 40)), ranges: [{ chatId: 'chat-a', fromSeq: 39, toSeq: 40 }] })
-    await store.ingest(account, { ...batch(message('m20', 'w', 20)), ranges: [{ chatId: 'chat-a', fromSeq: 3, toSeq: 38 }] })
-    expect((await store.page(account, { chatId: 'chat-a', beforeSeq: 46, limit: 6 })).rows.map(row => row.id)).toEqual(['m1', 'm2', 'm20', 'm39', 'm40', 'm45'])
-    expect((await store.page(account, { chatId: 'chat-a', beforeSeq: 46, limit: 6 })).covered).toBe(true)
-    // A gap that names nothing beyond what is held changes nothing.
-    await store.ingest(account, { writes: [{ type: 'gap', chatId: 'chat-a', throughSeq: 45 }], revisions: [] })
-    expect((await store.page(account, { chatId: 'chat-a', beforeSeq: 46, limit: 6 })).covered).toBe(true)
-  })
-
   it('commits deletion and progress together, rejects late writes, and skips already consumed revision writes', async () => {
     await setup()
     await store.ingest(account, { ...batch(message('one')), throughRevision: '1' })
@@ -185,6 +167,24 @@ describe.each(subjects)('IM message store contract (%s)', (_name, open) => {
       expect(await reader.windows(account, ['chat-a'], 40)).toEqual([])
       expect((await reader.windows('account-b', ['chat-a'], 40))[0]?.content).toBe('zinnia private')
     }
+  })
+
+  it('keeps verified ranges through a gap, starts the next arrival after it, and closes it when a page fills the hole', async () => {
+    await setup()
+    await store.ingest(account, { ...batch(message('m1', 'a', 1), message('m2', 'b', 2)), ranges: [{ chatId: 'chat-a', fromSeq: 1, toSeq: 2 }] })
+    await store.ingest(account, { writes: [], revisions: [{ revision: '1', writes: [{ type: 'gap', chatId: 'chat-a', throughSeq: 40 }] }], throughRevision: '1' })
+    // What was held is still verified.
+    expect((await store.page(account, { chatId: 'chat-a', beforeSeq: 3, limit: 2 })).covered).toBe(true)
+    await store.ingest(account, { writes: [], revisions: [{ revision: '2', writes: [{ type: 'put', message: message('m45', 'live', 45) }] }], throughRevision: '2' })
+    expect((await store.page(account, { chatId: 'chat-a', beforeSeq: 46, limit: 3 })).covered).toBe(false)
+    // A newest page read from the server, then the older page below it: one range again.
+    await store.ingest(account, { ...batch(message('m39', 'x', 39), message('m40', 'y', 40)), ranges: [{ chatId: 'chat-a', fromSeq: 39, toSeq: 40 }] })
+    await store.ingest(account, { ...batch(message('m20', 'w', 20)), ranges: [{ chatId: 'chat-a', fromSeq: 3, toSeq: 38 }] })
+    expect((await store.page(account, { chatId: 'chat-a', beforeSeq: 46, limit: 6 })).rows.map(row => row.id)).toEqual(['m1', 'm2', 'm20', 'm39', 'm40', 'm45'])
+    expect((await store.page(account, { chatId: 'chat-a', beforeSeq: 46, limit: 6 })).covered).toBe(true)
+    // A gap that names nothing beyond what is held changes nothing.
+    await store.ingest(account, { writes: [{ type: 'gap', chatId: 'chat-a', throughSeq: 45 }], revisions: [] })
+    expect((await store.page(account, { chatId: 'chat-a', beforeSeq: 46, limit: 6 })).covered).toBe(true)
   })
 
   it('removes an authoritative departed chat and blocks a late page until the chat is authoritatively restored', async () => {
