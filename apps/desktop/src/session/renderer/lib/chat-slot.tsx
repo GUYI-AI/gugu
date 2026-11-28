@@ -10,7 +10,7 @@ import { SurfaceShownContext } from '@/lib/retainedSurface';
  */
 export function ChatSlot({ chatId, className }: { chatId: string; className?: string }) {
   // 这一格真摆在屏上(不在藏着的保留页 / 页签层里,任务页这一框也没被藏):报给壳,通知与「看见即已读」认它(lib/onScreenChat)。
-  useReportChatOnScreen(useContext(SurfaceShownContext) ? chatId : null);
+  useReportChatOnScreen(useContext(SurfaceShownContext) ? chatId : null, { block: true });
   const ref = useCallback((element: HTMLDivElement | null) => readShellSlots()?.setSlot(chatSlotKey(chatId), element), [chatId]);
   return <div ref={ref} className={className} data-chat-slot={chatId} />;
 }

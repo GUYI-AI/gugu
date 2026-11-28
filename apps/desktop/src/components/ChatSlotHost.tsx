@@ -11,16 +11,17 @@ import { useTheme } from '../store/theme'
 import { SessionUiTheme } from './sessionpage/SessionUiTheme'
 
 import { isOwnedAgentPeer, openOwnedAgentEntry, useOwnedAgentEntries } from '../lib/ownedAgentConversation'
-import { useChatShown } from '../lib/onScreenChat'
+import { useChatBlockShown } from '../lib/onScreenChat'
 
 installShellSlots()
 
 const EMPTY: ReadonlyMap<string, HTMLElement> = new Map()
 
-// A block stays mounted while the shell hides it (another tab, another page): it is hidden exactly when its slot is not
-// on screen (ChatSlot reports it), as the chat page's own panel is hidden when it is not the one shown.
+// A block stays mounted while the shell hides it (another tab, another page): it is hidden exactly when its own slot is
+// not on screen (ChatSlot reports it), even while the same chat is open on the chat page, as the chat page's own panel
+// is hidden when it is not the one shown.
 function ShownChatArea({ chatId, ...props }: ComponentProps<typeof ChatAreaPanel> & { chatId: string }) {
-  return <ChatAreaPanel {...props} hidden={!useChatShown(chatId)} />
+  return <ChatAreaPanel {...props} hidden={!useChatBlockShown(chatId)} />
 }
 
 /**
