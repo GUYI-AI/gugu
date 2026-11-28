@@ -587,6 +587,23 @@ describe('what the window reads over the network is kept in this machine\'s file
     expect(writes.a).toBe(2)
     expect(await cache.read('f'.repeat(64))).toBeNull()
   })
+  it('reads a copy over the network once when two ask for it at the same time', async () => {
+    const content = Buffer.alloc(200_000, 6), sha = digest(content), cache = createFileCache(join(home, 'file-cache'))
+    let fills = 0
+    const fill = async () => {
+      fills++
+      await new Promise(done => setTimeout(done, 20))
+      await storeFileBytes(cache.directory, sha, 'both.bin', '', { size: content.length, read: async (offset, length) => content.subarray(offset, offset + length) })
+    }
+    const [one, other] = await Promise.all([cache.read(sha, fill), cache.read(sha, fill)])
+    expect(fills).toBe(1)
+    for (const copy of [one!, other!]) { expect(digest(await copy.read(0, copy.size))).toBe(sha); await copy.dispose() }
+    // Whoever waited on a read that failed reads for itself.
+    const lost = digest(Buffer.alloc(10, 1)), failing = vi.fn(async () => { await new Promise(done => setTimeout(done, 20)); throw new Error('cut') })
+    const [first, second] = await Promise.allSettled([cache.read(lost, failing), cache.read(lost, failing)])
+    expect([first.status, second.status]).toEqual(['rejected', 'rejected'])
+    expect(failing).toHaveBeenCalledTimes(2)
+  })
   it('reads the file store before the cache: what an agent saved there is not cached again', async () => {
     await writeDeviceIdCache(deviceFile(env, 'owner'), 'host-device')
     const content = Buffer.alloc(300_000, 9)

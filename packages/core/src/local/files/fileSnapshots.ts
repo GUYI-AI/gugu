@@ -346,7 +346,7 @@ export async function storedCopy(guguHome: string, sha256: string): Promise<Blob
 export const fileCacheDirectory = (guguHome: string) => join(guguHome, 'file-cache')
 const FILE_CACHE_BYTES = 10 * 1024 ** 3
 export function createFileCache(directory: string, maxBytes = FILE_CACHE_BYTES) {
-  const held = new Map<string, number>()
+  const held = new Map<string, number>(), filling = new Map<string, Promise<unknown>>()
   const hold = (sha256: string) => { held.set(sha256, (held.get(sha256) ?? 0) + 1) }
   const release = (sha256: string) => {
     const left = held.get(sha256)! - 1
@@ -372,8 +372,8 @@ export function createFileCache(directory: string, maxBytes = FILE_CACHE_BYTES) 
     return null
   }
   const trim = async () => {
-    await requireAgentFileTreeAccess(directory)
     const names = await readdir(directory).catch(error => { if (error.code === 'ENOENT') return [] as string[]; throw error })
+    if (names.length) await requireAgentFileTreeAccess(directory)
     const copies = await Promise.all(names.map(async name => ({
       name, copy: /^[0-9a-f]{64}$/.test(name) ? await copyOf(name) : null,
     })))
@@ -396,8 +396,15 @@ export function createFileCache(directory: string, maxBytes = FILE_CACHE_BYTES) 
       hold(sha256)
       try {
         let path = await cachedPath(sha256)
+        // One read of a copy over the network at a time: whoever else wants it waits and takes what that read wrote.
+        if (!path && fill && filling.has(sha256)) {
+          await filling.get(sha256)!.catch(() => undefined)
+          path = await cachedPath(sha256)
+        }
         if (!path && fill) {
-          await fill()
+          const mine = fill()
+          filling.set(sha256, mine)
+          try { await mine } finally { if (filling.get(sha256) === mine) filling.delete(sha256) }
           path = await cachedPath(sha256)
           if (path) budget.wrote((await stat(path)).size)
         }
