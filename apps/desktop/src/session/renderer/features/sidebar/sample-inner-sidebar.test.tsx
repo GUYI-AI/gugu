@@ -6,6 +6,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { observable, runInAction } from 'mobx';
+import { InitialResizeObserver } from '../../../../../../../tests/support/initialResizeObserver';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -128,6 +129,7 @@ const render = async () => {
 };
 
 beforeEach(async () => {
+  vi.stubGlobal('ResizeObserver', InitialResizeObserver);
   io.rows.clear();
   io.failWrite = false;
   io.toast.mockReset();
@@ -138,6 +140,7 @@ beforeEach(async () => {
   root = createRoot(host);
 });
 afterEach(() => {
+  vi.unstubAllGlobals();
   act(() => root.unmount());
   host.remove();
   openSamplePane(null);
