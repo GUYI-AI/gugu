@@ -1,4 +1,5 @@
 import { act } from 'react';
+import { isMacHost } from '@shared/host-os';
 import { createRoot, type Root } from 'react-dom/client';
 import { userEvent } from '@vitest/browser/context';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -38,6 +39,8 @@ afterEach(async () => {
   document.body.replaceChildren();
 });
 
+const modKey = isMacHost() ? 'Meta' : 'Control';
+const pressMod = (key: string) => userEvent.keyboard(`{${modKey}>}${key}{/${modKey}}`);
 const focus = (id: string) => (shadow.getElementById(id) as HTMLElement).focus();
 
 describe('typing in the task page keeps its keys (shadow root)', () => {
@@ -71,7 +74,7 @@ describe('a command with nothing to do lets the key through', () => {
     const onKey = (event: KeyboardEvent) => { if (event.key === '[') below(event); };
     window.addEventListener('keydown', onKey);
     focus('pane');
-    await userEvent.keyboard('{Control>}[[{/Control}');
+    await pressMod('[[');
     window.removeEventListener('keydown', onKey);
     expect(below).toHaveBeenCalledOnce();
     expect(below.mock.results[0]!.value).toBe(false);
@@ -84,7 +87,7 @@ describe('a command with nothing to do lets the key through', () => {
     const onKey = (event: KeyboardEvent) => { if (event.key === '[') below(); };
     window.addEventListener('keydown', onKey);
     focus('pane');
-    await userEvent.keyboard('{Control>}[[{/Control}');
+    await pressMod('[[');
     window.removeEventListener('keydown', onKey);
     expect(back).toHaveBeenCalledOnce();
     expect(below).not.toHaveBeenCalled();
@@ -101,9 +104,9 @@ describe('while the task page is hidden behind another shell tab', () => {
     provide({ scopeId: 'session-sub', surface: 'shell', getCommands: () => [{ id: 'app.find', execute: contactsFind }] });
     await act(async () => setEmbedVisible(false));
     focus('pane');
-    await userEvent.keyboard('{Control>},{/Control}');
-    await userEvent.keyboard('{Control>}w{/Control}');
-    await userEvent.keyboard('{Control>}f{/Control}');
+    await pressMod(',');
+    await pressMod('w');
+    await pressMod('f');
     expect(settings).toHaveBeenCalledOnce();
     expect(closeTab).not.toHaveBeenCalled();
     expect(contactsFind).toHaveBeenCalledOnce();
@@ -119,16 +122,16 @@ describe('the registry', () => {
     first();
     first();
     focus('pane');
-    await userEvent.keyboard('{Control>},{/Control}');
+    await pressMod(',');
     expect(settings).not.toHaveBeenCalled();
     second();
-    await userEvent.keyboard('{Control>},{/Control}');
+    await pressMod(',');
     expect(settings).toHaveBeenCalledOnce();
   });
 
   it('lets a rebound tab command leave the terminal and keeps its disabled alias inside', async () => {
     saved.keyboard = { 'session.tabPrev': 'Control+Y', 'session.tabNext': null };
-    await act(async () => root.render(<KeyboardDispatcher />));
+    await act(async () => root.render(<KeyboardDispatcher key="rebound" />));
     const previous = vi.fn();
     const next = vi.fn();
     provide({ scopeId: 'session-sub', getCommands: () => [
