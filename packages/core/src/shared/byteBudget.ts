@@ -2,21 +2,26 @@
  * A byte budget over kept copies, wherever they are kept (the page's Cache Storage, the desktop's file cache): from the
  * newest back, what fits stays and what does not is dropped. A dropped copy is read over the network again when wanted.
  */
-/** budget: counted against the budget; keep: neither counted nor dropped (in use); drop: dropped outright. */
-export type BudgetRole = 'budget' | 'keep' | 'drop'
-
 /**
- * Trims `newestFirst` to the budget; returns the bytes left that count against it. `size` is asked only for a counted
- * entry. `drop` answering `false` did not drop (the copy is in use): it stays, and still counts.
+ * budget: counted, and dropped when it does not fit; held: counted, never dropped (someone is reading it);
+ * keep: neither counted nor dropped (still being written); drop: dropped outright.
  */
-export async function trimToBytes<T>(newestFirst: Iterable<T>, maxBytes: number,
-  entry: (item: T) => Promise<{ role: BudgetRole; size(): number | Promise<number> } | null>, drop: (item: T) => Promise<boolean | void>): Promise<number> {
+export type BudgetRole = 'budget' | 'held' | 'keep' | 'drop'
+
+/** Trims `newestFirst` to the budget; returns the bytes left that count against it. `size` is asked only for a counted entry. */
+export async function trimToBytes<T>(
+  newestFirst: Iterable<T>, maxBytes: number,
+  entry: (item: T) => Promise<{ role: BudgetRole; size(): number | Promise<number> } | null>,
+  drop: (item: T) => Promise<unknown>,
+): Promise<number> {
   let kept = 0
   for (const item of newestFirst) {
     const found = await entry(item)
     if (!found || found.role === 'keep') continue
-    const size = found.role === 'drop' ? 0 : await found.size()
-    if (found.role !== 'drop' && kept + size <= maxBytes || await drop(item) === false) kept += size
+    if (found.role === 'drop') { await drop(item); continue }
+    const size = await found.size()
+    if (found.role === 'held' || kept + size <= maxBytes) kept += size
+    else await drop(item)
   }
   return kept
 }

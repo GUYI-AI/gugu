@@ -5,22 +5,27 @@
  */
 import { byteBudget, trimToBytes, type BudgetRole } from '@gugu/core/shared/byteBudget'
 
-/** budget:计入上限;keep:不计入也不删(读到一半的续传分片);drop:直接删(崩溃留下的分片)。 */
-export type CacheEntryRole = BudgetRole
-
-/** 裁到上限以内,返回留下的(计入上限的)字节数。 */
-export async function trimCacheToBytes(cache: Cache, maxBytes: number, roleOf: (url: string, response: Response) => CacheEntryRole): Promise<number> {
+/**
+ * 裁到上限以内,返回留下的(计入上限的)字节数。`roleOf`:budget 计入上限;keep 不计入也不删(读到一半的续传分片);
+ * drop 直接删(崩溃留下的分片)。
+ */
+export async function trimCacheToBytes(
+  cache: Cache, maxBytes: number, roleOf: (url: string, response: Response) => BudgetRole,
+): Promise<number> {
   return trimToBytes([...await cache.keys()].reverse(), maxBytes, async (request) => {
     const response = await cache.match(request)
     return response ? { role: roleOf(request.url, response), size: async () => (await response.blob()).size } : null
-  }, async request => { await cache.delete(request) })
+  }, request => cache.delete(request))
 }
 
 /**
  * 有上限的缓存的唯一写入口。比整个上限还大的那一份不进缓存(进了就得把别的全挤掉)。写入后不每次都扫(`byteBudget`):只在本次运行
  * 第一次写、或者超了上限时才裁。
  */
-export function budgetedCacheWriter(open: () => Promise<Cache>, maxBytes: number, roleOf: (url: string, response: Response) => CacheEntryRole, onError: (error: unknown) => void) {
+export function budgetedCacheWriter(
+  open: () => Promise<Cache>, maxBytes: number,
+  roleOf: (url: string, response: Response) => BudgetRole, onError: (error: unknown) => void,
+) {
   const budget = byteBudget(maxBytes, async () => trimCacheToBytes(await open(), maxBytes, roleOf), onError)
   return {
     async put(request: RequestInfo | URL, body: Blob): Promise<void> {

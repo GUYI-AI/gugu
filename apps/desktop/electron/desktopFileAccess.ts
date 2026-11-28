@@ -90,7 +90,10 @@ export function createDesktopFileAccess(deps: {
   const saveTo = createFileSaver(providers)
   const resolve = createFileResolver({ ...providers, saveTo })
   const cache = createFileCache(fileCacheDirectory(deps.home)), log = coreLogger('file-cache')
-  const blobBytes = (blob: Blob): FileBytes => ({ size: blob.size, here: true, read: async (offset, length) => new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()), dispose: async () => {} })
+  const blobBytes = (blob: Blob): FileBytes => ({
+    size: blob.size, here: true, dispose: async () => {},
+    read: async (offset, length) => new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()),
+  })
   /**
    * This machine's bytes of `sha256`, without the network: the file store's copy or an original this machine sent, a
    * version it holds in a project, else what the window read before (the file cache).
@@ -109,7 +112,8 @@ export function createDesktopFileAccess(deps: {
     if (revision.source !== 'managed-object') {
       const file = await providers.temporary(revision, context)
       // Keeping it only saves a later read: failing to never takes down what was read.
-      const keep = () => cache.read(revision.sha256!, () => storeFileBytes(cache.directory, revision.sha256!, revision.file_name, revision.content_type, file))
+      const { sha256, file_name: name, content_type: type } = revision
+      const keep = () => cache.read(sha256!, () => storeFileBytes(cache.directory, sha256!, name, type, file))
         .then(kept => kept?.dispose(), (error: unknown) => log.warn({ error }, 'relayed copy not kept'))
       const acknowledged = (file.acknowledged ?? Promise.resolve()).then(keep)
       acknowledged.catch(() => undefined)
@@ -130,7 +134,10 @@ export function createDesktopFileAccess(deps: {
     },
     expiredPreview: async (preview: FilePreview, context: FileContext) => new Uint8Array(await (await providers.expiredPreview!(preview, context)).arrayBuffer()),
   }
-  /** This machine's copy saved as the person's own file: a cached copy is cloned where the filesystem can, anything else written as bytes. */
+  /**
+   * This machine's copy saved as the person's own file: a cached copy is cloned where the filesystem can, anything else
+   * written as bytes.
+   */
   const save = (copy: FileBytes & { path?: string }, target: string) => copy.path
     ? writeFileAt(target, 0o644, partial => copySnapshot(copy.path!, partial))
     : writeFileBytes(copy, target, 0o644)
@@ -141,7 +148,9 @@ export function createDesktopFileAccess(deps: {
    * is, anything else from this machine's copy of it, read into the file cache first when it has none. `revision`: the
    * version saved, for the window to know next time.
    */
-  const download = async (ref: FileRef, actor: FileActor, pick: () => Promise<string | null>, known: FileBytes & { path?: string } | null, signal?: AbortSignal): Promise<{ saved: boolean; revision?: FileRevision } | { status: Exclude<FileMetadata['status'], 'ready'> }> => {
+  const download = async (
+    ref: FileRef, actor: FileActor, pick: () => Promise<string | null>, known: FileBytes & { path?: string } | null, signal?: AbortSignal,
+  ): Promise<{ saved: boolean; revision?: FileRevision } | { status: Exclude<FileMetadata['status'], 'ready'> }> => {
     if (known) {
       try { const target = await pick(); if (target) await save(known, target); return { saved: !!target } }
       finally { await known.dispose() }
@@ -154,7 +163,8 @@ export function createDesktopFileAccess(deps: {
       const context: FileContext = { ref, actor, ...(signal ? { signal } : {}) }, { revision } = file
       if (!revision.sha256 || await providers.local(context)) await writeFileHandle(file, target, 0o644)
       else {
-        const copy = await here(revision.sha256) ?? (await cache.read(revision.sha256, () => saveTo(revision, context, cache.directory, revision.file_name, true)))!
+        const copy = await here(revision.sha256)
+          ?? (await cache.read(revision.sha256, () => saveTo(revision, context, cache.directory, revision.file_name, true)))!
         try { await save(copy, target) } finally { await copy.dispose() }
       }
       return { saved: true, revision }

@@ -5,7 +5,7 @@ import { basename, dirname, join } from 'node:path'
 import type { FileSink } from '../../shared/fileCipher'
 import { FILE_CHUNK_BYTES, FileIntegrityError, requireFileRange, requireFileRevision } from '../../shared/fileResolver'
 import type { FileChunkCache } from '../../shared/fileCache'
-import { byteBudget, trimToBytes } from '../../shared/byteBudget'
+import { byteBudget, trimToBytes, type BudgetRole } from '../../shared/byteBudget'
 import { createHash, randomUUID } from 'node:crypto'
 import { attachmentDownloadName } from '../../shared/attachmentDownloadName.mjs'
 import { cloudFileProviders } from '../../cloud/fileProviders'
@@ -283,16 +283,24 @@ export async function writeFileAt(path: string, mode: number, fill: (partial: st
  * private by default; a file the person saves for themselves is `0o644`, as a browser saves it.
  */
 export async function writeFileHandle(file: FileHandle, path: string, mode = 0o600) {
-  const hash = createHash('sha256'); let size = 0
+  const hash = createHash('sha256'); let size = 0, observedSha = ''
   try {
     requireFileRevision(file.revision)
     await writeFileAt(path, mode, async partial => {
       const output = await open(partial, 'wx', mode)
-      try { for await (const chunk of file.stream()) { size += chunk.length; if (size > file.revision.size_bytes) throw new Error('File export size changed'); hash.update(chunk); await output.writeFile(chunk) } }
-      finally { await output.close() }
-      if (size !== file.revision.size_bytes || file.revision.sha256 !== null && hash.copy().digest('hex') !== file.revision.sha256) throw new FileIntegrityError('File export')
+      try {
+        for await (const chunk of file.stream()) {
+          size += chunk.length
+          if (size > file.revision.size_bytes) throw new Error('File export size changed')
+          hash.update(chunk); await output.writeFile(chunk)
+        }
+      } finally { await output.close() }
+      // Checked before it is given its name: bytes that are not the pinned ones never appear at `path`.
+      observedSha = hash.digest('hex')
+      const { size_bytes: expected, sha256: pinned } = file.revision
+      if (size !== expected || pinned !== null && observedSha !== pinned) throw new FileIntegrityError('File export')
     })
-    return { file_path: path, file_name: basename(path), size_bytes: size, sha256: hash.digest('hex'), content_type: file.revision.content_type }
+    return { file_path: path, file_name: basename(path), size_bytes: size, sha256: observedSha, content_type: file.revision.content_type }
   }
   finally { await file.dispose() }
 }
@@ -300,12 +308,15 @@ export async function writeFileHandle(file: FileHandle, path: string, mode = 0o6
 export async function writeFileBytes(bytes: Pick<FileBytes, 'size' | 'read'>, path: string, mode: number): Promise<void> {
   await writeFileAt(path, mode, async partial => {
     const output = await open(partial, 'wx', mode)
-    try { for (let offset = 0; offset < bytes.size; offset += FILE_CHUNK_BYTES) await output.writeFile(await bytes.read(offset, Math.min(FILE_CHUNK_BYTES, bytes.size - offset))) }
-    finally { await output.close() }
+    try {
+      for (let offset = 0; offset < bytes.size; offset += FILE_CHUNK_BYTES) {
+        await output.writeFile(await bytes.read(offset, Math.min(FILE_CHUNK_BYTES, bytes.size - offset)))
+      }
+    } finally { await output.close() }
   })
 }
 
-/** Where `directory` (the file store, or the file cache) holds a complete file of `sha256`, checked against it. */
+/** Where `directory` (the file store) holds a complete file of `sha256`, checked against it. */
 async function verifiedCopy(directory: string, sha256: string): Promise<string | null> {
   if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error('Invalid stored file SHA-256')
   const held = await requireAgentFileAccess(join(directory, sha256))
@@ -333,15 +344,18 @@ export async function storedCopy(guguHome: string, sha256: string): Promise<Blob
  * until it lets go (`dispose`): a copy being read, or being written, is never dropped.
  */
 export const fileCacheDirectory = (guguHome: string) => join(guguHome, 'file-cache')
-export const FILE_CACHE_BYTES = 10 * 1024 ** 3
+const FILE_CACHE_BYTES = 10 * 1024 ** 3
 export function createFileCache(directory: string, maxBytes = FILE_CACHE_BYTES) {
   const held = new Map<string, number>()
   const hold = (sha256: string) => { held.set(sha256, (held.get(sha256) ?? 0) + 1) }
-  const release = (sha256: string) => { const left = held.get(sha256)! - 1; if (left) held.set(sha256, left); else held.delete(sha256) }
+  const release = (sha256: string) => {
+    const left = held.get(sha256)! - 1
+    if (left) held.set(sha256, left); else held.delete(sha256)
+  }
   /** One sha's copy: its size once (its names are links to the same bytes), and when it was last read. */
   const copyOf = async (name: string) => {
-    const files = await Promise.all((await readdir(join(directory, name)).catch(() => [] as string[])).filter(file => !file.endsWith('.part'))
-      .map(file => stat(join(directory, name, file)).catch(() => null)))
+    const names = (await readdir(join(directory, name)).catch(() => [] as string[])).filter(file => !file.endsWith('.part'))
+    const files = await Promise.all(names.map(file => stat(join(directory, name, file)).catch(() => null)))
     const file = files.find(info => info?.isFile())
     return file ? { size: file.size, readAt: Math.max(...files.map(info => info?.atimeMs ?? 0)) } : null
   }
@@ -360,12 +374,17 @@ export function createFileCache(directory: string, maxBytes = FILE_CACHE_BYTES) 
   const trim = async () => {
     await requireAgentFileTreeAccess(directory)
     const names = await readdir(directory).catch(error => { if (error.code === 'ENOENT') return [] as string[]; throw error })
-    const copies = await Promise.all(names.map(async name => ({ name, copy: /^[0-9a-f]{64}$/.test(name) ? await copyOf(name) : null })))
+    const copies = await Promise.all(names.map(async name => ({
+      name, copy: /^[0-9a-f]{64}$/.test(name) ? await copyOf(name) : null,
+    })))
     copies.sort((a, b) => (b.copy?.readAt ?? 0) - (a.copy?.readAt ?? 0))
-    // What is not a complete copy (an interrupted write, a file moved aside) is dropped, unless it is being written. A
-    // copy someone holds counts like any other and is never dropped, even past the budget.
-    return trimToBytes(copies, maxBytes, async ({ name, copy }) => ({ role: copy ? 'budget' : held.has(name) ? 'keep' : 'drop', size: () => copy!.size }),
-      async ({ name }) => { if (held.has(name)) return false; await rm(join(directory, name), { recursive: true, force: true }) })
+    // A copy someone holds counts like any other and is never dropped, even past the budget. What is not a complete
+    // copy (an interrupted write, a file moved aside) is dropped, unless it is being written.
+    const roleOf = (name: string, complete: boolean): BudgetRole =>
+      complete ? held.has(name) ? 'held' : 'budget' : held.has(name) ? 'keep' : 'drop'
+    return trimToBytes(copies, maxBytes,
+      async ({ name, copy }) => ({ role: roleOf(name, !!copy), size: () => copy!.size }),
+      ({ name }) => rm(join(directory, name), { recursive: true, force: true }))
   }
   const budget = byteBudget(maxBytes, trim, error => storeLog.warn({ error }, 'file cache trim failed'))
   return { directory, idle: budget.idle,
@@ -387,8 +406,11 @@ export function createFileCache(directory: string, maxBytes = FILE_CACHE_BYTES) 
         const info = await stat(path); await utimes(path, new Date(), info.mtime)
         const blob = await openAsBlob(path)
         let disposed = false
-        return { path, size: blob.size, here: true, read: async (offset, length) => new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()),
-          dispose: async () => { if (!disposed) { disposed = true; release(sha256); budget.released() } } }
+        return {
+          path, size: blob.size, here: true,
+          read: async (offset, length) => new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()),
+          dispose: async () => { if (!disposed) { disposed = true; release(sha256); budget.released() } },
+        }
       } catch (error) { release(sha256); throw error }
     },
   }

@@ -92,7 +92,9 @@ export function createNativeFileHost(deps: {
         try {
           await check(scope, owner, epoch)
           const { url, release } = await deps.serve(sha256, contentType, file)
-          const id = randomUUID(); entries.set(id, { scope, epoch, owner, context: key, file, release, url }); return { id, size: file.size, url }
+          const id = randomUUID()
+          entries.set(id, { scope, epoch, owner, context: key, file, release, url })
+          return { id, size: file.size, url }
         } catch (error) { await file.dispose(); throw error }
       }
       if (request.op === 'cloud' || request.op === 'cloud-preview' || request.op === 'cloud-expired-preview' || request.op === 'download') {
