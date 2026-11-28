@@ -145,7 +145,7 @@ export async function runServerLogin(out: Out = defaultOut, args: readonly strin
   const nameAt = args.indexOf('--name')
   const name = nameAt >= 0 ? args[nameAt + 1]?.trim() || null : null
   if (nameAt >= 0 && (!name || name.startsWith('--'))) {
-    out('请在 --name 后填写设备名。')
+    out('请在 --name 后填写设备名。以 -- 开头的参数用于命令选项。')
     return 2
   }
   if (args.includes('--grant-stdin')) {

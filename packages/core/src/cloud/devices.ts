@@ -32,9 +32,7 @@ export interface DeviceTableClient {
   }
 }
 
-// #1749 rename / remove 都走 RPC 一条受控路径。
-// rename 必须用 RPC(不是裸 UPDATE label)：设备心跳每 ~30s 全行 upsert 会用 hostname 默认名覆写 label，
-// rename_device 同时打 label_customized_at 标记，DB 触发器据此让后续心跳保留自定义名(见迁移)。
+// Explicit renames use the owner-scoped RPC, which advances the marker the heartbeat trigger preserves.
 export interface DeviceRpcClient {
   rpc(
     fn: 'rename_device' | 'remove_device',
@@ -71,31 +69,34 @@ export async function renameDevice(
   if (error) throw new Error(error.message)
 }
 
-/** 库替没报名字的设备取的默认名(`Linux 2`、`Mac 1`,见迁移 gugu_devices_default_label)。 */
-export function isDerivedDeviceLabel(label: string): boolean {
-  return /^(Mac|Linux|Windows|Device) \d+$/.test(label)
+interface DeviceLabelUpdate {
+  eq(column: 'device_id', value: string): DeviceLabelUpdate
+  is(column: 'label_customized_at', value: null): DeviceLabelUpdate
+  neq(column: 'label', value: string): DeviceLabelUpdate
+  select(columns: 'device_id'): PromiseLike<DeviceQueryResult>
 }
 
-export interface DeviceLabelClient extends DeviceRpcClient {
+export interface DeviceLabelClient {
   from(table: 'gugu_devices'): {
-    select(columns: 'label, label_customized_at'): {
-      eq(column: 'device_id', value: string): { maybeSingle(): PromiseLike<DeviceQueryResult> }
-    }
+    update(value: { label: string; label_customized_at: string; updated_at: string }): DeviceLabelUpdate
   }
 }
 
 /**
- * #6264 这台机器早就有设备行、名字还是库取的 `Linux 2`(人没改过),现在有了人给它的名字(SSH 别名)⇒ 换成这个名字。
- * 人改过的、已经不是默认名的一律不动;还没有这一行 ⇒ 不做(第一次心跳自己会带上名字)。
- * @returns 改没改。
+ * The ownership policy and marker check apply to the same update, so a concurrent manual rename wins.
+ * PostgreSQL's `now` sets the marker for the label-preservation trigger. An equal label stays unmarked.
  */
 export async function adoptDeviceName(client: DeviceLabelClient, deviceId: string, name: string): Promise<boolean> {
-  const { data, error } = await client.from('gugu_devices').select('label, label_customized_at').eq('device_id', deviceId).maybeSingle()
+  const label = name.trim()
+  if (!label) throw new Error('设备名不能为空')
+  const { data, error } = await client.from('gugu_devices')
+    .update({ label, label_customized_at: 'now', updated_at: 'now' })
+    .eq('device_id', deviceId)
+    .is('label_customized_at', null)
+    .neq('label', label)
+    .select('device_id')
   if (error) throw new Error(error.message)
-  const row = data as { label?: unknown; label_customized_at?: unknown } | null
-  if (!row || row.label_customized_at || typeof row.label !== 'string' || !isDerivedDeviceLabel(row.label)) return false
-  await renameDevice(client, deviceId, name)
-  return true
+  return Array.isArray(data) && data.length === 1
 }
 
 /**
