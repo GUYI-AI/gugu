@@ -16,12 +16,14 @@ export function AgentAppDetailDialog({ agentId, onClose, onCreate }: {
     <Sheet onClose={onClose} titleId={titleId} testId="market-detail-dialog" dimNested
       desktopWidth="min(704px, 100%)" desktopMaxHeight="calc(100dvh - 32px)"
       finalFocus={() => opener.current?.isConnected ? opener.current : false}>
-      <ModalClose floating onClose={onClose} />
-      <ModalSurfaceProvider>
-        <MarketDetailConfirmations>
-          <MarketAgentDetail agentId={agentId} titleId={titleId} onCreate={onCreate} />
-        </MarketDetailConfirmations>
-      </ModalSurfaceProvider>
+      <div className="relative flex min-h-0 flex-col">
+        <ModalClose floating onClose={onClose} />
+        <ModalSurfaceProvider>
+          <MarketDetailConfirmations>
+            <MarketAgentDetail agentId={agentId} titleId={titleId} onCreate={onCreate} />
+          </MarketDetailConfirmations>
+        </ModalSurfaceProvider>
+      </div>
     </Sheet>
   );
 }
