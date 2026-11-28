@@ -47,6 +47,9 @@ async function archiveServerTasks(deviceId: string, listBoundAgents: DevicesCont
 export function ServerUninstallDialog({
   device,
   address,
+  agentCount,
+  countError,
+  onReloadAgents,
   listBoundAgents,
   onRemove,
   onRemoveOnly,
@@ -54,6 +57,9 @@ export function ServerUninstallDialog({
 }: {
   device: Device
   address: string
+  agentCount: number | null
+  countError: boolean
+  onReloadAgents: () => void
   listBoundAgents: DevicesContextValue['listBoundAgents']
   /** Remove the empty device after archive and uninstall. */
   onRemove: () => Promise<void>
@@ -68,9 +74,7 @@ export function ServerUninstallDialog({
   const [removed, setRemoved] = useState<true | string | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [archiving, setArchiving] = useState(false)
-  const [archiveError, setArchiveError] = useState('')
-  const [agentCount, setAgentCount] = useState<number | null>(null)
-  const [countError, setCountError] = useState(false)
+  const [archiveError, setArchiveError] = useState(false)
   const runIdRef = useRef<string | null>(null)
   const removeStarted = useRef(false)
 
@@ -121,16 +125,6 @@ export function ServerUninstallDialog({
     && !inspection.accounts.some((account) => account.you && account.signedIn))
 
   useEffect(() => {
-    if (phase !== 'confirm' || !inspection?.installed) return
-    let live = true
-    void listBoundAgents(device.device_id).then(
-      (agents) => { if (live) setAgentCount(agents.length) },
-      () => { if (live) setCountError(true) },
-    )
-    return () => { live = false }
-  }, [phase, inspection?.installed, device.device_id, listBoundAgents])
-
-  useEffect(() => {
     if (phase !== 'done' || removeStarted.current) return
     removeStarted.current = true
     void onRemove().then(() => setRemoved(true), (error: unknown) => setRemoved(messageForUser(error)))
@@ -145,15 +139,16 @@ export function ServerUninstallDialog({
     const electron = api()
     if (!electron || !runId || !inspection?.supported || needsSignIn || othersSignedIn || agentCount === null || archiving) return
     setArchiving(true)
-    setArchiveError('')
+    setArchiveError(false)
     try {
       if (!inspection.archiveReady && inspection.accounts.length > 0) await archiveServerTasks(device.device_id, listBoundAgents)
       else if (agentCount > 0) throw new Error(t('devices.uninstall.signInRequired'))
       if (!(await electron.invoke(SERVER_SSH_MACHINES_CHANNELS.uninstallConfirm, runId))) {
-        throw new Error(t('devices.uninstall.confirmExpired'))
+        throw new Error('Uninstall confirmation expired')
       }
     } catch (error) {
-      setArchiveError(messageForUser(error))
+      log.error({ err: String((error as Error)?.message ?? error), deviceId: device.device_id }, 'server task archival or uninstall confirmation failed')
+      setArchiveError(true)
     } finally {
       setArchiving(false)
     }
@@ -163,9 +158,8 @@ export function ServerUninstallDialog({
     setRunId(null)
     setStates({})
     setUnknownMachine(false)
-    setAgentCount(null)
-    setCountError(false)
-    setArchiveError('')
+    setArchiveError(false)
+    onReloadAgents()
     setAttempt(value => value + 1)
   }
   const uninstalling = archiving || phase === 'uninstalling' || (phase === 'done' && removed === null)
@@ -230,7 +224,7 @@ export function ServerUninstallDialog({
                 t('devices.uninstall.boundAgents', { count: agentCount })}
           </div>
         )}
-        {archiveError && <div role="alert" className={`${body} text-[var(--danger-fg)]`}>{t('devices.uninstall.archiveFailed', { reason: archiveError })}</div>}
+        {archiveError && <div role="alert" className={`${body} text-[var(--danger-fg)]`}>{t('devices.uninstall.archiveFailed')}</div>}
 
         {uninstalling && <div className={`${body} ${muted}`}>{t(archiving ? 'devices.uninstall.archiving' : 'devices.uninstall.uninstalling')}</div>}
 
