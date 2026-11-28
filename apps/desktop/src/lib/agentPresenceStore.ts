@@ -72,12 +72,17 @@ export type AgentPresenceState = {
 
 export type AgentPresenceListener = (state: AgentPresenceState) => void
 
-// 刚确认过的读数不值得再问一遍;比这更旧的在**重新订阅时**对账一次。
-// ⚠️ 这条不是「定期复查」,不在被删掉的那一类里:设备心跳不广播,所以一台机器恢复之后云端不会来通知。
-// 缓存里那份载荷会随时钟诚实地掉成「不在线」——而那恰恰是最该去问一次的时刻。删掉它的后果是
-// 一个活着的 agent 一直显示不在线,直到别的什么事凑巧触发一次拉取。
-// 它也不改变状态:它只决定**什么时候去问**,答案仍然只由宿主给。
-const REVALIDATE_AFTER_MS = 10_000
+// @@@presence-coverage - A cached value stays true only while a presence channel that carries this agent has stayed
+// subscribed since the value was read (agentPresenceChannels: the owner's channel, an open chat's channel). The
+// server broadcasts every change of the agent to those channels, so a covered entry needs no question. Anything else
+// (never covered, or its channel closed, errored or reconnected) is asked once when someone looks at it again.
+// Channel → the agents it has carried since it last subscribed.
+const coverage = new Map<string, Set<string>>()
+
+function isCovered(agentUserId: string): boolean {
+  for (const ids of coverage.values()) if (ids.has(agentUserId)) return true
+  return false
+}
 
 // @@@3839 这个 store 持有的是**知识**,不是订阅。谁在看只决定两件事:谁会被通知,以及是否值得为这个
 // agent 花网络。观测过的 agent 不因视图卸载被遗忘 —— 展示态是 (payload, now) 的函数,而 payload 自带
@@ -100,9 +105,6 @@ type Entry = {
   // 落地后读 entry.state,布尔式去重会让后到的调用者拿不到完成时机)。
   snapshotPromise: Promise<void> | null
   holding: DeviceCommandHolding | null
-  // @@@3839 离屏期间收到的权威变更:只记「该重问」,不当场发请求 —— 没人在看的 agent 不值得占网络,
-  // 而重新订阅时先推缓存值再对账,所以这条延后不会让任何人看见 pending。
-  dirty: boolean
   // @@@3839 冷却起点(最后一个订阅者离开、或预热建立的时刻)。TTL/容量淘汰只看它;null = 正被观察。
   cooledAt: number | null
   /** 本机宿主按 agent 的流里的那一条。没有本机腿、或这台机器不是它的宿主时为 null。 */
@@ -122,6 +124,7 @@ export function setPresenceBusContext(ctx: { currentUserId: string | null }): vo
   // `null → 某个身份` 是**激活**,不是换人:那一刻屏上已经确认过的状态仍然是这个人自己的,
   // 把它打回 pending 只会在启动时白闪一次(shell 提交发生在会话列表已经订阅之后)。
   const leftAnIdentity = previousUserId !== null
+  if (leftAnIdentity) coverage.clear()
   for (const entry of [...entries.values()]) {
     if (leftAnIdentity) {
       // 没人看的直接丢。有人看的退回 pending —— 这正是 pending 唯一合法的场合:
@@ -133,48 +136,65 @@ export function setPresenceBusContext(ctx: { currentUserId: string | null }): vo
       entry.state = neverObservedAgentPresence(entry.agentUserId)
       entry.local = null
       entry.holding = null
-      entry.dirty = false
       notify(entry)
     }
     if (ctx.currentUserId) void fetchSnapshot(entry)
   }
 }
 
-// The durable journal retains every changed agent id; only its realtime wake is throttled.
-// Apply carried facts through the same projection as snapshots. Old journal rows
-// and identity lifecycle notifications still use the existing batched read.
-export async function refreshObservedAgentPresenceFromRevision(payloads: readonly unknown[]): Promise<void> {
-  const owner = accountContext.currentUserId
-  const latest = new Map<string, AgentPresencePayload | null>()
-  for (const payload of payloads) {
-    const raw = payload && typeof payload === 'object' && !Array.isArray(payload)
-      ? payload as { agent_user_id?: unknown; presence?: unknown } : null
-    const id = raw?.agent_user_id
-    if (typeof id !== 'string' || !id.trim()) throw new Error('presence_changed revision requires agent_user_id')
-    const supplied = Object.prototype.hasOwnProperty.call(raw, 'presence')
-    const presence = supplied ? parseAgentPresencePayload({ presence: raw?.presence }) : null
-    if (supplied && (!presence || presence.agentUserId !== id)) throw new Error('presence_changed revision has malformed presence')
-    latest.set(id, presence)
-  }
-  const carried: Array<{ entry: Entry; payload: AgentPresencePayload }> = []
-  await Promise.all([...latest].map(async ([id, payload]) => {
+/** Ask the server again for these agents, the ones this store knows (an identity was removed or re-read). */
+export async function refetchAgentPresence(agentUserIds: readonly string[]): Promise<void> {
+  await Promise.all([...new Set(agentUserIds)].map(async (id) => {
     const entry = entries.get(id)
-    if (!entry) return
-    // A snapshot already in flight may predate this revision. Let it finish before
-    // fetching again or marking a cooled entry dirty, so it cannot consume this change.
-    if (entry.snapshotPromise) await entry.snapshotPromise
-    if (accountContext.currentUserId !== owner || entries.get(id) !== entry) return
-    if (payload) carried.push({ entry, payload })
-    else if (entry.listeners.size === 0) entry.dirty = true
-    else await fetchSnapshot(entry, true)
+    // A removed agent may no longer be viewable: that answer is recorded on its entry like any other read.
+    if (entry) await fetchSnapshot(entry)
   }))
-  const holdings = await readAgentHoldings(carried.map(({ payload }) => payload))
-  if (accountContext.currentUserId !== owner) return
-  for (const { entry, payload } of carried) {
-    if (entries.get(payload.agentUserId) !== entry || !shouldApplyAgentPresencePayload(entry.state.payload, payload)) continue
+}
+
+/**
+ * A presence channel subscribed (again): from now on it carries every change of these agents. Read their current
+ * values once, after subscribing, so no change between the read and the subscription is missed.
+ */
+export function coverAgentPresence(channel: string, agentUserIds: readonly string[]): void {
+  const ids = coverage.get(channel) ?? new Set<string>()
+  coverage.set(channel, ids)
+  extendAgentPresenceCoverage(channel, agentUserIds)
+}
+
+/** More agents came into a subscribed channel's scope (a new agent of mine, a new member): read those once. */
+export function extendAgentPresenceCoverage(channel: string, agentUserIds: readonly string[]): void {
+  const ids = coverage.get(channel)
+  if (!ids || !accountContext.currentUserId) return
+  for (const id of agentUserIds) {
+    if (!id || ids.has(id)) continue
+    ids.add(id)
+    const entry = entries.get(id) ?? createCooledEntry(id)
+    void fetchSnapshot(entry)
+  }
+  evictCooledEntries()
+}
+
+/** The channel closed, errored or is reconnecting: what it carried is no longer known to be current. */
+export function uncoverAgentPresence(channel: string): void {
+  coverage.delete(channel)
+}
+
+/** One broadcast from a presence channel. The channel carries this agent from now on. */
+export function applyAgentPresenceBroadcast(channel: string, raw: unknown): void {
+  const payload = parseAgentPresencePayload(raw)
+  if (!payload) throw new Error('Malformed agent presence broadcast')
+  const ids = coverage.get(channel)
+  if (!ids || !accountContext.currentUserId) return
+  ids.add(payload.agentUserId)
+  const entry = entries.get(payload.agentUserId) ?? createCooledEntry(payload.agentUserId)
+  if (!shouldApplyAgentPresencePayload(entry.state.payload, payload, 'event')) return
+  const owner = accountContext.currentUserId
+  void readAgentHoldings([payload]).then((holdings) => {
+    if (accountContext.currentUserId !== owner || entries.get(payload.agentUserId) !== entry) return
     entry.holding = holdings[payload.agentUserId] ?? null
     applyPayload(entry, payload, 'event')
-  }
+  })
+  evictCooledEntries()
 }
 
 /**
@@ -185,22 +205,24 @@ export async function refreshObservedAgentPresenceFromRevision(payloads: readonl
 export async function recheckUnseenAgentPresence(memberIds: readonly string[]): Promise<void> {
   await Promise.all([...new Set(memberIds)].map(async (id) => {
     const entry = entries.get(id)
-    if (!entry || !entry.state.error) return
-    if (entry.listeners.size === 0) entry.dirty = true
+    // 没人在看的不问:它不在任何频道里,下次有人看时自然会问一次(revive)。
+    if (!entry || !entry.state.error || entry.listeners.size === 0) return
     // 还是看不到也是正常的答案(另一个成员挪了读水位),照旧记在这一条上,❌ 当成修订失败抛出去。
-    else await fetchSnapshot(entry)
+    await fetchSnapshot(entry)
   }))
 }
 
 /**
- * 在线状态的两条修订都归这张表(❌ 归会话列表):`presence_changed` 刷新看过的 agent;`chat_members_changed`
- * —— 一个 agent 进了我在的群,它的状态我才看得到(80e),成员变了就重问上次没问到的那几个。返回一个退订。
+ * 状态本身不走账号修订(走状态频道,agentPresenceChannels)。账号修订里归这张表的只剩两件:
+ * `chat_members_changed` —— 一个 agent 进了我在的群,它的状态我才看得到(80e),成员变了就重问上次没问到的那几个;
+ * `presence_changed` —— 只剩「我的 agent 开始 / 不再等我」这一条边沿,是给手机推送读的,这里只认领(❌ 不认领会卡住
+ * 它后面的每一条修订),状态已经从主人频道到了。返回一个退订。
  */
 export function subscribeAgentPresenceRevisions(
   subscribe: (event: AccountRevisionEvent, listener: AccountRevisionListener) => () => void,
 ): () => void {
   const unsubscribes = [
-    subscribe('presence_changed', async (operations) => { await refreshObservedAgentPresenceFromRevision(operations.map((operation) => operation.payload)) }),
+    subscribe('presence_changed', () => undefined),
     subscribe('chat_members_changed', async (operations) => {
       await recheckUnseenAgentPresence(operations.map((operation) => readMemberRosterRevision(operation.payload))
         .flatMap((change) => (change.own || change.left || !change.memberId ? [] : [change.memberId])))
@@ -304,23 +326,11 @@ export function agentPresenceReadable(agentUserId: string): Readable<AgentPresen
   return readable
 }
 
-// @@@3839 D — 让缓存在任何视图挂载**之前**就是暖的:会话列表一解析出它的 agent 成员就调这里,
-// 之后无论用户先点进哪个 tab,那些 agent 都已被观测过。预热只建立知识、不建立订阅,所以预热出来的
-// entry 一开始就是冷却态,照常受 TTL/容量约束。
-export function prewarmAgentPresence(agentUserIds: readonly string[]): void {
-  const now = Date.now()
-  for (const agentUserId of agentUserIds) {
-    if (!agentUserId) continue
-    const existing = entries.get(agentUserId)
-    if (existing) {
-      if (existing.cooledAt !== null) existing.cooledAt = now
-      continue
-    }
-    const entry = createEntry(agentUserId)
-    entry.cooledAt = now
-    void fetchSnapshot(entry)
-  }
-  evictCooledEntries()
+/** Known, but nobody looks at it yet: a channel told us about it. Bounded like any cooled entry. */
+function createCooledEntry(agentUserId: string): Entry {
+  const entry = createEntry(agentUserId)
+  entry.cooledAt = Date.now()
+  return entry
 }
 
 function createEntry(agentUserId: string): Entry {
@@ -331,7 +341,6 @@ function createEntry(agentUserId: string): Entry {
     refCount: 0,
     snapshotPromise: null,
     holding: null,
-    dirty: false,
     cooledAt: null,
     local: null,
   }
@@ -347,23 +356,12 @@ function ensureEntry(agentUserId: string): Entry {
   return entry
 }
 
-// @@@3839 第一个订阅者到达:只在**值得**时才对账(离屏期间来过权威变更,或这份读数已经不新鲜)。
+// @@@3839 第一个订阅者到达:先推缓存值(subscribe 里),只有没被任何状态频道带着时才问一次(@@@presence-coverage)。
 // 全程不碰 status:'pending' —— 这个 agent 已经被观测过了。
-// @@@5912 冷却期间不再「攒时间差」:离屏时设备下线会作为一次边沿进到 dirty,而不是等这里按时钟补算。
 function revive(entry: Entry): void {
   entry.cooledAt = null
-  if (!entry.state.payload) return
-  // ⚠️ 新鲜度问的是「**上次听到服务端说话**是什么时候」,不是「上次动过这份 state」:
-  // lastUpdatedAt 会被本机叠加盖成 now,用它判新鲜会在最该问的时候判成「刚确认过」。
-  // 只有 lastSnapshotAt/lastEventAt 是观测时刻。
-  if (entry.dirty || Date.now() - lastObservedAt(entry.state) >= REVALIDATE_AFTER_MS) {
-    entry.dirty = false
-    void fetchSnapshot(entry)
-  }
-}
-
-function lastObservedAt(state: AgentPresenceState): number {
-  return Math.max(state.lastSnapshotAt ?? 0, state.lastEventAt ?? 0)
+  if (!entry.state.payload || isCovered(entry.agentUserId)) return
+  void fetchSnapshot(entry)
 }
 
 // @@@3839 最后一个订阅者离开:停下为它花网络,但**留着已知的事实**。
@@ -575,7 +573,7 @@ async function runSnapshotBatch(waiters: BatchWaiter[]): Promise<void> {
     }
     const holdings = await readAgentHoldings(ready.map(({ payload }) => payload))
     for (const { waiter, payload } of ready) {
-      if (entries.get(payload.agentUserId) === waiter.entry && shouldApplyAgentPresencePayload(waiter.entry.state.payload, payload)) {
+      if (entries.get(payload.agentUserId) === waiter.entry && shouldApplyAgentPresencePayload(waiter.entry.state.payload, payload, 'snapshot')) {
         waiter.entry.holding = holdings[payload.agentUserId] ?? null
         applyPayload(waiter.entry, payload, 'snapshot')
       }
@@ -612,7 +610,7 @@ function applyPayload(
   payload: AgentPresencePayload,
   source: 'snapshot' | 'event',
 ): void {
-  if (!shouldApplyAgentPresencePayload(entry.state.payload, payload)) return
+  if (!shouldApplyAgentPresencePayload(entry.state.payload, payload, source)) return
   const now = Date.now()
   const deviceOnline = computeDeviceOnline(payload)
   const reading = readingOf(payload, entry.local)
@@ -648,13 +646,18 @@ function applyPayload(
     lastSnapshotAt: source === 'snapshot' ? now : entry.state.lastSnapshotAt,
     lastEventAt: source === 'event' ? now : entry.state.lastEventAt,
   }
-  entry.dirty = false
   if (changed) notify(entry)
 }
 
+/**
+ * A broadcast that is not newer than what is held is dropped; a read of the same seq is the same state (it may carry
+ * newer recent actions, which travel without a broadcast) and is taken. Without seq on either side (a removed agent,
+ * an older backend) the row's updated_at orders them.
+ */
 export function shouldApplyAgentPresencePayload(
   current: AgentPresencePayload | null,
   incoming: AgentPresencePayload,
+  source: 'snapshot' | 'event',
 ): boolean {
   if (!current) return true
   if (current.accountStatus === 'removed') {
@@ -662,6 +665,7 @@ export function shouldApplyAgentPresencePayload(
       && Date.parse(incoming.updatedAt) >= Date.parse(current.updatedAt)
   }
   if (incoming.accountStatus === 'removed') return true
+  if (incoming.seq !== null && current.seq !== null) return source === 'event' ? incoming.seq > current.seq : incoming.seq >= current.seq
   return Date.parse(incoming.updatedAt) >= Date.parse(current.updatedAt)
 }
 

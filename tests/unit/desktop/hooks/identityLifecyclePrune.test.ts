@@ -15,7 +15,7 @@ const reads = vi.hoisted(() => ({ ids: [] as string[][] }))
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({
   readDisplayIdentities: vi.fn(async (ids: string[]) => { reads.ids.push([...ids].sort()); return [] }),
 }))
-vi.mock('../../../../apps/desktop/src/lib/agentPresenceStore', () => ({ refreshObservedAgentPresenceFromRevision: vi.fn(async () => {}) }))
+vi.mock('../../../../apps/desktop/src/lib/agentPresenceStore', () => ({ refetchAgentPresence: vi.fn(async () => {}) }))
 
 const { useIdentityLifecycle } = await import('../../../../apps/desktop/src/hooks/useIdentityLifecycle')
 const { openImRepository } = await import('../../../../apps/desktop/src/lib/imRepository')

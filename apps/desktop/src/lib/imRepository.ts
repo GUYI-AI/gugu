@@ -40,7 +40,6 @@ export type IdentityRow = LocalImRow & { id: string; value: DisplayIdentity }
 export type ChatRow = LocalImRow & { id: string; value: ChatItem }
 type ChatRowChanges = { changed: readonly ChatItem[]; deleted: readonly string[] }
 export type MembershipRow = LocalImRow & { chatId: string; identityId: string; value: EntityValue }
-export type PresenceRow = LocalImRow & { identityId: string; value: EntityValue }
 export type OutboxRow = LocalImRow & { id: string; value: OutboxRecord }
 export type ViewRow = LocalImRow & { key: string; value: unknown }
 export type SyncStateRow = LocalImRow & { key: string; value: unknown }
@@ -85,7 +84,6 @@ export interface ImRepositorySnapshot {
   identity: readonly IdentityRow[]
   chat: readonly ChatRow[]
   membership: readonly MembershipRow[]
-  presence: readonly PresenceRow[]
   outbox: readonly OutboxRow[]
   view: readonly ViewRow[]
   sync_state: readonly SyncStateRow[]
@@ -101,7 +99,6 @@ export interface ImRepositoryTransaction {
   putChat(id: string, value: ChatItem): void
   putMembership(chatId: string, identityId: string, value: EntityValue): void
   readView(key: string): unknown
-  putPresence(identityId: string, value: EntityValue): void
   putView(key: string, value: unknown): void
   putSyncState(key: string, value: unknown): void
   delete(store: ImStoreName, key: IDBValidKey): void
@@ -139,7 +136,6 @@ export const imSelectors = {
   chatRowsById: fromTable('chat', (rows) => new Map(rows.map(row => [row.id, row.value]))),
   membershipsForChat: (chatId: string) => fromTable('membership', (rows) =>
     rows.filter((row) => row.chatId === chatId)),
-  presence: (snapshot: ImRepositorySnapshot) => snapshot.presence,
   outbox: (snapshot: ImRepositorySnapshot) => snapshot.outbox
     .map((row) => row.value)
     .sort((a, b) => a.enqueuedAt.localeCompare(b.enqueuedAt)),
@@ -397,11 +393,6 @@ function createTransaction(accountId: string, operations: LocalImDbOperation[], 
       value,
     }),
     readView,
-    putPresence: (identityId, value) => put('presence', {
-      accountId,
-      identityId: nonEmpty(identityId, 'presence.identityId'),
-      value,
-    }),
     putView: (key, value) => put('view', { accountId, key: nonEmpty(key, 'view.key'), value }),
     putSyncState: (key, value) => put('sync_state', { accountId, key: nonEmpty(key, 'sync_state.key'), value }),
     delete: (store, key) => {
@@ -709,7 +700,6 @@ function tableIndex(store: ImStoreName, rows: readonly LocalImRow[]): Map<string
 function keyForRow(store: ImStoreName, row: LocalImRow): IDBValidKey {
   const value = row as Record<string, unknown>
   if (store === 'membership') return [value.accountId as string, value.chatId as string, value.identityId as string]
-  if (store === 'presence') return [value.accountId as string, value.identityId as string]
   if (store === 'view' || store === 'sync_state') return [value.accountId as string, value.key as string]
   return [value.accountId as string, value.id as string]
 }

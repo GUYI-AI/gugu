@@ -353,17 +353,6 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       const byChat = mergeUnreadRows((data ?? []) as Array<Record<string, unknown> & { chat_id: string }>)
       return indexExact(ids, byChat as Map<string, unknown>)
     },
-    presence: async (ids, signal) => {
-      const { data, error } = await identityDb.rpc('get_agent_presence_batch', { p_agent_user_ids: [...ids] }).abortSignal(signal)
-      if (error) throw new Error(error.message)
-      const byId = new Map<string, unknown>()
-      for (const row of (data ?? []) as Array<Record<string, unknown>>) {
-        const id = String(row.agent_user_id ?? row.user_id ?? '')
-        if (id) byId.set(id, { id, online: row.is_online === true || row.online === true })
-      }
-      // presence 缺行 = 不在线,不是「读不到」⇒ 显式投影成 offline,❌ 留 undefined 让 UI 猜。
-      return new Map([...ids].map((id) => [id, byId.get(id) ?? { id, online: false }]))
-    },
     preview: async (ids, signal, onReferenceRead) => {
       // @@@chat-list-visibility — list_chat_previews 是 security invoker 的函数 ⇒ 走 `messages` 那套 RLS
       // (成员门 + `hide_history_before` 门 + whisper 门),列表 preview 与 transcript 消费同一成员可见性。

@@ -482,11 +482,11 @@ describe('stale subscription watchdog', () => {
     fakeChannel._subscribe('SUBSCRIBED')
   }
   it('does NOT reconnect when a real broadcast refreshed lastEventAt (the #840 fix)', async () => {
-    await subscribeAndJoin('agent:a2:presence')
+    await subscribeAndJoin('presence:chat:c2')
     // Age it stale, then deliver a real broadcast — the layer-owned wildcard listener must bump
     // lastEventAt back to now. Without the fix the broadcast would not bump it → still stale.
-    expect(_simulateStaleSubscriptionForTesting('agent:a2:presence')).toBe(true)
-    fakeChannel._broadcast('presence_changed', { agentUserId: 'a2' })
+    expect(_simulateStaleSubscriptionForTesting('presence:chat:c2')).toBe(true)
+    fakeChannel._broadcast('agent_presence', { presence: { agent_user_id: 'a2' } })
     runStaleSubscriptionCheck()
     expect(listRealtimeChannelRegistry()[0]).toMatchObject({ status: 'subscribed' })
   })

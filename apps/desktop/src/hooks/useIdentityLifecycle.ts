@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { pruneUnreferencedIdentities, referencedIdentityIds, type AccountImRepository } from '../lib/imRepository'
 import { readDisplayIdentities } from '../lib/identityReadAdapter'
-import { refreshObservedAgentPresenceFromRevision } from '../lib/agentPresenceStore'
+import { refetchAgentPresence } from '../lib/agentPresenceStore'
 import { dataClient } from '../lib/supabase'
 import { subscribeAuthenticatedRealtimeChannel, unsubscribeAuthenticatedRealtimeChannel } from '../lib/realtimeChannel'
 import { UI_EVENTS } from '../lib/uiEvents'
@@ -39,7 +39,7 @@ export function useIdentityLifecycle(userId: string | null | undefined, getRepos
       const ids = id === null ? [...known] : [id]
       await Promise.all([
         readDisplayIdentities(ids).then(rows => { if (active) return repository.putIdentities(rows) }),
-        refreshObservedAgentPresenceFromRevision(ids.map(agent_user_id => ({ agent_user_id }))),
+        refetchAgentPresence(ids),
         ...(id === null ? [] : [reloadRef.current()]),
       ])
       if (active) window.dispatchEvent(new CustomEvent(UI_EVENTS.identityInvalidated, { detail: { id } }))
