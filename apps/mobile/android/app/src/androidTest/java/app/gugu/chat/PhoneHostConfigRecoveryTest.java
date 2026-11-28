@@ -17,7 +17,6 @@ import org.junit.runner.RunWith;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.UUID;
 import static org.junit.Assert.*;
 
@@ -42,6 +41,7 @@ public class PhoneHostConfigRecoveryTest {
             @Override public SharedPreferences getSharedPreferences(String name, int mode) {
                 return super.getSharedPreferences(prefix + name, mode);
             }
+            @Override public boolean deleteSharedPreferences(String name) { return super.deleteSharedPreferences(prefix + name); }
         };
     }
 
@@ -53,7 +53,7 @@ public class PhoneHostConfigRecoveryTest {
     private File snapshot() { return new File(context.getFilesDir(), "phone-agent/" + owner + "/host-state.json"); }
     private static void write(File file, byte[] bytes) throws IOException {
         if (!file.getParentFile().isDirectory()) assertTrue(file.getParentFile().mkdirs());
-        Files.write(file.toPath(), bytes);
+        NativeTestFiles.write(file, bytes);
     }
     private JSObject config(String session, int revision, long expiresAt) throws Exception {
         String claims = new JSONObject().put("session_id", session).put("revision", revision).toString();
@@ -65,8 +65,8 @@ public class PhoneHostConfigRecoveryTest {
     private void commitSession(JSObject config, String savedOwner) throws Exception {
         JSONObject session = new JSONObject().put("user", new JSONObject().put("id", savedOwner))
             .put("access_token", config.getString("accessToken")).put("refresh_token", config.getString("refreshToken"));
-        assertTrue(context.getSharedPreferences("gugu-auth-storage", Context.MODE_PRIVATE).edit().putString("sb-main",
-            new JSONObject().put("state", "SESSION").put("raw", session.toString()).toString()).commit());
+        new AndroidAuthStore(context).put("sb-main",
+            new JSONObject().put("state", "SESSION").put("raw", session.toString()).toString());
     }
     private void assertUnreadable() throws Exception {
         try { GuguAgentHostStore.read(context, owner); fail("Nonempty corrupt credentials were accepted"); }
@@ -82,9 +82,9 @@ public class PhoneHostConfigRecoveryTest {
         assertNull(GuguAgentHostStore.read(context, owner));
         GuguAgentHostStore.configure(context, input);
         assertEquals(input.getString("refreshToken"), GuguAgentHostStore.read(context, owner).getString("refreshToken"));
-        byte[] saved = Files.readAllBytes(credentials().toPath());
+        byte[] saved = NativeTestFiles.read(credentials());
         GuguAgentHostStore.read(context, owner);
-        assertArrayEquals(saved, Files.readAllBytes(credentials().toPath()));
+        assertArrayEquals(saved, NativeTestFiles.read(credentials()));
         assertArrayEquals(new String[] { "config.enc" }, credentials().getParentFile().list());
     }
 
@@ -108,8 +108,7 @@ public class PhoneHostConfigRecoveryTest {
     @Test public void emptyCredentialsCannotReviveRetiredOrOtherOwnerSessions() throws Exception {
         JSObject input = config(UUID.randomUUID().toString(), 1, 100);
         write(credentials(), new byte[0]);
-        context.getSharedPreferences("gugu-auth-storage", Context.MODE_PRIVATE).edit()
-            .putString("sb-main", "{\"state\":\"RETIRED_EMPTY\"}").commit();
+        new AndroidAuthStore(context).put("sb-main", "{\"state\":\"RETIRED_EMPTY\"}");
         try { GuguAgentHostStore.configure(context, input); fail("Retired session was restored"); }
         catch (SecurityException expected) { }
         commitSession(input, UUID.randomUUID().toString());
@@ -124,7 +123,7 @@ public class PhoneHostConfigRecoveryTest {
             bad[0] = length == 29 ? (byte) 11 : (byte) 12;
             write(credentials(), bad);
             assertUnreadable();
-            assertArrayEquals(bad, Files.readAllBytes(credentials().toPath()));
+            assertArrayEquals(bad, NativeTestFiles.read(credentials()));
         }
     }
 
@@ -132,13 +131,13 @@ public class PhoneHostConfigRecoveryTest {
         JSObject input = config(UUID.randomUUID().toString(), 1, 100);
         commitSession(input, owner);
         GuguAgentHostStore.configure(context, input);
-        byte[] bad = Files.readAllBytes(credentials().toPath());
+        byte[] bad = NativeTestFiles.read(credentials());
         bad[bad.length - 1] ^= 1;
         write(credentials(), bad);
         assertUnreadable();
         try { GuguAgentHostStore.configure(context, input); fail("Corrupt credentials were silently replaced"); }
         catch (SecurityException expected) { }
-        assertArrayEquals(bad, Files.readAllBytes(credentials().toPath()));
+        assertArrayEquals(bad, NativeTestFiles.read(credentials()));
     }
 
     @Test public void fileIoFailureIsNotTreatedAsMissingCredentials() throws Exception {
@@ -158,6 +157,23 @@ public class PhoneHostConfigRecoveryTest {
         assertEquals(latest.getString("accessToken"), saved.getString("accessToken"));
         assertEquals(latest.getString("refreshToken"), saved.getString("refreshToken"));
         assertEquals(200, saved.optLong("expiresAt"));
+    }
+
+    @Test public void lateHostRefreshCannotOverwriteBOrReviveRetiredLogin() throws Exception {
+        JSObject first = config(UUID.randomUUID().toString(), 1, 100);
+        commitSession(first, owner); GuguAgentHostStore.configure(context, first);
+        JSObject renewed = config(UUID.randomUUID().toString(), 2, 200);
+        JSONObject late = new JSONObject().put("user", new JSONObject().put("id", owner))
+            .put("access_token", renewed.getString("accessToken")).put("refresh_token", renewed.getString("refreshToken"));
+        commitSession(renewed, UUID.randomUUID().toString());
+        String before = new AndroidAuthStore(context).get("sb-main");
+        try { GuguAgentHostStore.updateSession(context, owner, late); fail("A host overwrote B's login"); }
+        catch (SecurityException expected) { }
+        assertEquals(before, new AndroidAuthStore(context).get("sb-main"));
+        new AndroidAuthStore(context).put("sb-main", "{\"state\":\"RETIRED_EMPTY\"}");
+        try { GuguAgentHostStore.updateSession(context, owner, late); fail("A host revived a retired login"); }
+        catch (SecurityException expected) { }
+        assertEquals("{\"state\":\"RETIRED_EMPTY\"}", new AndroidAuthStore(context).get("sb-main"));
     }
 
     @Test public void invalidSnapshotIsNeverReturnedAsAnEmptySessionListOrDeletedByClear() throws Exception {

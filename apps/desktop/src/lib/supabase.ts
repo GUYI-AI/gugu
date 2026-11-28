@@ -14,6 +14,8 @@ type NativeAuthStorage = {
   get(options: { key: string }): Promise<{ value: string | null }>
   write(options: { key: string; value: string }): Promise<void>
   remove(options: { key: string }): Promise<void>
+  recoveryState(): Promise<{ canReset: boolean; revision: string }>
+  resetUnreadable(options: { revision: string }): Promise<void>
 }
 const nativeAuthStorage = registerPlugin<NativeAuthStorage>('GuguAuthStorage')
 let storageTail = Promise.resolve()
@@ -98,6 +100,17 @@ export const mainAuthSessionStorage = {
     setItem: (key, value) => { if (isAuthTemporaryStorageKey(key)) return mainAuthTemporaryStorage.setItem(key, value) },
     removeItem: (key) => { if (isAuthTemporaryStorageKey(key)) return mainAuthTemporaryStorage.removeItem(key) },
   } satisfies GuguSupabaseStorage,
+  recoveryState: () => ordered(() => nativeAuthStorage.recoveryState()),
+  resetUnreadable(revision: string, signal: AbortSignal): Promise<void> {
+    return ordered(async () => {
+      if (signal.aborted) throw new Error('Auth recovery cancelled')
+      await nativeAuthStorage.resetUnreadable({ revision })
+      // Native has committed RETIRED_EMPTY before discarding the obsolete WebView copy.
+      cleanLegacyStorage()
+      if (legacyCleanup !== null) throw Object.assign(new Error('Legacy cleanup incomplete'), { code: 'auth_storage_unavailable' })
+      bootCandidate = null
+    })
+  },
   getState: () => ({ bootCandidate, warning: legacyCleanup === null ? null : new Error('Legacy auth storage cleanup pending') }),
   commit(session: Session, signal: AbortSignal): Promise<void> {
     return ordered(async () => {

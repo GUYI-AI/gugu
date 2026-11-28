@@ -1,21 +1,13 @@
 package app.gugu.chat;
 
 import android.content.Context;
-import android.security.keystore.KeyGenParameterSpec;
-import android.security.keystore.KeyProperties;
 import com.getcapacitor.JSObject;
 import org.json.JSONException;
 import org.json.JSONObject;
 import java.io.File;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.security.KeyStore;
-import javax.crypto.Cipher;
 import javax.crypto.AEADBadTagException;
-import javax.crypto.KeyGenerator;
-import javax.crypto.SecretKey;
-import javax.crypto.spec.GCMParameterSpec;
 
 /** Owner credentials never enter an Intent, public runtime state, logs, or Android backup. */
 final class GuguAgentHostStore {
@@ -34,7 +26,7 @@ final class GuguAgentHostStore {
         JSObject previous = read(context, owner);
         JSONObject committed;
         synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
-            String raw = context.getSharedPreferences("gugu-auth-storage", Context.MODE_PRIVATE).getString("sb-main", null);
+            String raw = new AndroidAuthStore(context).get("sb-main");
             if (raw == null) throw new SecurityException("登录会话尚未保存，不能启用手机宿主");
             JSONObject envelope = new JSONObject(raw);
             if (!"SESSION".equals(envelope.optString("state"))) throw new SecurityException("账号已退出，旧宿主不能恢复登录");
@@ -71,15 +63,9 @@ final class GuguAgentHostStore {
         }
         // The envelope contains a length byte, a 12-byte IV and a 16-byte GCM tag.
         if (bytes.length < 29 || (bytes[0] & 0xff) != 12) throw new SecurityException(UNREADABLE);
-        ByteBuffer body = ByteBuffer.wrap(bytes);
-        int length = body.get() & 0xff;
-        byte[] iv = new byte[length]; body.get(iv);
-        byte[] encrypted = new byte[body.remaining()]; body.get(encrypted);
-        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(128, iv));
-        cipher.updateAAD(GuguAgentHostPolicy.owner(owner).getBytes(StandardCharsets.UTF_8));
         try {
-            JSObject config = new JSObject(new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8));
+            JSObject config = new JSObject(new String(GcmRecord.decrypt(bytes, GuguAgentHostPolicy.owner(owner).getBytes(StandardCharsets.UTF_8),
+                create -> PlatformSecretKey.get(KEY, create)), StandardCharsets.UTF_8));
             config.put("allowLocalHttp", BuildConfig.DEBUG && BuildConfig.GUGU_ALLOW_LOCAL_HTTP);
             GuguAgentHostPolicy.endpoint(config.optString("supabaseUrl"), BuildConfig.DEBUG && BuildConfig.GUGU_ALLOW_LOCAL_HTTP);
             return config;
@@ -94,8 +80,8 @@ final class GuguAgentHostStore {
         if (user == null || !owner.equals(user.optString("id"))) throw new SecurityException("登录会话不属于当前账号");
         if (session.optString("access_token").isEmpty() || session.optString("refresh_token").isEmpty()) throw new SecurityException("登录会话缺少凭据");
         synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
-            var storage = context.getSharedPreferences("gugu-auth-storage", Context.MODE_PRIVATE);
-            String current = storage.getString("sb-main", null);
+            var storage = new AndroidAuthStore(context);
+            String current = storage.get("sb-main");
             if (current != null) {
                 JSONObject existing = new JSONObject(current);
                 if (!"SESSION".equals(existing.optString("state"))) throw new SecurityException("账号已退出，旧宿主不能恢复登录");
@@ -110,7 +96,7 @@ final class GuguAgentHostStore {
             save(context, owner, config);
             // This is the existing native Supabase storage contract, not a public host-state event.
             JSONObject envelope = new JSONObject().put("state", "SESSION").put("raw", session.toString());
-            if (!storage.edit().putString("sb-main", envelope.toString()).commit()) throw new IllegalStateException("无法保存续期后的登录会话");
+            storage.put("sb-main", envelope.toString());
         }
         return config;
     }
@@ -122,15 +108,11 @@ final class GuguAgentHostStore {
     }
 
     private static void save(Context context, String owner, JSONObject config) throws Exception {
-        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.ENCRYPT_MODE, key());
-        cipher.updateAAD(owner.getBytes(StandardCharsets.UTF_8));
-        byte[] encrypted = cipher.doFinal(config.toString().getBytes(StandardCharsets.UTF_8));
-        byte[] iv = cipher.getIV();
-        ByteBuffer body = ByteBuffer.allocate(1 + iv.length + encrypted.length).put((byte) iv.length).put(iv).put(encrypted);
+        byte[] bytes = GcmRecord.encrypt(config.toString().getBytes(StandardCharsets.UTF_8),
+            owner.getBytes(StandardCharsets.UTF_8), create -> PlatformSecretKey.get(KEY, create));
         File target = file(context, owner);
         if (!target.getParentFile().isDirectory() && !target.getParentFile().mkdirs()) throw new IllegalStateException("无法创建手机宿主凭据目录");
-        DurableFile.write(target, body.array());
+        DurableFile.write(target, bytes);
     }
 
     private static File file(Context context, String owner) { return new File(context.getNoBackupFilesDir(), "phone-agent-host/" + GuguAgentHostPolicy.owner(owner) + "/config.enc"); }
@@ -141,13 +123,5 @@ final class GuguAgentHostStore {
         String id = claims.optString("session_id");
         if (id.isEmpty()) throw new SecurityException("登录凭据缺少会话标识");
         return id;
-    }
-    private static SecretKey key() throws Exception {
-        KeyStore store = KeyStore.getInstance("AndroidKeyStore"); store.load(null);
-        if (store.containsAlias(KEY)) return (SecretKey) store.getKey(KEY, null);
-        KeyGenerator generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
-        generator.init(new KeyGenParameterSpec.Builder(KEY, KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
-            .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build());
-        return generator.generateKey();
     }
 }

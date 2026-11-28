@@ -9,6 +9,7 @@ import { refreshSshMachines } from './sshLinkChannel'
 import { MAIN_AUTH_STORAGE_KEY, mainAuthSessionStorage, supabase } from './supabase'
 import { phoneHostAuthAvailable, phoneHostGetSession, phoneHostRefreshSession, phoneHostRestoreSession, phoneHostSignOut, setPhoneHostAuthHandoffBarrier, forgetClosedPhoneHostSession } from './phoneHostAuth'
 import { platform } from '../platform'
+import { authStorageRecoveryAction } from './authStorageFailure'
 import type { AuthUser } from '../store/auth'
 import { ingestMessages } from './messageIngest'
 
@@ -31,6 +32,7 @@ export interface SessionCoordinatorDeps {
   getPersistedSessionState: () => { bootCandidate: Session | null; warning: Error | null }
   commitPersistedSession: (session: Session, signal: AbortSignal) => Promise<void>
   clearPersistedSession: (session: Session, signal: AbortSignal) => Promise<void>
+  resetUnreadableStorage?: (revision: string, signal: AbortSignal) => Promise<void>
   clearClosedAccountCache?: (ownerId: string) => Promise<void>
   clearClosedOwnerMemory?: (ownerId: string) => void
   subscribeAppForeground: (listener: () => void, onError: (error: unknown) => void) => () => void
@@ -195,6 +197,24 @@ export class SessionCoordinator {
       timer = setTimeout(finish, Math.max(0, waitMs))
       unsubscribe = this.subscribe(() => { if (this.snapshot.status !== 'boot-restoring') finish() })
     })
+  }
+
+  async retryAuthStorage(): Promise<void> {
+    if (!this.active || !authStorageRecoveryAction(this.snapshot.error)) return
+    if (this.restoreFlight) return this.restoreFlight.settled
+    await this.restore()
+  }
+  async resetUnreadableAuthStorage(revision: string): Promise<void> {
+    const expected = this.snapshot
+    const changed = () => Object.assign(new Error('Login recovery state changed'), { code: 'auth_storage_unavailable' })
+    if (!this.active || authStorageRecoveryAction(expected.error) !== 'relogin' || !this.deps.resetUnreadableStorage) throw changed()
+    const generation = this.nextGeneration()
+    await this.captureAuthHandoff()
+    if (!this.generationIsCurrent(generation) || this.snapshot !== expected) throw changed()
+    await this.deps.resetUnreadableStorage(revision, this.generationAbort.signal)
+    if (!this.generationIsCurrent(generation) || this.snapshot !== expected) throw changed()
+    this.deps.publishSession('AUTH_STORAGE_RESET', null)
+    this.setSnapshot({ status: 'anonymous', session: null, user: null, error: null })
   }
 
   beginInteractiveLogin(): number { return ++this.interactiveAttempt }
@@ -363,7 +383,12 @@ export class SessionCoordinator {
       settle(); handoff()
     }
     try {
-      await this.deps.loadPersistedSession()
+      try { await this.deps.loadPersistedSession() }
+      catch (error) {
+        if (authStorageRecoveryAction(error) !== 'retry' || !this.generationIsCurrent(generation)) throw error
+        // One local read retry only; persistent failures wait for the user's Retry action.
+        await this.deps.loadPersistedSession()
+      }
       if (!this.generationIsCurrent(generation)) return
       const candidate = this.deps.getPersistedSessionState().bootCandidate
       if (candidate && this.snapshot.session?.user.id !== candidate.user.id) {
@@ -396,6 +421,7 @@ export class SessionCoordinator {
    */
   private async authCallFailed(error: unknown, fallback: string, session: Session | null, expiredEvent: string,
     purpose: RetryPurpose, work: Work, retry: () => void | Promise<unknown>): Promise<void> {
+    if (authStorageRecoveryAction(error)) { this.degrade(errorOf(error, fallback)); return }
     if (isPermanentAuthError(error)) { await this.transitionWithoutSession('expired', expiredEvent, session); return }
     this.degrade(errorOf(error, fallback))
     this.scheduleRetry(purpose, work, retry)
@@ -685,6 +711,7 @@ export const sessionCoordinator = new SessionCoordinator({
   clearMirror: clearHostMirror,
   loadPersistedSession: () => Promise.resolve(mainAuthSessionStorage.storage.getItem(MAIN_AUTH_STORAGE_KEY)),
   getPersistedSessionState: () => mainAuthSessionStorage.getState(),
+  resetUnreadableStorage: (revision, signal) => mainAuthSessionStorage.resetUnreadable(revision, signal),
   commitPersistedSession: (session, signal) => mainAuthSessionStorage.commit(session, signal),
   clearPersistedSession: (session, signal) => mainAuthSessionStorage.remove(session, signal),
   clearClosedAccountCache: async ownerId => {

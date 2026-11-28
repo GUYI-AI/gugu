@@ -1018,6 +1018,17 @@ export default {
     "newAgent": "Create agent",
     "newTask": "New task",
     "usage": "Usage",
+    "authStorage": {
+      "unreadable": "Your login information cannot be read. Please sign in again.",
+      "unavailable": "Your login information is temporarily unavailable. Please try again.",
+      "closurePending": "We cannot yet confirm whether account deletion has finished. Select Retry to continue.",
+      "relogin": "Sign in again",
+      "retry": "Retry",
+      "titleUnreadable": "Sign in again",
+      "titleUnavailable": "Unable to restore your login",
+      "titleClosure": "Account deletion is not yet confirmed",
+      "localOnly": "Only this phone’s login is cleared. Your conversations and data stay in the cloud."
+    },
     "sessionExpired": {
       "description": "Retrying automatically. Messages cannot be sent and agents cannot be created until the connection is restored.",
       "title": "Cannot connect to the server"

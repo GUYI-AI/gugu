@@ -998,6 +998,17 @@ export default {
     "newAgent": "创建智能体",
     "newTask": "新建任务",
     "usage": "用量",
+    "authStorage": {
+      "unreadable": "登录信息无法读取，需要重新登录。",
+      "unavailable": "暂时无法读取登录信息，请重试。",
+      "closurePending": "还不能确认账号是否已注销，请点重试继续。",
+      "relogin": "重新登录",
+      "retry": "重试",
+      "titleUnreadable": "需要重新登录",
+      "titleUnavailable": "登录暂时遇到问题",
+      "titleClosure": "注销还未确认",
+      "localOnly": "只清除本机登录信息，会话和数据都在云端"
+    },
     "sessionExpired": {
       "description": "正在自动重试。恢复连接前，无法发送消息或新建 agent。",
       "title": "无法连接服务器"

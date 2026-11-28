@@ -2,4 +2,6 @@
 <full-backup-content>
     <!-- Tool consent belongs to this installation; its identity lives in no_backup. -->
     <exclude domain="sharedpref" path="phone-agent-grants.xml" />
+    <exclude domain="sharedpref" path="gugu-auth-storage.xml" />
+    <exclude domain="root" path="shared_prefs/gugu-auth-storage.xml.bak" />
 </full-backup-content>

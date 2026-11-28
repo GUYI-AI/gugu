@@ -11,7 +11,7 @@ final class GuguPhoneRegistration {
     static String resolve(Context context, PhoneInstallationIdentity.Identity installation, String suppliedOwner, String cachedId, String cachedBinding) throws Exception {
         String owner = GuguAgentHostPolicy.owner(suppliedOwner);
         synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
-            String raw = context.getSharedPreferences("gugu-auth-storage", Context.MODE_PRIVATE).getString("sb-main", null);
+            String raw = new AndroidAuthStore(context).get("sb-main");
             if (raw == null) throw new IOException("手机登录尚未保存，无法迁移设备登记");
             JSONObject envelope = new JSONObject(raw);
             if (!"SESSION".equals(envelope.optString("state")) || !owner.equals(new JSONObject(envelope.getString("raw")).getJSONObject("user").optString("id")))
