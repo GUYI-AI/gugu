@@ -1749,7 +1749,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     isActive: (element) => !!store && !!element && !!rootRef.current?.contains(element),
     getCommands: () => (['chat.scrollToTop', 'chat.scrollToBottom'] as const).map((id) => ({
       id,
-      execute: () => !isEditableElement(deepActiveElement()) && executeChatViewCommand(viewRef.current, id),
+      execute: () => (id === 'chat.scrollToBottom' || !isEditableElement(deepActiveElement())) && executeChatViewCommand(viewRef.current, id),
     })),
   });
 

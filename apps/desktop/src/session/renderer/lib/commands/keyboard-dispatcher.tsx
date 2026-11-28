@@ -87,6 +87,11 @@ function dispatchIn(event: KeyboardEvent, source: KeySource): boolean {
     const bindings = [getEffectiveHotkey(id, overrides), ...effectiveAliases(id, overrides)];
     const match = bindings.find(binding => {
       if (!binding) return false;
+      // Option changes event.key on macOS; the bracket keys still navigate the timeline.
+      if ((id === 'session.timelinePrev' && binding === 'Alt+[') || (id === 'session.timelineNext' && binding === 'Alt+]')) {
+        return event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey &&
+          event.code === (id === 'session.timelinePrev' ? 'BracketLeft' : 'BracketRight');
+      }
       if (typeof binding === 'string') return matchesKeyboardEvent(event, binding as Hotkey, PLATFORM);
       return binding.region === 'navigation' && !!start?.closest(`[data-region="left-sidebar"], [data-region="${SESSION_NAV_FOCUS_REGION}"]`) &&
         event.key === binding.character && !event.metaKey && (!event.ctrlKey || event.getModifierState('AltGraph'));

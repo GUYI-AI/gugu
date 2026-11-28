@@ -6,9 +6,10 @@ import { useCommandProvider } from '@renderer/lib/commands/use-command-provider'
 export const GroupRenameContext = createContext<{ request: number } | null>(null)
 
 /** Commands reveal the chat's info and its name's editor there; all validation and saving stay there. */
-export function useChatCommands({ chatId, isGroup, visible, surface, openSettings, snapshot }: {
+export function useChatCommands({ chatId, isGroup, visible, surface, openSettings, jumpToLatest, snapshot }: {
   chatId: string | null; isGroup: boolean; visible: boolean; surface: RefObject<HTMLElement | null>
   snapshot: GroupCollabSnapshot | null
+  jumpToLatest: () => void
   openSettings: () => void
 }) {
   const { settings } = useGroupChatSettings(isGroup ? chatId : null, groupRoleRevision(snapshot))
@@ -17,7 +18,8 @@ export function useChatCommands({ chatId, isGroup, visible, surface, openSetting
     scopeId: 'session-sub',
     surface: 'shell',
     isActive: (element) => visible && !!element && !!surface.current?.contains(element),
-    getCommands: () => settings?.can_manage !== true ? [] : [{
+    getCommands: () => [{ id: 'chat.scrollToBottom', execute: jumpToLatest }, {
+      enabled: settings?.can_manage === true,
       id: 'chat.rename', execute: () => {
         setRename((current) => ({ chatId, count: current.count + 1 }))
         openSettings()

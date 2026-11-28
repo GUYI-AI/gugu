@@ -137,6 +137,7 @@ const BlockSlot = observer(function BlockSlot({ blockId }: { blockId: string }) 
     <div
       className="relative flex h-full w-full min-h-0 min-w-0 flex-1 flex-col bg-[var(--screen-ground,var(--color-background))]"
       style={{ anchorName: blockAnchorName(blockId) } as CSSProperties}
+      tabIndex={-1}
       data-screen-block={blockId}
       onPointerDownCapture={() => focusScreenBlock(blockId)}
     >

@@ -182,14 +182,6 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     // activeChatId is unchanged — so isAtBottomRef doesn't stay stale-false from a prior scroll-up.
   }, [activeChatId, isRoomChatSurface, openNonce, closeRightSurfaces, messageProfile.card])
 
-  const groupRename = useChatCommands({
-    chatId: activeChatId, visible: surfaceVisible, surface: surfaceElement,
-    isGroup: isGroupChat, snapshot: groupCollabSnapshot,
-    openSettings: handleOpenSettingsDrawer,
-  })
-
-
-
   // A chat's tabs (a group's, a topic's, a private chat's — 主人 10-05) hold Apps' pages and files, the folder among them
   // (真源 §2.4), beside the messages on the task's tab engine (chat-tabs/chat-layouts): asked of the chat every way in.
   const opener = useChatOpener(activeChatId, undefined, undefined, activeChat?.source_chat_id ?? activeChatId) // a topic's files are its source line's
@@ -282,6 +274,12 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const { pinToBottom } = useTailPinning({ resetKey: chatResetKey, messages: listedMessages,
     enabled: !unreadNavigationPending, messageWindow, scrollerRef, listRef, isAtBottomRef,
     isPreservingPosition, prepareForSavedPosition, forgetSavedPosition, returnToLatest: returnToLatestMessages, onError: onHistoryError })
+
+  const groupRename = useChatCommands({
+    chatId: activeChatId, visible: surfaceVisible, surface: surfaceElement,
+    isGroup: isGroupChat, snapshot: groupCollabSnapshot,
+    openSettings: handleOpenSettingsDrawer, jumpToLatest: pinToBottom,
+  })
 
   const handleReaction = useCallback((messageId: string, emoji: string) => {
     void toggleReaction(messageId, emoji).catch((error) => toast(t('message.actions.react'), 'error', safeFailureLine(String((error as Error)?.message ?? error))))

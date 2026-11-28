@@ -449,7 +449,7 @@ describe('BrowserWebContentsRegistry', () => {
         webContents.emitEvent('before-input-event', ev, {
           type: 'keyDown',
           key: 'P',
-          shift: false,
+          shift: true,
           alt: false,
           ...mod,
         });
@@ -477,7 +477,7 @@ describe('BrowserWebContentsRegistry', () => {
           webContents.emitEvent('before-input-event', ev, {
             type: 'keyDown',
             key: 'P',
-            shift: false,
+            shift: true,
             alt: false,
             ...mod,
           });
