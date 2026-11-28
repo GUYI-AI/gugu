@@ -47,7 +47,11 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
   const [editingKey, setEditingKey] = useState<CommandId | null>(null);
 
   const rejectConflict = (owner: CommandId) => {
-    toast({ title: translate('keyboard.conflictTitle'), description: translate('keyboard.conflictDescription', { label: commandLabel(owner) }), variant: 'destructive' });
+    toast({
+      title: translate('keyboard.conflictTitle'),
+      description: translate('keyboard.conflictDescription', { label: commandLabel(owner) }),
+      variant: 'destructive',
+    });
     recorder.cancelRecording();
     setEditingKey(null);
   };
