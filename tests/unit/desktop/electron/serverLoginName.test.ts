@@ -81,6 +81,28 @@ async function login(args: string[], lines: string[] = [], rest?: (request: Requ
   return runServerLogin(line => lines.push(line), args)
 }
 
+const adoptionMarker = '2026-11-28T00:00:00Z'
+
+async function loginWithAlias(row: { device_id: string; label: string; label_customized_at: string | null }, alias: string) {
+  const patch = vi.fn(async (request: Request) => {
+    const url = new URL(request.url)
+    expect([request.method, url.pathname]).toEqual(['PATCH', '/rest/v1/gugu_devices'])
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      device_id: `eq.${row.device_id}`, label_customized_at: 'is.null', label: `neq.${alias}`, select: 'device_id',
+    })
+    const change = await request.json() as { label: string; label_customized_at: string; updated_at: string }
+    expect(change).toEqual({ label: alias, label_customized_at: 'now', updated_at: 'now' })
+    if (row.label_customized_at !== null || row.label === change.label) return Response.json([])
+    row.label = change.label
+    row.label_customized_at = adoptionMarker
+    return Response.json([{ device_id: row.device_id }])
+  })
+  expect(await login(['--grant-stdin', '--name', alias], [], patch)).toBe(0)
+  expect(patch).toHaveBeenCalledOnce()
+  await expect(patch.mock.results[0].value).resolves.toBeInstanceOf(Response)
+  expect(devices.renameDevice).not.toHaveBeenCalled()
+}
+
 describe('#6264 gugu-server login --grant-stdin --name', () => {
   it('refuses an unmigrated layout before consuming the grant or requesting tokens', async () => {
     layout.checkLayout.mockImplementation(() => { throw new Error('Run gugu-server start to migrate one@example.test') })
@@ -118,25 +140,18 @@ describe('#6264 gugu-server login --grant-stdin --name', () => {
     { previous: 'Linux 2', marker: '2026-10-01T00:00:00Z', expected: 'Linux 2' },
     { previous: 'd22', marker: null, expected: 'd22' },
   ])('adopts a new alias for $previous only when the stored marker permits it', async ({ previous, marker, expected }) => {
-    const row = { label: previous, label_customized_at: marker }
-    const patch = vi.fn(async (request: Request) => {
-      const url = new URL(request.url)
-      expect([request.method, url.pathname]).toEqual(['PATCH', '/rest/v1/gugu_devices'])
-      expect(Object.fromEntries(url.searchParams)).toEqual({
-        device_id: 'eq.dev-1', label_customized_at: 'is.null', label: 'neq.d22', select: 'device_id',
-      })
-      const change = await request.json() as { label: string; label_customized_at: string; updated_at: string }
-      expect(change).toEqual({ label: 'd22', label_customized_at: 'now', updated_at: 'now' })
-      if (row.label_customized_at !== null || row.label === change.label) return Response.json([])
-      row.label = change.label
-      row.label_customized_at = 'database timestamp'
-      return Response.json([{ device_id: 'dev-1' }])
-    })
-    expect(await login(['--grant-stdin', '--name', 'd22'], [], patch)).toBe(0)
-    expect(patch).toHaveBeenCalledOnce()
-    await expect(patch.mock.results[0].value).resolves.toBeInstanceOf(Response)
-    expect(row).toEqual({ label: expected, label_customized_at: previous === expected ? marker : 'database timestamp' })
-    expect(devices.renameDevice).not.toHaveBeenCalled()
+    const row = { device_id: 'dev-1', label: previous, label_customized_at: marker }
+    await loginWithAlias(row, 'd22')
+    expect(row).toMatchObject({ label: expected, label_customized_at: previous === expected ? marker : adoptionMarker })
+  })
+
+  it('keeps the first adopted alias and its marker on a later SSH login for the same device', async () => {
+    const row = { device_id: 'dev-1', label: 'old-alias', label_customized_at: null }
+    await loginWithAlias(row, 'first-alias')
+    expect(row).toEqual({ device_id: 'dev-1', label: 'first-alias', label_customized_at: adoptionMarker })
+    const adopted = { ...row }
+    await loginWithAlias(row, 'later-alias')
+    expect(row).toEqual(adopted)
   })
 
   it('reads the SSH name written by login when the real resolver reserves the device', async () => {

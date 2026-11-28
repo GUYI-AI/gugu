@@ -58,13 +58,18 @@ export function isDeviceRemovedError(error: unknown): boolean {
   return message.includes(DEVICE_REMOVED_PREFIX)
 }
 
+function validatedDeviceLabel(label: string): string {
+  const trimmed = label.trim()
+  if (!trimmed) throw new Error('设备名不能为空')
+  return trimmed
+}
+
 export async function renameDevice(
   client: DeviceRpcClient,
   deviceId: string,
   label: string,
 ): Promise<void> {
-  const trimmed = label.trim()
-  if (!trimmed) throw new Error('设备名不能为空')
+  const trimmed = validatedDeviceLabel(label)
   const { error } = await client.rpc('rename_device', { p_device_id: deviceId, p_label: trimmed })
   if (error) throw new Error(error.message)
 }
@@ -87,8 +92,7 @@ export interface DeviceLabelClient {
  * PostgreSQL's `now` sets the marker for the label-preservation trigger. An equal label stays unmarked.
  */
 export async function adoptDeviceName(client: DeviceLabelClient, deviceId: string, name: string): Promise<boolean> {
-  const label = name.trim()
-  if (!label) throw new Error('设备名不能为空')
+  const label = validatedDeviceLabel(name)
   const { data, error } = await client.from('gugu_devices')
     .update({ label, label_customized_at: 'now', updated_at: 'now' })
     .eq('device_id', deviceId)
