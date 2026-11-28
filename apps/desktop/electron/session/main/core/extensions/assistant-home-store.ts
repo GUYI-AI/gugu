@@ -308,12 +308,13 @@ export async function agentSessionHere(ownerId: string, agentId: string): Promis
 
 /**
  * The personal assistant's home, when it lives on this computer: its home device is this one and its session is here,
- * in the folder that session works in. Null: it lives elsewhere.
+ * in the folder that session works in. Null: it lives elsewhere — on another computer, or in another install of this one
+ (no session of it here), the same as its schedules (app-bound-schedules.ts).
  */
 export async function assistantHomeHere(ownerId: string, agentId: string, deviceId: string): Promise<AssistantHomeHere | null> {
   if (!(await isThisComputer(deviceId))) return null;
   const sessionId = await agentSessionHere(ownerId, agentId);
-  if (!sessionId) throw refused('failed', 'The local assistant session is unavailable');
+  if (!sessionId) return null;
   const [row] = await db.select({ path: workspaces.path, archivedAt: sessions.archivedAt }).from(sessions)
     .innerJoin(workspaces, eq(workspaces.id, sessions.workspaceId)).where(eq(sessions.id, sessionId)).limit(1);
   if (!row?.path || row.archivedAt != null) throw refused('failed', 'The local assistant workspace is unavailable');

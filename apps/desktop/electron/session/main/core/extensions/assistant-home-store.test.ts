@@ -15,7 +15,8 @@ vi.mock('@main/core/runtime/runtime-manager', async () => {
 });
 vi.mock('@main/db/client', () => ({ db: {} }));
 vi.mock('@gugu/core', () => ({ listAgents: async () => [] }));
-const { createAssistantHomeStore } = await import('./assistant-home-store');
+vi.mock('@main/core/sessions/session-family', () => ({ otherMachines: () => ({ isThisDevice: async (id: string) => id === 'this-device' }) }));
+const { assistantHomeHere, createAssistantHomeStore } = await import('./assistant-home-store');
 
 /**
  * The assistant's home on this computer as an App's binding reads and changes it: its own files, answered with the store's
@@ -85,6 +86,11 @@ describe('reading the home', () => {
     } finally {
       lifetime.abort();
     }
+  });
+
+  it('lives elsewhere when its home device is another computer, or this one without its session here', async () => {
+    expect(await assistantHomeHere(OWNER, AGENT, 'other-device')).toBeNull();
+    expect(await assistantHomeHere(OWNER, AGENT, 'this-device')).toBeNull();
   });
 
   it('refuses another assistant, and a path out of the home', async () => {
