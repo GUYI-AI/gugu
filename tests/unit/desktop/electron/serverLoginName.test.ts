@@ -5,10 +5,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ServerAccount } from '../../../../apps/desktop/electron/server/server-layout'
 
 const layout = vi.hoisted(() => ({ writeServerConnectVia: vi.fn(), accounts: [] as ServerAccount[], checkLayout: vi.fn() }))
-const devices = vi.hoisted(() => ({ adoptDeviceName: vi.fn(async () => true), restartServerAfterLogin: vi.fn() }))
+const devices = vi.hoisted(() => ({
+  adoptDeviceName: vi.fn(async () => true),
+  renameDevice: vi.fn(async () => undefined),
+  resolveLocalDeviceId: vi.fn(async () => 'dev-1'),
+  restartServerAfterLogin: vi.fn(),
+}))
+const writeStoredServerSession = vi.hoisted(() => vi.fn())
 
 vi.mock('electron', () => ({ app: { getVersion: () => '0.3.0' }, safeStorage: {} }))
-vi.mock('../../../../apps/desktop/electron/server/server-auth', () => ({ writeStoredServerSession: vi.fn() }))
+vi.mock('../../../../apps/desktop/electron/server/server-auth', () => ({ writeStoredServerSession }))
 vi.mock('../../../../apps/desktop/electron/server/server-layout', () => ({
   applyAccountEnv: vi.fn(),
   accountDataDir: () => '/data/u1',
@@ -22,7 +28,7 @@ vi.mock('../../../../apps/desktop/electron/server/server-layout', () => ({
 vi.mock('../../../../apps/desktop/electron/server/server-boot.cjs', () => ({ prepareAccountLogin: vi.fn(), assertAccountLayoutReady: layout.checkLayout }))
 vi.mock('@gugu/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@gugu/core')>()),
-  resolveLocalDeviceId: async () => 'dev-1',
+  resolveLocalDeviceId: devices.resolveLocalDeviceId,
   resolveServerMachineId: async () => 'machine-1',
 }))
 vi.mock('@gugu/core/cloud/devices', () => devices)
@@ -42,7 +48,7 @@ afterEach(() => {
 
 const jwt = `x.${Buffer.from(JSON.stringify({ sub: 'u1', email: 'me@x.y' })).toString('base64url')}.y`
 
-async function login(args: string[]) {
+async function login(args: string[], lines: string[] = []) {
   process.env.GUGU_SUPABASE_URL = 'https://db.example.test'
   process.env.GUGU_SUPABASE_ANON_KEY = 'anon'
   Object.defineProperty(process, 'stdin', { value: Readable.from([`${'d'.repeat(43)}\n`]), configurable: true })
@@ -54,7 +60,7 @@ async function login(args: string[]) {
         : new Response(JSON.stringify({ access_token: jwt, refresh_token: 'r' }), { status: 200 }),
   ))
   const { runServerLogin } = await import('../../../../apps/desktop/electron/server/server-login')
-  return runServerLogin(() => undefined, args)
+  return runServerLogin(line => lines.push(line), args)
 }
 
 describe('#6264 gugu-server login --grant-stdin --name', () => {
@@ -92,6 +98,7 @@ describe('#6264 gugu-server login --grant-stdin --name', () => {
     expect(await login(['--grant-stdin', '--name', 'd22'])).toBe(0)
     expect(layout.writeServerConnectVia).toHaveBeenCalledWith('/data/u1', 'ssh', { name: 'd22' })
     expect(devices.adoptDeviceName).toHaveBeenCalledWith(expect.anything(), 'dev-1', 'd22')
+    expect(devices.renameDevice).not.toHaveBeenCalled()
   })
 
   it('没带名字(老桌面):照旧登录,不记名字、不改名', async () => {
@@ -102,9 +109,34 @@ describe('#6264 gugu-server login --grant-stdin --name', () => {
 })
 
 describe('gugu-server login --name(链接 + 短码那条路)', () => {
-  it('名字同样记进 connect-via,已有的设备行同样交给 adoptDeviceName', async () => {
-    expect(await login(['--name', 'juma2'])).toBe(0)
-    expect(layout.writeServerConnectVia).toHaveBeenCalledWith('/data/u1', 'tunnel', { name: 'juma2' })
-    expect(devices.adoptDeviceName).toHaveBeenCalledWith(expect.anything(), 'dev-1', 'juma2')
+  it('renames the reserved device before publishing the session, regardless of its old label', async () => {
+    expect(await login(['--name', ' Research runner '])).toBe(0)
+    expect(layout.writeServerConnectVia).toHaveBeenCalledWith('/data/u1', 'tunnel', { name: 'Research runner' })
+    expect(devices.renameDevice).toHaveBeenCalledWith(expect.anything(), 'dev-1', 'Research runner')
+    expect(devices.renameDevice).toHaveBeenCalledBefore(writeStoredServerSession)
+    expect(devices.adoptDeviceName).not.toHaveBeenCalled()
+  })
+
+  it.each(['resolveLocalDeviceId', 'renameDevice'] as const)('reports %s failure and leaves login retryable', async (operation) => {
+    devices[operation].mockRejectedValueOnce(new Error('device write refused'))
+    const lines: string[] = []
+    expect(await login(['--name', 'Research runner'], lines)).toBe(1)
+    expect(lines.at(-1)).toContain('无法设置设备名 "Research runner"：device write refused')
+    expect(writeStoredServerSession).not.toHaveBeenCalled()
+    expect(devices.restartServerAfterLogin).not.toHaveBeenCalled()
+  })
+
+  it('leaves naming to the server heartbeat when no name is supplied', async () => {
+    expect(await login([])).toBe(0)
+    expect(layout.writeServerConnectVia).toHaveBeenCalledWith('/data/u1', 'tunnel', { name: null })
+    expect(devices.resolveLocalDeviceId).not.toHaveBeenCalled()
+    expect(devices.renameDevice).not.toHaveBeenCalled()
+  })
+
+  it('rejects an empty explicit name before requesting authorization', async () => {
+    const lines: string[] = []
+    expect(await login(['--name', ' '], lines)).toBe(2)
+    expect(lines).toEqual(['请在 --name 后填写设备名。'])
+    expect(fetch).not.toHaveBeenCalled()
   })
 })
