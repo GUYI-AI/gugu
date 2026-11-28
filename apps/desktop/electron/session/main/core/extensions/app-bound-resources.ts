@@ -308,36 +308,41 @@ export async function appResourceWatch(
   let turn = 0;
   const lifetime = new AbortController();
   lifetime.signal.addEventListener('abort', () => feed?.abort(), { once: true });
-  /** Follows the assistant's home under the same authority; true when what the page reads may have changed. */
+  /**
+   * Follows the assistant's home under the same authority. The feed it had is let go only once the new one is heard (or
+   * the home is elsewhere), so a failure leaves the watch as it was. True: the home moved, or its files are heard only now.
+   * A move changes only the device the bound agent lives on (`my_app_agent`); while its session here is not ready yet the
+   * home is `elsewhere`, and the next look attaches.
+   */
   async function follow(found: Bound | null, mine: number): Promise<boolean> {
     if (mine !== turn || lifetime.signal.aborted) return false;
     if (!found || found.agentId !== watch.agentId || found.handle !== watch.handle) throw denied('Conversation binding changed');
     const moved = found.deviceId !== home;
-    // Still where it was, and heard: nothing to do. Not heard yet (its session here may have appeared since): look again.
     if (!moved && feed) return false;
-    feed?.abort();
-    feed = null;
-    home = found.deviceId;
-    const next = new AbortController();
+    let next: AbortController | null = new AbortController();
     try {
       const store = await found.store();
       await store.watch(next.signal, () => { void notifyResourceWatch(watch); });
     } catch (error) {
       next.abort();
       if (codeOf(error) !== 'elsewhere') throw error;
-      return moved;
+      next = null;
     }
-    if (mine !== turn || lifetime.signal.aborted) { next.abort(); return false; }
+    // A newer look, or the page went, while this one waited: it is theirs.
+    if (mine !== turn || lifetime.signal.aborted) { next?.abort(); return false; }
+    feed?.abort();
     feed = next;
-    await found.recheck();
-    return true;
+    home = found.deviceId;
+    if (next) await found.recheck();
+    return moved || next !== null;
   }
   const watch: ResourceWatch = {
     lifetime, pageId, watchId, extensionId, name, ownerId: bound.ownerId, handle: bound.handle, agentId: bound.agentId,
     hear: (event) => hear(watchId, event),
+    // The turn is taken once the binding is read: a look whose check failed leaves the one under way to finish.
     rehome: async () => {
-      const mine = ++turn;
-      return follow(await boundAgent(extensionId, name, ['resources'], null), mine);
+      const found = await boundAgent(extensionId, name, ['resources'], null);
+      return follow(found, ++turn);
     },
   };
   if (!addResourceWatch(watch)) throw denied('Conversation binding changed');

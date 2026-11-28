@@ -23,7 +23,10 @@ export interface ResourceWatch {
   agentId: string;
   lifetime: AbortController;
   hear(event: AppResourceEvent): void;
-  /** Finds the assistant's home again under the same authority (`denied` thrown if it no longer holds); true: it moved. */
+  /**
+   * Finds the assistant's home again under the same authority (`denied` thrown if it no longer holds; any other failure
+   * leaves the feed it had). True: the home moved, or its files are heard only now — the page should read again.
+   */
   rehome(): Promise<boolean>;
 }
 
@@ -120,8 +123,8 @@ export async function notifyAgentResourcesChanged(agentIds: readonly string[]): 
 
 /**
  * The account signed in, or where its assistant lives, may have changed while pages stay open: watches whose authority
- * went end; the others find the assistant's home again and, where it moved, hear `changed`. A check that could not be
- * made now keeps the watch as it is.
+ * went end; the others find the assistant's home again and, where it moved, hear `changed`. A look that fails keeps
+ * the feed the watch had, to be tried again at the next change.
  */
 export async function rehomeResourceWatches(): Promise<void> {
   await revalidateResourceWatches();
@@ -130,7 +133,7 @@ export async function rehomeResourceWatches(): Promise<void> {
       if (await watch.rehome()) await notifyResourceWatch(watch);
     } catch (error) {
       if ((error as { code?: unknown } | null)?.code === 'denied') end(watch);
-      else log.warn('Finding the assistant home of an App resource watch failed', { error: String(error) });
+      else log.warn('Finding the assistant home of an App resource watch failed; it keeps the feed it had', { error: String(error) });
     }
   }));
 }

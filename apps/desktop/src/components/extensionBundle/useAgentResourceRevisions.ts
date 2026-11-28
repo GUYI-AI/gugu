@@ -12,8 +12,9 @@ const homeOf = (value: MyAssistant) => `${value.agentId}:${value.provisionDevice
 /**
  * #1927 (42) App pages hearing their binding's agent resources (`gugu.bindings.onResourcesChanged`) hear the assistant's
  * home itself, in main (its files, while it lives on this computer). What only this side sees is told there: the account
- * changed (what main holds for the one before ends), or the assistant moved (`myAssistant`, read again on setup, move,
- * close, focus and bus resume). ❌ A read or a channel of its own.
+ * changed (what main holds for the one before ends), or the assistant moved (`myAssistant`). Held here, so it is read
+ * again on setup, move, close, focus and bus resume whether or not a surface shows it; where one does (the shell), the
+ * same reading serves both. ❌ A channel of its own.
  */
 export function useAgentResourceRevisions(): void {
   const ownerId = useAuth().user?.id ?? null
@@ -28,10 +29,12 @@ export function useAgentResourceRevisions(): void {
     if (!ownerId) return
     const now = myAssistant.entries()[0]?.reading
     let home = now?.state === 'value' ? homeOf(now.value) : null
-    return myAssistant.subscribe([], ({ reading }) => {
+    const stopHearing = myAssistant.subscribe([], ({ reading }) => {
       if (reading.state !== 'value' || reading.error) return
       const next = homeOf(reading.value)
       if (next !== home) { home = next; tell() }
     })
+    const release = myAssistant.hold()
+    return () => { release(); stopHearing() }
   }, [ownerId])
 }

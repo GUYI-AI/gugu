@@ -42,6 +42,8 @@ const { servingOf } = await vi.hoisted(async () => await import('./test-support/
 vi.mock('./app-assistant-serving', () => ({
   assistantServingChat: async (_token: string, ownerId: string, chatId: string) => servingOf(state.provisions as never[], ownerId, chatId, state.provisionsError),
 }));
+const warn = vi.hoisted(() => vi.fn());
+vi.mock('@main/lib/logger', () => ({ log: { warn, info: vi.fn(), error: vi.fn() } }));
 vi.mock('@gugu/core', () => ({ userIdFromSupabaseAccessToken: (token: string) => token || null }));
 vi.mock('./account-token', () => ({ currentAccountAccessToken: async () => state.owner || null }));
 vi.mock('./app-files', () => ({ unreadBindingChatChoices: async () => [], boundConversationFiles: {} }));
@@ -125,6 +127,8 @@ function identityRpc(name: string, args: Record<string, unknown>) {
  * another computer (`state.home` false) is `elsewhere`. The real home store is tested in assistant-home-store.test.ts.
  */
 const diskSignals = vi.hoisted(() => [] as AbortSignal[]);
+/** Stands in for the home's file feed starting: held open (`gate`) or failing (`fails`). */
+const disk = vi.hoisted(() => ({ gate: null as Promise<void> | null, fails: false, started: 0 }));
 vi.mock('./assistant-home-store', async () => {
   const { createAssistantPanelClient } = await import('@gugu/core/cloud/assistantPanel');
   const bodies = await import('@gugu/core/cloud/assistantPanelBodies');
@@ -132,7 +136,12 @@ vi.mock('./assistant-home-store', async () => {
     isHomeBody: () => false,
     assistantHomeHere: async () => (state.home ? { paths: {}, anchor: '/home' } : null),
     createAssistantHomeStore: () => ({
-      watch: async (signal: AbortSignal) => { diskSignals.push(signal); },
+      watch: async (signal: AbortSignal) => {
+        disk.started++;
+        await disk.gate;
+        if (disk.fails) throw Object.assign(new Error('watch failed'), { code: 'failed' });
+        diskSignals.push(signal);
+      },
       client: createAssistantPanelClient(async (name, args) => identityRpc(name, args), () => state.owner || null),
       readBody: (item: Item, maxBytes?: number) => bodies.readAssistantPanelBody(item as never, { token: state.owner, ownerId: OWNER, chatId: CHAT, maxBytes, accountId: async () => OWNER }),
       upload: (label: string, bytes: Uint8Array) => bodies.uploadAssistantPanelBody({ token: state.owner, ownerId: OWNER, chatId: CHAT, label, bytes, accountId: async () => OWNER }),
@@ -499,7 +508,7 @@ describe('hearing that the agent\'s resources changed', () => {
     const answer = await appResourceWatch('assistant', pageId, { watchId, name: 'main', on: true }, (id, event) => heard.push([id, event]));
     return { answer, heard };
   };
-  beforeEach(() => stopResourceWatches(41));
+  beforeEach(() => { stopResourceWatches(41); Object.assign(disk, { gate: null, fails: false, started: 0 }); diskSignals.length = 0; });
 
   it('a watch hears its agent\'s changes, not another agent\'s; stopped, it hears nothing', async () => {
     const { answer, heard } = await watch('1');
@@ -551,7 +560,6 @@ describe('hearing that the agent\'s resources changed', () => {
   });
 
   it('follows the assistant while the page stays open: its files heard only while it lives here, the page told when it moved', async () => {
-    diskSignals.length = 0;
     const { heard } = await watch('move');
     expect(diskSignals.map(s => s.aborted)).toEqual([false]);
     // Asked again where it lives, and it has not moved: nothing changes, nothing is told.
@@ -572,16 +580,53 @@ describe('hearing that the agent\'s resources changed', () => {
     expect(diskSignals.map(s => s.aborted)).toEqual([true, true]);
   });
 
-  it('an assistant that comes to live here after the page began watching is heard from its files', async () => {
-    diskSignals.length = 0;
-    state.home = false;
+  it('a move under way is not an end: the binding names the new computer before its session there is ready, then it is heard', async () => {
     const { heard } = await watch('arrive');
-    expect(diskSignals).toEqual([]);
-    // Same home device, its session here only now: looked for again, though it did not move.
+    expect(diskSignals.map(s => s.aborted)).toEqual([false]);
+    // my_app_agent answers the same agent on its new device at once; its session here is not ready yet: elsewhere.
+    state.provisions = [{ ...ASSISTANT, device_id: 'new-device' }];
+    state.home = false;
+    await rehomeResourceWatches();
+    expect(diskSignals.map(s => s.aborted)).toEqual([true]);
+    expect(heard).toEqual([['arrive', { name: 'main', state: 'changed' }]]);
+    // Same device, its session ready now: looked for again, though it did not move.
     state.home = true;
     await rehomeResourceWatches();
+    expect(diskSignals.map(s => s.aborted)).toEqual([true, false]);
+    expect(heard).toEqual([['arrive', { name: 'main', state: 'changed' }], ['arrive', { name: 'main', state: 'changed' }]]);
+    expect(heldResourceWatches()).toBe(1);
+  });
+
+  it('a look that fails keeps the feed the watch had: neither a failed check beside an attach under way, nor a feed that would not start', async () => {
+    state.home = false;
+    const { heard } = await watch('deaf');
+    let open!: () => void;
+    disk.gate = new Promise<void>((resolve) => { open = resolve; });
+    state.home = true;
+    const attaching = rehomeResourceWatches();
+    await vi.waitFor(() => expect(disk.started).toBe(1));
+    state.provisionsError = true;
+    await rehomeResourceWatches();
+    open();
+    await attaching;
     expect(diskSignals.map(s => s.aborted)).toEqual([false]);
-    expect(heard).toEqual([['arrive', { name: 'main', state: 'changed' }]]);
+    expect(heard).toEqual([['deaf', { name: 'main', state: 'changed' }]]);
+    // The assistant moves on, and the new home's feed will not start: the old feed stays, the page is not told anything.
+    state.provisionsError = false;
+    state.provisions = [{ ...ASSISTANT, device_id: 'third' }];
+    disk.gate = null;
+    disk.fails = true;
+    warn.mockClear();
+    await rehomeResourceWatches();
+    expect(diskSignals.map(s => s.aborted)).toEqual([false]);
+    expect(heard).toHaveLength(1);
+    expect(heldResourceWatches()).toBe(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('keeps the feed it had'), expect.anything());
+    // Tried again at the next change, and heard there.
+    disk.fails = false;
+    await rehomeResourceWatches();
+    expect(diskSignals.map(s => s.aborted)).toEqual([true, false]);
+    expect(heard).toHaveLength(2);
   });
 
   it('ends when the assistant is no longer the conversation\'s; a check that could not be made keeps it', async () => {
