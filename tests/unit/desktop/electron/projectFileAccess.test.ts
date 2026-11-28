@@ -6,11 +6,11 @@ vi.mock('node:fs/promises', async importOriginal => {
   return { ...fs,
     link: (from: string, to: string) => (fsHooks.link ?? fs.link)(from, to),
     rename: (from: string, to: string) => (fsHooks.rename ?? fs.rename)(from, to),
-    __actualRename: fs.rename, __actualLink: fs.link }
+    __actualRename: fs.rename }
 })
 import { chmod, mkdtemp, mkdir, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createFileResolver, type FileProviders, type FileRevision } from '../../../../packages/core/src/shared/fileResolver'
 import { ciphertextSize, createFileKey, transformFile } from '../../../../packages/core/src/shared/fileCipher'
@@ -23,7 +23,7 @@ import { createDesktopFileAccess } from '../../../../apps/desktop/electron/deskt
 import { deviceFile, writeDeviceIdCache } from '@gugu/core/cloud/deviceRuntime'
 import { forgetProjectGroupId, readProjectFile, rememberProjectFile, rememberProjectGroupId } from '../../../../apps/desktop/electron/sessionpage/sessionpage-project-groups'
 
-const { __actualRename: actualRename, __actualLink: actualLink } = await import('node:fs/promises') as unknown as Record<'__actualRename' | '__actualLink', (from: string, to: string) => Promise<void>>
+const { __actualRename: actualRename } = await import('node:fs/promises') as unknown as { __actualRename: (from: string, to: string) => Promise<void> }
 let home: string, root: string, tempRoot: string, env: NodeJS.ProcessEnv
 let accountId: string, revision: FileRevision
 const bytes = Buffer.alloc(700_001, 83)
@@ -37,8 +37,6 @@ const reader = () => createProjectFileReader({ identity, root: async id => id ==
 
 // A save reads through the chunk cache (so a save that dies resumes); a finished or refused save leaves no chunks behind.
 const chunksLeft = () => readdir(tempRoot).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return []; throw error })
-// The link that hands a read's chunk file to its sink, as opposed to the store's own link of a name: the store tests fail only the latter.
-const stagedChunks = (from: string) => basename(from) === 'data' && basename(dirname(from)).startsWith('open-')
 
 describe('downloads consume one file and leave no cached chunks behind', () => {
   const remote = (content: Uint8Array = bytes) => {
@@ -144,8 +142,7 @@ describe('downloads consume one file and leave no cached chunks behind', () => {
   it.each([['a link', 'EEXIST'], ['a rename, without hard links', 'EPERM']])('a changed file that appears at the name while it saves is moved aside by %s', async (_, code) => {
     const { resolve } = remote()
     const edit = Buffer.alloc(bytes.length, 1)
-    fsHooks.link = async (from, to) => {
-      if (stagedChunks(from)) return actualLink(from, to)
+    fsHooks.link = async (_from, to) => {
       if (code === 'EEXIST') delete fsHooks.link
       await writeFile(to, edit)
       throw Object.assign(new Error('link'), { code })
@@ -159,8 +156,7 @@ describe('downloads consume one file and leave no cached chunks behind', () => {
   })
   it('where hard links are unavailable and another save already finished this name, the save succeeds on its file', async () => {
     const { resolve } = remote()
-    fsHooks.link = async (from, to) => {
-      if (stagedChunks(from)) return actualLink(from, to)
+    fsHooks.link = async (_from, to) => {
       await writeFile(to, bytes)
       throw Object.assign(new Error('no links'), { code: 'EPERM' })
     }
@@ -284,11 +280,11 @@ describe('downloads consume one file and leave no cached chunks behind', () => {
     expect(ranges).toEqual([0, 2 * 512 * 1024])
     expect(await chunksLeft()).toEqual([])
   })
-  it('a large file read on three connections is written once: the saved file is the chunk file itself', async () => {
+  it('a large file read on three connections is written once: the saved file is the chunk file itself, moved', async () => {
     const large = Uint8Array.from({ length: 17 * 1024 * 1024 + 11 }, (_, i) => (i * 31) % 251)
     const stored = { ...revision, source: 'managed-object' as const, size_bytes: large.length, sha256: digest(large) }
-    const asked: string[] = [], linked: string[] = []
-    fsHooks.link = async (from, to) => { linked.push(stagedChunks(from) ? 'chunk file' : basename(from)); return actualLink(from, to) }
+    const asked: string[] = [], moved: number[] = []
+    fsHooks.rename = async (from, to) => { if (from.endsWith('.taken')) moved.push((await stat(from)).ino); return actualRename(from, to) }
     const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       if (String(url).endsWith('/file-resolve')) return Response.json({ status: 'ready', ...stored })
       if (String(url).endsWith('/file-download')) return Response.json({ status: 'ready', url: 'https://objects.invalid/large', size_bytes: large.length, sha256: stored.sha256, download_id: 'download' })
@@ -303,8 +299,9 @@ describe('downloads consume one file and leave no cached chunks behind', () => {
     const saved = await saveToFileStore(file, home, 'large.bin')
     expect(digest(await readFile(saved.file_path))).toBe(stored.sha256)
     expect(asked).toHaveLength(3)
-    // The chunk file went into place by a link, not by a second write of its bytes.
-    expect(linked[0]).toBe('chunk file')
+    // The chunk file itself went into place, not a second write of its bytes; and it is the store's alone.
+    const kept = await stat(saved.file_path)
+    expect([moved, kept.nlink]).toEqual([[kept.ino], 1])
     expect(await chunksLeft()).toEqual([])
   })
   it('does not ask again when the account\'s download quota is used up', async () => {
@@ -692,10 +689,17 @@ describe('local read fence and verified snapshot', () => {
     await second.put(key, 1, tail)
     await expect(second.put(key, 1, new Uint8Array([7, 8, 0]))).rejects.toThrow('SHA-256')
     expect(await first.get(key, 1)).toEqual(tail)
-    // Complete only when every chunk is there; then it is the file itself.
-    expect(await first.file!(key, 3)).toBeNull()
-    const whole = await first.file!(key, 2)
+    // Handed over only when every chunk is there: then it is the file itself, out of the cache, to one taker.
+    expect(await first.take!(key, 3)).toBeNull()
+    expect(await first.get(key, 1)).toEqual(tail)
+    const whole = await first.take!(key, 2)
     expect(await readFile(whole!)).toEqual(Buffer.concat([head, tail]))
+    expect(await second.take!(key, 2)).toBeNull()
+    expect(await second.get(key, 1)).toBeNull()
+    // Whoever puts under this key next starts a new file: the one handed over is not written to.
+    await second.put(key, 1, new Uint8Array([1, 1, 1]))
+    expect(await readFile(whole!)).toEqual(Buffer.concat([head, tail]))
+    expect(await second.get(key, 0)).toBeNull()
     for (const [badKey, index] of [['../project/file.bin', 0], [key, -1], [key, 0.5]] as const) {
       await expect(second.get(badKey, index)).rejects.toThrow('Invalid file cache key')
       await expect(second.put(badKey, index, new Uint8Array([7]))).rejects.toThrow('Invalid file cache key')
@@ -711,22 +715,40 @@ describe('local read fence and verified snapshot', () => {
     expect(await first.get(left, 0)).toBeNull()
     await first.clear(left)
   })
-  it('a sink takes the complete chunk file as it is: the same file under its own name, written once', async () => {
+  it('a sink makes the complete chunk file its own: moved, not written again, and no one else\'s', async () => {
     const key = 'ef'.repeat(32), cache = createFileChunkCache(tempRoot), content = new Uint8Array(512 * 1024 + 5).fill(3)
     await cache.put(key, 0, content.subarray(0, 512 * 1024)); await cache.put(key, 1, content.subarray(512 * 1024))
-    const staged = (await cache.file!(key, 2))!, inode = (await stat(staged)).ino
+    const staged = (await cache.take!(key, 2))!, inode = await stat(staged)
     const sink = await createFileSink(tempRoot, content.length)
     await sink.adopt!(staged)
     await expect(sink.write(new Uint8Array(1))).rejects.toThrow('Invalid file staging write')
     const file = await sink.commit()
-    expect((await stat(sink.path())).ino).toBe(inode)
+    const adopted = await stat(sink.path())
+    expect([adopted.ino, adopted.nlink]).toEqual([inode.ino, 1])
+    await expect(stat(staged)).rejects.toMatchObject({ code: 'ENOENT' })
     await cache.clear(key)
     expect(await file.read(512 * 1024 - 1, 3)).toEqual(new Uint8Array([3, 3, 3]))
     await file.dispose()
+    // A file that is gone (another read took it, or the key was cleared) leaves the sink as it was: it is written instead.
+    const other = await createFileSink(tempRoot, 3)
+    await expect(other.adopt!(staged)).rejects.toMatchObject({ code: 'ENOENT' })
+    await other.write(new Uint8Array([1, 2, 3]))
+    const written = await other.commit()
+    expect(await written.read(0, 3)).toEqual(new Uint8Array([1, 2, 3]))
+    await written.dispose()
     const short = await createFileSink(tempRoot, content.length + 1)
     await cache.put(key, 0, content.subarray(0, 512 * 1024))
     await expect(short.adopt!(join(tempRoot, `open-${key}`, 'data'))).rejects.toThrow('Incomplete file snapshot')
     await short.abort(); await cache.clear(key)
+    expect(await readdir(tempRoot)).toEqual([])
+  })
+  it('a read that stopped leaves its chunks and nothing open: the next one reads them from the file', async () => {
+    const key = '12'.repeat(32), cache = createFileChunkCache(tempRoot), chunk = new Uint8Array([4, 5, 6])
+    await cache.put(key, 0, chunk)
+    await cache.rest!(key)
+    expect((await readdir(join(tempRoot, `open-${key}`))).sort()).toEqual(['data', 'done'])
+    expect(await cache.get(key, 0)).toEqual(chunk)
+    await cache.clear(key)
     expect(await readdir(tempRoot)).toEqual([])
   })
   it('an agent reading by message gets the file on this disk, with no temporary transfer through the cloud', async () => {

@@ -249,15 +249,16 @@ export function cloudFileProviders(deps: {
       }
       // Downloads publish only after the final authorization read; private snapshot readers retain their existing sink.
       const writing = destination ? { ...sink, commit: async (): Promise<FileBytes> => ({ size: revision.size_bytes, read: async () => { throw new Error('Download is not committed') }, dispose: async () => {} }) } : sink
-      // @@@adopt-staged-file - plaintext chunks kept in one file (`FileChunkCache.file`) are the content itself: once the
-      // reader has checked them in order, the sink takes that file as it is, and nothing is written a second time.
+      // @@@adopt-staged-file - plaintext chunks kept in one file (`FileChunkCache.take`) are the content itself: once the
+      // reader has checked them in order, the sink makes that file its own, and nothing is written a second time.
       const chunks = Math.max(1, Math.ceil(revision.size_bytes / FILE_CHUNK_BYTES)), staging = deps.cache
-      const adopting: FileSink | undefined = !encrypted && !revision.legacy_object && staging.file && sink.adopt ? {
+      const adopting: FileSink | undefined = !encrypted && !revision.legacy_object && staging.take && sink.adopt ? {
         write: async () => {}, abort: () => writing.abort(),
         async commit() {
-          const staged = await staging.file!(key, chunks)
-          if (staged) { await sink!.adopt!(staged); return writing.commit() }
-          // Another read of this same file ended first and took the chunks with it: read once more, into the sink.
+          const staged = await staging.take!(key, chunks)
+          const adopted = staged !== null && await sink!.adopt!(staged).then(() => true, error => { if (error?.code !== 'ENOENT') throw error; return false })
+          if (adopted) return writing.commit()
+          // Another read of this same file ended first and took or cleared the chunks: read once more, into the sink.
           const again = openSource()
           try { return await copyVerifiedFile(revision, again, writing, context.signal) } finally { await again.dispose() }
         },
@@ -306,6 +307,7 @@ export function cloudFileProviders(deps: {
       dataKey?.fill(0); if (lease) delete lease.key; await source.dispose()
       // The sink holds the bytes once read. Only an interrupted or abandoned read keeps its chunks, to resume from them.
       if (!source.interrupted() && !context.signal?.aborted) await deps.cache.clear(key)
+      else await deps.cache.rest?.(key)
     }
   }
   const readPreview = async (preview: FilePreview, ref: FileContext['ref'], context: FileContext) => {

@@ -12,7 +12,7 @@ export interface FileSink {
   write(bytes: Uint8Array): Promise<void>
   commit(): Promise<FileBytes>
   abort(): Promise<void>
-  /** The staged bytes are this complete, already verified file (`FileChunkCache.file`): taken as it is, then `commit`. */
+  /** The staged bytes are this complete, already verified file (`FileChunkCache.take`): made this sink's own, then `commit`. */
   adopt?(path: string): Promise<void>
 }
 type NodeCrypto = { createHash(algorithm: 'sha256'): { update(data: Uint8Array): unknown; digest(): Uint8Array } }

@@ -7,11 +7,13 @@ export interface FileChunkCache {
   put(key: string, index: number, bytes: Uint8Array): Promise<void>
   clear(key: string): Promise<void>
   /**
-   * Where a host with a filesystem keeps a key's chunks: one file, each chunk written once at its own offset. Its path
-   * once it holds all `chunks` (it is never written again after that), `null` before. A sink can take that file as it is
-   * (`FileSink.adopt`) instead of being handed the same bytes a second time.
+   * A host with a filesystem keeps a key's chunks in one file, each chunk written once at its own offset. `take`: that
+   * file, once it holds all `chunks`, handed over whole and out of the cache (`null` before then), for a sink to make
+   * its own (`FileSink.adopt`) instead of being handed the same bytes a second time.
    */
-  file?(key: string, chunks: number): Promise<string | null>
+  take?(key: string, chunks: number): Promise<string | null>
+  /** A read ended and left its chunks for the next one: nothing of them stays open. */
+  rest?(key: string): Promise<void>
 }
 
 /** Browser private staging uses the existing cache, with an unguessable temporary namespace. */
