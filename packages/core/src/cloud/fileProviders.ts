@@ -23,6 +23,8 @@ const cacheKey = (context: FileContext, digest: string) => hex(sha256(new TextEn
 const sameLegacyObject = (revision: FileRevision, row: { bucket_id?: string; object_name?: string; message_id?: string }) =>
   !revision.legacy_object || row.bucket_id === revision.legacy_object.bucket_id && row.object_name === revision.legacy_object.object_name && row.message_id === revision.legacy_object.message_id
 // An unhashed historical object cannot authenticate persistent cached chunks between opens.
+/** Where a preview's verified bytes are kept for this reader and reference (`imageCache`). */
+export const filePreviewCacheKey = (context: FileContext, sha256: string) => `https://attachments.gugu.invalid/preview/${cacheKey(context, sha256)}`
 const uncached: FileChunkCache = { get: async () => null, put: async () => {}, clear: async () => {} }
 
 /** Bytes per download lane: a file gets one more parallel ranged GET per this many bytes, up to `DOWNLOAD_LANES`. */
@@ -299,7 +301,7 @@ export function cloudFileProviders(deps: {
     }
   }
   const readPreview = async (preview: FilePreview, ref: FileContext['ref'], context: FileContext) => {
-    const key = `https://attachments.gugu.invalid/preview/${cacheKey(context, preview.sha256)}`
+    const key = filePreviewCacheKey(context, preview.sha256)
     const hit = await deps.imageCache?.match(key)
     if (hit) return hit.blob()
     let lease: Download | undefined

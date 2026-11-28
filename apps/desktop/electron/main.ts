@@ -2552,7 +2552,7 @@ const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider()
   fetch: egress.fetch, links: () => sshLinks,
   root: async projectId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectRoot(projectId) },
   project: async chatId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectOfGroup(chatId) },
-  deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
+  deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient, home: resolveGuguHome(process.env),
 })
 // A file on another of this account's machines streams over its device link (`@@@machine-file-stream`).
 setMachineFileStreams(remoteFileStreams(() => sshLinks ?? null, async () => (await requireAuth()).userId, linkReaches))
@@ -2592,6 +2592,10 @@ const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments
     const { createBytesPreview, releasePreview } = await import('./session/main/core/files/preview-protocol')
     const { url, previewId } = createBytesPreview(sha256, contentType, file)
     return { url, release: () => releasePreview(previewId) }
+  },
+  cloud: { ...desktopFiles.cloud,
+    download: (scope, context, name, here) => desktopFiles.download(context.ref, context.actor,
+      async () => (await import('./session/main/core/extensions/app-files')).askSaveTarget(webContents.fromId(scope) ?? null, name), here, context.signal),
   },
 })
 /**
