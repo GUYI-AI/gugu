@@ -12,6 +12,7 @@ import { AUTOMATION_TEST_IDS } from '@/lib/automationDom'
 import { OPEN_AT_LATEST, useRowAboveViewport } from '@/lib/listLanding'
 import { useFlowList, type FlowListHandle, type ListLanding } from '@/lib/flowList'
 import { formatCalendarDay } from '@/i18n/format'
+import { useLocale } from '@/i18n/useLocale'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
 import type { MemberProfileOpener } from '../memberProfileModels'
 import { Button } from '../ui/Button'
@@ -253,6 +254,8 @@ function rowViewsOf(rows: readonly ChatListRowItem[], props: MessageListRowProps
 type SeenRows = Map<string, () => void>
 
 const MessageListRow = memo(function MessageListRow({ id, seenRows }: { id: string; seenRows: SeenRows }) {
+  // The row is memoized: the language is one of its inputs, so a switch redraws it.
+  const { resolvedLocale } = useLocale()
   const store = useContext(RowStoreContext)!
   const view = useSelect(store, (list) => list.rows.get(id), Object.is)
   const shared = useSelect(store, (list) => list.shared, Object.is)
@@ -341,7 +344,7 @@ const MessageListRow = memo(function MessageListRow({ id, seenRows }: { id: stri
         /* @@@ui-ruler 时间分隔 = Chip(小标签的唯一实现:18px 药丸、caption 字号、muted 底)。
            原来是这里自己拍的 10px 圆角 + 2/10 内距 + 裸 11px。 */
         <div style={{ textAlign: 'center', margin: 'var(--spacing-sm) 0 var(--spacing-xs)', userSelect: 'none' }}>
-          <Chip>{formatCalendarDay(msg.created_at, { withTime: true })}</Chip>
+          <Chip>{formatCalendarDay(msg.created_at, { withTime: true }, resolvedLocale)}</Chip>
         </div>
       )}
       {/* @@@multi-select (#988) — 多选态：行首勾选框 + 整行点击切换选中；内层气泡 pointer-events:none

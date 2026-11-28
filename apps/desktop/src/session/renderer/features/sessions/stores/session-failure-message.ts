@@ -1,4 +1,4 @@
-import type { useSessionMessages } from '@renderer/localization/use-session-messages';
+import type { SessionTranslate } from '@renderer/localization/use-session-messages';
 import type { SessionFailure } from './session-failure';
 
 /**
@@ -14,7 +14,7 @@ import type { SessionFailure } from './session-failure';
  * (实测 new-session-page 的壳整模块 mock 了 session-selectors,组件从它这里拿到的 describeSessionFailure
  * 就是 undefined)。这里除类型外不 import 任何东西。
  */
-export type SessionTranslate = ReturnType<typeof useSessionMessages>['translate'];
+export type { SessionTranslate };
 
 export function describeSessionFailure(
   failure: SessionFailure,

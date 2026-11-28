@@ -23,7 +23,7 @@ import { extensionViewStore, residentPageKey, residentPlace } from './extension-
 import { confirmCloseOfUnsaved, reloadAppPage } from './app-page-unsaved';
 import { extensionSurfaceStore, extensionTabTitle, type ExtensionSharedPresentation } from './extension-surface-store';
 import { LOCAL_HOST, peekInstalledAppsTracked, useInstalledApps, type ExtensionTabContributionEntry } from './installed-extensions';
-import { translateSessionMessage } from '@renderer/localization/locale-store';
+import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { followLink } from '@/lib/guguLinks';
 import { fileTabLabels } from '@renderer/features/tabs/file-tab-label';
 import { fileBaseName, filePathKey } from '@renderer/features/sessions/stores/workspace-path';
@@ -219,6 +219,7 @@ export function createExtensionTabProvider(
       // The file this tab was opened for, when a claim opened it.
       const claimedFile =
         tab.resource instanceof ExtensionTabResource ? tab.resource.filePath : undefined;
+      const { translate } = useSessionMessages();
       const kindCommands = useMemo(
         () => [
           // ⚠️ The escape hatch, and the reason a file claim is safe to honour at
@@ -236,18 +237,18 @@ export function createExtensionTabProvider(
           // Whatever state the page is in (it did not load, it threw), the person can have it built again from the start.
           {
             id: `${kind}:reload-page`,
-            label: translateSessionMessage('extensions.reloadPage'),
+            label: translate('extensions.reloadPage'),
             group: 'extension',
             run: () => void reloadAppPage(sessionId, tab.tabId, claimedFile),
           },
           {
             id: `${kind}:app-settings`,
-            label: translateSessionMessage('extensions.appSettings'),
+            label: translate('extensions.appSettings'),
             group: 'extension',
             run: () => void followLink({ kind: 'app-detail', extensionId: parseExtensionTabKind(kind)!.extensionId, fromApp: true }),
           },
         ],
-        [claimedFile, place, sessionId, tab.tabId]
+        [claimedFile, place, sessionId, tab.tabId, translate]
       );
       // 同一个 App 开着两个不同目录下的同名文件:与文件页签同一条规矩,补上区分它们的那截路径(file-tab-label.ts)。
       const claimedTabs = host.resolvedTabs.filter((t): t is ResolvedTab<ExtensionTabResource> => t.kind === kind && !!(t.resource as ExtensionTabResource).filePath);
@@ -269,7 +270,7 @@ export function createExtensionTabProvider(
           hasError={surface.error !== null}
           preSlot={<ExtensionTabIcon kind={kind} file={claimedFile} />}
           statusSlot={own.dirtyIn !== null
-            ? <div className="size-2 rounded-full bg-foreground" title={translateSessionMessage('task.unsavedChanges')} />
+            ? <div className="size-2 rounded-full bg-foreground" title={translate('task.unsavedChanges')} />
             : <ExtensionTabBadge badge={surface.badge} />}
           // Declared entries sit after the engine's own (close, split, …): the
           // host's commands are the ones a user expects in a fixed place, and an

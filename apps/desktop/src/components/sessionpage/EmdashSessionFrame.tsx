@@ -254,11 +254,11 @@ function installSessionHostBridge(): SessionHostWsClient | null {
   if (platform.kind === 'electron') return null
   if (!sessionHostClient) {
     sessionHostClient = createSessionHostWsClient(resolveSessionHostEndpoint(), {
-      messages: {
+      messages: () => ({
         hostNotConnected: i18n.t('shell.taskFrame.hostNotConnected', { ns: 'main' }),
         hostConnectionLost: i18n.t('shell.taskFrame.hostConnectionLost', { ns: 'main' }),
         hostUnreachable: i18n.t('shell.taskFrame.hostUnreachable', { ns: 'main' }),
-      },
+      }),
     })
     // 壳通道(sessionpage:*)由本页面当场应答,其余交给宿主(#5012)。账号侧的活壳委托给宿主的 sessionpageIdentity.*,
     // 为此先把登录态交给宿主(装桥时 / 登录态变化 / 宿主重连各推一次)。

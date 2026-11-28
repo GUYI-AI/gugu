@@ -6,7 +6,7 @@ import { Button } from '../ui/Button'
 import { useBackLayer } from '../ui/sheetStack'
 import type { AnnotationConversation } from '@/session/shared/browser-annotation'
 import { selectionMenu, type FileReference } from '@/session/shared/extensions/file-selection'
-import { i18n } from '@/i18n'
+import { useLocale } from '@/i18n'
 import { fileTextRange, sourceLineRange, type FileTextRange } from './file-text-range'
 import { openCommentLine } from '@renderer/features/sessions/annotations/selection-line'
 import { FileSelectionMenu } from './FileSelectionMenu'
@@ -35,6 +35,7 @@ export function FileTextContent({ content, kind, style, selectable }: {
   selectable?: FileTextSelection
 }) {
   const { t } = useTranslation('messaging')
+  const { resolvedLocale } = useLocale()
   const openWebLink = useOpenWebLink('newTab')
   const container = useUiPortalContainer()
   const root = useRef<HTMLDivElement>(null)
@@ -93,9 +94,9 @@ export function FileTextContent({ content, kind, style, selectable }: {
     setSelection({ range, quote })
   }
   const conversation = selectable?.conversation, file = selectable?.file
-  const items = useMemo(() => selectable ? selectionMenu(selectable.conversation, Boolean(selectable.file), selectable.sends, i18n.language) : [],
+  const items = useMemo(() => selectable ? selectionMenu(selectable.conversation, Boolean(selectable.file), selectable.sends, resolvedLocale) : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps -- by value: callers hand a new object each render
-    [JSON.stringify(selectable?.conversation ?? null), Boolean(selectable?.file), selectable?.sends])
+    [JSON.stringify(selectable?.conversation ?? null), Boolean(selectable?.file), selectable?.sends, resolvedLocale])
   const citeOf = ({ quote: { startLine, endLine, text } }: Selection) =>
     selectionCite(conversation!, file!, { text, places: [linesPlace(startLine, endLine)], ...(kind === 'text' ? { code: true } : {}) })
   return <>
