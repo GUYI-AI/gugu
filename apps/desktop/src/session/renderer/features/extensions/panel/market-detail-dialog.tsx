@@ -100,8 +100,10 @@ export function MarketDetailDialog({ onClose, children }: { onClose: () => void;
 }
 
 export function MarketDetailCard({
-  name, publisher, icon, actions, devices, facts, subtitle, notice, onUninstall, alternate, children,
+  titleId, showCloseButton = true, name, publisher, icon, actions, devices, facts, subtitle, notice, onUninstall, alternate, children,
 }: {
+  titleId?: string;
+  showCloseButton?: boolean;
   name: string;
   publisher?: string;
   icon: ReactNode;
@@ -134,16 +136,16 @@ export function MarketDetailCard({
   return (
     <>
       <div data-slot="dialog-header" className="relative shrink-0 pt-6 pr-16 pl-6">
-        <DialogClose
+        {showCloseButton && <DialogClose
           render={<Button variant="ghost" size="icon" className="absolute top-4 right-4 text-foreground-muted" />}
           aria-label={translate('common.close')}
         >
           <XIcon aria-hidden />
-        </DialogClose>
+        </DialogClose>}
         <div className="flex min-w-0 gap-4">
           <div className="size-[68px] shrink-0 overflow-hidden rounded-2xl [&>*]:!size-full">{icon}</div>
           <div className="min-w-0">
-            <DialogTitle className="break-words text-xl font-semibold">{name}</DialogTitle>
+            <DialogTitle id={titleId} className="break-words text-xl font-semibold">{name}</DialogTitle>
             {publisher && <p className="mt-1 text-sm text-foreground-muted">{publisher}</p>}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {actions}

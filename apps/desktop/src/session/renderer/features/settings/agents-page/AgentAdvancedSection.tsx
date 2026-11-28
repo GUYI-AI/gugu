@@ -1,7 +1,8 @@
+import { isDeepEqual } from '@gugu/session-shared';
 import { useForm } from '@tanstack/react-form';
 import { ChevronRight, Plus, RotateCcw, Trash2 } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { parseEnvAssignmentPaste, replaceEnvEntryWithPaste } from '@renderer/lib/env-paste';
 import { Button } from '@renderer/lib/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@renderer/lib/ui/collapsible';
@@ -48,21 +49,7 @@ function makeDefaultValues(cfg: ProviderCustomConfig | undefined) {
   };
 }
 
-/**
- * 「高级」——**默认折叠**:下载源、附加参数、环境变量(#6157 / spec)。
- *
- * 「自定义路径」已经挪到面板上「用哪一份」那三行里(owner 2026-09-22:来源就三种,本机找到的 /
- * 咕咕管理 / 自定义路径,三者并列)。这里排成**左标签、右控件**两列,每一项的控件左缘对齐。
- * ❌ 不再一项一个排法(按钮贴右、输入框通栏、按钮又贴左),owner 截图里那一片就是这样散的。
- *
- * 以下为旧注释:
- *
- * 那两项是 spec 点名的:自定义可执行文件路径、手动指定下载源。用户面上的常规路径里不该出现
- * 「路径」和「源」这两个词(owner:「自己装的不应该有多个版本,也不会需要糙到有路径」),
- * 但知道自己要什么的人得有一个覆盖口,所以它们收在这里。
- *
- * 「附加参数」「环境变量」本来就在这一格里,原样留着 —— ❌ 不往这里加第三、第四项。
- */
+/** Settings for this agent on the selected host. The details panel includes its source selector. */
 export const AgentAdvancedSection = observer(function AgentAdvancedSection({
   agentId,
   children,
@@ -78,13 +65,16 @@ export const AgentAdvancedSection = observer(function AgentAdvancedSection({
 
   const form = useForm({ defaultValues: makeDefaultValues(storedConfig) });
 
-  // Re-sync form when external config changes (e.g. after a reset from outside).
+  const lastStored = useRef(makeDefaultValues(storedConfig));
+  // A blur saves one field while the next is already being edited. Apply a host refresh only to clean fields.
   useEffect(() => {
     if (isLoading) return;
     const next = makeDefaultValues(storedConfig);
-    form.setFieldValue('extraArgs', next.extraArgs);
-    form.setFieldValue('envEntries', next.envEntries);
-  }, [isLoading, storedConfig, isOverridden, form]);
+    const draft = form.state.values;
+    if (draft.extraArgs === lastStored.current.extraArgs) form.setFieldValue('extraArgs', next.extraArgs);
+    if (isDeepEqual(draft.envEntries, lastStored.current.envEntries)) form.setFieldValue('envEntries', next.envEntries);
+    lastStored.current = next;
+  }, [isLoading, storedConfig, form]);
 
   const commit = useCallback(() => {
     const { extraArgs, envEntries } = form.state.values;

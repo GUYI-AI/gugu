@@ -31,7 +31,7 @@ import { createExtensionOperations, ExtensionOperationsContext } from '@renderer
 import { InstalledManager } from '@renderer/features/extensions/installed/InstalledManager';
 import { appsLocation, currentAppsLocation, moveAppsLocation, previousAppsLocation, type AppsLocation } from './apps-location';
 import { AgentAppDetailDialog } from './agent-app-detail-dialog';
-import { restoreAgentDetailComposer } from './agent-app-detail-navigation';
+import { openAgentDeviceSettings, restoreAgentDetailComposer } from './agent-app-detail-navigation';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
@@ -80,6 +80,8 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
         <AgentDetailHost key={`${agentDetail.deviceId ?? 'local'}:${agentDetail.agentId}`} target={agentDetail}>
           <AgentAppDetailDialog
             agentId={agentDetail.agentId}
+            initialAdvanced={!!installed}
+            onConfigureDevice={deviceId => openAgentDeviceSettings(navigate, agentDetail.agentId, deviceId)}
             onClose={closeAgentDetail}
             onCreate={() => {
               setParams({ agentDetail: undefined, agentDetailFrom: undefined });

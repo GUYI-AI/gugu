@@ -20,7 +20,7 @@ import type { SessionpageLeg } from '@shared/core/sessions/sessions';
  * Every model of a machine takes the machine first (`refreshTag(AGENT_READINGS, machine)`).
  */
 type Machine = string | null;
-const AGENT_READINGS = 'agent-readings';
+export const AGENT_READINGS = 'agent-readings';
 /** All of the family but the install status itself: what a pushed status (already put on its entry) reads again. */
 const STATUS_DERIVED = 'agent-readings-derived';
 /** A machine's reading: asked even while the browser says offline (the machine answers, or the read fails loud). */

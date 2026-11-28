@@ -1,6 +1,6 @@
 import { refreshFailure } from '@/lib/replica';
 import { vendorName } from '@/i18n/vendorName';
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { AppIcon } from '@renderer/lib/components/app-icon';
 import { Button } from '@renderer/lib/ui/button';
 import { Spinner } from '@renderer/lib/ui/spinner';
@@ -32,7 +32,11 @@ function agentVersion(version: string | null | undefined) {
   return version ? `v${version.replace(/^v/, '')}` : null;
 }
 
-export function MarketAgentDetail({ agentId, onCreate }: { agentId: string; onCreate: () => void }) {
+type AdvancedSettings = { advancedOpen: boolean; onToggleAdvanced: () => void };
+
+export function MarketAgentDetail({ agentId, titleId, onCreate, ...advanced }: {
+  agentId: string; titleId: string; onCreate: () => void;
+} & AdvancedSettings) {
   const { translate } = useSessionMessages();
   const reading = useManagementAgent(agentId);
   const host = useLibraryHost();
@@ -41,8 +45,8 @@ export function MarketAgentDetail({ agentId, onCreate }: { agentId: string; onCr
   const noticeLine = notice && <DeviceScopeNoticeLine notice={{ ...notice, inHeading: false }} onRetry={reading.state === 'unknown' ? undefined : () => void reading.retry?.()} />;
   if (reading.state !== 'value' || !reading.value) {
     return (
-      <><DialogHeader>
-        <DialogTitle role="status">{translate(
+      <><DialogHeader showCloseButton={false}>
+        <DialogTitle id={titleId} role="status">{translate(
           reading.state === 'unknown' ? 'extensions.loading' : reading.state === 'error' ? 'agentsPage.detailLoadFailed' : 'agentsPage.detailUnavailable'
         )}</DialogTitle>
       </DialogHeader>{noticeLine}</>
@@ -55,24 +59,24 @@ export function MarketAgentDetail({ agentId, onCreate }: { agentId: string; onCr
       agentId={agentId}
       agentPayload={agent}
       installOptions={agent.installOptions}
-      renderPage={(installation) => <AgentCard agent={agent} installation={installation} onCreate={onCreate} notice={noticeLine} readOnly={readOnly} />}
+      renderPage={(installation) => <AgentCard {...advanced} titleId={titleId} agent={agent} installation={installation} onCreate={onCreate} notice={noticeLine} readOnly={readOnly} />}
     /></fieldset>
   );
 }
 
-function AgentCard({ agent, installation, onCreate, notice, readOnly }: {
+function AgentCard({ titleId, agent, installation, onCreate, notice, readOnly, advancedOpen, onToggleAdvanced }: {
+  titleId: string;
   agent: AgentPayload;
   installation: AgentInstallationHeader;
   onCreate: () => void;
   notice: ReactNode;
   readOnly: boolean;
-}) {
+} & AdvancedSettings) {
   const { translate, locale } = useSessionMessages();
   const host = useLibraryHost();
   const { confirmation, requestUninstall } = useAgentUninstallConfirmation();
   const { installed, runnable, install, update, uninstall, busy, installing, updating, uninstalling, version, source, failure, check } = installation;
   const terminalConfiguration = agent.id === 'claude' || agent.id === 'codex';
-  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const actions = installing || updating || uninstalling ? (
     <Button disabled aria-busy>
@@ -105,7 +109,7 @@ function AgentCard({ agent, installation, onCreate, notice, readOnly }: {
 
   return (
     <>
-      <MarketDetailCard
+      <MarketDetailCard titleId={titleId} showCloseButton={false}
         name={agent.name}
         publisher={agent.publisher ? translate('marketDetail.agentPublisher', { publisher: vendorName(agent.publisher) }) : undefined}
         icon={<AppIcon id={agent.id} size={68} dimmed={!installed} />}
@@ -114,7 +118,7 @@ function AgentCard({ agent, installation, onCreate, notice, readOnly }: {
           <MarketAgentDevices agentId={agent.id} />
           {installed && (
             <Button variant="outline" aria-pressed={advancedOpen} className="aria-pressed:bg-row-selected aria-pressed:text-foreground"
-              onClick={() => setAdvancedOpen(open => !open)} data-testid="agent-advanced-settings">
+              onClick={onToggleAdvanced} data-testid="agent-advanced-settings">
               {translate('agentsPage.advancedSettings')}
             </Button>
           )}

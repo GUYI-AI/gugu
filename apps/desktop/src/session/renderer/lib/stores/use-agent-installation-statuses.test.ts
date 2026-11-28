@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { agentInstallProgressChannel, agentInstallationStatusUpdatedChannel } from '@shared/events/appEvents';
 import { useAgentInstallationStatus, useAgentInstallationStatuses } from './use-agent-installation-statuses';
 import { LibraryHostProvider, LOCAL_LIBRARY_HOST } from '@renderer/features/library/library-host';
+import { toast } from '@renderer/lib/hooks/use-toast';
 import { useConnectionAvailability } from '@renderer/features/settings/subscriptions/use-connection-availability';
 import { connectionAvailability } from '@renderer/features/settings/subscriptions/subscription-queries';
 
@@ -254,6 +255,48 @@ describe('useAgentInstallationStatuses invalidate', () => {
     expect(mocks.refreshAuthStatus.mock.calls.filter(([machine]) => machine === 'server-b')).toHaveLength(1);
     expect(queryClient.getQueryState(connectionAvailability.key('server-a', 'codex')!)?.isInvalidated).toBe(true);
   });
+
+  it.each([
+    { version: '2.1.332', latest: '2.1.332', remaining: false, expected: 'claude updated to v2.1.332' },
+    { version: '2.1.278', latest: '2.1.332', remaining: true, expected: 'Update still available for claude v2.1.332' },
+  ])('waits for the target reading and reports $expected', async ({ version, latest, remaining, expected }) => {
+    await renderAvailability('server-a');
+    const status = {
+      id: 'claude',
+      installations: [{ version, latestVersion: latest, provenance: { ours: true }, updateAvailable: remaining }],
+    };
+    let finishRead!: (value: typeof status[]) => void;
+    mocks.listAgentInstallationStatus.mockImplementationOnce(() => new Promise(resolve => { finishRead = resolve; }));
+    mocks.update.mockResolvedValueOnce({ success: true, data: {} });
+    let operation!: Promise<unknown>;
+    await act(async () => { operation = api!.updateAsync({ id: 'claude', method: 'mise' }); });
+    await settle();
+    expect(finishRead).toBeTypeOf('function');
+    expect(toast).not.toHaveBeenCalled();
+    await act(async () => { finishRead([status]); await operation; });
+    expect(toast).toHaveBeenCalledWith({ title: expected });
+    expect(agentInstallationStatus.peekValue('server-a')?.[0]?.installations[0]?.updateAvailable).toBe(remaining);
+  });
+
+
+  it('keeps the verified version when a status read from before the update finishes late', async () => {
+    await renderAvailability('server-a');
+    const snapshot = (version: string) => [{ id: 'claude', installations: [
+      { version, provenance: { ours: true }, updateAvailable: version !== '2.1.332', latestVersion: '2.1.332' },
+    ] }];
+    let oldRead!: (value: ReturnType<typeof snapshot>) => void;
+    mocks.listAgentInstallationStatus.mockImplementationOnce(() => new Promise(resolve => { oldRead = resolve; }));
+    let earlier!: Promise<void>;
+    await act(async () => { earlier = agentInstallationStatus.refresh('server-a'); });
+    expect(oldRead).toBeTypeOf('function');
+    mocks.listAgentInstallationStatus.mockResolvedValue(snapshot('2.1.332'));
+    mocks.update.mockResolvedValueOnce({ success: true, data: {} });
+    await act(async () => { await api!.updateAsync({ id: 'claude', method: 'mise' }); });
+    await act(async () => { oldRead(snapshot('2.1.278')); await earlier; });
+    expect(toast).toHaveBeenCalledWith({ title: 'claude updated to v2.1.332' });
+    expect(agentInstallationStatus.peekValue('server-a')?.[0]?.installations[0]?.version).toBe('2.1.332');
+  });
+
 
   it('subscribes to progress while updating and clears it when the update settles', async () => {
     let complete!: (value: { success: true; data: object }) => void;
