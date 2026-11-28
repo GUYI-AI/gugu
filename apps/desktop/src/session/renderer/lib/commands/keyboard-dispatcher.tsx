@@ -7,6 +7,7 @@ import { effectiveAliases } from '@shared/effective-hotkey';
 import { isImeComposing } from '@/lib/ime';
 import { COMMANDS, getEffectiveHotkey, isHostCommandId, type CommandId, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { isEmbedVisible, subscribeEmbedVisibility } from '@renderer/lib/portal-container';
+import { aModalIsOpen } from '@renderer/lib/modal/modal-open';
 import { commandRegistry } from './registry';
 
 type Overrides = ReturnType<typeof useShortcutOverrides>;
@@ -87,11 +88,19 @@ function dispatchIn(event: KeyboardEvent, source: KeySource): boolean {
     const bindings = [getEffectiveHotkey(id, overrides), ...effectiveAliases(id, overrides)];
     const match = bindings.find(binding => {
       if (!binding) return false;
+      // Option changes event.key on macOS; the bracket keys still navigate the timeline.
+      if ((id === 'session.timelinePrev' && binding === 'Alt+[') || (id === 'session.timelineNext' && binding === 'Alt+]')) {
+        return event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey &&
+          event.code === (id === 'session.timelinePrev' ? 'BracketLeft' : 'BracketRight');
+      }
       if (typeof binding === 'string') return matchesKeyboardEvent(event, binding as Hotkey, PLATFORM);
       return binding.region === 'navigation' && !!start?.closest(`[data-region="left-sidebar"], [data-region="${SESSION_NAV_FOCUS_REGION}"]`) &&
         event.key === binding.character && !event.metaKey && (!event.ctrlKey || event.getModifierState('AltGraph'));
     });
     if (!match) continue;
+    if (def.workspaceShortcut && (source === 'aux' || source === 'terminal' || typing || inEditor || start?.isContentEditable ||
+      aModalIsOpen() || event.composedPath().some(node => node instanceof Element &&
+        node.matches('[role="textbox"], [role="combobox"], [role="dialog"], [role="alertdialog"], [role="menu"], [cmdk-root], [data-slot="popover-content"], [data-slot="popover-popup"]')))) continue;
     if (typing && !def.capture && !inEditor && (typeof match !== 'string' || yieldsToText(id, match as Hotkey))) continue;
     // @@@native-editor-find — CodeMirror owns replacement, regex and selection search; only app.find yields.
     if (id === 'app.find' && start?.closest('.cm-editor, [cmdk-root], [role=menu]')) continue;

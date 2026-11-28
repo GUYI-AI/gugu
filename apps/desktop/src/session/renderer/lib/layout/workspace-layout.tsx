@@ -175,7 +175,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
       <PanelSlot track={track} id="inner">
         {innerSidebar}
       </PanelSlot>
-      <div ref={fillRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="">
+      <div ref={fillRef} tabIndex={-1} className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="">
         {mainContent}
         {innerSidebarRestore}
       </div>

@@ -342,7 +342,9 @@ const DEVICE = 'device'
 
 const accountListeners = new Set<() => void>()
 type AccountState = { id: string | null; live: boolean }
-let account: AccountState = { id: readLastAccount(), live: false }
+/** The account remembered before this renderer received a sign-in event. */
+export const startupAccountId = readLastAccount()
+let account: AccountState = { id: startupAccountId, live: false }
 
 function readLastAccount(): string | null {
   try { return localStorage.getItem(LAST_ACCOUNT_KEY) } catch { return null }

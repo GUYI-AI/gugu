@@ -291,7 +291,11 @@ describe('一屏几块的骨架 (#7052)', () => {
     const frame = host!.querySelector<HTMLElement>('[data-screen-frame]')!.getBoundingClientRect();
     expect([block.left, block.top, block.width, block.height]).toEqual([frame.left, frame.top, frame.width, frame.height]);
     expect(separator()).toBeNull();
-    expect(host!.querySelectorAll('[data-screen-frame] [role="separator"], [data-screen-frame] [tabindex]:not([data-screen-block] *)').length).toBe(0);
+    const frameTargets = host!.querySelectorAll<HTMLElement>('[data-screen-frame] [tabindex]:not([data-screen-block] *)');
+    expect(Array.from(frameTargets).filter(el => el.tabIndex >= 0)).toHaveLength(0);
+    const pane = host!.querySelector<HTMLElement>('[data-screen-block]')!;
+    pane.focus();
+    expect(document.activeElement).toBe(pane);
   });
 
   it('只有一块时宽度一帧一帧地变(收侧栏、拖窗口):分块那一层一个属性都不写', async () => {

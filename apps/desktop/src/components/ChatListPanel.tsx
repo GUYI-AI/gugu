@@ -1,3 +1,4 @@
+import { isImeComposing } from '@/lib/ime'
 import type { PersonalConversationHiding } from '../lib/hideListedConversation'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useNativeAgentChats } from '@/hooks/useNativeAgentChats'
@@ -32,7 +33,7 @@ import { CreateGroupChatForm, MEMBER_PICKER_SHEET } from './CreateGroupChatModal
 import { AddFriendSearch } from './AddFriendSearch'
 import { Avatar } from './Avatar'
 import { PhoneProjectChatAvatar } from '@/mobile/partners/PhoneProjectChatAvatar'
-import { chatLineCalls, chatLineNews } from '@/lib/chatLineUnread'
+import { chatLineCalls, chatLineIsUnread, chatLineNews } from '@/lib/chatLineUnread'
 import { AvatarUnread } from './AvatarUnread'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestBridge'
@@ -913,24 +914,29 @@ export function ChatListPanel({
     if (readSidebarNotificationsOpen()) return false
     const focused = deepActiveElement()
     const path = focused instanceof HTMLElement ? focused : null
-    if (path?.closest('[role="dialog"], [role="menu"], [role="listbox"], [data-slot="popover-content"], [data-slot="popover-popup"], [data-slot="sheet-content"]')) return false
+    if (path?.closest('[role="dialog"], [role="menu"], [data-slot="popover-content"], [data-slot="popover-popup"], [data-slot="sheet-content"]')) return false
     // #2548 on the task page the one list's rows are walked from its composer too, as its old task rows were.
     const composerSelector = `[data-testid="${AUTOMATION_TEST_IDS.chatComposer}"]${inSidebar ? ', [data-testid="prompt-editor"]' : ''}`
     const insideChatComposer = !!path?.closest(composerSelector)
     if (!insideChatComposer && path?.closest('input, textarea, [contenteditable="true"], [role="textbox"]')) return false
+    const listbox = path?.closest('[role="listbox"]')
+    if (listbox && listbox !== listboxRef.current) return false
     const targetId = pick(visibleChatIds)
     const target = targetId ? chats.find((chat) => chat.id === targetId) : undefined
-    if (!target) return true
+    if (!target) return false
     const focusTarget = insideChatComposer ? 'composer' : 'sidebar'
     selectChat(target, focusTarget)
     if (focusTarget === 'sidebar') focusChatRow(targetId)
     return true
   }
+  const unreadIds = useMemo(() => new Set(visibleChats.filter(chat => chatLineIsUnread(chat, lineCalls.get(chat.id) ?? 0)).map(chat => chat.id)), [visibleChats, lineCalls])
   useCommandProvider({
     scopeId: 'session',
     surface: 'shell',
     isActive: () => walksListKeys,
     getCommands: () => [
+      { id: 'chat.nextUnread', execute: () => walkTo(ids => nextChatId(ids, selectedChatId, 1, id => unreadIds.has(id))) },
+      { id: 'chat.previousUnread', execute: () => walkTo(ids => nextChatId(ids, selectedChatId, -1, id => unreadIds.has(id))) },
       { id: 'session.next', execute: () => walkTo((ids) => nextChatId(ids, selectedChatId, 1)) },
       { id: 'session.previous', execute: () => walkTo((ids) => nextChatId(ids, selectedChatId, -1)) },
       ...([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map((n) => ({
@@ -952,6 +958,7 @@ export function ChatListPanel({
   useEffect(() => (oneList ? installOneListNeighbour(openNeighbour) : undefined), [oneList, openNeighbour])
 
   const handleChatKeyDown = (event: Parameters<KeyboardEventHandler<HTMLDivElement>>[0], chat: ChatItem) => {
+    if (isImeComposing(event) || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       focusChatRow(nextChatId(visibleChatIds, chat.id, event.key === 'ArrowDown' ? 1 : -1))

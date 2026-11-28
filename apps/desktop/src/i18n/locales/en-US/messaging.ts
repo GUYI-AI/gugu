@@ -313,6 +313,7 @@ export default {
     "markRead": "Mark as read",
     "removeProject": "Remove Project",
     "markAllRead": "Mark all as read",
+    "markAllReadConfirm": "Unread indicators will be cleared in all conversations, including muted conversations.",
     "markAllReadFailed": "Could not mark chats as read. Try again.",
     "markAllReadPartial": "{{count}} chats could not be marked as read. Try again.",
     "markAllReadPartial_one": "{{count}} chat could not be marked as read. Try again.",
