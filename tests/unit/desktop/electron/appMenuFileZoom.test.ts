@@ -113,7 +113,7 @@ describe('application menu file zoom (#1625)', () => {
       expect(close.role).toBeUndefined()
       expect(close.accelerator).toBe('CmdOrCtrl+W')
       close.click!({}, window, {})
-      expect(closeFromMenu).toHaveBeenCalledExactlyOnceWith(window)
+      expect(closeFromMenu).toHaveBeenCalledExactlyOnceWith(window, true)
     }
   })
 })

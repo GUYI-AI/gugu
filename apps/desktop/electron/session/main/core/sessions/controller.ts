@@ -7,7 +7,6 @@ import { dehydrateSession } from './dehydrateSession';
 import { getSessions } from './getSessions';
 import { getSessionsForProject } from './getSessionsForProject';
 import { getUnarchivedSession } from './getUnarchivedSession';
-import { convertAutomationSession } from './convert-automation-session';
 import { forkSession } from './fork-session';
 import { getOutline } from './session-outline';
 import { hydrateSession } from './hydrateSession';
@@ -64,7 +63,6 @@ export const sessionController = createRPCController({
   // 人在侧栏把一条会话拖到另一条上 = 挂到它下面:与 agent 的 `session_set_parent` 同一个动作(校验、落库、事件都在
   // setSessionParent 里)。同样在 child 所在的机器上做 —— agent 那边由宿主按 child 的地址转,人这边由会话页按 child 的机器选线。
   setSessionParent,
-  convertAutomationSession,
   getUnarchivedSession,
   getSessionsForProject,
   markSessionSeen,

@@ -18,8 +18,7 @@ export function detectShortcutPlatform(): ShortcutPlatform {
  *
  * macOS keeps Control, which is what the owner asked for and is free there — ⌘ carries the primary
  * commands. On Windows and Linux Control *is* the primary modifier and all three are already spoken
- * for: Ctrl+R is the Electron default menu's Reload (this app never calls `setApplicationMenu`, and
- * it does ship nsis and AppImage builds), Ctrl+P is this registry's own `openFile`, and Ctrl+X is
+ * for: Ctrl+R is the unlocked Electron menu's Reload, Ctrl+P is this registry's own `openFile`, and Ctrl+X is
  * the platform's Cut. Alt is the spare modifier there, and unlike macOS's Option it does not rewrite
  * `event.key` (⌥R yields '®'), so the letter — the half worth remembering — survives the move.
  */
@@ -31,68 +30,6 @@ export function sessionActionDefault(
 }
 
 export type TabNavigationDirection = 'next' | 'previous';
-
-export interface DomTabNavigationInput {
-  type: string;
-  key: string;
-  ctrlKey: boolean;
-  shiftKey: boolean;
-  altKey: boolean;
-  metaKey: boolean;
-}
-
-export interface ElectronTabNavigationInput {
-  type: string;
-  key: string;
-  control?: boolean;
-  shift?: boolean;
-  alt?: boolean;
-  meta?: boolean;
-}
-
-function normalizeShortcutKey(key: string): string {
-  return key.toLowerCase();
-}
-
-function resolveTabNavigationDirection(input: {
-  type: string;
-  key: string;
-  control: boolean;
-  shift: boolean;
-  alt: boolean;
-  meta: boolean;
-}): TabNavigationDirection | null {
-  if (input.type !== 'keydown' && input.type !== 'keyDown') return null;
-  if (normalizeShortcutKey(input.key) !== 'tab') return null;
-  if (!input.control || input.alt || input.meta) return null;
-  return input.shift ? 'previous' : 'next';
-}
-
-export function getDomTabNavigationDirection(
-  input: DomTabNavigationInput
-): TabNavigationDirection | null {
-  return resolveTabNavigationDirection({
-    type: input.type,
-    key: input.key,
-    control: input.ctrlKey,
-    shift: input.shiftKey,
-    alt: input.altKey,
-    meta: input.metaKey,
-  });
-}
-
-export function getElectronTabNavigationDirection(
-  input: ElectronTabNavigationInput
-): TabNavigationDirection | null {
-  return resolveTabNavigationDirection({
-    type: input.type,
-    key: input.key,
-    control: Boolean(input.control),
-    shift: Boolean(input.shift),
-    alt: Boolean(input.alt),
-    meta: Boolean(input.meta),
-  });
-}
 
 export function resolveDefaultHotkey(
   def: Pick<CommandDef, 'defaultHotkey'>,

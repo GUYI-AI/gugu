@@ -18,6 +18,8 @@ export interface CommandDef {
   defaultHotkey?: string | ((platform: ShortcutPlatform) => string);
   /** Aliases stay bound when the primary key changes. Clearing the command disables its aliases too. */
   aliases?: readonly CommandAlias[];
+  /** The operating system registers this shortcut through its own preference. */
+  systemShortcut?: boolean;
   hideFromSettings?: boolean;
   hideFromPalette?: boolean;
   ignoreInputs?: boolean;
@@ -45,6 +47,7 @@ function defineCommands<const T extends Record<string, Omit<CommandDef, 'id'>>>(
 
 export const COMMANDS = defineCommands({
   'app.quickChat': {
+    systemShortcut: true,
     whenSessionPageHidden: 'run',
     label: 'Quick Chat', description: 'Open the floating assistant chat', category: 'Create',
   },
@@ -733,7 +736,7 @@ export const CONFIGURABLE_SHORTCUTS = (
     CommandId,
     (typeof COMMANDS)[CommandId],
   ][]
-).filter(([, def]) => !def.hideFromSettings);
+).filter(([, def]) => !def.hideFromSettings && !def.systemShortcut);
 
 export const SHORTCUTS_BY_CATEGORY = CONFIGURABLE_SHORTCUTS.reduce((acc, entry) => {
   const category = entry[1].category;

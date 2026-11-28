@@ -219,7 +219,7 @@ import { appService } from '@main/core/app/service'
 import { appSettingsService } from '@main/core/settings/settings-service'
 import { settleTerminalEnabled } from '@main/core/settings/terminal-visibility'
 import { upgradeProjectPinsToSidebarOnce } from '@main/core/sessions/sidebar-pin-upgrade'
-import { browserWebContentsRegistry } from '@main/core/browser/browser-webcontents-registry'
+import { applyKeyboardSettings } from '@main/core/settings/keyboard-settings'
 import { setBrowserCorsRelaxationSettings } from '@main/core/browser/browser-profile-session'
 import { promptLibraryService } from '@main/core/prompt-library/service'
 import { agentHookService } from '@main/core/agent-hooks/agent-hook-service'
@@ -748,9 +748,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   } catch (e) {
     log.error('sidebar pin upgrade failed; it runs again on the next start', { error: e })
   }
-  if (browserFeatures) {
-    browserWebContentsRegistry.setKeyboardSettings(await appSettingsService.get('keyboard'))
-  }
+  applyKeyboardSettings(await appSettingsService.get('keyboard'))
   setBrowserCorsRelaxationSettings(await appSettingsService.get('browser'))
   await promptLibraryService.initialize()
   // 写入者先于任何事件来源就位:它订 hook 总线,births / 收残 / 回收都经它(spec agent-status-writer)。

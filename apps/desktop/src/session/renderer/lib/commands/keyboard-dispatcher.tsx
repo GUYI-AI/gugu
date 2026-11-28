@@ -1,3 +1,4 @@
+import { SESSION_NAV_FOCUS_REGION } from '@renderer/features/sidebar/session-navigation-focus';
 import { detectPlatform, matchesKeyboardEvent, parseHotkey, type Hotkey } from '@tanstack/react-hotkeys';
 import { observer } from 'mobx-react-lite';
 import { useEffect } from 'react';
@@ -75,6 +76,8 @@ function dispatchIn(event: KeyboardEvent, source: KeySource): boolean {
     const id = command.id;
     if (seen.has(id) || !isHostCommandId(id)) continue;
     seen.add(id);
+    // A non-Mac terminal keeps shell control sequences; only tab navigation may claim its effective bindings.
+    if (source === 'terminal' && PLATFORM !== 'mac' && id !== 'session.tabNext' && id !== 'session.tabPrev') continue;
     const def = COMMANDS[id];
     if (def.conflictBehavior === 'allow') continue;
     // Capture phase: the entry keys a terminal or modal root would swallow, and everything while a code editor holds
@@ -85,7 +88,7 @@ function dispatchIn(event: KeyboardEvent, source: KeySource): boolean {
     const match = bindings.find(binding => {
       if (!binding) return false;
       if (typeof binding === 'string') return matchesKeyboardEvent(event, binding as Hotkey, PLATFORM);
-      return binding.region === 'navigation' && !!start?.closest('[data-region="left-sidebar"]') &&
+      return binding.region === 'navigation' && !!start?.closest(`[data-region="left-sidebar"], [data-region="${SESSION_NAV_FOCUS_REGION}"]`) &&
         event.key === binding.character && !event.metaKey && (!event.ctrlKey || event.getModifierState('AltGraph'));
     });
     if (!match) continue;

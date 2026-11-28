@@ -1,8 +1,21 @@
 import { BrowserWindow, Menu, webContents, type BaseWindow, type MenuItem, type MenuItemConstructorOptions } from 'electron'
+import type { AppSettings } from '../src/session/shared/core/app-settings'
+import { getEffectiveHotkey, sameShortcut } from '../src/session/shared/effective-hotkey'
 import { lockedMenuTemplate } from './devtools-lock'
 import type { FileZoomCommand } from '../src/session/shared/preview/file-zoom'
 import { runWindowMenuCommand } from './window-menu-commands'
 import { createLogger } from './lib/logger'
+
+type MenuKeyboard = AppSettings['keyboard'] | null
+
+function acceleratorFor(command: 'app.settings' | 'app.closeWindow' | 'session.tabClose', keyboard?: MenuKeyboard): string | undefined {
+  const hotkey = getEffectiveHotkey(command, keyboard)
+  return hotkey?.split('+').map(key => {
+    if (key === 'Mod') return 'CmdOrCtrl'
+    if (key === 'Meta') return process.platform === 'darwin' ? 'Command' : 'Super'
+    return key.replace(/^Arrow(Up|Down|Left|Right)$/, '$1')
+  }).join('+')
+}
 
 /**
  * 应用菜单 —— 咕咕自己定一份,❌ 交给 Electron 的默认菜单。
@@ -19,7 +32,7 @@ import { createLogger } from './lib/logger'
  */
 export function applicationMenuTemplate(
   platform: NodeJS.Platform,
-  { locked, settingsLabel, openSettings }: { locked: boolean; settingsLabel: string; openSettings: () => void },
+  { locked, settingsLabel, openSettings, keyboard }: { keyboard?: MenuKeyboard; locked: boolean; settingsLabel: string; openSettings: () => void },
 ): MenuItemConstructorOptions[] {
   const appMenu: MenuItemConstructorOptions = {
     role: 'appMenu',
@@ -27,7 +40,7 @@ export function applicationMenuTemplate(
       { role: 'about' },
       { type: 'separator' },
       // 按下 ⌘, 时 mac 先找菜单里的快捷键,渲染层那条 Mod+, 就收不到了;打开设置是幂等的,两边都接也只开一次。
-      { label: settingsLabel, accelerator: 'CmdOrCtrl+,', click: () => openSettings() },
+      { label: settingsLabel, accelerator: acceleratorFor('app.settings', keyboard), click: () => openSettings() },
       { type: 'separator' },
       { role: 'services' },
       { type: 'separator' },
@@ -50,8 +63,8 @@ export function applicationMenuTemplate(
 
 type MenuTemplate = Array<MenuItemConstructorOptions | MenuItem>
 type RoutedMenuCommand = FileZoomCommand | 'selectAll'
-type MenuCommandClick = (command: RoutedMenuCommand | 'close', window: BaseWindow | undefined) => void
-const COMMAND_ACCELERATORS: Record<RoutedMenuCommand | 'close', string> = { zoomIn: 'CmdOrCtrl+Plus', zoomOut: 'CmdOrCtrl+-', resetZoom: 'CmdOrCtrl+0', selectAll: 'CmdOrCtrl+A', close: 'CmdOrCtrl+W' }
+type MenuCommandClick = (command: RoutedMenuCommand | 'close', window: BaseWindow | undefined, byAccelerator?: boolean) => void
+const COMMAND_ACCELERATORS: Record<RoutedMenuCommand, string> = { zoomIn: 'CmdOrCtrl+Plus', zoomOut: 'CmdOrCtrl+-', resetZoom: 'CmdOrCtrl+0', selectAll: 'CmdOrCtrl+A' }
 const routedRoleOf = (role: string | undefined): RoutedMenuCommand | 'close' | null =>
   role?.toLowerCase() === 'selectall' ? 'selectAll' : role?.toLowerCase() === 'zoomin' ? 'zoomIn' : role?.toLowerCase() === 'zoomout' ? 'zoomOut' : role?.toLowerCase() === 'resetzoom' ? 'resetZoom' : role?.toLowerCase() === 'close' ? 'close' : null
 const hasRoutedRole = (menu: Menu): boolean => menu.items.some(item => routedRoleOf(item.role) !== null || (item.submenu ? hasRoutedRole(item.submenu) : false))
@@ -61,24 +74,28 @@ const hasRoutedRole = (menu: Menu): boolean => menu.items.some(item => routedRol
  * 装着它们的那几栏换成新模板项,其余 MenuItem 原样放回。❌ 改已建好的 MenuItem —— 它的 submenu 只读,赋值即抛。
  * 「关闭」(⌘W)不再直接关窗:mac 上菜单先于页面拿到 ⌘W,所以由它交给主窗的快捷键登记,有页签先关页签。
  */
-export function routeWindowCommandsTemplate(menu: Menu, onCommand: MenuCommandClick): MenuTemplate {
+export function routeWindowCommandsTemplate(menu: Menu, onCommand: MenuCommandClick, keyboard?: MenuKeyboard): MenuTemplate {
   return menu.items.map((item): MenuItemConstructorOptions | MenuItem => {
     const command = routedRoleOf(item.role)
-    if (command) return { label: item.label, accelerator: COMMAND_ACCELERATORS[command], click: (_item, window) => onCommand(command, window) }
+    if (command) return { label: item.label, accelerator: command === 'close' ? acceleratorFor('app.closeWindow', keyboard) : COMMAND_ACCELERATORS[command], click: (_item, window, event) => onCommand(command, window, event?.triggeredByAccelerator) }
     if (!item.submenu || !hasRoutedRole(item.submenu)) return item
-    return { ...(item.role ? { role: item.role } : {}), label: item.label, submenu: Menu.buildFromTemplate(routeWindowCommandsTemplate(item.submenu, onCommand)) }
+    return { ...(item.role ? { role: item.role } : {}), label: item.label, submenu: Menu.buildFromTemplate(routeWindowCommandsTemplate(item.submenu, onCommand, keyboard)) }
   })
 }
 
 /** 装上(或换语言后重装)应用菜单。要在 app ready **之后**调 —— 菜单是原生资源,ready 前设在部分平台无效。 */
-export function applyApplicationMenu(options: Parameters<typeof applicationMenuTemplate>[1] & { closeFromMenu: (window: BaseWindow | undefined) => void }): void {
+export function applyApplicationMenu(options: Parameters<typeof applicationMenuTemplate>[1] & { closeFromMenu: (window: BaseWindow | undefined, tabFirst: boolean) => void }): void {
   const log = createLogger('app-menu')
   const native = Menu.buildFromTemplate(applicationMenuTemplate(process.platform, options))
-  Menu.setApplicationMenu(Menu.buildFromTemplate(routeWindowCommandsTemplate(native, (command, window) => {
-    if (command === 'close') { options.closeFromMenu(window); return }
+  Menu.setApplicationMenu(Menu.buildFromTemplate(routeWindowCommandsTemplate(native, (command, window, byAccelerator) => {
+    if (command === 'close') {
+      const tabFirst = !byAccelerator || sameShortcut(getEffectiveHotkey('session.tabClose', options.keyboard), getEffectiveHotkey('app.closeWindow', options.keyboard))
+      options.closeFromMenu(window, tabFirst)
+      return
+    }
     if (window instanceof BrowserWindow) {
       const contents = command === 'selectAll' ? webContents.getFocusedWebContents() ?? window.webContents : window.webContents
       void runWindowMenuCommand(command, { contents, window }).catch(error => log.error({ error }, 'Window menu command failed'))
     }
-  })))
+  }, options.keyboard)))
 }

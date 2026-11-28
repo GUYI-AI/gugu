@@ -1,5 +1,7 @@
 import { makeAutoObservable } from 'mobx';
 
+export const SESSION_NAV_FOCUS_REGION = 'session-nav-focus';
+
 export type SessionNavFocusLayer = 'nav' | 'composer';
 
 /** The single observable fact consumed by navigation and every session-page auto-focus writer. */

@@ -8,10 +8,9 @@ import type { CommandAlias } from '@shared/commands';
 import type { Hotkey } from '@tanstack/react-hotkeys';
 import React, { useState, useMemo } from 'react';
 import {
-  type COMMANDS,
   getEffectiveHotkey,
   type CommandId, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
-import { SHORTCUTS_BY_CATEGORY } from '@shared/commands';
+import { COMMANDS, SHORTCUTS_BY_CATEGORY } from '@shared/commands';
 import { commandCategoryLabel, commandDescription, commandLabel } from '@renderer/lib/commands/command-copy';
 import { type BaseModalProps } from '@renderer/lib/modal/modal-provider';
 import { Shortcut } from '@renderer/lib/ui/shortcut';
@@ -335,7 +334,7 @@ const ShortcutRow: React.FC<ShortcutRowProps> = ({
       <span className="flex flex-wrap justify-end gap-2">
         {hotkeys.map(binding => typeof binding === 'string'
           ? <Shortcut key={binding} hotkey={binding as Hotkey} variant="keycaps" />
-          : <kbd key={binding.character}>{binding.character}</kbd>)}
+          : <Shortcut key={binding.character} hotkey={binding.character as Hotkey} variant="keycaps" />)}
         {systemBinding && <kbd>{systemBinding}</kbd>}
         {!hotkeys.length && !systemBinding && emptyLabel}
       </span>
@@ -408,7 +407,8 @@ const CategorySection: React.FC<CategorySectionProps> = ({
 
 export const KeyboardShortcutsCheatSheet: React.FC<BaseModalProps> = ({ onClose }) => {
   const keyboard = useShortcutOverrides();
-  const quickChat = useQuickChatState().reading;
+  const { available, reading: quickChat } = useQuickChatState();
+  const showQuickChat = available && quickChat.state === 'value' && quickChat.value.supported;
   const quickChatBinding = quickChat.state === 'value' && quickChat.value.registered ? quickChatShortcutLabel(quickChat.value) : undefined;
   const [editorShortcuts] = useState(() => {
     const roots = new Set<ParentNode>([document, (getPortalContainer()?.getRootNode() ?? document) as ParentNode]);
@@ -430,7 +430,9 @@ export const KeyboardShortcutsCheatSheet: React.FC<BaseModalProps> = ({ onClose 
 
   const groups = [...SHORTCUTS_BY_CATEGORY].map(([category, entries]) => {
     const query = searchQuery.trim().toLowerCase();
-    return [category, entries.filter(([id]) =>
+    const group: ShortcutEntry[] = showQuickChat && category === COMMANDS['app.quickChat'].category
+      ? [['app.quickChat', COMMANDS['app.quickChat']], ...entries] : entries;
+    return [category, group.filter(([id]) =>
       !query || [commandLabel(id), commandDescription(id)].some(text => text.toLowerCase().includes(query)))] as const;
   });
 

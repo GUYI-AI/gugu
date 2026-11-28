@@ -12,6 +12,8 @@ export { resolveDefaultHotkey, sharesChordIntentionally } from '@shared/shortcut
 
 type ShortcutOverrides = Partial<Record<CommandId, string | null>>;
 
+const noOverrides: ShortcutOverrides = {};
+
 export function isHostCommandId(id: string): id is CommandId {
   return Object.hasOwn(COMMANDS, id);
 }
@@ -38,6 +40,6 @@ export function getHotkeyRegistration(
 export function useShortcutOverrides(): ShortcutOverrides | null {
   const { settings } = useAppSettingsKey('keyboard');
   if (settings.state === 'value') return settings.value.value;
-  if (!platform.capabilities.sessionHost || settings.state === 'error') return {};
+  if (!platform.capabilities.sessionHost || settings.state === 'error') return noOverrides;
   return null;
 }

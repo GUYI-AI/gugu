@@ -72,8 +72,8 @@ export function AppMenuEvents() {
   // 否则关窗。和在页面里直接按 ⌘W 走的是同一个结果。
   // 认领「关闭」:主进程只在有人认领时才把 ⌘W 交过来,否则自己关窗(登录页、崩溃、重载时 ⌘W 照样能关)。
   useEffect(() => {
-    const stop = events.on(menuCloseChannel, () => {
-      if (!commandRegistry.dispatch('session.tabClose')) commandRegistry.dispatch('app.closeWindow');
+    const stop = events.on(menuCloseChannel, tabFirst => {
+      if (!tabFirst || !commandRegistry.dispatch('session.tabClose')) commandRegistry.dispatch('app.closeWindow');
     });
     events.emit(menuCloseHandlerChannel, true);
     return () => {

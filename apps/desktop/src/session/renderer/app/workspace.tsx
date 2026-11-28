@@ -2,7 +2,7 @@ import { LeftSidebar } from '@renderer/features/sidebar/left-sidebar';
 import { InnerSidebar, InnerSidebarRestore } from '@renderer/features/sidebar/inner-sidebar';
 import { PinnedSidebarAgentsPublisher } from '@renderer/features/sidebar/sidebar-pinned-agents';
 import { SessionKeyboardNavListener } from '@renderer/features/sidebar/session-keyboard-nav-listener';
-import { SESSION_NAV_FOCUS_REGION } from '@renderer/features/sidebar/session-keyboard-nav';
+import { SESSION_NAV_FOCUS_REGION } from '@renderer/features/sidebar/session-navigation-focus';
 import { KeyboardDispatcher } from '@renderer/lib/commands/keyboard-dispatcher';
 import { AppKeyboardShortcuts } from '@renderer/lib/components/app-keyboard-shortcuts';
 import { BrowserAppShortcutEvents } from '@renderer/lib/components/browser-app-shortcut-events';

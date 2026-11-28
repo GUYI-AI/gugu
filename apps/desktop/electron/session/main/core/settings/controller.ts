@@ -1,5 +1,5 @@
 import { setBrowserCorsRelaxationSettings } from '@main/core/browser/browser-profile-session';
-import { browserWebContentsRegistry } from '@main/core/browser/browser-webcontents-registry';
+import { applyKeyboardSettings } from '@main/core/settings/keyboard-settings';
 import { reconcileResourceSampler } from '@main/core/resource-monitor/resource-sampler';
 import { pushIdleCompactionSetting } from '@main/core/acp/idle-compaction-setting';
 import { peekAcpWorkerClient } from '@main/core/acp/runtime-process/host';
@@ -15,7 +15,7 @@ async function reconcileSettingsRuntimeState(key: AppSettingsKey): Promise<void>
   if (key === 'sessions') await pushIdleCompactionSetting(await peekAcpWorkerClient());
   if (key === 'keyboard') {
     // Re-read the effective settings so runtime state observes service-side defaults or merges.
-    browserWebContentsRegistry.setKeyboardSettings(await appSettingsService.get('keyboard'));
+    applyKeyboardSettings(await appSettingsService.get('keyboard'));
   }
   if (key === 'browser') {
     setBrowserCorsRelaxationSettings(await appSettingsService.get('browser'));

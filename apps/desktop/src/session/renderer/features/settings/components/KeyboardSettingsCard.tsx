@@ -5,12 +5,12 @@ import { commandRegistry } from '@renderer/lib/commands/registry';
 import { commandCategoryLabel, commandDescription, commandLabel } from '@renderer/lib/commands/command-copy';
 import { useAppSettingsKey, type AppSettingsKeyApi } from '@renderer/features/settings/use-app-settings-key';
 import type { AppSettings } from '@shared/core/app-settings';
-import { CONFIGURABLE_SHORTCUTS, SHORTCUTS_BY_CATEGORY } from '@shared/commands';
+import { SHORTCUTS_BY_CATEGORY } from '@shared/commands';
+import { defaultShortcutOwner, shortcutConflict } from '@shared/effective-hotkey';
 import { SettingValue } from './SettingControls';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import {
   getEffectiveHotkey,
-  sharesChordIntentionally,
   type CommandId,
 } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { Button } from '@renderer/lib/ui/button';
@@ -43,16 +43,8 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
     onRecord: (hotkey: Hotkey) => {
       if (!editingKey) return;
 
-      const conflict = CONFIGURABLE_SHORTCUTS.find(([key]) => {
-        if (key === editingKey) return false;
-        // A registered intentional share is not a conflict — refusing it here would make the
-        // shared default unreachable once the user has rebound either half.
-        if (sharesChordIntentionally(key, editingKey)) return false;
-        return getEffectiveHotkey(key, keyboard) === hotkey;
-      });
-
-      if (conflict) {
-        const [conflictKey] = conflict;
+      const conflictKey = shortcutConflict(editingKey, hotkey, keyboard);
+      if (conflictKey) {
         const msg = translate('keyboard.conflictDescription', { label: commandLabel(conflictKey) });
         toast({
           title: translate('keyboard.conflictTitle'),
@@ -88,10 +80,12 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
   }, [recorder.isRecording]);
 
   const handleReset = (key: CommandId) => {
+    const owner = defaultShortcutOwner(key, keyboard);
     resetField(key);
     toast({
       title: translate('keyboard.resetTitle'),
-      description: translate('keyboard.resetDescription', { label: commandLabel(key) }),
+      description: owner ? translate('keyboard.defaultInUse', { label: commandLabel(owner) })
+        : translate('keyboard.resetDescription', { label: commandLabel(key) }),
     });
   };
 
@@ -117,6 +111,7 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
             <div className="space-y-3">
               {shortcuts.map(([key]) => {
                 const effectiveHotkey = getEffectiveHotkey(key, keyboard);
+                const displacedBy = keyboard[key] === undefined && defaultShortcutOwner(key, keyboard);
                 const capturing = editingKey === key && recorder.isRecording;
                 const showClear = effectiveHotkey !== null;
                 const showReset = keyboard[key] !== undefined;
@@ -132,6 +127,7 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
                       <div className="text-sm break-words">{commandLabel(key)}</div>
                       <div className="text-foreground-muted text-xs break-words">
                         {commandDescription(key)}
+                        {displacedBy && <p>{translate('keyboard.defaultInUse', { label: commandLabel(displacedBy) })}</p>}
                       </div>
                     </div>
                     <div className="ml-auto flex shrink-0 items-center gap-2">

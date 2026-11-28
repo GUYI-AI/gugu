@@ -34,7 +34,6 @@ import {
 } from '@shared/events/browserEvents';
 import { COMMANDS, type CommandId } from '@shared/commands';
 import { effectiveAliases, getEffectiveHotkey } from '@shared/effective-hotkey';
-import { getElectronTabNavigationDirection } from '@shared/shortcuts';
 import { isGoogleAuthUrl, userAgentForBrowserUrl } from './browser-user-agent';
 import { isSupportedBrowserNavigationUrl } from './browser-navigation';
 
@@ -129,8 +128,8 @@ export class BrowserWebContentsRegistry {
       if (browserId && (input.code === 'Space' || input.key === ' ') && input.type === 'keyUp') events.emit(browserAnnotationSpaceChannel, { browserId, pressed: false });
       const command = getBrowserShortcutKey(input, this.browserShortcuts);
       if (command === 'session.tabNext' || command === 'session.tabPrev') {
-        const direction = getElectronTabNavigationDirection(input);
-        if (direction && onTab?.(direction)) { event.preventDefault(); return; }
+        const direction = command === 'session.tabNext' ? 'next' : 'previous';
+        if (onTab?.(direction)) { event.preventDefault(); return; }
       }
       if (command && onCommand(command)) event.preventDefault();
     });
