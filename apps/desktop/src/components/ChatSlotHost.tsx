@@ -1,5 +1,5 @@
 import { useSidebarChatView } from '../lib/sidebarChatsBridge'
-import { memo, useEffect, useSyncExternalStore } from 'react'
+import { memo, useEffect, useSyncExternalStore, type ComponentProps } from 'react'
 import { createPortal } from 'react-dom'
 import { CHAT_SLOT_PREFIX, InChatSlot, chatPartSlotKey, installShellSlots, readShellSlots } from '../lib/shellSlots'
 import { ChatAreaPanel } from './ChatAreaPanel'
@@ -11,10 +11,17 @@ import { useTheme } from '../store/theme'
 import { SessionUiTheme } from './sessionpage/SessionUiTheme'
 
 import { isOwnedAgentPeer, openOwnedAgentEntry, useOwnedAgentEntries } from '../lib/ownedAgentConversation'
+import { useChatShown } from '../lib/onScreenChat'
 
 installShellSlots()
 
 const EMPTY: ReadonlyMap<string, HTMLElement> = new Map()
+
+// A block stays mounted while the shell hides it (another tab, another page): it is hidden exactly when its slot is not
+// on screen (ChatSlot reports it), as the chat page's own panel is hidden when it is not the one shown.
+function ShownChatArea({ chatId, ...props }: ComponentProps<typeof ChatAreaPanel> & { chatId: string }) {
+  return <ChatAreaPanel {...props} hidden={!useChatShown(chatId)} />
+}
 
 /**
  * 把对话画进会话页留的格子(gugu-dev#181:项目块的第一枚页签是项目群,对话也是一块)。和对话页同一个群聊组件,
@@ -63,7 +70,8 @@ export const ChatSlotHost = memo(function ChatSlotHost(handlers: AssistantChatHa
           <SessionUiTheme theme={theme}>
             <InChatSlot.Provider value={{ projectName: projectGroupChats.has(chatId) ? chats.find((chat) => chat.id === chatId)?.name ?? null : null }}>
               <TaskChatScope chatId={chatId}>
-                <ChatAreaPanel
+                <ShownChatArea
+                  chatId={chatId}
                   viewportKey={key}
                   navigationTarget={sidebarView.focusedChatId === chatId}
                   blockHost={{

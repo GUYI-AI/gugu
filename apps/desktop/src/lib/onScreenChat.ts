@@ -4,6 +4,8 @@ import { platform } from '@/platform'
 // 人眼前的那条会话 = 壳报「摆在屏幕上」∧ App 在前台。选中(activeChatId)在人走开之后仍留着,不能当「在看」。
 // 报的不止一处(对话页、「助理」App 里那条私聊 #7199),同一时刻至多一处摆着;按报的那一方各记一格,❌ 一个全局格互相盖。
 const shownByReporter = new Map<object, string>()
+const shownListeners = new Set<() => void>()
+const notifyShown = (): void => { for (const notify of shownListeners) notify() }
 // 首次宿主答复异步到达;答复之前没有「已确认前台」的资格。
 let appActive = false
 const listeners = new Set<() => void>()
@@ -46,6 +48,14 @@ export function isChatOnScreen(chatId: string): boolean {
 export function isChatShown(chatId: string): boolean {
   return [...shownByReporter.values()].includes(chatId)
 }
+/** isChatShown, re-rendering when the shell shows or hides this chat. */
+export function useChatShown(chatId: string): boolean {
+  return useSyncExternalStore(subscribeShown, () => isChatShown(chatId))
+}
+function subscribeShown(listener: () => void): () => void {
+  shownListeners.add(listener)
+  return () => { shownListeners.delete(listener) }
+}
 /** 与会话是否上报无关的同一份宿主前后台真值,供会话页的项目格子复用。 */
 export function isAppActive(): boolean { return appActive }
 
@@ -75,6 +85,7 @@ export function useReportChatOnScreen(shown: string | null): void {
   useEffect(() => {
     if (!shown) return
     shownByReporter.set(reporter, shown)
-    return () => { shownByReporter.delete(reporter) }
+    notifyShown()
+    return () => { shownByReporter.delete(reporter); notifyShown() }
   }, [reporter, shown])
 }

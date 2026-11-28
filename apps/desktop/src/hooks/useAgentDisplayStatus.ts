@@ -49,8 +49,8 @@ export function useAgentDisplayStatus(agentUserId: string | null | undefined) {
 }
 
 // @@@batched-presence-hook - One stable subscription per agent ID; aggregated map for surfaces that render N agents.
-// Re-subscribes only when the ID set changes. `chatId` = these are the agents of that open chat: its presence channel is
-// held while the caller is mounted, so their status arrives live (agentPresenceChannels).
+// Re-subscribes only when the ID set changes. `chatId` = these are the agents of that chat, on screen now: its presence
+// channel is held while the caller passes it, so their status arrives live (agentPresenceChannels); null when hidden.
 export function useAgentDisplayStatuses(
   agentUserIds: readonly string[],
   chatId?: string | null,
