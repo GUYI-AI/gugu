@@ -3,9 +3,14 @@ import { COMMANDS, type CommandId } from './commands';
 import { effectiveAliases, getEffectiveHotkey } from './effective-hotkey';
 
 describe('saved keyboard assignments across factory binding changes', () => {
-  it.each(Object.keys(COMMANDS) as CommandId[])('keeps an assigned or cleared %s', id => {
+  const editable = (Object.keys(COMMANDS) as CommandId[]).filter(id => !COMMANDS[id].systemShortcut);
+  it.each(editable)('keeps an assigned or cleared %s', id => {
     expect(getEffectiveHotkey(id, { [id]: 'Alt+F10' })).toBe('Alt+F10');
     expect(getEffectiveHotkey(id, { [id]: null })).toBeNull();
+  });
+
+  it('keeps a historical in-app assignment from overriding the system Quick Chat shortcut', () => {
+    expect(getEffectiveHotkey('app.quickChat', { 'app.quickChat': 'Alt+F10' })).toBeNull();
   });
 
   it('only advertises and accepts compatibility keys when the user left them available', () => {
