@@ -498,19 +498,22 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     if (imRepositoryRef.current?.accountId === userId) seedCacheFromDisk(cache, imRepositoryRef.current, chatId)
     return cache.get(chatId)
   }, [cache, userId])
+  /** Whether the journal delivers this conversation's arrivals (an observer's topic has no list row and gets none) and is not a longer backlog behind. */
+  const journalKeepsCurrent = useCallback(async (chatId: string): Promise<boolean> => {
+    if (!chatsRef.current.some((row) => row.id === chatId)) return false
+    return getRevisionCoordinator().then(coordinator => coordinator.behind()).then(behind => !behind, () => false)
+  }, [chatsRef, getRevisionCoordinator])
   const openMessageWindow = useCallback(async (chatId: string, observer: WindowObserver) => {
     if (!userId) return
     const foregroundDone = catchupPriority?.begin()
     const epoch = getMessageSnapshotEpoch(chatId)
-    const listed = chatsRef.current.some((row) => row.id === chatId)
     const current = () => !imRepositoryScope.disposed && epoch === getMessageSnapshotEpoch(chatId) && observer.current()
     revalidateInFlightRef.current.add(chatId)
     try {
       await openCachedChatWindow({
         chatId, userId: userId, cache, getRepository: getImRepository,
         history: cache.history(chatId),
-        // A topic visible to an observer may have no list row, and the journal does not deliver its arrivals.
-        journalCurrent: () => listed ? getRevisionCoordinator().then(coordinator => coordinator.behind()).then(behind => !behind, () => false) : Promise.resolve(false),
+        journalCurrent: () => journalKeepsCurrent(chatId),
         observer: { ...observer, current },
         commit: (rows, replaceTail, hasOlder) => {
           if (replaceTail) commitNewestPage(chatId, rows, null, epoch)
@@ -520,7 +523,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
         revalidate: () => revalidateWindowOverlays(chatId),
       })
     } finally { foregroundDone?.(); revalidateInFlightRef.current.delete(chatId) }
-  }, [applyMessagesSnapshot, cache, catchupPriority, chatsRef, commitNewestPage, getImRepository, getMessageSnapshotEpoch, getRevisionCoordinator, imRepositoryScope.disposed, revalidateWindowOverlays, userId])
+  }, [applyMessagesSnapshot, cache, catchupPriority, commitNewestPage, getImRepository, getMessageSnapshotEpoch, imRepositoryScope.disposed, journalKeepsCurrent, revalidateWindowOverlays, userId])
   // One read and revision owner per observed chat, shared by every surface.
   startConversationRef.current = (chatId) => {
     if (!userId) return () => undefined

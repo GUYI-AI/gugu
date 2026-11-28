@@ -64,8 +64,7 @@ export type AccountRevisionRuntime = {
   whenIdle: () => Promise<void>
   /**
    * Whether the account is more than one page behind its head, so what it has stored is not yet current. Waits for at
-   * most one page: the one in flight, or the one it asks for when the last read failed. A read that fails is no
-   * evidence of a backlog and answers false.
+   * most the page in flight; with no read in flight, or after one that failed, there is no evidence of a backlog.
    */
   behind: () => Promise<boolean>
 }
@@ -328,7 +327,6 @@ export function createAccountRevisionRuntime(
       return drainPromise
     },
     behind() {
-      if (retryTimer) scheduleWake()
       if (!draining) return Promise.resolve(false)
       // A scheduled drain yields to foreground reads (accountCatchupPriority), so a foreground read cannot wait for it.
       if (scheduling) return Promise.resolve(true)

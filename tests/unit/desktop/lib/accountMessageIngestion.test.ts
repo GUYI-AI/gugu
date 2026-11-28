@@ -256,25 +256,3 @@ it('answers behind as soon as a page shows a longer backlog, and not behind once
   await coordinator.whenIdle()
   expect(await coordinator.behind()).toBe(false)
 })
-
-it('asks the journal again at once when its last read failed, instead of answering from the stale cursor', async () => {
-  const repository = await openImRepository('viewer', { adapter: createMemoryLocalSyncDb() })
-  await repository.transaction(tx => tx.putSyncState('account-revision-cursor', { revision: '0' }))
-  let reachable = false, asked = 0
-  const coordinator = createAccountRevisionCoordinator('viewer', repository, {
-    syncSince: async (cursor) => {
-      asked += 1
-      if (!reachable) throw new TypeError('Network request failed')
-      return { operations: [arrival(String(BigInt(cursor) + 1n), `backlog-${asked}`, row(`backlog-${asked}`, asked))], hasMore: BigInt(cursor) < 1n }
-    },
-    subscribeWake: () => () => undefined,
-  }, { recover: vi.fn(async () => null), notify: vi.fn(async () => {}) })
-  stops.push(() => { coordinator.stop(); repository.close() })
-  coordinator.start()
-  await coordinator.whenIdle().catch(() => undefined)
-  expect(await coordinator.behind()).toBe(false) // still unreachable: no evidence of a backlog
-  expect(asked).toBe(2)
-  reachable = true
-  expect(await coordinator.behind()).toBe(true)
-  await coordinator.whenIdle()
-})
