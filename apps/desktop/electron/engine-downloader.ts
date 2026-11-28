@@ -1,4 +1,5 @@
 import { installerEnvironment } from './egress/installer'
+import { coreLogger } from '@gugu/core/log'
 // 两样随包工具,给 claude 桥接(acp-bridge/claude-bridge-deps.ts)在后台装用户那份 Claude 配对的桥接用:
 //   · execWithStallWatch:跑一个子进程,盯工作目录的字节进展,连续零进展就杀掉并报错(#2004 §3);
 //   · resolveBundledNpmInvocation:用 Electron 内嵌的 node 跑随 App 交付的 npm。
@@ -238,7 +239,7 @@ export function execWithStallWatch(
         sampleFailed = false
         sampled(bytes)
       }, (error: unknown) => {
-        if (!settled && !stallMsg && !sampleFailed) console.warn('[engine-downloader] Could not sample installation progress:', error)
+        if (!settled && !stallMsg && !sampleFailed) coreLogger('engine-downloader').warn({ err: error }, 'Could not sample installation progress')
         sampleFailed = true
         // 采样失败不算增长，也不能停掉之后的轮询和超时判定。
         sampled(lastBytes)
