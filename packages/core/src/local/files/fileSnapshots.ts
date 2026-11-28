@@ -464,7 +464,7 @@ export async function storedCopy(guguHome: string, sha256: string): Promise<Blob
  * What this desktop's window read over the network: `<home>/file-cache/<sha256>/<name>`, beside the file store and laid
  * out like it. Unlike the store it is only a cache: nothing here is anyone's only copy and no path into it is handed out
  * (the store also holds files this machine sent and files agents were given by path), so it has a byte budget, and past it
- * the least recently read copies are dropped (`trimToBytes`, the page cache's own rule). Whoever reads a copy holds it
+ * the copies used longest ago are dropped (`trimToBytes`, the page cache's own rule). Whoever reads a copy holds it
  * until it lets go (`dispose`): a copy being read, or being written, is never dropped.
  */
 export const fileCacheDirectory = (guguHome: string) => join(guguHome, 'file-cache')
@@ -533,14 +533,22 @@ export function createFileCache(directory: string, maxBytes = FILE_CACHE_BYTES) 
           if (path) budget.wrote((await stat(path)).size)
         }
         if (!path) { release(sha256); return null }
-        // Read now: the least recently read copy is the first to go.
-        const info = await stat(path); await utimes(path, new Date(), info.mtime)
+        // The copy used longest ago is the first to go. Its use is stamped here, as it is handed out and again as it is
+        // let go: a system may or may not move the access time on the reads in between, and the order must not depend
+        // on which. (Not the modification time: the Blob below refuses to read a file whose modification time moved.)
+        const copy = path, used = async () => utimes(copy, new Date(), (await stat(copy)).mtime)
+        await used()
         const blob = await openAsBlob(path)
         let disposed = false
         return {
           path, size: blob.size, here: true,
           read: async (offset, length) => new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()),
-          dispose: async () => { if (!disposed) { disposed = true; release(sha256); budget.released() } },
+          async dispose() {
+            if (disposed) return
+            disposed = true
+            await used().catch(error => storeLog.warn({ error }, 'file cache copy not stamped'))
+            release(sha256); budget.released()
+          },
         }
       } catch (error) { release(sha256); throw error }
     },
