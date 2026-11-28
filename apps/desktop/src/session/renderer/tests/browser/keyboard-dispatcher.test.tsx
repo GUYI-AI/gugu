@@ -2,14 +2,15 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { userEvent } from '@vitest/browser/context';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { KeyboardDispatcher } from '@renderer/lib/commands/keyboard-dispatcher';
+import { dispatchKey, KeyboardDispatcher } from '@renderer/lib/commands/keyboard-dispatcher';
 import { commandRegistry } from '@renderer/lib/commands/registry';
 import type { CommandProvider } from '@renderer/lib/commands/types';
 import { setEmbedVisible } from '@renderer/lib/portal-container';
 import { useTabShortcuts } from '@renderer/features/tabs/hooks/useTabShortcuts';
 import { dismissOpenModal } from '@renderer/lib/modal/modal-open';
 
-vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } });
+const saved = vi.hoisted(() => ({ keyboard: {} as Record<string, string | null> }));
+vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings(saved.keyboard) } });
 
 // The task page runs inside an open shadow root in the gugu shell; these cases put the focused element there too.
 let root: Root;
@@ -30,6 +31,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  saved.keyboard = {};
   disposers.splice(0).forEach((dispose) => dispose());
   setEmbedVisible(true);
   await act(async () => root.unmount());
@@ -124,7 +126,27 @@ describe('the registry', () => {
     expect(settings).toHaveBeenCalledOnce();
   });
 
-  it('Ctrl+Tab is a fixed alias of next tab', async () => {
+  it('lets a rebound tab command leave the terminal and keeps its disabled alias inside', async () => {
+    saved.keyboard = { 'session.tabPrev': 'Control+Y', 'session.tabNext': null };
+    await act(async () => root.render(<KeyboardDispatcher />));
+    const previous = vi.fn();
+    const next = vi.fn();
+    provide({ scopeId: 'session-sub', getCommands: () => [
+      { id: 'session.tabPrev', execute: previous }, { id: 'session.tabNext', execute: next },
+    ] });
+    const terminal = shadow.getElementById('editor')!;
+    terminal.addEventListener('keydown', event => {
+      dispatchKey(event, 'terminal');
+      event.stopPropagation();
+    });
+    focus('editor');
+    await userEvent.keyboard('{Control>}y{/Control}');
+    expect(previous).toHaveBeenCalledOnce();
+    await userEvent.keyboard('{Control>}{Tab}{/Control}');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('Ctrl+Tab is an alias of next tab', async () => {
     const next = vi.fn();
     provide({ scopeId: 'session-sub', getCommands: () => [{ id: 'session.tabNext', execute: next }] });
     focus('editor');

@@ -53,9 +53,9 @@ vi.mock('electron', () => ({
 
 const { applyApplicationMenu } = await import('../../../../apps/desktop/electron/app-menu')
 
-const apply = (platform: NodeJS.Platform, locked: boolean, closeFromMenu: (window: unknown) => void = () => {}) => {
+const apply = (platform: NodeJS.Platform, locked: boolean, closeFromMenu: (window: unknown, tabFirst: boolean) => void = () => {}, keyboard: Record<string, string | null> = {}) => {
   vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
-  applyApplicationMenu({ locked, settingsLabel: '设置…', openSettings: () => {}, closeFromMenu })
+  applyApplicationMenu({ locked, settingsLabel: '设置…', openSettings: () => {}, closeFromMenu, keyboard })
   return setApplicationMenu.mock.lastCall![0]
 }
 const view = (menu: FakeMenu) => menu.items.find((item) => item.role === 'viewMenu')!.submenu!.items
@@ -103,6 +103,20 @@ describe('application menu file zoom (#1625)', () => {
     await vi.waitFor(() => expect(window.webContents.selectAll).toHaveBeenCalledOnce())
     expect(window.webContents.executeJavaScript).toHaveBeenCalledWith(expect.stringContaining('gugu:prepare-select-all'))
   })
+
+  it('uses the recorded accelerator on each native item and leaves the Tab command independent', () => {
+    const closeFromMenu = vi.fn();
+    const window = new FakeBrowserWindow();
+    const menu = apply('darwin', false, closeFromMenu, { 'app.settings': 'Alt+K', 'app.closeWindow': 'Alt+J' });
+    const settings = menu.items.find(item => item.role === 'appMenu')!.submenu!.items.find(item => item.label === '设置…')!;
+    const close = menu.items.find(item => item.role === 'windowMenu')!.submenu!.items.find(item => item.label === 'Close Window')!;
+    expect(settings.accelerator).toBe('Alt+K');
+    expect(close.accelerator).toBe('Alt+J');
+    close.click!({}, window, { triggeredByAccelerator: true });
+    expect(closeFromMenu).toHaveBeenCalledWith(window, false);
+    close.click!({}, window, {});
+    expect(closeFromMenu).toHaveBeenCalledWith(window, true);
+  });
 
   it('⌘W (the native Close item) goes to the host close routing, which hands it to the shortcut registry', () => {
     for (const locked of [false, true]) {

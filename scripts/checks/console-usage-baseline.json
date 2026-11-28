@@ -181,11 +181,6 @@
   },
   {
     "rule": "console-member",
-    "file": "apps/desktop/src/session/renderer/features/sessions/stores/session-store.ts",
-    "count": 1
-  },
-  {
-    "rule": "console-member",
     "file": "apps/desktop/src/session/renderer/features/tabs/pane-store.ts",
     "count": 1
   },

@@ -209,7 +209,7 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
                             onClick={() => startCapture(key)}
                             disabled={saving}
                           >
-                            <Shortcut hotkey={effectiveHotkey} variant="keycaps" />
+                            {effectiveHotkey ? <Shortcut hotkey={effectiveHotkey} variant="keycaps" /> : translate('keyboard.unassignedValue')}
                           </Button>
                         </>
                       )}
