@@ -427,8 +427,8 @@ function recordedSizeOf(item: ImageViewerItem): Promise<Size | null> {
 /** A mounted bubble lends a retryable original reader and owns the URLs until it unmounts. */
 export function registerAttachmentImage(thumb: HTMLImageElement, source: AttachmentSource, file: NonNullable<ImageViewerItem['file']>,
   origin?: ImageViewerItem['source'], size?: Size): () => void {
-  const reader = createImageRead(async () => {
-    const bytes = await attachmentBytes(source, 'full')
+  const reader = createImageRead(async (progress) => {
+    const bytes = await attachmentBytes(source, 'full', undefined, undefined, progress)
     if (bytes.status !== 'ready') throw new Error(bytes.status)
     return bytes.blob
   })

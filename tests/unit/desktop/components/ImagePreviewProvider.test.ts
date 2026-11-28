@@ -180,8 +180,11 @@ describe('ImagePreviewProvider', () => {
       await waitForCondition(() => !pswp.opener.isOpening && full.mock.calls.length === 1, 'the original never started')
     })
     const slide = pswp.currSlide!
+    // Over the thumbnail it opened from, the viewer says the original is still coming (after a short delay: data-preview).
+    await waitForCondition(() => !!document.querySelector('.gg-image-viewer__read[role=status][data-preview]'), 'no loading while the original is read')
     await act(async () => finish('blob:original'))
     await waitForCondition(() => document.querySelector('img.pswp__img[src="blob:original"]') !== null, 'original bytes were not displayed')
+    await waitForCondition(() => !document.querySelector('.gg-image-viewer__read'), 'loading stayed after the original arrived')
     const image = slide.content.element as HTMLImageElement
     Object.defineProperties(image, { naturalWidth: { value: 3000 }, naturalHeight: { value: 2000 } })
     await act(async () => image.dispatchEvent(new Event('load')))

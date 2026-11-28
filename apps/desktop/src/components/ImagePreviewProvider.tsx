@@ -417,7 +417,8 @@ function ImageViewerChrome({ viewer, mobile, onEdit }: { viewer: OpenViewer; mob
   const current = items[index]
   const slide = pswp.currSlide
   const data = slide?.data as ViewerSlide | undefined
-  const reading = data?.item === current && current.preview && !slide?.content.isError()
+  // Something is still being read for the slide shown: its thumbnail, or the original over the thumbnail it opened from.
+  const reading = data?.item === current && (current.preview || current.full) && !slide?.content.isError()
     && (slide?.content.state !== 'loaded' || (current.full && data.src !== data.original))
   const { copied, confirm } = useCopyConfirmation(current)
 
