@@ -190,7 +190,6 @@ export function useDeviceRemoval(machines: readonly DeviceMachine[], { onRemoved
         countError={agentReadFailed}
         onReloadAgents={() => void loadAgents([dialog.device])}
         listBoundAgents={listBoundAgents}
-        onRemove={() => removeDevice(dialog.device, false)}
         onRemoveOnly={() => openRemove(dialog.device)}
         onClose={() => back(dialog.machineKey)}
       />

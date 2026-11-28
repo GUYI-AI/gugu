@@ -17,7 +17,7 @@ import type {
 import type { ServerSshInstallPrompt } from '../../src/lib/serverSshInstall'
 import { buildSshArgs, classifySshFailure, lastLines, type SshTarget } from './ssh-install/logic'
 import type { SpawnSsh, SshRunResult } from './ssh-install/runner'
-import { desktopServerChannel, remoteServerPaths, SERVER_LOGIN_REVOKED, serverNames, UNINSTALL_ARCHIVE_RECEIPT } from './server-names'
+import { desktopServerChannel, isServerSessionId, remoteServerPaths, SERVER_LOGIN_FOR_UNINSTALL, SERVER_LOGIN_REVOKED, serverNames, UNINSTALL_ARCHIVE_RECEIPT } from './server-names'
 import { verifiedUninstallProcessesScript } from './ssh-uninstall-processes'
 
 export const INSPECT_BEGIN = '__GUGU_UNINSTALL_PROBE_BEGIN__'
@@ -46,7 +46,8 @@ export function inspectScript(): string {
     `echo ${INSPECT_BEGIN}`,
     ...installationPaths,
     'if [ -x "$CLI" ] || [ -e "$B" ] || [ -L "$B" ]; then echo installed=1; fi',
-    'if { [ -x "$CLI" ] && "$CLI" help 2>/dev/null | grep -q "gugu-server revoke-login"; } || { [ ! -x "$CLI" ] && [ -f "$READY" ]; }; then echo supported=1; fi',
+    'if { [ -x "$CLI" ] && "$CLI" help 2>/dev/null | grep -q "gugu-server revoke-login.*--confirmed-session"; } || { [ ! -x "$CLI" ] && [ -f "$READY" ]; }; then echo supported=1; fi',
+    'if [ ! -x "$CLI" ] && [ -f "$READY" ] && [ -n "$(sed -n \'2p\' "$READY")" ]; then echo cleanup_pending=1; fi',
     'printf "home=%s\\n" "$H"',
     'if [ -f "$READY" ]; then printf "archived=%s\\n" "$(head -n 1 "$READY")"; fi',
     'echo "version=$(cat "$H/current/version" 2>/dev/null)"',
@@ -64,7 +65,7 @@ export function inspectScript(): string {
 }
 
 export type InspectedAccount = { userId: string; signedIn: boolean; email: string | null }
-export type InspectResult = { installed: boolean; supported: boolean; home: string | null; archivedFor: string | null; version: string | null; accounts: InspectedAccount[] }
+export type InspectResult = { installed: boolean; supported: boolean; cleanupPending: boolean; home: string | null; archivedFor: string | null; version: string | null; accounts: InspectedAccount[] }
 
 export function parseInspectOutput(stdout: string): InspectResult | null {
   const begin = stdout.lastIndexOf(INSPECT_BEGIN)
@@ -72,6 +73,7 @@ export function parseInspectOutput(stdout: string): InspectResult | null {
   if (begin < 0 || end < 0) return null
   let installed = false
   let supported = false
+  let cleanupPending = false
   let home: string | null = null
   let archivedFor: string | null = null
   let version: string | null = null
@@ -80,6 +82,7 @@ export function parseInspectOutput(stdout: string): InspectResult | null {
     const line = raw.trim()
     if (line === 'installed=1') installed = true
     else if (line === 'supported=1') supported = true
+    else if (line === 'cleanup_pending=1') cleanupPending = true
     else if (line.startsWith('home=/')) home = line.slice('home='.length)
     else if (line.startsWith('archived=')) archivedFor = line.slice('archived='.length)
     else if (line.startsWith('version=')) version = line.slice('version='.length).trim() || null
@@ -89,7 +92,7 @@ export function parseInspectOutput(stdout: string): InspectResult | null {
       accounts.push({ userId, signedIn: signed === '1', email: rest.join(' ').trim() || null })
     }
   }
-  return { installed, supported, home, archivedFor, version, accounts }
+  return { installed, supported, cleanupPending, home, archivedFor, version, accounts }
 }
 
 /** 给确认页的清单:登着的在前、你自己排第一;没登录态的账号(退出过的)也列出来，卸载会保留它的数据。 */
@@ -97,18 +100,29 @@ export function toInspection(result: InspectResult, currentUserId: string | null
   const accounts: ServerUninstallAccount[] = result.accounts
     .map((account) => ({ email: account.email, signedIn: account.signedIn, you: account.userId === currentUserId }))
     .sort((a, b) => Number(b.you) - Number(a.you) || Number(b.signedIn) - Number(a.signedIn))
-  return { installed: result.installed, supported: result.supported, home: result.home,
-    archiveReady: Boolean(currentUserId && result.archivedFor === currentUserId), version: result.version, accounts }
+  const archiveReady = Boolean(currentUserId && result.archivedFor === currentUserId)
+  return { installed: result.installed, supported: result.supported, home: result.home, archiveReady,
+    cleanupPending: archiveReady && result.cleanupPending, version: result.version, accounts }
 }
 
-/** The archive is confirmed by the desktop before this script can stop the host. */
-export function uninstallScript(userId: string): string {
+function uninstallPaths(userId: string): string[] {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(userId)) throw new UninstallFailure('revokeFailed')
   return [
     ...installationPaths,
     `OWNER='${userId}'`,
     `revoke_failed() { echo '${REVOKE_FAILED_MARK}' >&2; exit 1; }`,
-    'if [ -x "$CLI" ]; then',
+  ]
+}
+
+/** Stop the archived host and report the exact session bound to its local login. */
+export function prepareUninstallScript(userId: string): string {
+  return [
+    ...uninstallPaths(userId),
+    'if [ ! -x "$CLI" ]; then',
+    '  [ "$(head -n 1 "$READY" 2>/dev/null)" = "$OWNER" ] || revoke_failed',
+    `  printf '${SERVER_LOGIN_FOR_UNINSTALL}=%s\\n' "$(sed -n '2p' "$READY")"`,
+    '  exit 0',
+    'fi',
     'account=',
     'for d in "$H/account" "$H"/accounts/*/ "$H"/retired/*/; do',
     '  [ -L "${d%/}" ] && continue',
@@ -118,16 +132,30 @@ export function uninstallScript(userId: string): string {
     '  if [ -f "$d/data/server-session.enc" ] && { [ "${d%/}" != "$H/account" ] || [ "$id" != "$OWNER" ]; }; then revoke_failed; fi',
     'done',
     'if [ -n "$account" ] && [ "$account" != "$OWNER" ]; then revoke_failed; fi',
+    // launchd KeepAlive can restart a force-stopped server until its job is unloaded.
+    'if [ "$(uname -s)" = Darwin ] && ! "$CLI" service uninstall </dev/null; then exit 1; fi',
     verifiedUninstallProcessesScript(),
     // A failure or dropped reply after this point can be retried from SSH while the task host is stopped.
     'if [ "$(head -n 1 "$READY" 2>/dev/null)" != "$OWNER" ]; then',
     '  if ! (umask 077; printf "%s\\n" "$OWNER" > "$READY"); then exit 1; fi',
     'fi',
-    'if [ -n "$account" ]; then',
-    '  if ! o="$("$CLI" revoke-login "$OWNER" </dev/null)"; then revoke_failed; fi',
-    `  printf "%s\\n" "$o" | grep -Fxq "${SERVER_LOGIN_REVOKED}" || revoke_failed`,
-    'fi',
-    'if ! "$CLI" service uninstall </dev/null; then exit 1; fi',
+    '[ -n "$account" ] || revoke_failed',
+    '"$CLI" revoke-login "$OWNER" --session-id </dev/null || revoke_failed',
+    '',
+  ].join('\n')
+}
+
+/** Only run after the desktop received a revocation receipt for this exact session. */
+export function uninstallScript(userId: string, sessionId: string): string {
+  if (!isServerSessionId(sessionId)) throw new UninstallFailure('revokeFailed')
+  return [
+    ...uninstallPaths(userId),
+    `SESSION='${sessionId}'`,
+    '[ "$(head -n 1 "$READY" 2>/dev/null)" = "$OWNER" ] || revoke_failed',
+    'if [ -x "$CLI" ]; then',
+    'if ! o="$("$CLI" revoke-login "$OWNER" --confirmed-session "$SESSION" </dev/null)"; then revoke_failed; fi',
+    `printf "%s\\n" "$o" | grep -Fxq "${SERVER_LOGIN_REVOKED}" || revoke_failed`,
+    'if [ "$(uname -s)" != Darwin ] && ! "$CLI" service uninstall </dev/null; then exit 1; fi',
     'T="$H/current/app/tmux-bundle/tmux"; [ -x "$T" ] || T=tmux',
     'for d in "$H/account" "$H"/accounts/*/ "$H"/retired/*/; do',
     '  [ -L "${d%/}" ] && continue',
@@ -135,8 +163,8 @@ export function uninstallScript(userId: string): string {
     '  id="$(sed -n \'s/.*"userId": *"\\([^"]*\\)".*/\\1/p\' "$d/account.json" 2>/dev/null | head -n 1)"; [ -n "$id" ] || id="$(basename "$d")"',
     `  "$T" -L "${serverNames(desktopServerChannel()).bin}-$(printf %s "$id" | cut -c1-8)" kill-server >/dev/null 2>&1`,
     'done',
-    'elif [ "$(head -n 1 "$READY" 2>/dev/null)" != "$OWNER" ]; then',
-    '  exit 1',
+    'elif [ "$(sed -n \'2p\' "$READY")" != "$SESSION" ]; then',
+    '  revoke_failed',
     'fi',
     'rm -rf "$H/current" "$H/versions" || exit 1',
     `for l in ${['stable', 'beta'].map(channel => `"$HOME/.local/bin/${serverNames(channel).bin}"`).join(' ')} "$HOME/.local/bin/node" ${SERVER_HOME}; do`,
@@ -148,7 +176,7 @@ export function uninstallScript(userId: string): string {
     '    if [ -e "$l" ] || [ -L "$l" ]; then echo "卸载失败:删不掉 $l" >&2; exit 1; fi',
     '  fi',
     'done',
-    'rm -f "$READY" || exit 1',
+    // Keep the login receipt for retrying a lost registration response. Sign-in clears it.
     `echo ${UNINSTALLED_MARK}`,
     '',
   ].join('\n')
@@ -161,6 +189,7 @@ export type UninstallDeps = {
   currentUserId: string | null
   /** 人确认并完成任务归档后，才能停止和卸载服务器。 */
   waitForConfirm: () => Promise<boolean>
+  changeRegistration: (action: 'revoke' | 'remove', sessionId: string) => Promise<unknown>
   signal: AbortSignal
 }
 
@@ -171,6 +200,14 @@ class UninstallFailure extends Error {
   ) {
     super(reason)
   }
+}
+
+function checkUninstallStep(result: SshRunResult): void {
+  if (result.code === 0) return
+  const errors = result.stderr.split(/\r?\n/)
+  if (errors.includes(REVOKE_FAILED_MARK)) throw new UninstallFailure('revokeFailed')
+  const own = errors.findLast((line) => line.startsWith('卸载失败'))
+  throw new UninstallFailure('uninstallFailed', own ?? lastLines(`${result.stdout}\n${result.stderr}`))
 }
 
 /** 一次卸载的状态;快照每变一次整份推给界面。 */
@@ -235,15 +272,29 @@ export async function runSshUninstall(target: SshTarget, run: UninstallRun, deps
     run.update((draft) => {
       draft.phase = 'uninstalling'
     })
-    const removed = await ssh(uninstallScript(deps.currentUserId))
-    if (removed.code !== 0 || !removed.stdout.split(/\r?\n/).includes(UNINSTALLED_MARK)) {
-      if (removed.stderr.split(/\r?\n/).includes(REVOKE_FAILED_MARK)) throw new UninstallFailure('revokeFailed')
-      const own = removed.stderr.split(/\r?\n/).reverse().find((line) => line.startsWith('卸载失败'))
-      throw new UninstallFailure('uninstallFailed', own ?? lastLines(`${removed.stdout}\n${removed.stderr}`))
+    const prepared = await ssh(prepareUninstallScript(deps.currentUserId))
+    checkUninstallStep(prepared)
+    const prefix = SERVER_LOGIN_FOR_UNINSTALL + '='
+    const sessions = prepared.stdout.split(/\r?\n/).filter(line => line.startsWith(prefix))
+    const sessionId = sessions.length === 1 ? sessions[0].slice(prefix.length) : ''
+    if (!isServerSessionId(sessionId)) throw new UninstallFailure('revokeFailed')
+    if (!inspection.cleanupPending) {
+      const receipt = await deps.changeRegistration('revoke', sessionId).catch(() => {
+        throw new UninstallFailure(deps.signal.aborted ? 'cancelled' : 'revokeFailed')
+      })
+      if (receipt !== 'revoked' && receipt !== 'already_absent') throw new UninstallFailure('revokeFailed')
     }
+    const removed = await ssh(uninstallScript(deps.currentUserId, sessionId))
+    checkUninstallStep(removed)
+    if (!removed.stdout.split(/\r?\n/).includes(UNINSTALLED_MARK)) throw new UninstallFailure('uninstallFailed')
+    const registration = await deps.changeRegistration('remove', sessionId).catch(() => {
+      throw new UninstallFailure(deps.signal.aborted ? 'cancelled' : 'registrationFailed')
+    })
+    if (registration !== 'removed' && registration !== 'already_absent' && registration !== 'rebound') throw new UninstallFailure('registrationFailed')
     run.update((draft) => {
       draft.prompt = null
       draft.phase = 'done'
+      draft.registrationRetained = registration === 'rebound'
     })
   } catch (error) {
     const failure = error instanceof UninstallFailure ? error : new UninstallFailure('unknown', error instanceof Error ? error.message : String(error))

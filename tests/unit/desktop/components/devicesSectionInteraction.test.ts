@@ -560,7 +560,7 @@ describe('DevicesSection interaction', () => {
     expect(ids).toEqual(['gpu'])
   })
 
-  it('archives tasks before uninstall confirmation and removes the device without cascading', async () => {
+  it('archives agents and remaining tasks with bounded concurrency before confirming uninstall', async () => {
     const confirming: ServerUninstallState = {
       runId: 'uninstall-1', deviceId: 'srv', target: 'alice@box', phase: 'confirm',
       inspection: {
@@ -583,15 +583,32 @@ describe('DevicesSection interaction', () => {
         return () => undefined
       },
     }
-    const agent = { id: 'agent-1', display_name: 'Research Agent', avatar: null }
-    let bound = [agent]
+    const agents = Array.from({ length: 8 }, (_, index) => ({ id: `agent-${index + 1}`, display_name: 'Research Agent', avatar: null }))
+    let bound = agents
+    let activeAgents = 0
+    let failFirst = true
+    const firstArchive = Promise.withResolvers<void>()
     const finishing = Promise.withResolvers<void>()
-    archiveAgent.mockReset().mockRejectedValueOnce(new Error('Host did not respond')).mockImplementationOnce(async () => {
-      await finishing.promise
-      bound = []
+    archiveAgent.mockReset().mockImplementation(async (id: string) => {
+      activeAgents += 1
+      try {
+        await (failFirst ? firstArchive.promise : finishing.promise)
+        if (id === 'agent-1' && failFirst) {
+          failFirst = false
+          throw new Error('Host did not respond')
+        }
+        bound = bound.filter(agent => agent.id !== id)
+      } finally {
+        activeAgents -= 1
+      }
     })
-    hostSessions.getSessions.mockReset().mockResolvedValue([{ id: 'unfinished-task', projectId: 'project-1' }])
-    hostSessions.archiveSession.mockReset().mockResolvedValue({ archived: [], unreached: [] })
+    const tasks = Array.from({ length: 8 }, (_, index) => ({ id: `task-${index}`, projectId: 'project-1' }))
+    const finishTasks = Promise.withResolvers<void>()
+    hostSessions.getSessions.mockReset().mockResolvedValue(tasks)
+    hostSessions.archiveSession.mockReset().mockImplementation(async () => {
+      await finishTasks.promise
+      return { archived: [], unreached: [] }
+    })
     try {
       const value = store({
         devices: [device({ device_id: 'srv', label: 'Linux 1', capabilities: { terminals: [], runtimes: [], host_kind: 'server' } })],
@@ -604,25 +621,31 @@ describe('DevicesSection interaction', () => {
       await openMenuItem('settings-device-uninstall-button')
       const dialog = document.body.querySelector<HTMLElement>('[data-testid="settings-device-uninstall-dialog"]')!
       expect(value.listBoundAgents).toHaveBeenCalledWith('srv')
-      expect(dialog.textContent).toContain('还有 1 个智能体需要归档')
+      expect(dialog.textContent).toContain('还有 8 个智能体需要归档')
       expect(dialog.textContent).toContain('/home/alice/.gugu-server')
       expect(dialog.textContent).not.toContain('Research Agent')
       expect(dialog.querySelector('input[type="checkbox"]')).toBeNull()
 
       const confirms = () => invoke.mock.calls.filter(([channel]) => channel === 'server-ssh-machines:uninstall-confirm')
       await act(async () => { buttonByText(dialog, '卸载').click() })
+      expect(activeAgents).toBe(6)
+      expect(hostSessions.getSessions).not.toHaveBeenCalled()
+      await act(async () => { firstArchive.resolve(); finishing.resolve() })
       expect(dialog.textContent).toContain('任务归档未完成')
       expect(confirms()).toHaveLength(0)
+      expect(bound.map(agent => agent.id)).toEqual(['agent-1'])
       await act(async () => { buttonByText(dialog, '卸载').click() })
-      expect(archiveAgent).toHaveBeenLastCalledWith(agent.id, { removeSocialIdentity: true })
+      expect(archiveAgent).toHaveBeenLastCalledWith('agent-1', { removeSocialIdentity: true })
+      expect(hostSessions.archiveSession).toHaveBeenCalledTimes(6)
       expect(confirms()).toHaveLength(0)
-      await act(async () => { finishing.resolve() })
-      expect(hostSessions.archiveSession).toHaveBeenCalledWith('project-1', 'unfinished-task', { removeSocialIdentity: true })
+      await act(async () => { finishTasks.resolve() })
+      expect(hostSessions.archiveSession).toHaveBeenCalledTimes(8)
+      expect(hostSessions.archiveSession).toHaveBeenCalledWith('project-1', 'task-0', { removeSocialIdentity: true })
       expect(confirms()).toEqual([['server-ssh-machines:uninstall-confirm', confirming.runId]])
       expect(value.remove).not.toHaveBeenCalled()
 
       await act(async () => { pushState!({ ...confirming, phase: 'done' }) })
-      expect(value.remove).toHaveBeenCalledWith('srv', { cascade: false })
+      expect(value.remove).not.toHaveBeenCalled()
       expect(dialog.textContent).toContain('已归档任务保留在原机')
     } finally {
       delete (window as unknown as { electronAPI?: unknown }).electronAPI

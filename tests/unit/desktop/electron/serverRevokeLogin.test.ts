@@ -4,8 +4,6 @@ import { revokeServerLogin } from '../../../../apps/desktop/electron/server/serv
 vi.mock('../../../../apps/desktop/electron/server/server-auth', () => ({
   clearStoredServerSession: vi.fn(),
   readStoredServerSession: vi.fn(),
-  reserveSessionSlot: vi.fn(),
-  writeStoredServerSession: vi.fn(),
 }))
 
 const owner = 'owner'
@@ -14,68 +12,49 @@ const access = (exp: number, sessionId = session) =>
   ['header', Buffer.from(JSON.stringify({ sub: owner, session_id: sessionId, exp })).toString('base64url'), 'signature'].join('.')
 const original = { accessToken: access(1), refreshToken: 'old refresh' }
 const rotated = { accessToken: access(2), refreshToken: 'new refresh' }
-const logoutPath = 'logout?scope=local'
-const tokenPath = 'token?grant_type=refresh_token'
-const rejection = (status: number, error_code: string) => Response.json({ error_code }, { status })
 
-function store(request: Parameters<typeof revokeServerLogin>[1]['request']) {
-  let current: typeof original | null = original
-  return {
-    read: () => current,
-    reserve: vi.fn(),
-    write: vi.fn((tokens: typeof original) => { current = tokens }),
+function store(current: typeof original | null = original, receipt = owner + '\n') {
+  const deps = {
+    receipt,
+    read: vi.fn(() => current),
+    markRevoked: vi.fn((text: string) => { deps.receipt = text }),
     clear: vi.fn(() => { current = null }),
-    request: vi.fn(request),
   }
+  return deps
 }
 
 describe('revoking an installed server login', () => {
-  it('retries session-scoped logout after a committed revocation lost its response', async () => {
-    let live = true
-    const deps = store(async (path, headers) => {
-      expect(path).toBe(logoutPath)
-      expect(headers.authorization).toBe('Bearer ' + original.accessToken)
-      if (!live) return rejection(403, 'session_not_found')
-      live = false
-      throw new Error('Connection closed without a response')
-    })
-    await expect(revokeServerLogin(owner, deps)).rejects.toThrow('Connection closed')
+  it('reports the exact session of an expired credential and waits for the desktop receipt', async () => {
+    const deps = store()
+    await expect(revokeServerLogin(owner, deps)).resolves.toBe(session)
     expect(deps.read()).toEqual(original)
     expect(deps.clear).not.toHaveBeenCalled()
-    await revokeServerLogin(owner, deps)
+    await revokeServerLogin(owner, deps, session)
+    expect(deps.markRevoked).toHaveBeenCalledWith(`${owner}\n${session}\n`)
     expect(deps.read()).toBeNull()
-    expect(deps.reserve).not.toHaveBeenCalled()
   })
 
-  it('persists both rotated tokens before logout, retaining them if logout fails', async () => {
-    const deps = store(async (path, headers) => {
-      if (path === tokenPath) {
-        expect(deps.reserve).toHaveBeenCalledOnce()
-        return Response.json({ access_token: rotated.accessToken, refresh_token: rotated.refreshToken })
-      }
-      if (headers.authorization === 'Bearer ' + original.accessToken) return rejection(403, 'bad_jwt')
-      expect(deps.read()).toEqual(rotated)
-      return deps.request.mock.calls.length === 3 ? rejection(502, 'unexpected_failure') : new Response(null, { status: 204 })
-    })
-    await expect(revokeServerLogin(owner, deps)).rejects.toThrow('HTTP 502')
+  it('a rotated credential has the same binding and is retained until revocation is confirmed', async () => {
+    const deps = store(rotated)
+    await expect(revokeServerLogin(owner, deps)).resolves.toBe(session)
     expect(deps.read()).toEqual(rotated)
-    expect(deps.clear).not.toHaveBeenCalled()
-    await revokeServerLogin(owner, deps)
-    expect(deps.read()).toBeNull()
-    expect(deps.write).toHaveBeenCalledOnce()
-  })
-
-  it('keeps the login when a refresh token is rejected without evidence about the session', async () => {
-    const deps = store(async path => path === logoutPath ? rejection(403, 'bad_jwt') : rejection(400, 'refresh_token_not_found'))
-    await expect(revokeServerLogin(owner, deps)).rejects.toThrow('Could not refresh')
-    expect(deps.read()).toEqual(original)
+    expect(deps.markRevoked).not.toHaveBeenCalled()
     expect(deps.clear).not.toHaveBeenCalled()
   })
 
-  it('does not send logout for an access token without a bound session', async () => {
-    const deps = store(async () => new Response(null, { status: 204 }))
-    deps.write({ ...original, accessToken: access(1, '') })
+  it('can resume after local clearing and refuses a receipt for an earlier login', async () => {
+    const receipt = `${owner}\n${session}\n`
+    const cleared = store(null, receipt)
+    await expect(revokeServerLogin(owner, cleared, session)).resolves.toBe(session)
+    expect(cleared.markRevoked).not.toHaveBeenCalled()
+    const current = store({ ...original, accessToken: access(3, '22222222-2222-4222-8222-222222222222') }, receipt)
+    await expect(revokeServerLogin(owner, current, session)).rejects.toThrow('account changed')
+    expect(current.clear).not.toHaveBeenCalled()
+  })
+
+  it('does not clear credentials without a bound session', async () => {
+    const deps = store({ ...original, accessToken: access(1, '') })
     await expect(revokeServerLogin(owner, deps)).rejects.toThrow('does not identify')
-    expect(deps.request).not.toHaveBeenCalled()
+    expect(deps.clear).not.toHaveBeenCalled()
   })
 })

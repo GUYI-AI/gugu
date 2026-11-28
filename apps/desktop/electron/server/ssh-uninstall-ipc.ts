@@ -33,6 +33,7 @@ export function registerServerSshUninstallIpc(options: {
   store: SshMachineStore
   /** 桌面此刻登着的账号:只卸「这个人用 SSH 装上的」那几台,并在清单里标出「你」。 */
   currentUserId: () => Promise<string | null>
+  changeRegistration: (action: 'revoke' | 'remove', deviceId: string, userId: string, sessionId: string, signal: AbortSignal) => Promise<unknown>
 }): void {
   const runs = new Map<string, ActiveUninstall>()
 
@@ -67,6 +68,7 @@ export function registerServerSshUninstallIpc(options: {
             spawnSsh: systemSpawnSsh(env),
             controlPath: workspaceControlPath(workspace.dir),
             currentUserId: userId,
+            changeRegistration: (action, sessionId) => options.changeRegistration(action, deviceId, userId, sessionId, abort.signal),
             waitForConfirm: () =>
               new Promise<boolean>((resolve) => {
                 if (abort.signal.aborted) return resolve(false)
@@ -78,7 +80,7 @@ export function registerServerSshUninstallIpc(options: {
             signal: abort.signal,
           })
           // 装的东西都删了:这台桌面也不再记得怎么 SSH 过去(它的「编程」直连随之没有)。
-          if (final.phase === 'done') {
+          if (final.phase === 'done' && !final.registrationRetained && options.store.list().includes(machine)) {
             // 卸掉了:这台机器那条共享连接一并收掉(❌ 留一条认证过的连接挂在后台)。
             void closeMachineMaster(machine)
             options.store.forget(deviceId)

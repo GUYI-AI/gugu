@@ -65,6 +65,8 @@ export type ServerUninstallInspection = {
   /** 那台机器上还能找到咕咕 server 程序。 */
   installed: boolean
   supported: boolean
+  /** The program is already gone and the archived receipt can finish removing the registration. */
+  cleanupPending?: boolean
   home: string | null
   archiveReady: boolean
   version: string | null
@@ -77,7 +79,7 @@ export type ServerUninstallInspection = {
  */
 export type ServerUninstallPhase = 'inspecting' | 'confirm' | 'uninstalling' | 'done' | 'failed' | 'cancelled'
 
-export type ServerUninstallFailureReason = ServerSshInstallFailureReason | 'uninstallFailed' | 'revokeFailed' | 'updateRequired'
+export type ServerUninstallFailureReason = ServerSshInstallFailureReason | 'uninstallFailed' | 'revokeFailed' | 'registrationFailed' | 'updateRequired'
 
 export type ServerUninstallState = {
   runId: string
@@ -86,6 +88,7 @@ export type ServerUninstallState = {
   phase: ServerUninstallPhase
   prompt: ServerSshInstallPrompt | null
   inspection: ServerUninstallInspection | null
+  registrationRetained?: boolean
   failure: { reason: ServerUninstallFailureReason; detail?: string } | null
 }
 

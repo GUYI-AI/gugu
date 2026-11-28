@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { once } from 'node:events'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   INSPECT_BEGIN,
   INSPECT_END,
@@ -12,6 +12,7 @@ import {
   UninstallRun,
   inspectScript,
   parseInspectOutput,
+  prepareUninstallScript,
   runSshUninstall,
   toInspection,
   uninstallScript,
@@ -20,12 +21,13 @@ import { createSshMachineStore, registerSshMachinesIpc } from '../../../../apps/
 import { createServerUpdateStateWriter } from '../../../../apps/desktop/electron/server/server-updater'
 import type { SpawnSsh } from '../../../../apps/desktop/electron/server/ssh-install/runner'
 import { SERVER_SSH_MACHINES_CHANNELS, type ServerUninstallState } from '../../../../apps/desktop/src/lib/serverSshMachines'
-import { binLauncher, SERVER_LOGIN_REVOKED, UNINSTALL_ARCHIVE_RECEIPT } from '../../../../apps/desktop/electron/server/server-names'
+import { binLauncher, SERVER_LOGIN_FOR_UNINSTALL, SERVER_LOGIN_REVOKED, UNINSTALL_ARCHIVE_RECEIPT } from '../../../../apps/desktop/electron/server/server-names'
 import { migrateAccountLayout } from '../../../../apps/desktop/electron/server/server-boot.cjs'
 import { accountLockHolder } from '../../../../apps/desktop/electron/server/server-account-lock'
 
 const ME = '11111111-1111-4111-8111-111111111111'
 const OTHER = '22222222-2222-4222-8222-222222222222'
+const SESSION = '33333333-3333-4333-8333-333333333333'
 
 function tmp(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'gugu-uninstall-6264-'))
@@ -55,8 +57,16 @@ function fakeCli(root: string, prefix = ''): void {
   fs.writeFileSync(path.join(root, 'versions/0.2.99/bin/gugu-server'), `#!/bin/sh
 ${prefix}
 case "$1" in
-  help) echo '  gugu-server revoke-login' ;;
-  revoke-login) rm -f "$GUGU_SERVER_HOME/account/data/server-session.enc"; echo '${SERVER_LOGIN_REVOKED}' ;;
+  help) echo '  gugu-server revoke-login <owner> --session-id | --confirmed-session <id>' ;;
+  revoke-login)
+    if [ "$3" = --session-id ]; then
+      echo '${SERVER_LOGIN_FOR_UNINSTALL}=${SESSION}'
+    elif [ "$3" = --confirmed-session ] && [ "$4" = '${SESSION}' ]; then
+      printf '%s\\n%s\\n' "$2" "$4" > "$GUGU_SERVER_HOME/${UNINSTALL_ARCHIVE_RECEIPT}"
+      rm -f "$GUGU_SERVER_HOME/account/data/server-session.enc"
+      echo '${SERVER_LOGIN_REVOKED}'
+    else exit 1
+    fi ;;
 esac
 `, { mode: 0o755 })
 }
@@ -66,14 +76,19 @@ function useCurrentLayout(root: string): void {
 }
 
 /** 远端是 `sh -s` 读标准输入;这里把同一段脚本落成文件交给 sh(同步 spawn 不走 input,见 #3766)。 */
-const runSh = (home: string, script: string): string => {
+const runSh = (home: string, script: string, commandPath = process.env.PATH): string => {
   const file = path.join(home, '.script.sh')
   fs.writeFileSync(file, script)
   try {
-    return execFileSync('sh', [file], { env: { ...process.env, HOME: home, GUGU_SERVER_HOME: '' }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    return execFileSync('sh', [file], { env: { ...process.env, PATH: commandPath, HOME: home, GUGU_SERVER_HOME: '' }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
   } finally {
     fs.rmSync(file, { force: true })
   }
+}
+
+function completeUninstall(home: string): string {
+  expect(runSh(home, prepareUninstallScript(ME))).toContain(`${SERVER_LOGIN_FOR_UNINSTALL}=${SESSION}`)
+  return runSh(home, uninstallScript(ME, SESSION))
 }
 
 describe('#6264 从这台机器上卸载咕咕 server:远端脚本', () => {
@@ -88,7 +103,7 @@ describe('#6264 从这台机器上卸载咕咕 server:远端脚本', () => {
       fs.mkdirSync(path.join(serverHome, 'data'))
       const file = path.join(serverHome, 'data', kind === 'keeper' ? 'keeper.pid' : 'server.lock')
       fs.writeFileSync(file, text)
-      expect(() => runSh(home, uninstallScript(ME))).toThrow(`Cannot verify ${kind} PID: empty or invalid PID file ${file}`)
+      expect(() => runSh(home, prepareUninstallScript(ME))).toThrow(`Cannot verify ${kind} PID: empty or invalid PID file ${file}`)
       expect(fs.existsSync(serverHome)).toBe(true)
       expect(fs.readFileSync(file, 'utf8')).toBe(text)
       expect(fs.existsSync(path.join(serverHome, 'data/stopped'))).toBe(false)
@@ -107,7 +122,11 @@ describe('#6264 从这台机器上卸载咕咕 server:远端脚本', () => {
       await once(foreign.stdout, 'data')
       const serverHome = fakeInstall(home)
       if (layout === 'fixed') useCurrentLayout(serverHome)
-      else fs.rmSync(path.join(serverHome, 'accounts', ME, 'data/server-session.enc'))
+      else {
+        fs.rmSync(path.join(serverHome, 'accounts', ME, 'data/server-session.enc'))
+        fs.mkdirSync(path.join(serverHome, 'account'))
+        fs.copyFileSync(path.join(serverHome, 'accounts', ME, 'account.json'), path.join(serverHome, 'account/account.json'))
+      }
       const nodeDir = path.join(serverHome, 'current/node/bin')
       fs.mkdirSync(nodeDir, { recursive: true })
       fs.symlinkSync(process.execPath, path.join(nodeDir, 'node'))
@@ -117,7 +136,7 @@ describe('#6264 从这台机器上卸载咕咕 server:远端脚本', () => {
       fs.writeFileSync(path.join(serverHome, 'data/keeper.pid'), String(foreign.pid))
       const log = path.join(home, 'calls.log')
       fakeCli(serverHome, `echo "$*" >> '${log}'`)
-      expect(runSh(home, uninstallScript(ME))).toContain(UNINSTALLED_MARK)
+      expect(completeUninstall(home)).toContain(UNINSTALLED_MARK)
       expect(foreign.exitCode).toBe(null)
       expect(fs.readFileSync(path.join(other, 'server.lock'), 'utf8')).toBe(String(foreign.pid))
       expect(fs.readFileSync(log, 'utf8').split('\n')).not.toContain('stop')
@@ -138,7 +157,7 @@ describe('#6264 从这台机器上卸载咕咕 server:远端脚本', () => {
       else fs.rmSync(path.join(serverHome, 'accounts', ME, 'data/server-session.enc'))
       const file = path.join(serverHome, layout === 'fixed' ? 'account' : `accounts/${ME}`, 'data/server.lock')
       fs.writeFileSync(file, String(process.pid))
-      expect(() => runSh(home, uninstallScript(ME))).toThrow()
+      expect(() => runSh(home, prepareUninstallScript(ME))).toThrow()
       expect(fs.readFileSync(file, 'utf8')).toBe(String(process.pid))
     } finally { fs.rmSync(home, { recursive: true, force: true }) }
   })
@@ -156,13 +175,13 @@ describe('#6264 从这台机器上卸载咕咕 server:远端脚本', () => {
       fs.symlinkSync(process.execPath, path.join(nodeDir, 'node'))
       const file = path.join(root, directory, 'data/server.lock')
       fs.writeFileSync(file, '')
-      expect(() => runSh(home, uninstallScript(ME))).toThrow('Cannot verify account lock ownership')
+      expect(() => runSh(home, prepareUninstallScript(ME))).toThrow('Cannot verify account lock ownership')
       expect(fs.readFileSync(file, 'utf8')).toBe('')
       expect(fs.existsSync(path.join(root, 'data/stopped'))).toBe(false)
     } finally { fs.rmSync(home, { recursive: true, force: true }) }
   })
 
-  it.each([false, true])('stops a sessionless live owner before removal, including after actual retirement (migrate=%s)', async migrate => {
+  it.each([false, true])('stops a sessionless live owner while preparing and retains the unverified installation (migrate=%s)', async migrate => {
     const home = tmp(), root = fakeInstall(home), data = path.join(root, 'accounts', ME, 'data')
     const term = path.join(home, 'term-observed')
     fs.rmSync(path.join(data, 'server-session.enc'))
@@ -192,12 +211,13 @@ describe('#6264 从这台机器上卸载咕咕 server:远端脚本', () => {
       let output = '', error = ''
       shell.stdout.on('data', value => { output += value }); shell.stderr.on('data', value => { error += value })
       const shellExit = once(shell, 'exit')
-      shell.stdin.end(uninstallScript(ME))
-      expect((await shellExit)[0], error).toBe(0)
-      expect(output).toContain(UNINSTALLED_MARK)
+      shell.stdin.end(prepareUninstallScript(ME))
+      expect((await shellExit)[0], error).toBe(1)
+      expect(error).toContain('UNINSTALL_REVOKE_FAILED')
+      expect(output).not.toContain(UNINSTALLED_MARK)
       expect(fs.readFileSync(term, 'utf8')).toBe('term')
       expect((await exited)[0]).toBe(0)
-      expect(fs.existsSync(path.join(root, 'versions'))).toBe(false)
+      expect(fs.existsSync(path.join(root, 'versions'))).toBe(true)
     } finally {
       child.stdin.end()
       await exited
@@ -216,7 +236,7 @@ describe('#6264 从这台机器上卸载咕咕 server:远端脚本', () => {
       const parsed = parseInspectOutput(runSh(home, inspectScript()))!
       expect(parsed.accounts).toHaveLength(2)
       expect(parsed.accounts.filter(account => account.userId === ME)).toEqual([{ userId: ME, email: 'me@example.test', signedIn: true }])
-      expect(runSh(home, uninstallScript(ME))).toContain(UNINSTALLED_MARK)
+      expect(completeUninstall(home)).toContain(UNINSTALLED_MARK)
       expect(fs.existsSync(path.join(root, 'versions'))).toBe(false)
       expect(fs.existsSync(path.join(home, 'projects/app'))).toBe(true)
     } finally { fs.rmSync(home, { recursive: true, force: true }) }
@@ -245,7 +265,7 @@ describe('#6264 从这台机器上卸载咕咕 server:远端脚本', () => {
       useCurrentLayout(serverHome)
       fs.writeFileSync(path.join(serverHome, 'install-id'), 'installation')
       fs.writeFileSync(path.join(serverHome, 'account/data/gugu4.db'), 'history')
-      const out = runSh(home, uninstallScript(ME))
+      const out = completeUninstall(home)
       expect(out).toContain(UNINSTALLED_MARK)
       expect(fs.existsSync(path.join(serverHome, 'versions'))).toBe(false)
       expect(fs.existsSync(path.join(home, '.local', 'bin', 'gugu-server'))).toBe(false)
@@ -256,7 +276,8 @@ describe('#6264 从这台机器上卸载咕咕 server:远端脚本', () => {
       expect(fs.readFileSync(path.join(serverHome, 'install-id'), 'utf8')).toBe('installation')
       expect(fs.readFileSync(path.join(serverHome, 'account/data/gugu4.db'), 'utf8')).toBe('history')
       expect(fs.existsSync(path.join(serverHome, 'account/data/server-session.enc'))).toBe(false)
-      expect(fs.existsSync(path.join(serverHome, UNINSTALL_ARCHIVE_RECEIPT))).toBe(false)
+      expect(fs.readFileSync(path.join(serverHome, UNINSTALL_ARCHIVE_RECEIPT), 'utf8')).toBe(`${ME}\n${SESSION}\n`)
+      expect(toInspection(parseInspectOutput(runSh(home, inspectScript()))!, ME)).toMatchObject({ installed: false, cleanupPending: true })
     } finally {
       fs.rmSync(home, { recursive: true, force: true })
     }
@@ -270,11 +291,11 @@ describe('#6264 从这台机器上卸载咕咕 server:远端脚本', () => {
       const bin = path.join(home, '.local', 'bin', 'gugu-server')
       fs.rmSync(bin)
       fs.writeFileSync(bin, binLauncher(path.join(home, 'elsewhere')), { mode: 0o755 })
-      expect(() => runSh(home, uninstallScript(ME))).toThrow()
+      expect(() => runSh(home, prepareUninstallScript(ME))).toThrow()
       expect(fs.existsSync(bin)).toBe(true)
       fs.mkdirSync(serverHome, { recursive: true })
       fs.writeFileSync(bin, binLauncher(serverHome), { mode: 0o755 })
-      expect(runSh(home, uninstallScript(ME))).toContain(UNINSTALLED_MARK)
+      expect(completeUninstall(home)).toContain(UNINSTALLED_MARK)
       expect(fs.existsSync(bin)).toBe(false)
     } finally {
       fs.rmSync(home, { recursive: true, force: true })
@@ -283,13 +304,32 @@ describe('#6264 从这台机器上卸载咕咕 server:远端脚本', () => {
 })
 
 describe('sign-out before removing the program', () => {
+  it('unloads the launchd job before reading the session for desktop revocation', () => {
+    const home = tmp()
+    try {
+      const root = fakeInstall(home)
+      useCurrentLayout(root)
+      const commands = path.join(home, 'commands'), log = path.join(home, 'calls.log')
+      fs.mkdirSync(commands)
+      fs.writeFileSync(path.join(commands, 'uname'), '#!/bin/sh\necho Darwin\n', { mode: 0o755 })
+      fakeCli(root, `echo "$*" >> '${log}'`)
+      const commandPath = `${commands}:${process.env.PATH}`
+      expect(runSh(home, prepareUninstallScript(ME), commandPath)).toContain(`${SERVER_LOGIN_FOR_UNINSTALL}=${SESSION}`)
+      expect(fs.readFileSync(log, 'utf8').trim().split('\n'))
+        .toEqual(['service uninstall', `revoke-login ${ME} --session-id`])
+      expect(fs.existsSync(path.join(root, 'account/data/server-session.enc'))).toBe(true)
+      expect(runSh(home, uninstallScript(ME, SESSION), commandPath)).toContain(UNINSTALLED_MARK)
+      expect(fs.readFileSync(log, 'utf8').split('\n').filter(line => line === 'service uninstall')).toHaveLength(1)
+    } finally { fs.rmSync(home, { recursive: true, force: true }) }
+  })
+
   it('does not uninstall when another account is signed in', () => {
     const home = tmp()
     try {
       const root = fakeInstall(home)
       useCurrentLayout(root)
       fs.writeFileSync(path.join(root, 'accounts', OTHER, 'data/server-session.enc'), 'another login')
-      expect(() => runSh(home, uninstallScript(ME))).toThrow('UNINSTALL_REVOKE_FAILED')
+      expect(() => runSh(home, prepareUninstallScript(ME))).toThrow('UNINSTALL_REVOKE_FAILED')
       expect(fs.existsSync(path.join(root, 'current/bin/gugu-server'))).toBe(true)
       expect(fs.existsSync(path.join(root, UNINSTALL_ARCHIVE_RECEIPT))).toBe(false)
     } finally { fs.rmSync(home, { recursive: true, force: true }) }
@@ -303,14 +343,14 @@ describe('sign-out before removing the program', () => {
       const session = path.join(root, 'account/data/server-session.enc')
       const log = path.join(home, 'calls.log')
       fakeCli(root, `echo "$*" >> '${log}'; [ "$1" != revoke-login ] || exit 1`)
-      expect(() => runSh(home, uninstallScript(ME))).toThrow('UNINSTALL_REVOKE_FAILED')
+      expect(() => runSh(home, prepareUninstallScript(ME))).toThrow('UNINSTALL_REVOKE_FAILED')
       expect(fs.existsSync(path.join(root, 'current/bin/gugu-server'))).toBe(true)
       expect(fs.existsSync(session)).toBe(true)
-      expect(fs.readFileSync(log, 'utf8')).not.toContain('service uninstall')
+      expect(fs.readFileSync(log, 'utf8').includes('service uninstall')).toBe(process.platform === 'darwin')
       expect(toInspection(parseInspectOutput(runSh(home, inspectScript()))!, ME).archiveReady).toBe(true)
 
       fakeCli(root, `echo "$*" >> '${log}'`)
-      expect(runSh(home, uninstallScript(ME))).toContain(UNINSTALLED_MARK)
+      expect(completeUninstall(home)).toContain(UNINSTALLED_MARK)
       expect(fs.existsSync(session)).toBe(false)
       expect(fs.existsSync(path.join(root, 'current'))).toBe(false)
       expect(fs.readFileSync(log, 'utf8')).toContain('service uninstall')
@@ -321,8 +361,13 @@ describe('sign-out before removing the program', () => {
 describe('#6264 卸载的状态机', () => {
   const target = { destination: 'alice@box', display: 'alice@box' }
   const inspectOut = `${INSPECT_BEGIN}\ninstalled=1\nsupported=1\nversion=0.2.99\naccount=${ME} 1 me@example.test\naccount=${OTHER} 1 lab@example.test\n${INSPECT_END}\n`
+  const inspected = { code: 0, stdout: inspectOut }
+  const prepared = { code: 0, stdout: `${SERVER_LOGIN_FOR_UNINSTALL}=${SESSION}\n` }
+  const removed = { code: 0, stdout: `${UNINSTALLED_MARK}\n` }
+  type ChangeRegistration = Parameters<typeof runSshUninstall>[2]['changeRegistration']
 
-  function harness(responses: Array<{ code: number; stdout?: string; stderr?: string }>, confirm: boolean) {
+  function harness(responses: Array<{ code: number; stdout?: string; stderr?: string }>, confirm: boolean,
+    change: ChangeRegistration = async (action) => action === 'revoke' ? 'revoked' : 'removed') {
     const scripts: string[] = []
     const spawnSsh: SpawnSsh = async (_args, { stdin }) => {
       scripts.push(typeof stdin === 'string' ? stdin : stdin.file)
@@ -330,22 +375,28 @@ describe('#6264 卸载的状态机', () => {
       return { code: next.code, stdout: next.stdout ?? '', stderr: next.stderr ?? '' }
     }
     const states: ServerUninstallState[] = []
+    const changeRegistration = vi.fn(change)
     const run = new UninstallRun('run-1', 'dev-1', 'alice@box', (s) => states.push(s))
     const done = runSshUninstall(target, run, {
       spawnSsh,
       controlPath: null,
       currentUserId: ME,
       waitForConfirm: async () => confirm,
+      changeRegistration,
       signal: new AbortController().signal,
     })
-    return { done, scripts, states }
+    return { done, scripts, states, changeRegistration }
   }
 
-  it('看过清单、确认之后才跑删除脚本;删完是 done', async () => {
-    const { done, scripts, states } = harness([{ code: 0, stdout: inspectOut }, { code: 0, stdout: `${UNINSTALLED_MARK}\n` }], true)
+  it.each(['revoked', 'already_absent'])('uninstalls after the confirmed revocation result %s', async (receipt) => {
+    const { done, scripts, states, changeRegistration } = harness([inspected, prepared, removed], true,
+      async (action) => action === 'revoke' ? receipt : 'removed')
     const final = await done
     expect(final.phase).toBe('done')
-    expect(scripts).toHaveLength(2)
+    expect(scripts).toHaveLength(3)
+    expect(changeRegistration.mock.calls).toEqual([['revoke', SESSION], ['remove', SESSION]])
+    expect(scripts[1]).toContain('--session-id')
+    expect(scripts[2]).toContain('--confirmed-session')
     const confirmState = states.find((s) => s.phase === 'confirm')
     expect(confirmState?.inspection?.accounts.map((a) => [a.email, a.you])).toEqual([['me@example.test', true], ['lab@example.test', false]])
   })
@@ -371,6 +422,47 @@ describe('#6264 卸载的状态机', () => {
     expect(await lost.done).toMatchObject({ phase: 'failed', failure: { reason: 'connectionRefused' } })
     const refused = harness([inspection, { code: 1, stderr: '__GUGU_UNINSTALL_REVOKE_FAILED__\n' }], true)
     expect(await refused.done).toMatchObject({ phase: 'failed', failure: { reason: 'revokeFailed' } })
+  })
+
+  it('reports a lost revocation reply and finishes after a retry confirms the session is gone', async () => {
+    let alive = true
+    const cloud: ChangeRegistration = async (action) => {
+      if (action === 'remove') return 'removed'
+      if (!alive) return 'already_absent'
+      alive = false
+      throw new Error('Response lost after committing the revocation')
+    }
+    const first = harness([inspected, prepared], true, cloud)
+    expect(await first.done).toMatchObject({ phase: 'failed', failure: { reason: 'revokeFailed' } })
+    expect(first.scripts).toHaveLength(2)
+    const retry = harness([inspected, prepared, removed], true, cloud)
+    expect(await retry.done).toMatchObject({ phase: 'done', registrationRetained: false })
+  })
+
+  it.each(['database unavailable', 'binding changed', 'only the refresh token was rejected'])
+    ('leaves the installation in place when revocation fails: %s', async (error) => {
+      const fixture = harness([inspected, prepared], true, async () => { throw new Error(error) })
+      expect(await fixture.done).toMatchObject({ phase: 'failed', failure: { reason: 'revokeFailed' } })
+      expect(fixture.scripts).toHaveLength(2)
+      expect(fixture.changeRegistration.mock.calls).toEqual([['revoke', SESSION]])
+    })
+
+  it('keeps a replacement registration and its SSH details after the original installation is removed', async () => {
+    const fixture = harness([inspected, prepared, removed], true, async action => action === 'revoke' ? 'revoked' : 'rebound')
+    expect(await fixture.done).toMatchObject({ phase: 'done', registrationRetained: true })
+    expect(fixture.changeRegistration.mock.calls).toEqual([['revoke', SESSION], ['remove', SESSION]])
+  })
+
+  it('retries a lost registration cleanup response using the receipt left by the local uninstall', async () => {
+    const first = harness([inspected, prepared, removed], true, async action => {
+      if (action === 'revoke') return 'revoked'
+      throw new Error('Cleanup response lost')
+    })
+    expect(await first.done).toMatchObject({ phase: 'failed', failure: { reason: 'registrationFailed' } })
+    const receipt = { code: 0, stdout: `${INSPECT_BEGIN}\nsupported=1\ncleanup_pending=1\narchived=${ME}\n${INSPECT_END}\n` }
+    const retry = harness([receipt, prepared, removed], true, async () => 'already_absent')
+    expect(await retry.done).toMatchObject({ phase: 'done', registrationRetained: false })
+    expect(retry.changeRegistration.mock.calls).toEqual([['remove', SESSION]])
   })
 })
 
