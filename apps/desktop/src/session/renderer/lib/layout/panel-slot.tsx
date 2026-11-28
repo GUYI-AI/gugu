@@ -3,11 +3,11 @@ import { cn } from '@renderer/utils/utils';
 import type { PanelTrack } from './panel-track';
 
 /**
- * One slot of a PanelTrack (panel-track.ts): its place in the flow, the window that clips it there, and its content. Sizes
- * are written by the track only; this renders the three boxes and hands them over. The window clips along the track only.
- * `windowProps` go on the window (the box the panel is seen through: data attributes, z, a hidden style).
- * `fill`: the track's fill in the same three boxes (it takes the rest, nothing clips it), so a child that becomes or stops
- * being the last of a cut keeps its nodes (TrackCut).
+ * One slot of a PanelTrack (panel-track.ts): its place in the flow, the window that clips it there, and its content.
+ * Sizes are written by the track only; this renders the three boxes and hands them over. The window clips along the
+ * track only. `windowProps` go on the window (the box the panel is seen through: data attributes, z, a hidden style).
+ * `fill`: the track's fill in the same three boxes (it takes the rest, nothing clips it), so a child that becomes or
+ * stops being the last of a cut keeps its nodes (TrackCut).
  */
 export function PanelSlot({
   track,
@@ -37,7 +37,10 @@ export function PanelSlot({
     // Became the fill or stopped being it: what the other role's track wrote goes, the new track writes its own.
     if (role.current !== fill && place && window && content) {
       role.current = fill;
-      for (const { style } of [place, window, content]) style.width = style.height = style.left = style.top = style.right = style.bottom = style.maskImage = style.transform = '';
+      for (const { style } of [place, window, content]) {
+        style.width = style.height = style.left = style.top = style.right = style.bottom = '';
+        style.maskImage = style.transform = '';
+      }
       window.inert = false;
     }
     const all = place && window && content ? { place, window, content } : null;
@@ -49,7 +52,14 @@ export function PanelSlot({
     attach();
   };
   return (
-    <div ref={ref('place')} data-panel-slot={fill ? undefined : id} data-panel-fill={fill ? '' : undefined} className={cn(fill ? 'relative min-h-0 min-w-0 flex-1' : 'relative shrink-0', axis === 'x' ? 'h-full' : 'w-full', className)}>
+    <div
+      ref={ref('place')}
+      data-panel-slot={fill ? undefined : id}
+      data-panel-fill={fill ? '' : undefined}
+      className={cn(
+        fill ? 'relative min-h-0 min-w-0 flex-1' : 'relative shrink-0', axis === 'x' ? 'h-full' : 'w-full', className
+      )}
+    >
       <div
         {...windowProps}
         ref={ref('window')}

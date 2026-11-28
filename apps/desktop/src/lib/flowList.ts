@@ -88,7 +88,9 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
   const lastFrameRef = useRef<{ key: Slice['key']; gap: number; top: number; at?: { row: Element; top: number } }>({ key: resetKey, gap: 0, top: 0 })
   if (lastFrameRef.current.key !== resetKey) lastFrameRef.current = { key: resetKey, gap: 0, top: 0 }
   const report = useCallback((scroller: HTMLElement) => {
-    if (scroller.checkVisibility && !scroller.checkVisibility()) return // 藏着不排版(保留页 content-visibility:hidden)时读到的几何是冻住的 / 全 0,❌ 记成基准:重新显示、补排这段时间进来的行时,按藏起来之前那份读数判「在底部就贴住」
+    // 藏着不排版(保留页 content-visibility:hidden)时读到的几何是冻住的 / 全 0,❌ 记成基准:
+    // 重新显示、补排这段时间进来的行时,按藏起来之前那份读数判「在底部就贴住」
+    if (scroller.checkVisibility && !scroller.checkVisibility()) return
     const range = rangeRef.current
     const gap = scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop
     const atBottom = range.end === range.rowIds.length && gap <= atBottomThreshold

@@ -31,8 +31,14 @@ function intersect(a: ElementBox, b: ElementBox): ElementBox {
     height: Math.max(0, Math.min(a.top + a.height, b.top + b.height) - top) }
 }
 
-/** The resident layer, a native page and widget ownership read the same walk: a box's rectangle, what its ancestors' clips leave of it, and the opacity they draw it at (a panel fading, mid-move too). */
-export function clippedElementBox(element: HTMLElement, bounds: ElementBox): { full: ElementBox; clip: ElementBox; opacity: number } {
+/**
+ * The resident layer, a native page and widget ownership read the same walk: a box's rectangle, what its ancestors'
+ * clips leave of it, and the opacity they draw it at (a panel fading, mid-move too).
+ */
+export function clippedElementBox(
+  element: HTMLElement,
+  bounds: ElementBox
+): { full: ElementBox; clip: ElementBox; opacity: number } {
   const full = elementBox(element)
   let clip = intersect(full, bounds)
   let opacity = 1

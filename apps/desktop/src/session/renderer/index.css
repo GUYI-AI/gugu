@@ -1139,7 +1139,8 @@
 
   [data-chat-card-head],
   [data-chat-card] {
-    /* The right gap closes with the last pixels of the tools' cell as they come or go: written on these two (chat-workspace-chrome @@@card-gap). */
+    /* The right gap closes with the last pixels of the tools' cell as they come or go: written on these two
+       (chat-workspace-chrome @@@card-gap). */
     margin-right: var(--chat-card-half-gap);
     background: var(--bg);
   }

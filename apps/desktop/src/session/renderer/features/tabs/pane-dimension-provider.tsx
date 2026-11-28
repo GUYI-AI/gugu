@@ -55,7 +55,10 @@ export function PaneDimensionProvider({
   children,
 }: {
   sink: PaneDimensionSink;
-  /** Through a move of a panel around it the width is the one it lands at (PanelTrack's panelRest): narrow or not is decided once. */
+  /**
+   * Through a move of a panel around it the width is the one it lands at (PanelTrack's panelRest): narrow or not is
+   * decided once.
+   */
   atRest?: boolean;
   children: ReactNode;
 }) {
@@ -78,7 +81,8 @@ export function PaneDimensionProvider({
       sink.setDimensions(width, height);
     };
 
-    const toCome = () => { // how much wider the rows moving around it will leave it when they land (null: none is moving)
+    // how much wider the rows moving around it will leave it when they land (null: none is moving)
+    const toCome = () => {
       const moving = atRest ? ancestorsOf(el).flatMap((place) => panelRest.get(place) ?? []) : [];
       return moving.length ? moving.reduce((sum, to) => sum + to.grow, 0) : null;
     };
@@ -87,13 +91,22 @@ export function PaneDimensionProvider({
       last = el.getBoundingClientRect();
       commitMeasurement(last.width + (toCome() ?? 0), last.height);
     };
-    const observer = new ResizeObserver(([entry]) => { if (entry && toCome() === null) commitMeasurement((last = entry.contentRect).width, last.height); }); // the size it is given, ❌ read again: an observer before it wrote styles this pass, so a read is a forced layout per frame
+    // the size it is given, ❌ read again: an observer before it wrote styles this pass, so a read is a forced layout
+    // per frame
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry && toCome() === null) commitMeasurement((last = entry.contentRect).width, last.height);
+    });
     observer.observe(el);
 
     // 初次测量发生在子组件 passive effect 之前；额外等待两帧，覆盖 provider 挂载后
     // 父级 layout effect 才为固定任务帧设置最终尺寸的情况。
     measure();
-    const unhear = onPanelRest(el, () => { const grow = toCome(); if (grow !== null) commitMeasurement(last.width + grow, last.height); }); // a move starting: the resting size from what was last measured, ❌ measured again in the task that started it; landing changes nothing
+    // a move starting: the resting size from what was last measured, ❌ measured again in the task that started it;
+    // landing changes nothing
+    const unhear = onPanelRest(el, () => {
+      const grow = toCome();
+      if (grow !== null) commitMeasurement(last.width + grow, last.height);
+    });
     let settleFrame: number | null = null;
     const settle = () => {
       settleFrame = requestAnimationFrame(() => {

@@ -504,7 +504,8 @@ export const ExtensionPage = observer(function ExtensionPage({
               : ancestors.some((element) => element.hasAttribute('data-tab-fullscreen'))
                 ? 'var(--z-pane-fullscreen-resident)'
                 : 'var(--z-pane-resident)';
-            // Drawn as its slot is, fading with its panel. Hidden, only a managed page is made clear (a guest under opacity 0 stops drawing).
+            // Drawn as its slot is, fading with its panel. Hidden, only a managed page is made clear (a guest under
+            // opacity 0 stops drawing).
             box.style.opacity = managed && !shown ? '0' : opacity < 1 ? String(opacity) : managed ? '1' : '';
             box.inert = !shown;
             const inner = innerRef.current;

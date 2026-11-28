@@ -1,10 +1,12 @@
-import { type ReactNode, useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useId, useLayoutEffect, useRef, useState } from 'react';
 import { ShellSidebarToggle } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { INNER_SIDEBAR_MIN_WIDTH_PX, innerSidebarMaxWidth, SIDEBAR_MIN_WIDTH_PX } from '@renderer/lib/layout/layout-provider';
 import { PanelSlot } from '@renderer/lib/layout/panel-slot';
 import { MOVE, PANEL_LANDED_PX } from '@renderer/lib/layout/panel-track';
-import { INNER_FOLD_FADES, INNER_FOLD_LINE, innerFoldFrames, innerFoldOpacity } from '@renderer/lib/layout/inner-fold-paint';
+import {
+  INNER_FOLD_FADES, INNER_FOLD_LINE, innerFoldFrames, innerFoldOpacity
+} from '@renderer/lib/layout/inner-fold-paint';
 import { RESTORE_LANE_FOLLOWER } from '@renderer/lib/components/titlebar/shell-restore-lane';
 import { PanelResizeDragGuard, PanelResizeHandle } from '@renderer/lib/layout/panel-resize-handle';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -23,7 +25,8 @@ interface WorkspaceLayoutProps {
   innerSidebarRestore?: ReactNode;
 }
 
-const all = (root: Element | null | undefined, name: string) => [...(root?.getElementsByClassName(name) ?? [])] as HTMLElement[];
+const all = (root: Element | null | undefined, name: string) =>
+  [...(root?.getElementsByClassName(name) ?? [])] as HTMLElement[];
 const moves = (from: number, to: number, content: number) => Math.abs(from - to) >= PANEL_LANDED_PX && content > 0;
 /**
  * 侧栏折不折只由用户说了算(顶栏按钮 / 快捷键 / 拖分隔条)。
@@ -45,8 +48,6 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
   const { translate } = useSessionMessages();
   const {
     track,
-    leftAnimatedWidth,
-    innerEdge,
     workspaceRootRef,
     setWorkspaceWidth,
     setLeftWidth,
@@ -58,6 +59,8 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     innerSidebarShown,
   } = useWorkspaceLayoutContext();
   const [isResizing, setIsResizing] = useState(false);
+  // the handles' anchors, which their drag guards are placed by: one per layout
+  const edges = `--edge-${useId().replace(/[^\w-]/g, '')}`;
 
   // #2642 会话页的宽:内层栏放得下多宽由它推出(窗口变窄时那一列跟着让)。
   useLayoutEffect(() => {
@@ -72,29 +75,43 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
   const fillNode = useRef<HTMLDivElement | null>(null);
   const fillRef = useCallback((element: HTMLDivElement | null) => {
     fillNode.current = element;
-    track.attachFill(element && { place: element, window: element, content: element });
+    track.attachFill(element);
   }, [track]);
-  // @@@inner-fold-motion (owner 11-26) — what goes with the inner column's move, as animations riding it on these elements only: the restore lane's button and the tab strip that
-  // leaves it room get `--shell-restore-lane-shown` (0 → 1 over the second half of a fold, 1 → 0 over the first half of an unfold); inside the column (inner-fold-paint.ts) the line's
-  // `right` and the fading blocks' `opacity`. The card's `data-inner-column` (@@@inner-on-card) is held while any of the column is drawn: its left corners go at the start of an unfold and
-  // come back when a fold has landed, ❌ at the click (a seam for the whole move). ❌ An inherited variable on the shell or the page: every frame would restyle every element under it.
+  // @@@inner-fold-motion (owner 11-26) — what goes with the inner column's move, as animations riding it on these
+  // elements only: the restore lane's button and the tab strip that
+  // leaves it room get `--shell-restore-lane-shown` (0 → 1 over the second half of a fold, 1 → 0 over the first half of
+  // an unfold); inside the column (inner-fold-paint.ts) the line's
+  // `right` and the fading blocks' `opacity`. The card's `data-inner-column` (@@@inner-on-card) is held while any of
+  // the column is drawn: its left corners go at the start of an unfold and
+  // come back when a fold has landed, ❌ at the click (a seam for the whole move). ❌ An inherited variable on the shell
+  // or the page: every frame would restyle every element under it.
   useLayoutEffect(() => {
     const column = workspaceRootRef.current?.querySelector(':scope > [data-panel-slot="inner"]');
     return track.ride('inner', (from, to, content) => !moves(from, to, content) ? [] : [
-      ...all(column, INNER_FOLD_LINE).map((line) => line.animate({ right: [`${content - from}px`, `${content - to}px`] }, MOVE)),
-      ...all(column, INNER_FOLD_FADES).map((block) => block.animate(innerFoldFrames(from, to, content, 'opacity', innerFoldOpacity), MOVE)),
+      ...all(column, INNER_FOLD_LINE)
+        .map((line) => line.animate({ right: [`${content - from}px`, `${content - to}px`] }, MOVE)),
+      ...all(column, INNER_FOLD_FADES)
+        .map((block) => block.animate(innerFoldFrames(from, to, content, 'opacity', innerFoldOpacity), MOVE)),
     ]);
   }, [track, workspaceRootRef]);
-  // The followers come and go with the render that starts the move (the lane's button mounts, the strip takes the class): their rider is registered after that render, and joins the move under way.
+  // The followers come and go with the render that starts the move (the lane's button mounts, the strip takes the
+  // class): their rider is registered after that render, and joins the move under way.
   useLayoutEffect(() => {
     const fill = fillNode.current;
-    const rest = () => { // ❌ the column's box read here: in the render that starts its move it would lay the page out again. The card's mark is written here only, after the render's own removals (❌ before them: removing the focused button would restyle the card on the spot), and not at all by a fold until it has landed
-      for (const follower of all(fill, RESTORE_LANE_FOLLOWER)) follower.style.setProperty('--shell-restore-lane-shown', innerSidebarShown ? '0' : '1');
+    // ❌ the column's box read here: in the render that starts its move it would lay the page out again. The card's mark
+    // is written here only, after the render's own removals (❌ before them: removing the focused button would restyle
+    // the card on the spot), and not at all by a fold until it has landed
+    const rest = () => {
+      for (const follower of all(fill, RESTORE_LANE_FOLLOWER)) {
+        follower.style.setProperty('--shell-restore-lane-shown', innerSidebarShown ? '0' : '1');
+      }
       fill?.toggleAttribute('data-inner-column', innerSidebarShown || track.moving);
     };
     rest();
     const off = [track.onLanded(rest), track.ride('inner', (from, to, content) => !moves(from, to, content) ? [] :
-      all(fill, RESTORE_LANE_FOLLOWER).map((follower) => follower.animate(innerFoldFrames(from, to, content, '--shell-restore-lane-shown', (open) => innerFoldOpacity(1 - open)), MOVE)))];
+      all(fill, RESTORE_LANE_FOLLOWER).map((follower) => follower.animate(
+        innerFoldFrames(from, to, content, '--shell-restore-lane-shown', (open) => innerFoldOpacity(1 - open)), MOVE
+      )))];
     return () => off.forEach((stop) => stop());
   }, [track, innerSidebarShown]);
 
@@ -121,6 +138,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
       <PanelSlot track={track} id="list" className="z-40" edge={
         <PanelResizeHandle
           ariaLabel={translate('task.resizeSidebar')}
+          anchor={`${edges}-list`}
           // #2548 the sidebar as one list draws no line on its edge: hovering it only shows the resize cursor.
           className="hover:bg-transparent"
           // A drag starts from where the edge is now (the rail, or mid-animation).
@@ -153,6 +171,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
       <PanelSlot track={track} id="inner" edge={innerSidebarShown ? (
         <PanelResizeHandle
           ariaLabel={translate('task.resizeInnerSidebar')}
+          anchor={`${edges}-inner`}
           // 从该画的宽起拖:窗口窄时它可能正被夹着,从存着的宽起拖会先空拖一截。
           getSize={innerShownWidth}
           minSize={INNER_SIDEBAR_MIN_WIDTH_PX}
@@ -171,13 +190,18 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
       ) : null}>
         {innerSidebar}
       </PanelSlot>
-      <div ref={fillRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="" data-panel-fill="">
+      <div
+        ref={fillRef}
+        className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+        data-workspace-content-surface=""
+        data-panel-fill=""
+      >
         {mainContent}
         {innerSidebarRestore}
       </div>
-      <PanelResizeDragGuard offset={leftAnimatedWidth} />
+      <PanelResizeDragGuard anchor={`${edges}-list`} />
       {/* #2642 正文的页签条压在内层栏分隔条的右半截上:守卫排在正文后面,那半截才是拖宽度而 ❌ 拖窗口。 */}
-      {innerSidebarShown ? <PanelResizeDragGuard offset={innerEdge} /> : null}
+      {innerSidebarShown ? <PanelResizeDragGuard anchor={`${edges}-inner`} /> : null}
       {/* 左侧栏开关的控制器(快捷键、「消息」再点一下都走它);按钮本身 #2548 起在一张表侧栏的头一行。 */}
       <ShellSidebarToggle />
     </div>

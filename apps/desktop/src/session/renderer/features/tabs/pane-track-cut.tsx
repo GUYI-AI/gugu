@@ -189,7 +189,13 @@ export function TrackCut({
 
   return (
     // Clipped along the track only, ❌ hidden (a hidden box is scrolled when a page still off the edge takes focus).
-    <div ref={rootRef} className={cn('relative flex h-full w-full min-h-0 min-w-0', axis === 'y' ? 'flex-col overflow-y-clip' : 'overflow-x-clip')} data-track-cut={axis}>
+    <div
+      ref={rootRef}
+      className={cn(
+        'relative flex h-full w-full min-h-0 min-w-0', axis === 'y' ? 'flex-col overflow-y-clip' : 'overflow-x-clip'
+      )}
+      data-track-cut={axis}
+    >
       {items.map((item, at) => {
         const fill = at === items.length - 1;
         const own = divider?.at === at ? divider : undefined;
@@ -226,7 +232,10 @@ export function TrackCut({
         return (
           <PanelSlot key={item.id} track={track} id={item.id} axis={axis} fill={fill} edge={edge}>
             {/* A slot's last pixel is the divider's. */}
-            <div style={{ display: 'flex', flexDirection: 'column', [size]: fill || edgeless(at) ? '100%' : 'calc(100% - 1px)', [axis === 'x' ? 'height' : 'width']: '100%' }}>{item.node}</div>
+            <div style={{
+              display: 'flex', flexDirection: 'column', [size]: fill || edgeless(at) ? '100%' : 'calc(100% - 1px)',
+              [axis === 'x' ? 'height' : 'width']: '100%'
+            }}>{item.node}</div>
           </PanelSlot>
         );
       })}

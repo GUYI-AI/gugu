@@ -37,15 +37,19 @@ export const PEEKED_PAGE_STYLE: CSSProperties = {
 };
 
 /**
- * @@@follow-the-box - the page is laid over the peek's box by measuring it, as the App pages' layer lays a page over its
- * slot, and follows it the same way (followBox). It cannot be put in the box: the box is in the shell's document tree and
- * this page's styles are in the session frame's. Placed by the box's viewport rect, then corrected by where it actually
- * landed, so a transformed ancestor cannot skew it; drawn at the opacity the box is (a peek coming or going on its track).
+ * @@@follow-the-box - the page is laid over the peek's box by measuring it, as the App pages' layer lays a page over
+ * its slot, and follows it the same way (followBox). It cannot be put in the box: the box is in the shell's document
+ * tree and this page's styles are in the session frame's. Placed by the box's viewport rect, then corrected by where it
+ * actually landed, so a transformed ancestor cannot skew it; drawn at the opacity the box is (a peek coming or going on
+ * its track).
  */
 export function layOver(page: HTMLElement, box: HTMLElement): () => void {
   const place = () => {
     const { full: want, opacity } = clippedElementBox(box, { left: 0, top: 0, width: innerWidth, height: innerHeight });
-    const set = (left: number, top: number) => Object.assign(page.style, { left: `${left}px`, top: `${top}px`, width: `${want.width}px`, height: `${want.height}px`, opacity: opacity < 1 ? String(opacity) : '' });
+    const set = (left: number, top: number) => Object.assign(page.style, {
+      left: `${left}px`, top: `${top}px`, width: `${want.width}px`, height: `${want.height}px`,
+      opacity: opacity < 1 ? String(opacity) : ''
+    });
     set(want.left, want.top);
     const got = page.getBoundingClientRect();
     if (got.left !== want.left || got.top !== want.top) set(2 * want.left - got.left, 2 * want.top - got.top);

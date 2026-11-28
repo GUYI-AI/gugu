@@ -1,5 +1,4 @@
-import { motion, type MotionValue } from 'framer-motion';
-import { useRef } from 'react';
+import { useRef, type CSSProperties } from 'react';
 import { cn } from '@renderer/utils/utils';
 
 /**
@@ -12,12 +11,6 @@ export const PANEL_SNAP_RATIO = 0.5;
 export const KEYBOARD_STEP_PX = 16;
 /** 命中带宽度(px)。视觉上的那条发丝线由面板自己的边框画,这一条只负责"抓得住"。 */
 const HIT_STRIP_PX = 4;
-
-/** 骑在面板右边界上:把手中线对准面板边缘,两侧各分一半命中带。把手和它的拖拽守卫共用这一份几何。 */
-function stripStyle(offset: MotionValue<number>) {
-  // Moved by transform: ❌ left, which lays the strip out again in every frame of a fold.
-  return { width: HIT_STRIP_PX, left: 0, x: offset, marginLeft: -HIT_STRIP_PX / 2 };
-}
 
 interface PanelResizeHandleProps {
   /** 面板当前的目标宽(px)。拖拽以它为基准,而不是读 DOM —— 读 DOM 会读到动画中的中间值。 */
@@ -37,6 +30,8 @@ interface PanelResizeHandleProps {
   follow?: { onMove: (rawSize: number) => void; onRelease: () => void };
   ariaLabel: string;
   className?: string;
+  /** The anchor name its drag guard is placed by (PanelResizeDragGuard). */
+  anchor?: string;
 }
 
 /**
@@ -60,6 +55,7 @@ export function PanelResizeHandle({
   follow,
   ariaLabel,
   className,
+  anchor,
 }: PanelResizeHandleProps) {
   const dragRef = useRef<{ pointerId: number; startX: number; startSize: number } | null>(null);
 
@@ -97,7 +93,7 @@ export function PanelResizeHandle({
         'absolute inset-y-0 z-40 cursor-col-resize outline-none transition-colors hover:bg-border/60',
         className
       )}
-      style={{ width: HIT_STRIP_PX, right: -HIT_STRIP_PX / 2 }}
+      style={{ width: HIT_STRIP_PX, right: -HIT_STRIP_PX / 2, anchorName: anchor } as CSSProperties}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         event.preventDefault();
@@ -143,13 +139,15 @@ export function PanelResizeHandle({
  * 它的 no-drag 压得住。它只管拖拽区:不可点(pointer-events:none,指针照旧落在把手上)、不进焦点和读屏顺序,
  * ❌ 把把手本身挪到面板后面(那样 Tab 和读屏会在整个主区之后才走到分隔条)。
  */
-export function PanelResizeDragGuard({ offset }: { offset: MotionValue<number> }) {
+export function PanelResizeDragGuard({ anchor }: { anchor: string }) {
+  // The handle's own box (its anchor), wherever its slot's edge is drawn: one geometry, ❌ a second copy of the edge.
+  const style = { positionAnchor: anchor, left: 'anchor(left)', width: HIT_STRIP_PX } as CSSProperties;
   return (
-    <motion.div
+    <div
       aria-hidden
       data-panel-resize-drag-guard=""
       className="pointer-events-none absolute inset-y-0 [-webkit-app-region:no-drag]"
-      style={stripStyle(offset)}
+      style={style}
     />
   );
 }

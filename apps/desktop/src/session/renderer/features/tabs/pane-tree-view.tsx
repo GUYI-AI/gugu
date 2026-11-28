@@ -46,20 +46,29 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
   const alone = narrow || !!single;
   const visiblePaneId = single ?? layout.activePaneId;
   const hosts = useRef(new Map<string, HTMLDivElement>());
-  const hostOf = (paneId: string) => hosts.current.get(paneId) ?? hosts.current.set(paneId, surfaceHost('contents')).get(paneId)!;
+  const hostOf = (paneId: string) =>
+    hosts.current.get(paneId) ?? hosts.current.set(paneId, surfaceHost('contents')).get(paneId)!;
   useLayoutEffect(() => {
-    for (const [paneId, host] of hosts.current) if (!layout.groups.some((group) => group.paneId === paneId)) { host.remove(); hosts.current.delete(paneId); }
+    for (const [paneId, host] of hosts.current) {
+      if (!layout.groups.some((group) => group.paneId === paneId)) { host.remove(); hosts.current.delete(paneId); }
+    }
   });
   const pagesRef = useRef<HTMLDivElement>(null);
-  // The chat workspace's strip, a host per column: wide, each heads its pane's cell (@@@strip-in-cells); in full view and narrow, the row above.
+  // The chat workspace's strip, a host per column: wide, each heads its pane's cell (@@@strip-in-cells); in full view
+  // and narrow, the row above.
   const [heads] = useState(() => ({ chat: surfaceHost('contents'), tools: surfaceHost('contents') }));
   const headPark = useRef<HTMLSpanElement>(null);
-  // @@@single-on-track — the chat workspace's hidden and full views, and the narrow layout, are the cuts at 100 / 0. The
-  // page a move stops showing stays shown, live, until its cell is at nothing (@@@leaving-panes); in full view the other
-  // page coming to the front, the layout going narrow or wide, and another tab coming to the front of a pane (a side page has its own width) are page swaps, in one frame.
+  // @@@single-on-track — the chat workspace's hidden and full views, and the narrow layout, are the cuts at 100 / 0.
+  // The page a move stops showing stays shown, live, until its cell is at nothing (@@@leaving-panes); in full view the
+  // other page coming to the front, the layout going narrow or wide, and another tab coming to the front of a pane (a
+  // side page has its own width) are page swaps, in one frame.
   const fronts = layout.groups.map(({ paneId, pane }) => `${paneId} ${pane.activeTabId}`);
   const before = useRef({ single, narrow, fronts });
-  const swap = (!!before.current.single && !!single && before.current.single !== single) || before.current.narrow !== narrow || (before.current.fronts.length === fronts.length && fronts.some((front, at) => front !== before.current.fronts[at]));
+  const was = before.current;
+  const swap =
+    (!!was.single && !!single && was.single !== single) ||
+    was.narrow !== narrow ||
+    (was.fronts.length === fronts.length && fronts.some((front, at) => front !== was.fronts[at]));
   useLayoutEffect(() => { before.current = { single, narrow, fronts }; });
   // Wide, the root cut is on a track: a pane whose last tab closes goes off it before it goes (@@@closing-pane).
   useLayoutEffect(() => narrow ? undefined : layout.attachMotion(), [layout, narrow]);
@@ -70,24 +79,54 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
   const paired = layout.sidePaneId !== null;
   const lifted = layout.groups.some(({ pane }) => tabFullscreen.isOn(pane));
   const headsInCells = !!scopedChrome && !narrow && layout.chatWorkspaceMode !== 'full';
-  const headOf = (paneId: string) => paneId === layout.chatWorkspacePanes?.chat.paneId ? heads.chat : paneId === layout.chatWorkspacePanes?.tools?.paneId ? heads.tools : undefined;
+  const headOf = (paneId: string) =>
+    paneId === layout.chatWorkspacePanes?.chat.paneId ? heads.chat
+      : paneId === layout.chatWorkspacePanes?.tools?.paneId ? heads.tools
+        : undefined;
   return <PaneDimensionProvider sink={layout} atRest>
     {/* What the content surface around it reads (desktop-shell.css): only while this workspace is on screen. A retained page
         hidden under it keeps its own two marks, and the surface took a hidden task's cards for the shown chat's (square corners). */}
-    <div className="flex h-full min-h-0 min-w-0 flex-col" style={{ anchorName: anchor } as CSSProperties} data-chat-tool-workspace={scopedChrome ? '' : undefined} data-chat-tool-cards={scopedChrome && layout.chatToolCardPaneId ? '' : undefined}
+    <div
+      className="flex h-full min-h-0 min-w-0 flex-col"
+      style={{ anchorName: anchor } as CSSProperties}
+      data-chat-tool-workspace={scopedChrome ? '' : undefined}
+      data-chat-tool-cards={scopedChrome && layout.chatToolCardPaneId ? '' : undefined}
       data-surface-chat={scopedChrome && workspaceShown ? layout.chatToolCardPaneId ? 'cards' : 'tools' : undefined}>
       {/* A page of the pair in full screen keeps this one strip over it (its exit is on the tab); the row keeps its height, so nothing under it moves. */}
       {scopedChrome && <span ref={headPark} hidden />}
-      {scopedChrome && <ChatWorkspaceChrome layout={layout} heads={heads} inCells={headsInCells} park={headPark} anchor={anchor} {...scopedChrome} />}
+      {scopedChrome && (
+        <ChatWorkspaceChrome
+          layout={layout} heads={heads} inCells={headsInCells} park={headPark} anchor={anchor} {...scopedChrome}
+        />
+      )}
       {!scopedChrome && paired && <div className="min-w-0 shrink-0" style={{ height: WINDOW_CONTROL_BAR_HEIGHT_PX }} data-pane-strip="">
         <div style={lifted ? STRIP_OVER_FULLSCREEN : undefined}>{renderPane(layout.mainGroup.paneId, true, true, 'bar')}</div>
       </div>}
-      <div ref={pagesRef} className="relative min-h-0 min-w-0 flex-1" data-pane-tree-pages="" data-pane-tree-narrow={alone || undefined} data-chat-tool-dragging={draggingChatTool || undefined}>
+      <div
+        ref={pagesRef}
+        className="relative min-h-0 min-w-0 flex-1"
+        data-pane-tree-pages=""
+        data-pane-tree-narrow={alone || undefined}
+        data-chat-tool-dragging={draggingChatTool || undefined}
+      >
         {/* The root is a cut even as one pane, so the side page coming and going moves on its track (going, live: @@@closing-pane). */}
-        <Cut node={layout.layout} layout={layout} narrow={narrow} visiblePaneId={visiblePaneId} hostOf={hostOf} park={pagesRef} headPark={headPark} single={single} swap={swap} headOf={headsInCells ? headOf : undefined} />
+        <Cut
+          node={layout.layout} layout={layout} narrow={narrow} visiblePaneId={visiblePaneId} hostOf={hostOf}
+          park={pagesRef} headPark={headPark} single={single} swap={swap} headOf={headsInCells ? headOf : undefined}
+        />
         {layout.groups.map(({ paneId }) => {
           const shown = layout.isPaneShown(paneId);
-          return createPortal(<RetainedTabContent visible={shown} style={FILLS_BOX} className="min-h-0 min-w-0" data-chat-tool-card={scopedChrome && paneId === layout.chatToolCardPaneId ? '' : undefined} data-chat-card={scopedChrome && layout.chatToolCardPaneId && paneId === layout.chatWorkspacePanes?.chat.paneId ? '' : undefined} inert={!shown || paneId === closing} aria-hidden={!shown || paneId === closing || undefined}>
+          const chatCard =
+            scopedChrome && layout.chatToolCardPaneId && paneId === layout.chatWorkspacePanes?.chat.paneId;
+          return createPortal(<RetainedTabContent
+            visible={shown}
+            style={FILLS_BOX}
+            className="min-h-0 min-w-0"
+            data-chat-tool-card={scopedChrome && paneId === layout.chatToolCardPaneId ? '' : undefined}
+            data-chat-card={chatCard ? '' : undefined}
+            inert={!shown || paneId === closing}
+            aria-hidden={!shown || paneId === closing || undefined}
+          >
             {renderPane(paneId, alone || paneId === first, alone || paneId === last, (scopedChrome || paired) ? 'body' : 'all')}
           </RetainedTabContent>, hostOf(paneId), paneId);
         })}
@@ -97,14 +136,31 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
   </PaneDimensionProvider>;
 });
 
-type TreeProps = { node: PaneLayoutNode; layout: PaneLayoutStore; narrow: boolean; visiblePaneId: string; hostOf: (paneId: string) => HTMLElement; park: React.RefObject<HTMLElement | null>; headPark: React.RefObject<HTMLElement | null>; single?: string; swap?: boolean; headOf?: (paneId: string) => HTMLElement | undefined };
+type TreeProps = {
+  node: PaneLayoutNode;
+  layout: PaneLayoutStore;
+  narrow: boolean;
+  visiblePaneId: string;
+  hostOf: (paneId: string) => HTMLElement;
+  park: React.RefObject<HTMLElement | null>;
+  headPark: React.RefObject<HTMLElement | null>;
+  single?: string;
+  swap?: boolean;
+  headOf?: (paneId: string) => HTMLElement | undefined;
+};
 
 const Tree = observer(function Tree({ node, ...rest }: TreeProps) {
   if (node.type !== 'pane') return <Cut node={node} {...rest} />;
   const head = rest.headOf?.(node.paneId);
   const { layout, park } = rest;
   return <div className="flex h-full min-h-0 min-w-0 flex-col">
-    {head && <SurfaceBox host={head} park={rest.headPark} className="relative flex min-w-0 shrink-0" data-chat-workspace-header={layout.chatWorkspaceMode} data-chat-tool-cards={layout.chatToolCardPaneId ? '' : undefined} />}
+    {head && <SurfaceBox
+      host={head}
+      park={rest.headPark}
+      className="relative flex min-w-0 shrink-0"
+      data-chat-workspace-header={layout.chatWorkspaceMode}
+      data-chat-tool-cards={layout.chatToolCardPaneId ? '' : undefined}
+    />}
     <SurfaceBox host={rest.hostOf(node.paneId)} park={park} className="relative min-h-0 min-w-0 flex-1" />
   </div>;
 });
@@ -117,7 +173,8 @@ const Cut = observer(function Cut({ node, ...rest }: TreeProps) {
   const tree = (child: PaneLayoutNode) => <Tree node={child} {...rest} />;
   const horizontal = split.orientation === 'horizontal';
   const root = node === layout.layout;
-  // One page on screen (narrow, at every cut; the chat workspace's hidden and full views): the others are at nothing, in the same cells.
+  // One page on screen (narrow, at every cut; the chat workspace's hidden and full views): the others are at nothing,
+  // in the same cells.
   const only = narrow ? visiblePaneId : root ? rest.single : undefined;
   // A pane closing goes to nothing; the rest take its share (@@@closing-pane).
   const closing = root ? layout.closingPaneId : undefined;

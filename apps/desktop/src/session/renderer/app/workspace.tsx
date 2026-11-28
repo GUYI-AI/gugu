@@ -137,7 +137,11 @@ const ScreenArea = observer(function ScreenArea({
   const areaRef = useRef<HTMLDivElement>(null);
   const hiddenStyle = useRetainedHiddenStyle(areaRef, onSessionView);
   return (
-    <div ref={(area) => { areaRef.current = screenPark.current = area; }} className="relative flex min-h-0 min-w-0 flex-1 flex-col" {...handlers}>
+    <div
+      ref={(area) => { areaRef.current = screenPark.current = area; }}
+      className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+      {...handlers}
+    >
       {/* @@@retained-screen — the screen stays mounted under Library & the other places: going back flips it visible,
           its chat blocks keep their live message windows (no remount, no refetch, no restyle of the whole list). */}
       <div style={onSessionView ? SHOWN_IN_PLACE : hiddenStyle}>
@@ -208,7 +212,8 @@ const RetainedSessionPage = memo(function RetainedSessionPage({
   const shown = (blockId !== null && embedVisible) || peekBox !== null;
   const pageRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => (pageRef.current && peekBox ? layOver(pageRef.current, peekBox) : undefined), [peekBox]);
-  // Rendered once, into its host (@@@placed-surface): its block puts the host in its box; on no block it is in the screen's.
+  // Rendered once, into its host (@@@placed-surface): its block puts the host in its box; on no block it is in the
+  // screen's.
   const host = sessionPageHost(sessionId);
   useLayoutEffect(() => { if (!host.isConnected) placeIn(host, screenPark.current); });
   useLayoutEffect(() => () => { host.remove(); sessionPageHosts.delete(sessionId); }, [host, sessionId]);

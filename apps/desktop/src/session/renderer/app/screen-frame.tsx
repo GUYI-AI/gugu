@@ -125,7 +125,9 @@ const BlockSlot = observer(function BlockSlot({ blockId }: { blockId: string }) 
   const block = screenLayout.blocks.get(blockId);
   // A session's block shows that session's page, unless the screen is not drawn and the page is beside an App instead.
   const shown = useContext(SurfaceShownContext);
-  const page = block?.kind === 'session' && (shown || sessionPeek.current?.sessionId !== block.sessionId) ? sessionPageHost(block.sessionId) : null;
+  const page = block?.kind === 'session' && (shown || sessionPeek.current?.sessionId !== block.sessionId)
+    ? sessionPageHost(block.sessionId)
+    : null;
   return (
     <div
       className="relative flex h-full w-full min-h-0 min-w-0 flex-1 flex-col bg-[var(--screen-ground,var(--color-background))]"
