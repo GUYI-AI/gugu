@@ -33,6 +33,7 @@ const digest = async (file: string) => {
   for await (const bytes of createReadStream(await requireAgentFileAccess(file))) hash.update(bytes)
   return hash.digest('hex')
 }
+const imports = new Map<string, Promise<void>>()
 /**
  * Every send is a project-owned copy, so a version's bytes never change when its original is edited. Copies are kept by
  * content (`.gugu/attachments/<sha256>/<name>`): an earlier send of the same bytes, or an attempt whose publication
@@ -46,25 +47,37 @@ export async function importProjectFile(root: string, file: { path: string; name
   const unchanged = async () => { if (etagOf(await stat(file.path, { bigint: true })) !== etagOf(before)) throw new Error('Selected file changed') }
   const sha = await digest(file.path)
   await unchanged()
-  const directory = `.gugu/attachments/${sha}`
-  const kept = await readdir(await inWorkspace(root, directory)).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return []; throw error })
-  for (const name of kept) {
-    const path = await inWorkspace(root, `${directory}/${name}`)
-    if ((await stat(path)).size === file.size && await digest(path) === sha) { await unchanged(); return path }
-    await rm(path, { force: true }) // No longer these bytes, so no version can read it as them.
-  }
-  // Create and re-check each level: an existing .gugu or attachments symlink cannot escape the root.
-  for (const path of ['.gugu', '.gugu/attachments']) await mkdir(await inWorkspace(root, path), { recursive: true, mode: 0o700 })
-  const created = await mkdir(await inWorkspace(root, directory), { recursive: true, mode: 0o700 })
-  const target = await inWorkspace(root, `${directory}/${sanitizeRemoteFileName(file.name)}`)
+  const key = `${await inWorkspace(root, '.')}\0${sha}`
+  const pending = imports.get(key) ?? Promise.resolve()
+  let release!: () => void
+  const held = new Promise<void>(done => { release = done })
+  imports.set(key, held)
+  await pending
   try {
-    // Keep the version separate from the agent's editable original, using a clone where the filesystem supports it.
-    await copySnapshot(file.path, target)
-    await unchanged()
-    if (await digest(target) !== sha) throw new Error('Imported file changed')
-    return target
-  } catch (error) {
-    await rm(created ?? target, { recursive: true, force: true }) // Only what this import created, not yet published.
-    throw error
+    // 同一目录的校验、复制和失败清理不能与另一份相同内容的导入交错。
+    const directory = `.gugu/attachments/${sha}`
+    const kept = await readdir(await inWorkspace(root, directory)).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return []; throw error })
+    for (const name of kept) {
+      const path = await inWorkspace(root, `${directory}/${name}`)
+      if ((await stat(path)).size === file.size && await digest(path) === sha) { await unchanged(); return path }
+      await rm(path, { force: true }) // No longer these bytes, so no version can read it as them.
+    }
+    // Create and re-check each level: an existing .gugu or attachments symlink cannot escape the root.
+    for (const path of ['.gugu', '.gugu/attachments']) await mkdir(await inWorkspace(root, path), { recursive: true, mode: 0o700 })
+    const created = await mkdir(await inWorkspace(root, directory), { recursive: true, mode: 0o700 })
+    const target = await inWorkspace(root, `${directory}/${sanitizeRemoteFileName(file.name)}`)
+    try {
+      // Keep the version separate from the agent's editable original, using a clone where the filesystem supports it.
+      await copySnapshot(file.path, target)
+      await unchanged()
+      if (await digest(target) !== sha) throw new Error('Imported file changed')
+      return target
+    } catch (error) {
+      await rm(created ?? target, { recursive: true, force: true }) // Only what this import created, not yet published.
+      throw error
+    }
+  } finally {
+    release()
+    if (imports.get(key) === held) imports.delete(key)
   }
 }
