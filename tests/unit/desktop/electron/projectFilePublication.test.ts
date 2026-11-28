@@ -130,7 +130,7 @@ describe('external selections become durable project-owned copies through the sa
     expect(await readFile(join(root, file.name))).toEqual(Buffer.from(data))
     expect(publishedPaths(f)).toEqual([]); expect(await readProjectFile({ item_id: 'item', version: 1 }, 'owner', 'device', env, noRecord)).toBeNull()
   })
-  it('retains its complete local copy when publication fails, without inventing an indexed reference', async () => {
+  it('retains its complete local copy when publication fails, without inventing an indexed reference, and the retry reuses it', async () => {
     const f = fixture(); await writeFile(selected().path, data)
     f.rpc.mockRejectedValueOnce(new Error('publication outcome unknown'))
     await expect(f.publish('group', selected(), null, 'owner')).rejects.toThrow('publication outcome unknown')
@@ -138,6 +138,9 @@ describe('external selections become durable project-owned copies through the sa
     expect(directories).toHaveLength(1)
     expect(await readFile(join(root, '.gugu/attachments', directories[0], file.name))).toEqual(Buffer.from(data))
     expect(await readProjectFile({ item_id: 'item', version: 1 }, 'owner', 'device', env, noRecord)).toBeNull()
+    // The retry publishes that copy rather than leaving one more per attempt.
+    await f.publish('group', selected(), null, 'owner')
+    expect(await readdir(join(root, '.gugu/attachments'))).toEqual(directories)
   })
 })
 const publishedPaths = (f: ReturnType<typeof fixture>) => f.rpc.mock.calls.filter(([name]) => name === 'file_device_publish').map(([, args]) => args.p_path as string)
@@ -187,10 +190,14 @@ describe('project file publication runs before document conversion or cloud uplo
     expect(f.rpc.mock.calls.find(([name]) => name === 'file_device_publish')?.[1]).toMatchObject({ p_message: message })
     expect(f.store).not.toHaveBeenCalled()
   })
-  it('publishes a native selection through the same fence and streamed SHA without transporting its bytes', async () => {
+  it('publishes a file inside the bound folder as its own snapshot: editing the original never changes the sent version', async () => {
     const f = fixture(), selected = { name: file.name, path: join(root, file.name), size: data.length, contentType: file.contentType }
     expect(await f.publish('group', selected, null, 'owner')).toEqual(row)
-    expect(f.rpc.mock.calls.find(([name]) => name === 'file_device_publish')?.[1]).toMatchObject({ p_path: file.name, p_sha: createHash('sha256').update(data).digest('hex'), p_size: data.length })
+    expect(f.rpc.mock.calls.find(([name]) => name === 'file_device_publish')?.[1]).toMatchObject({ p_sha: createHash('sha256').update(data).digest('hex'), p_size: data.length })
+    const [path] = publishedPaths(f)
+    expect(path).toMatch(/^\.gugu\/attachments\/[0-9a-f-]{36}\/file\.bin$/)
+    await writeFile(selected.path, 'edited afterwards')
+    expect(await readFile(join(root, path))).toEqual(Buffer.from(data))
     for (const path of [join(home, 'secret'), '', 'relative/file.bin']) {
       await expect(f.publish('group', { ...selected, path }, null, 'owner')).rejects.toThrow()
     }

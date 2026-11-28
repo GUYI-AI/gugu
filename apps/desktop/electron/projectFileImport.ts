@@ -1,12 +1,11 @@
 import { requireAgentFileAccess, requireAgentFileTreeAccess } from '@gugu/core/local/state/agentFileBoundary'
 import { createReadStream, constants } from 'node:fs'
-import { copyFile, mkdir, rm, stat } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, rm, stat } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { promisify } from 'node:util'
 import { execFile } from '@gugu/core/local/childProcess'
 import { coreLogger } from '@gugu/core/log'
-import type { FileRevision } from '@gugu/core/shared/fileResolver'
 import { etagOf, inWorkspace } from './session/main/core/files/workspace-transfer'
 import { sanitizeRemoteFileName } from './remoteFileOpen'
 
@@ -34,8 +33,12 @@ const digest = async (file: string) => {
   for await (const bytes of createReadStream(await requireAgentFileAccess(file))) hash.update(bytes)
   return hash.digest('hex')
 }
-/** Imported sends are project-owned copies; an existing published copy is reused only after re-verification. */
-export async function importProjectFile(root: string, file: { path: string; name: string; size: number }, find: (sha: string) => Promise<FileRevision | null>) {
+/**
+ * Every send is a project-owned copy, so a version's bytes never change when its original is edited. A copy of the same
+ * bytes already in `.gugu/attachments` — an earlier send, or an attempt whose publication failed — is reused after
+ * re-verification.
+ */
+export async function importProjectFile(root: string, file: { path: string; name: string; size: number }) {
   await requireAgentFileTreeAccess(root)
   file = { ...file, path: await requireAgentFileAccess(file.path) }
   const before = await stat(file.path, { bigint: true })
@@ -43,11 +46,13 @@ export async function importProjectFile(root: string, file: { path: string; name
   const unchanged = async () => { if (etagOf(await stat(file.path, { bigint: true })) !== etagOf(before)) throw new Error('Selected file changed') }
   const sha = await digest(file.path)
   await unchanged()
-  const saved = await find(sha)
-  if (saved) {
-    const path = await inWorkspace(root, saved.relative_path!)
-    try { if ((await stat(path)).size === file.size && await digest(path) === sha) { await unchanged(); return path } }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+  const attachments = await inWorkspace(root, '.gugu/attachments')
+  const saved = await readdir(attachments, { recursive: true, withFileTypes: true })
+    .catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return []; throw error })
+  for (const entry of saved) {
+    if (!entry.isFile()) continue
+    const path = await inWorkspace(root, join('.gugu/attachments', relative(attachments, join(entry.parentPath, entry.name))))
+    if ((await stat(path)).size === file.size && await digest(path) === sha) { await unchanged(); return path }
   }
   // Create and re-check each level: an existing .gugu or attachments symlink cannot escape the root.
   for (const path of ['.gugu', '.gugu/attachments']) await mkdir(await inWorkspace(root, path), { recursive: true, mode: 0o700 })

@@ -292,12 +292,6 @@ export async function findProjectFileByName(chat: string, name: string, ownerId:
   return found ? held(mapping, ownerId, deviceId, found) : null
 }
 
-export async function findProjectFileCopy(projectId: string, sha: string, ownerId: string, deviceId: string, env: NodeJS.ProcessEnv = process.env) {
-  const mapping = await readMapping(env)
-  const found = Object.values(mapping.files?.[ownerId] ?? {}).findLast(row => row.host_project_id === projectId && row.sha256 === sha && row.relative_path?.startsWith('.gugu/attachments/'))
-  return found ? held(mapping, ownerId, deviceId, found) : null
-}
-
 /** The database's record of one version of a file (its current one when no version is named). */
 export type ProjectFileVersionLookup = (ref: { item_id: string; version?: number }) => Promise<FileRevision | null>
 
