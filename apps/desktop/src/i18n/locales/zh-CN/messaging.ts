@@ -312,6 +312,7 @@ export default {
     "markRead": "标为已读",
     "removeProject": "移除项目",
     "markAllRead": "全部标为已读",
+    "markAllReadConfirm": "将清除所有会话的未读标记，包括已静音的会话。",
     "markAllReadFailed": "未能全部标为已读，请重试",
     "markAllReadPartial": "有 {{count}} 个会话未能标为已读，请重试",
     "markAllReadPartial_one": "有 {{count}} 个会话未能标为已读，请重试",

@@ -33,7 +33,7 @@ import { CreateGroupChatForm, MEMBER_PICKER_SHEET } from './CreateGroupChatModal
 import { AddFriendSearch } from './AddFriendSearch'
 import { Avatar } from './Avatar'
 import { PhoneProjectChatAvatar } from '@/mobile/partners/PhoneProjectChatAvatar'
-import { chatLineCalls, chatLineNews } from '@/lib/chatLineUnread'
+import { chatLineCalls, chatLineIsUnread, chatLineNews } from '@/lib/chatLineUnread'
 import { AvatarUnread } from './AvatarUnread'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestBridge'
@@ -929,17 +929,14 @@ export function ChatListPanel({
     if (focusTarget === 'sidebar') focusChatRow(targetId)
     return true
   }
-  const unread = (id: string) => {
-    const chat = chats.find(row => row.id === id)
-    return !!chat && (chat.is_marked_unread || chat.unread_count > 0 || (lineCalls.get(id) ?? 0) > 0)
-  }
+  const unreadIds = useMemo(() => new Set(visibleChats.filter(chat => chatLineIsUnread(chat, lineCalls.get(chat.id) ?? 0)).map(chat => chat.id)), [visibleChats, lineCalls])
   useCommandProvider({
     scopeId: 'session',
     surface: 'shell',
     isActive: () => walksListKeys,
     getCommands: () => [
-      { id: 'chat.nextUnread', execute: () => walkTo(ids => nextChatId(ids, selectedChatId, 1, unread)) },
-      { id: 'chat.previousUnread', execute: () => walkTo(ids => nextChatId(ids, selectedChatId, -1, unread)) },
+      { id: 'chat.nextUnread', execute: () => walkTo(ids => nextChatId(ids, selectedChatId, 1, id => unreadIds.has(id))) },
+      { id: 'chat.previousUnread', execute: () => walkTo(ids => nextChatId(ids, selectedChatId, -1, id => unreadIds.has(id))) },
       { id: 'session.next', execute: () => walkTo((ids) => nextChatId(ids, selectedChatId, 1)) },
       { id: 'session.previous', execute: () => walkTo((ids) => nextChatId(ids, selectedChatId, -1)) },
       ...([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map((n) => ({

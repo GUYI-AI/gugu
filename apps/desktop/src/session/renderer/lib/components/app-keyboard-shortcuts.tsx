@@ -1,10 +1,10 @@
 import { useEffect } from 'react';
 import { notify } from '@/lib/notices';
-import { replicaAccount } from '@/lib/replica';
-import { readInterface, writeInterface } from '@/lib/viewStateTable';
+import { replicaAccount, startupAccountId } from '@/lib/replica';
+import { takeKeyboardUpdateNotice } from './keyboard-update-notice';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { deepActiveElement } from '@renderer/features/sidebar/session-navigation-focus';
-import { useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
+import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { commandRegistry } from '@renderer/lib/commands/registry';
 import { getPortalContainer } from '@renderer/lib/portal-container';
@@ -49,13 +49,12 @@ function cyclePane(step: number): boolean {
 
 export function AppKeyboardShortcuts() {
   const showCommandPalette = useShowModal('commandPaletteModal');
-  const keyboard = useShortcutOverrides();
+  const { settings } = useAppSettingsKey('keyboard');
+  const keyboard = settings.state === 'value' && !settings.stale ? settings.value.value : null;
   const account = replicaAccount().id;
   const { translate } = useSessionMessages();
   useEffect(() => {
-    if (!account || !keyboard) return;
-    if (readInterface<boolean>('keyboard-defaults-update', account)) return;
-    writeInterface('keyboard-defaults-update', true, account);
+    if (!takeKeyboardUpdateNotice(account, startupAccountId, keyboard)) return;
     notify({ key: 'keyboard-defaults-update', tier: 'info', title: translate('keyboard.shortcutsUpdated'),
       action: { label: translate('keyboard.cheatSheetTitle'), onClick: () => { commandRegistry.dispatch('app.showKeyboardShortcuts'); } } });
   }, [account, keyboard, translate]);

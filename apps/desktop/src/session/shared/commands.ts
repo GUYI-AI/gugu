@@ -23,6 +23,8 @@ export interface CommandDef {
   hideFromSettings?: boolean;
   hideFromPalette?: boolean;
   ignoreInputs?: boolean;
+  /** Only a shortcut pressed in the main workspace can invoke this command. Palette selection is explicit. */
+  workspaceShortcut?: boolean;
   /** Capture before terminal widgets and modal roots consume global entry keys. */
   capture?: boolean;
   conflictBehavior?: 'prevent' | 'allow';
@@ -125,6 +127,7 @@ export const COMMANDS = defineCommands({
     category: 'Create',
   },
   'chat.markAllRead': {
+    workspaceShortcut: true,
     label: 'Mark All as Read',
     description: 'Mark all conversations as read',
     category: 'Navigation',

@@ -234,3 +234,32 @@ describe('⌘W over a modal', () => {
     expect(escape.mock.results[0]!.value).toBe('Escape');
   });
 });
+
+describe('the mark-all-read shortcut belongs to the workspace', () => {
+  it('leaves fields and overlays alone and takes the key again on the conversation pane', async () => {
+    const mark = vi.fn();
+    provide({ scopeId: 'app', getCommands: () => [{ id: 'chat.markAllRead', execute: mark }] });
+    const press = () => userEvent.keyboard('{Shift>}{Escape}{/Shift}');
+    focus('editor');
+    await press();
+    expect(mark).not.toHaveBeenCalled();
+    for (const attribute of ['role', 'cmdk-root']) {
+      const overlay = document.createElement('div');
+      overlay.setAttribute(attribute, attribute === 'role' ? 'dialog' : '');
+      const button = overlay.appendChild(document.createElement('button'));
+      shadow.append(overlay);
+      button.focus();
+      await press();
+      expect(mark).not.toHaveBeenCalled();
+      overlay.remove();
+    }
+    const sheet = document.body.appendChild(document.createElement('div'));
+    sheet.setAttribute('aria-modal', 'true');
+    focus('pane');
+    await press();
+    expect(mark).not.toHaveBeenCalled();
+    sheet.remove();
+    await press();
+    expect(mark).toHaveBeenCalledOnce();
+  });
+});

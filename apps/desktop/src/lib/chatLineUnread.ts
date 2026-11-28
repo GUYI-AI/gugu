@@ -29,3 +29,8 @@ export function chatLineCalls(chats: readonly ChatItem[]): ReadonlyMap<string, n
 export function chatLineNews(chat: Pick<ChatItem, 'unread_count'>, calls: number): boolean {
   return calls === 0 && chat.unread_count > 0
 }
+
+/** Keyboard navigation also honors a row explicitly marked unread. Muting only silences notifications. */
+export function chatLineIsUnread(chat: Pick<ChatItem, 'is_marked_unread' | 'unread_count'>, calls: number): boolean {
+  return chat.is_marked_unread || calls > 0 || chatLineNews(chat, calls)
+}
