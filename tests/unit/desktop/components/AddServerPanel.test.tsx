@@ -323,6 +323,8 @@ describe('AddServerPanel · 连接后原地变成进度', () => {
     }))
     expect(body()).toContain('在「连接」步骤失败')
     expect(body()).toContain('这台机器的身份已变更')
+    expect(body()).toContain(zhSettings.devices.link.afterVerify)
+    expect(enSettings.devices.link.afterVerify).toContain('verifying the fingerprint independently')
     expect(body()).toContain("ssh-keygen -R '[box]:2222'")
     expect(body()).toContain('SHA256:new')
     expect(buttonNamed('重试')).toBeTruthy()
@@ -806,6 +808,9 @@ describe('addServerFormat', () => {
   it('要复制给别人执行的命令都引好号(zsh 会把 [ ] 当通配)', () => {
     expect(knownHostsRemoveCommand('[10.0.0.5]:2222')).toBe("ssh-keygen -R '[10.0.0.5]:2222'")
     expect(knownHostsRemoveCommand('box.example.com')).toBe('ssh-keygen -R box.example.com')
+    expect(knownHostsRemoveCommand('[box]:2222', '/Users/A B/known_hosts:7')).toBe("ssh-keygen -R '[box]:2222' -f '/Users/A B/known_hosts'")
+    expect(knownHostsRemoveCommand('box', 'C:\\Users\\Test User\\.ssh\\known_hosts:87')).toBe("ssh-keygen -R box -f 'C:\\Users\\Test User\\.ssh\\known_hosts'")
+    expect(knownHostsRemoveCommand('box', 'unknown')).toBeNull()
     expect(lingerCommand('alice')).toBe('sudo loginctl enable-linger alice')
   })
 

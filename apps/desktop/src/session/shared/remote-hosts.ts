@@ -175,7 +175,7 @@ type RemoteHostsWindow = Window & { [REMOTE_HOSTS_BRIDGE_KEY]?: RemoteHostsBridg
  */
 export function remoteHostReachable(device: Pick<RemoteHostDevice, 'isOnline' | 'directTerminal' | 'sshLink' | 'cloudComputer'>): boolean {
   if (device.cloudComputer === 'asleep' || device.cloudComputer === 'waking') return false;
-  if (device.sshLink === 'signInRequired' || device.sshLink === 'updating') return false;
+  if (device.sshLink === 'disconnected' || device.sshLink === 'hostKeyChanged' || device.sshLink === 'signInRequired' || device.sshLink === 'updating') return false;
   return device.isOnline || device.directTerminal;
 }
 

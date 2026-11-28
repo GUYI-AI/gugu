@@ -407,6 +407,24 @@ describe('桌面主进程:每台机器一条设备连接', () => {
     expect(links.send('other', { ask: 1 })).toBe(false)
   })
 
+  it('keeps a saved manual disconnect across a fresh manager until the user reconnects', async () => {
+    let paused: true | undefined = true
+    const child = fakeChild()
+    const spawnSsh = vi.fn(() => child as unknown as ChildProcessWithoutNullStreams)
+    const links = createSshLinkManager({
+      machineFor: async () => ({ target, accountUserId: ACCOUNT, deviceLinkPaused: paused }),
+      controlPath: () => null, onMessage: vi.fn(), onClosed: vi.fn(), spawnSsh,
+    })
+    expect(await links.open('saved')).toMatchObject({ ok: false, reason: 'disconnected' })
+    expect(spawnSsh).not.toHaveBeenCalled()
+    paused = undefined
+    const opening = links.open('saved')
+    await flush()
+    child.stdout.write(`${LINK_READY_MARK}\n`)
+    await expect(opening).resolves.toEqual({ ok: true })
+    links.close('saved')
+  })
+
   it('接上之后断了 → 报「断了」;主动收掉 ❌ 报;没接上就结束 → 回原因、不留记录', async () => {
     const children: ReturnType<typeof fakeChild>[] = []
     const onClosed = vi.fn()
@@ -541,6 +559,30 @@ describe('桌面主进程:每台机器一条设备连接', () => {
     expect(await links.open('slow')).toMatchObject({ ok: false, reason: 'unreachable' })
     expect(children[0]!.killed).toEqual(['SIGTERM'])
   })
+})
+
+it('verifies the negotiated SSH version without starting an installer or replacing a held link', async () => {
+  const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
+  const upgrader = { request: vi.fn(), upgrading: () => false }
+  const links = registerSshLinkIpc({
+    ipcMain: { handle: (name: string, fn: (event: unknown, ...args: unknown[]) => unknown) => handlers.set(name, fn) } as never,
+    getWindow: () => null, currentUserId: async () => ACCOUNT,
+    store: { list: () => [{ deviceId: 'box', ownerUserId: ACCOUNT }], onChange: () => () => undefined } as never,
+    upgrader,
+  })
+  const open = vi.spyOn(links, 'open').mockResolvedValue({ ok: true })
+  const protocol = vi.spyOn(links, 'protocol').mockReturnValue(19)
+  const verify = () => handlers.get(SSH_LINK_CHANNELS.open)!({}, 'box', 'verify-version')
+  const release = links.hold('box')
+  expect(await verify()).toMatchObject({ ok: false, reason: 'outdated' })
+  expect(open).not.toHaveBeenCalled()
+  release()
+  expect(await verify()).toMatchObject({ ok: false, reason: 'outdated' })
+  protocol.mockReturnValue(null)
+  expect(await verify()).toMatchObject({ ok: false, reason: 'outdated' })
+  protocol.mockReturnValue(REMOTE_PROTOCOL_VERSION)
+  expect(await verify()).toEqual({ ok: true })
+  expect(upgrader.request).not.toHaveBeenCalled()
 })
 
 describe('a device link over a remote tunnel', () => {

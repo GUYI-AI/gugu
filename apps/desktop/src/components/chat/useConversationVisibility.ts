@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 
 /** A retained desktop slot stays mounted while another shell page covers it. */
-export function useConversationVisibility(requested: boolean) {
-  const ref = useRef<HTMLDivElement>(null)
+export function useConversationVisibility<Element extends HTMLElement = HTMLDivElement>(requested: boolean) {
+  const ref = useRef<Element>(null)
   const [intersects, setIntersects] = useState(false)
   useLayoutEffect(() => {
     const element = ref.current

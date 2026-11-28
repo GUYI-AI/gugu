@@ -7,6 +7,7 @@
  * Windows 自带的 OpenSSH 没有共享连接,这一下记住的是新指纹(known_hosts)与装上的咕咕钥匙,之后 BatchMode 直接连上。
  * 密码提问上照样给「以后连这台机器不用再输密码」(下次免密,见 ssh-key-install.ts)。
  */
+import { serverProtocolTooOld } from '@gugu/core/cloud/serverMachineHealth'
 import { spawn } from '@gugu/core/local/childProcess'
 import type { BrowserWindow } from 'electron'
 import {
@@ -21,13 +22,16 @@ import type { TunnelMachines } from './tunnel-machines'
 import type { SshKeyInstallOutcome } from '../../src/session/shared/ssh-prompt'
 import type { DirectTerminalAskpass } from '../session/main/core/pty/direct-terminal/ssh-connect'
 import { createSshAutoUpgrader, sshServerUpgradeRunner, type SshAutoUpgrader } from './ssh-install/auto-upgrade'
-import { buildEnsureMasterArgs, changedHostKey, classifySshFailure } from './ssh-install/logic'
+import { buildEnsureMasterArgs, changedHostKey, classifySshFailure, hostForKnownHosts } from './ssh-install/logic'
 import { systemSpawnSsh } from './ssh-install/system'
 import type { DeviceCapabilities } from '@gugu/core/shared/types/chat'
 import type { DeviceRpcRequester } from '@gugu/core/cloud/deviceRpcRequester'
 import type { SharedSshLinks } from '../device-rpc-requester'
 import type { HeldFileSshLinks } from '../projectFileSsh'
-import { createSshLinkManager, type SshLinkManager } from './ssh-link'
+import { sshBatchArgs } from './ssh-batch'
+import { remoteServerStartCommand } from './server-names'
+import { updateVerifiedHostKey } from './ssh-host-key-recovery'
+import { classifyLinkExit, createSshLinkManager, type SshLinkManager } from './ssh-link'
 import { findSshMachine, sshTargetOf, terminalControlPath, type SshMachine, type SshMachineStore } from './ssh-machines'
 import { createTerminalAskpass } from './ssh-prompts'
 
@@ -51,12 +55,12 @@ export function openOutcome(
 }
 
 /** 登录那一下的 ssh 结束了:成没成、没成为什么。纯函数。 */
-export function classifySignInExit(code: number | null, stderr: string): SshLinkOpenResult {
+export function classifySignInExit(code: number | null, stderr: string, host = ''): SshLinkOpenResult {
   if (code === 0) return { ok: true }
   const failure = classifySshFailure(stderr)
   if (failure === 'authFailed' || failure === 'hostKeyRejected') return { ok: false, reason: 'signInRequired' }
   if (failure === 'hostKeyChanged') {
-    return { ok: false, reason: 'hostKeyChanged', hostKey: changedHostKey(stderr, '') }
+    return { ok: false, reason: 'hostKeyChanged', hostKey: changedHostKey(stderr, host) }
   }
   return { ok: false, reason: 'unreachable' }
 }
@@ -100,7 +104,7 @@ export function registerSshLinkIpc(options: {
   const links = createSshLinkManager({
     machineFor: async (deviceId) => {
       const machine = await machineFor(deviceId)
-      if (machine) return { target: sshTargetOf(machine), accountUserId: machine.ownerUserId }
+      if (machine) return { target: sshTargetOf(machine), accountUserId: machine.ownerUserId, deviceLinkPaused: machine.deviceLinkPaused }
       const tunnel = options.tunnels?.linkMachine(deviceId)
       return tunnel ? { ...tunnel, via: 'tunnel' } : null
     },
@@ -185,8 +189,22 @@ export function registerSshLinkIpc(options: {
         })
       : null)
 
-  options.ipcMain.handle(SSH_LINK_CHANNELS.open, async (_event, deviceId: unknown): Promise<SshLinkOpenResult> => {
+  options.ipcMain.handle(SSH_LINK_CHANNELS.open, async (_event, deviceId: unknown, mode?: unknown): Promise<SshLinkOpenResult> => {
     if (typeof deviceId !== 'string' || !ID.test(deviceId)) return { ok: false, reason: 'unmapped' }
+    if (mode === 'verify-version') {
+      const machine = await machineFor(deviceId)
+      if (!machine) return { ok: false, reason: 'unmapped' }
+      if (machine.deviceLinkPaused) return { ok: false, reason: 'disconnected' }
+      if (upgrader?.upgrading(deviceId)) return { ok: false, reason: 'updating' }
+      // Only an obsolete control-only link needs a fresh handshake. Preserve active readers and healthy links.
+      if (serverProtocolTooOld(links.protocol(deviceId))) {
+        if (holds.has(deviceId)) return { ok: false, reason: 'outdated' }
+        close(deviceId)
+      }
+      const verified = await links.open(deviceId)
+      if (verified.ok && serverProtocolTooOld(links.protocol(deviceId), { unknownIsTooOld: true })) return { ok: false, reason: 'outdated' }
+      return verified
+    }
     // The window uses the link again: a close it asked for while a read held it no longer stands.
     deferred.delete(deviceId)
     // 正在替它升级:这时开出去只会撞上还没换下来的旧版本,❌ 再起一个 ssh。
@@ -216,6 +234,59 @@ export function registerSshLinkIpc(options: {
     if (typeof deviceId === 'string') windowClose(deviceId)
   })
 
+  options.ipcMain.handle(SSH_LINK_CHANNELS.setPaused, async (_event, deviceId: unknown, paused: unknown) => {
+    if (typeof deviceId !== 'string' || !ID.test(deviceId) || typeof paused !== 'boolean') return false
+    const machine = await machineFor(deviceId)
+    if (!machine) return false
+    if ((machine.deviceLinkPaused === true) !== paused) {
+      options.store.remember({ ...machine, deviceLinkPaused: paused ? true : undefined })
+    }
+    if (paused) windowClose(deviceId)
+    return true
+  })
+
+  // Recovery is bound to a registered account/device pair; the renderer supplies no command or filename.
+  const starts = new Map<string, Promise<SshLinkOpenResult>>()
+  options.ipcMain.handle(SSH_LINK_CHANNELS.startService, async (_event, deviceId: unknown): Promise<SshLinkOpenResult> => {
+    if (typeof deviceId !== 'string' || !ID.test(deviceId)) return { ok: false, reason: 'unmapped' }
+    const machine = await machineFor(deviceId)
+    if (!machine) return { ok: false, reason: 'unmapped' }
+    if (machine.deviceLinkPaused) return { ok: false, reason: 'disconnected' }
+    const id = machine.ownerUserId + ':' + deviceId
+    const existing = starts.get(id)
+    if (existing) return existing
+    const start = async (): Promise<SshLinkOpenResult> => {
+      const before = await links.open(deviceId)
+      if (before.ok || before.reason !== 'notRunning') return before
+      const current = await machineFor(deviceId)
+      if (!current || JSON.stringify(current) !== JSON.stringify(machine)) return { ok: false, reason: 'unmapped' }
+      const command = remoteServerStartCommand()
+      const args = ['-o', 'StrictHostKeyChecking=yes', ...sshBatchArgs(sshTargetOf(machine), 'exec ' + command, terminalControlPath())]
+      const result = await systemSpawnSsh(process.env)(args, { stdin: '', signal: AbortSignal.timeout(25_000) })
+      if (result.code !== 0) {
+        const failure = result.code === 255 ? classifyLinkExit(result).reason : 'notRunning'
+        return { ok: false, reason: failure, detail: command }
+      }
+      const after = await links.open(deviceId)
+      return after.ok ? after : { ...after, detail: command }
+    }
+    const operation = start().finally(() => starts.delete(id))
+    starts.set(id, operation)
+    return operation
+  })
+
+  type Conflict = NonNullable<Extract<SshLinkOpenResult, { ok: false }>['hostKey']>
+  const conflicts = new Map<string, { machine: SshMachine; key: Conflict }>()
+  options.ipcMain.handle(SSH_LINK_CHANNELS.verifyIdentity, async (_event, deviceId: unknown, fingerprint: unknown): Promise<boolean> => {
+    if (typeof deviceId !== 'string' || !ID.test(deviceId) || typeof fingerprint !== 'string') return false
+    const conflict = conflicts.get(deviceId)
+    if (!conflict || conflict.key.fingerprint !== fingerprint) return false
+    conflicts.delete(deviceId)
+    const stillOwned = async () => JSON.stringify(await machineFor(deviceId)) === JSON.stringify(conflict.machine)
+    if (!await stillOwned()) return false
+    return updateVerifiedHostKey(sshTargetOf(conflict.machine), conflict.key, stillOwned).catch(() => false)
+  })
+
   // ── 登录(人点的那一下)──────────────────────────────────────────────────────
   const signIns = new Map<string, { askpass: DirectTerminalAskpass | null; done: Promise<SshLinkOpenResult> }>()
   options.ipcMain.handle(SSH_LINK_CHANNELS.signIn, async (_event, deviceId: unknown): Promise<SshLinkOpenResult> => {
@@ -230,12 +301,16 @@ export function registerSshLinkIpc(options: {
       const machine = await machineFor(deviceId)
       const controlPath = terminalControlPath()
       if (!machine) return { ok: false, reason: 'unmapped' }
+      if (machine.deviceLinkPaused) return { ok: false, reason: 'disconnected' }
+      conflicts.delete(deviceId)
       const install = options.installKey
       const askpass = await createTerminalAskpass(
         undefined,
         install ? (password) => install(machine, controlPath, password) : undefined,
       )
       entry.askpass = askpass
+      let cancelled = false
+      askpass.onSettled((_prompt, outcome) => { if (outcome === 'cancelled') cancelled = true })
       askpass.onPrompt((prompt) => send(SSH_LINK_CHANNELS.prompt, { deviceId, prompt }))
       askpass.onKeyInstall?.((outcome) => send(KEY_INSTALL_EVENT, { label: machine.display, outcome }))
       let installing: Promise<void> | void
@@ -252,8 +327,12 @@ export function registerSshLinkIpc(options: {
           child.on('error', (error) => resolve({ code: null, stderr: error.message }))
           child.on('close', (code) => resolve({ code, stderr }))
         })
-        const outcome = classifySignInExit(exit.code, exit.stderr)
+        if (cancelled) return { ok: false, reason: 'signInRequired', cancelled: true }
+        const outcome = classifySignInExit(exit.code, exit.stderr, hostForKnownHosts(sshTargetOf(machine)))
         if (!outcome.ok) {
+          if (outcome.reason === 'hostKeyChanged' && outcome.hostKey?.fingerprint && outcome.hostKey.location) {
+            conflicts.set(deviceId, { machine, key: outcome.hostKey })
+          }
           options.log?.('ssh link: sign-in failed', { deviceId, code: exit.code, detail: exit.stderr.trim().split(/\r?\n/).slice(-3).join('\n') })
           return outcome
         }

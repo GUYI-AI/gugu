@@ -309,20 +309,22 @@ export function ensureMachineWorkspaceBackend(): void {
     const deviceId = machineOfProject(projectId);
     return deviceId ? backendFor(deviceId) : null;
   });
-  // 那台机器此刻够不着:工作区各格照样在,只是说「离线,上次在线 X」(与侧栏同一句);连回来之后自己接上。
+  // The task condition and workspace panels share the observed cause for this device.
   setWorkspaceReachResolver((projectId) => {
     const deviceId = machineOfProject(projectId);
     if (!deviceId) return null;
     const device = remoteHostsStore.device(deviceId);
     const state = remoteHostsStore.connectionState(deviceId);
     const versionNotice = machineNoticeLabel(device?.notices, deviceLabel(deviceId), translateSessionMessage, {
-      protocolOnly: true, serverUpdate: state === 'connected' ? undefined : device?.serverUpdate,
+      connection: state, protocolOnly: true, serverUpdate: device?.sshLink ? undefined : device?.serverUpdate,
     });
     if (versionNotice) return versionNotice;
     if (state === 'connected' || state === 'connecting') return null;
     // Older desktops report their protocol when opening the link, without heartbeat notices.
-    if (state === 'outdated') return hostStatusLabel(state, deviceLabel(deviceId), device?.lastSeenAt, Date.now(), translateSessionMessage);
-    const reach = remoteToolReach(remoteHostsStore.device(deviceId) ?? null, Date.now(), translateSessionMessage);
+    if (state && (device?.sshLink || state === 'outdated')) {
+      return hostStatusLabel(state, deviceLabel(deviceId), device?.lastSeenAt, Date.now(), translateSessionMessage, device?.signInExpiredAt);
+    }
+    const reach = remoteToolReach(device, Date.now(), translateSessionMessage);
     return reach.ok ? translateSessionMessage('remoteWorkspace.noAnswer', { device: deviceLabel(deviceId) }) : reach.label;
   });
 }

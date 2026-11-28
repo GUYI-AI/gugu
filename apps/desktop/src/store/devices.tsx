@@ -14,12 +14,13 @@ import { publishDirectoryDevices } from '@/session/shared/remote-sessions/sessio
 import type { Device } from '@gugu/core/shared/types/chat'
 import { readDeviceRevision } from '../lib/accountRevisionCoordinator'
 import type { AccountRevisionOperation } from '../lib/accountRevisionRuntime'
-import { devicesModel, readCachedDevices } from './devicesCache'
-import { useReplica } from '../lib/replica'
+import { cachedDevicesAccount, devicesModel, readCachedDevices } from './devicesCache'
+import { replica, useReplica } from '../lib/replica'
 import { withDeviceProjects } from '@gugu/core/cloud/deviceProjects'
 import { withProjectsRead } from './deviceProjectsRead'
 import { listMyDeviceProjects } from '../lib/deviceProjects'
 import { accountProjectsStore } from '@/session/renderer/features/projects/stores/account-projects-store'
+import { verifySshVersionOnHeartbeat } from '../lib/sshLinkChannel'
 import { withSshLinkOnline } from '../lib/sshLinkOnline'
 import { useSshLinkProblems, useSshMachineIds } from '../hooks/useSshLinkProblems'
 import { desktopIpc } from '../platform/desktopIpc'
@@ -38,6 +39,20 @@ import {
 // #1749 设备 store：list(chatService.listDevices，含本机 self-merge) + 排序 + durable revision 刷新
 // (注册/心跳状态翻转/改名/删除都重拉) + rename/remove 动作。面板与 selector 共用这一份状态。
 const devicesLog = rendererLogger('devices')
+
+// Routine heartbeats do not publish directory revisions. Read just the unresolved rows while SSH and the server may disagree.
+const sshVersionReports = replica({
+  name: 'sshVersionReports',
+  scope: 'account',
+  read: async (_owner, deviceIds: readonly string[]) => {
+    const rows = await chatService.listDevices({ includePhones: true, deviceIds })
+    return rows.filter(row => deviceIds.includes(row.device_id))
+  },
+  fresh: Infinity,
+  keep: 0,
+  refreshOnFocus: true,
+  refreshEvery: 30_000,
+})
 
 export function DevicesProvider({ children, active = true }: { children: React.ReactNode; active?: boolean }) {
   const { user: authenticatedUser, loading: authLoading } = useAuth()
@@ -174,6 +189,35 @@ export function DevicesProvider({ children, active = true }: { children: React.R
   // 侧栏、选择器、设置 → 设备同一个说法。别的机器照常读心跳。
   const sshMachineIds = useSshMachineIds()
   const linkProblems = useSshLinkProblems()
+  const pendingVersions = devices.filter(device => {
+    const reason = linkProblems.get(device.device_id)
+    return reason === 'outdated' || reason === 'updateFailed'
+  }).map(device => device.device_id).sort()
+  const reports = useReplica(sshVersionReports, userId && pendingVersions.length ? [pendingVersions] : null)
+  const heartbeats = reports.state === 'value' && !reports.error ? reports.value : null
+  useEffect(() => {
+    if (!heartbeats || !userId || cachedDevicesAccount() !== userId) return
+    const current = readCachedDevices()
+    const newer = new Map(heartbeats.map(row => [row.device_id, row]))
+    const rows = current.map(device => {
+      const report = newer.get(device.device_id)
+      if (!report || Date.parse(report.last_seen_at) <= Date.parse(device.last_seen_at)) return device
+      // Keep concurrent edits and the projects read separately from this heartbeat.
+      return { ...device, last_seen_at: report.last_seen_at, status: report.status, is_online: report.is_online, capabilities: report.capabilities }
+    })
+    if (rows.some((row, index) => row !== current[index])) devicesModel.set([], rows)
+  }, [userId, heartbeats])
+  useEffect(() => {
+    if (!userId || cachedDevicesAccount() !== userId || reading.state !== 'value' || reading.stale || reading.error) return
+    for (const device of reading.value) {
+      const problem = linkProblems.get(device.device_id)
+      if (problem === 'outdated' || problem === 'updateFailed') {
+        void verifySshVersionOnHeartbeat(device).catch(err => {
+          devicesLog.warn({ deviceId: device.device_id, err: String(err) }, 'could not verify reported SSH server protocol')
+        })
+      }
+    }
+  }, [userId, reading, linkProblems])
   // #7199 云电脑那一行补上「休眠中 / 正在唤醒 / 运行中」,再排一次(休眠中的排在在线那一组)。
   const listedHere = useMemo(
     () =>

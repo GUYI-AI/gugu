@@ -11,7 +11,16 @@ export function DeviceRenameField({ label, onSave, onCancel }: { label: string; 
   const { t } = useTranslation('settings')
   const [draft, setDraft] = useState(label)
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-[6px]">
+    <div
+      className="flex min-w-0 flex-1 items-center gap-[6px]"
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return
+        event.stopPropagation()
+        if (isImeComposing(event)) return
+        event.preventDefault()
+        onCancel()
+      }}
+    >
       <input
         autoFocus
         value={draft}
@@ -19,7 +28,6 @@ export function DeviceRenameField({ label, onSave, onCancel }: { label: string; 
         onKeyDown={(e) => {
           if (isImeComposing(e)) return
           if (e.key === 'Enter') onSave(draft)
-          if (e.key === 'Escape') onCancel()
         }}
         aria-label={t('devices.menu.rename')}
         data-testid="device-rename-input"

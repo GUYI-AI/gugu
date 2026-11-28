@@ -4,7 +4,7 @@ import { Toaster } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { readEffectiveHostTheme, subscribeToHostTheme } from '@renderer/lib/theme/host-theme'
 import { readAuxLayers, subscribeAuxLayers } from '@renderer/app/aux-layers'
-import { persistentNotices, type PersistentNotice } from '@/lib/notices'
+import { isInboxNotice, persistentNotices, type PersistentNotice } from '@/lib/notices'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { AlertTriangle, ChevronLeft, ChevronRight, CheckCircle2, Info, X } from '@/lib/icons'
 import { Button } from './ui/Button'
@@ -108,7 +108,7 @@ const TIER_ICON = { error: AlertTriangle, warning: AlertTriangle, success: Check
 function NoticeDeck() {
   const { t } = useTranslation('common')
   const all = useSyncExternalStore(persistentNotices.subscribe, persistentNotices.read, persistentNotices.read)
-  const list = all.filter((notice) => !notice.deferred)
+  const list = all.filter((notice) => !isInboxNotice(notice))
   const [pick, setPick] = useState<string>()
   if (list.length === 0) return null
   // 停在用户翻到的那一张;它没了(或还没翻过)就露最新进来的那张。

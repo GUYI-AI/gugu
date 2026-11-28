@@ -37,9 +37,11 @@ vi.mock('@/lib/sshLinkChannel', () => ({
 }))
 import { SshLinkSignIn } from '@/components/SshLinkSignIn'
 import { reportedSshUpdate } from '@/lib/sshLinkOnline'
-import { persistentNotices } from '@/lib/notices'
+import { showSshStatusInPlace } from '@/lib/sshLinkNotice'
+import { isInboxNotice, persistentNotices } from '@/lib/notices'
 import { NoticeHost } from '@/components/NoticeHost'
-import { requestSshServerUpgrade } from '@/lib/sshLinkChannel'
+import { UI_EVENTS } from '@/lib/uiEvents'
+import { answerSshSignInPrompt, requestSshServerUpgrade } from '@/lib/sshLinkChannel'
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { state.problem = 'waitingIdle'; state.ssh = false; state.devices = []; state.calls = []; state.busyAgents = 0; state.refused = false; state.restartError = false; harness = createReactHarness() })
@@ -187,6 +189,24 @@ it('a background link that needs sign-in shows nothing; a sign-in started elsewh
   expect(document.body.textContent).toContain('Remote')
 })
 
+it('keeps the visible device condition in the inbox and still surfaces an interactive SSH question', async () => {
+  state.ssh = true
+  state.problem = 'notRunning'
+  state.devices = [device('remote', [], { label: 'Remote' })]
+  const release = showSshStatusInPlace('remote', 'notRunning')
+  try {
+    await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
+    expect(document.querySelector('[data-notice-key]')).toBeNull()
+    expect(persistentNotices.read().filter(isInboxNotice).map(n => n.key)).toContain('ssh-link:remote')
+    await act(async () => state.onPrompt?.({ deviceId: 'remote', prompt: { id: 'p1', kind: 'password', message: 'Password:', subject: 'remote' } }))
+    expect(document.querySelector('[data-testid=ssh-link-sign-in] input[type=password]')).not.toBeNull()
+    await act(async () => state.onPrompt?.({ deviceId: 'remote', prompt: null }))
+    expect(document.querySelector('[data-notice-key]')).toBeNull()
+    await act(async () => release())
+    expect(document.querySelector('[data-notice-key]')?.getAttribute('data-notice-key')).toBe('ssh-link:remote')
+  } finally { release() }
+})
+
 it('defers one machine to the bell and immediately shows the other', async () => {
   const first = server(undefined, true)
   const second = { ...first, device_id: 'remote-b', label: 'Second server' }
@@ -212,4 +232,45 @@ it('shows reported update progress for a pending mismatch and keeps real transpo
   host.capabilities.remote_protocol = 20
   host.capabilities.server_update_outcome = { kind: 'switched', request: 1 }
   expect(reportedSshUpdate(host, 'confirmationRequired')).toBeNull()
+  // This device still accepts SSH retries, but its last cloud update has gone stale.
+  host.status = 'offline'
+  expect(host.is_online).toBe(true)
+  expect(reportedSshUpdate(host, 'confirmationRequired')).toBe('confirmationRequired')
+})
+
+it('lets the visible recovery panel answer the pending SSH question and returns it to the deck when the panel closes', async () => {
+  state.ssh = true
+  state.problem = 'signInRequired'
+  state.devices = [device('remote', [], { label: 'Remote' })]
+  const panel = document.createElement('div')
+  document.body.appendChild(panel)
+  const close = showSshStatusInPlace('remote', null, panel)
+  try {
+    await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
+    await act(async () => state.onPrompt?.({ deviceId: 'remote', prompt: { id: 'pw', kind: 'password', message: 'Password:', subject: 'remote' } }))
+    expect(panel.querySelector('input[type=password]')).not.toBeNull()
+    expect(document.querySelector('[data-testid=notice-deck]')).toBeNull()
+    await clickElement(panel.querySelector<HTMLButtonElement>('[data-testid=ssh-prompt-cancel]')!)
+    expect(answerSshSignInPrompt).toHaveBeenCalledWith({ deviceId: 'remote', promptId: 'pw', value: null })
+    await act(async () => state.onPrompt?.({ deviceId: 'remote', prompt: { id: 'pw2', kind: 'password', message: 'Password:', subject: 'remote' } }))
+    await act(async () => close())
+    expect(panel.querySelector('input')).toBeNull()
+    const deck = document.querySelector('[data-testid=notice-deck]')!
+    expect(deck.querySelector('input[type=password]')).not.toBeNull()
+    await clickElement(deck.querySelector<HTMLButtonElement>('[data-testid=ssh-prompt-cancel]')!)
+    expect(answerSshSignInPrompt).toHaveBeenCalledWith({ deviceId: 'remote', promptId: 'pw2', value: null })
+  } finally { close(); panel.remove() }
+})
+
+it('opens the affected device from a changed identity notice for the shared fingerprint review', async () => {
+  state.ssh = true
+  state.problem = 'hostKeyChanged'
+  state.devices = [device('remote', [], { label: 'Remote' })]
+  await harness.render(<><NoticeHost /><SshLinkSignIn /></>)
+  const opened = vi.fn()
+  window.addEventListener(UI_EVENTS.openSettings, opened)
+  try {
+    await clickElement(document.querySelector<HTMLButtonElement>('[data-testid=ssh-link-sign-in] button')!)
+    expect(opened.mock.calls[0]?.[0].detail).toEqual({ section: 'devices', deviceId: 'remote' })
+  } finally { window.removeEventListener(UI_EVENTS.openSettings, opened) }
 })

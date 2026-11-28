@@ -60,6 +60,11 @@ export function remoteServerPaths(channel: string): { home: string; bin: string;
   }
 }
 
+/** The service recovery UI and the SSH command use the same installed launcher. */
+export function remoteServerStartCommand(): string {
+  return remoteServerPaths(desktopServerChannel()).binTilde + ' start'
+}
+
 /**
  * `~/.local/bin/<命令>` 的内容:一行启动脚本,把本通道的数据目录钉死递过去 —— 别的通道的 server 拉起的 agent 环境里
  * 带着它自己的 GUGU_SERVER_HOME;看门狗退回到不认通道名字的旧版本时,命令也不会去找别的目录。install.sh 写的是同一份。

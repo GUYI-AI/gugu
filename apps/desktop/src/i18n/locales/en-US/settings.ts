@@ -303,6 +303,141 @@ export default {
     "usageWindows": "Usage windows"
   },
   "devices": {
+    "facts": {
+      "attention": "Needs attention",
+      "connection": "Connection",
+      "lastOnline": "Last online",
+      "runsAs": "Runs as",
+      "notices": "Notices",
+      "actions": "What this device can do",
+      "trustRecord": "Previous trust record",
+      "manualTrust": "Verify the fingerprint independently, then follow the instructions below to update the trust record.",
+      "failed": "The device has not reconnected. Check its connection details below and retry."
+    },
+    "recovery": {
+      "notRunning": {
+        "status": "Service stopped",
+        "title": "Start Gugu",
+        "body": "SSH is connected. Start Gugu on this machine to reach your tasks again.",
+        "action": "Start and reconnect"
+      },
+      "connected": {
+        "status": "Connected",
+        "title": "Device connected",
+        "body": "Your tasks are available on this device."
+      },
+      "unreachable": {
+        "status": "Reconnecting",
+        "title": "Reconnecting to the workstation",
+        "body": "Your task will sync here when the connection returns.",
+        "action": "Retry now"
+      },
+      "signInRequired": {
+        "status": "Sign-in needed",
+        "title": "Sign in to SSH",
+        "body": "The workstation needs you to sign in again before your task can reconnect.",
+        "action": "Sign in"
+      },
+      "hostKeyChanged": {
+        "status": "Verify identity",
+        "title": "The device identity changed",
+        "body": "Connection is paused. Verify the new fingerprint independently with your administrator.",
+        "action": "View fingerprint"
+      },
+      "disconnected": {
+        "status": "Disconnected here",
+        "title": "Disconnected on this computer",
+        "body": "Connect again when you need this device.",
+        "action": "Connect"
+      },
+      "refused": {
+        "status": "Connection refused",
+        "title": "The service refused the connection",
+        "body": "SSH is connected. Check the remote service, then try again.",
+        "action": "Reconnect"
+      },
+      "notInstalled": {
+        "status": "Install required",
+        "title": "Install Gugu on this device",
+        "body": "The installer will show the target device and ask before starting.",
+        "action": "Open installer"
+      },
+      "unmapped": {
+        "status": "SSH not configured",
+        "title": "Set up SSH on this computer",
+        "body": "Choose a local SSH connection for this registered device.",
+        "action": "Set up connection"
+      },
+      "notSignedIn": {
+        "status": "Signed out of Gugu",
+        "title": "Sign the device in to Gugu",
+        "body": "SSH is available. The remote service needs a new account authorization.",
+        "action": "Authorize device"
+      },
+      "outdated": {
+        "status": "Update required",
+        "title": "Update the remote service",
+        "body": "Update the service on the device to reconnect.",
+        "action": "Update service"
+      },
+      "updating": {
+        "status": "Updating",
+        "title": "Updating the remote service",
+        "body": "The device will reconnect when its update finishes."
+      },
+      "updateFailed": {
+        "status": "Update failed",
+        "title": "The update did not finish",
+        "body": "You can retry this update.",
+        "action": "Retry update"
+      },
+      "waitingIdle": {
+        "status": "Waiting for tasks",
+        "title": "The update is ready",
+        "body": "The device will switch versions once its running tasks finish."
+      },
+      "confirmationRequired": {
+        "status": "Restart needed",
+        "title": "The update is ready",
+        "body": "Restarting will temporarily disconnect the device.",
+        "action": "Review restart"
+      },
+      "offline": {
+        "status": "Unreachable",
+        "title": "Cannot reach the workstation",
+        "body": "Check the network or power on the remote device. Your task stays here.",
+        "action": "Reconnect"
+      },
+      "checking": {
+        "status": "Connecting",
+        "title": "Checking the connection",
+        "body": "Waiting for the device to respond."
+      },
+      "details": "Connection details",
+      "address": "SSH address",
+      "version": "Version",
+      "lastSync": "Tasks last synced",
+      "manual": "Run on the device",
+      "verified": "I verified this fingerprint independently",
+      "trust": "Update trust and connect",
+      "promptTitle": "SSH sign-in · {{name}}",
+      "backToTask": "Back to task",
+      "heartbeat": "Heartbeat",
+      "reportedUpdate": "Last reported update",
+      "manualTrust": "This record needs a manual update. Verify the fingerprint, then follow the instructions under Connection details.",
+      "busy": "Working…",
+      "failed": "The device has not reconnected. Try again or open Connection details.",
+      "startFailed": "The service has not started. Check the service on the device, then retry.",
+      "close": "Done",
+      "fingerprint": "New fingerprint",
+      "title": "Device connection",
+      "dismiss": "Close connection details",
+      "seeUpdate": "Review update",
+      "restartHint": "Restarting may interrupt active tasks on this device.",
+      "noVersion": "Not reported",
+      "manualReconnect": "Reconnect after updating the record",
+      "pause": "Disconnect here"
+    },
     "bootTaskFailed": "Task {{task}} could not resume ({{operation}}): {{message}}. Other tasks remain available.",
     "longOffline": "Offline for a long time",
     "configurations": "Versions",
@@ -539,6 +674,12 @@ export default {
       }
     },
     "link": {
+      "afterVerify": "After verifying the fingerprint independently, remove the old entry on this computer and reconnect.",
+      "startService": "Run gugu-server start on the device, then reconnect.",
+      "deviceGone": "This device is no longer in your devices list.",
+      "connectFailed": "Could not reconnect to this device.",
+      "disconnectFailed": "Could not disconnect the device.",
+      "outdated": "Gugu on {{name}} needs an update.",
       "connecting": "Connecting to {{name}} over SSH…",
       "signIn": "Sign in",
       "hostKeyChanged": "{{name}}’s SSH host key changed. Verify the new fingerprint with the device administrator, then update this device’s entry in your SSH known hosts file and retry.",
@@ -554,6 +695,7 @@ export default {
       "reinstall": "Gugu server on {{name}} is too old to update automatically. Run the install command on the device again:",
       "refused": "Gugu server on {{name}} refused the connection.",
       "notSignedIn": "{{name}} is not signed in. Re-add it in Settings → Devices.",
+      "notRunning": "SSH connected. The Gugu service is stopped; open Device settings to reconnect it.",
       "notInstalled": "Gugu server is not installed on {{name}}. Re-add it in Settings → Devices.",
     },
     "approveServer": {
@@ -647,7 +789,7 @@ export default {
       },
       "prompt": {
         "hostKeyTitle": "First connection to this machine",
-        "hostKeyHint": "Continue only if the fingerprint is correct.",
+        "hostKeyHint": "Compare this fingerprint with the one from your administrator or the machine’s console before trusting it.",
         "host": "Host",
         "keyType": "Key type",
         "fingerprint": "Fingerprint",
@@ -748,7 +890,7 @@ export default {
       "back": "Change address",
       "close": "Done"
     },
-    "actions": "More actions",
+    "actions": "Device options",
     "appVersion": "Gugu {{version}}",
     "boundAgents_one": "Also deletes your {{count}} agent on this machine.",
     "boundAgents_other": "Also deletes your {{count}} agents on this machine.",

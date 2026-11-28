@@ -4,6 +4,8 @@
 import { observer } from 'mobx-react-lite';
 import { createContext, useContext, type ReactNode } from 'react';
 import { ConnectionStatus } from '@/components/connection/ConnectionStatus';
+import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { isSshAttention } from '@renderer/features/remote-hosts/connection-status';
 import { headerConnectionState } from '@renderer/features/remote-hosts/header-connection-state';
 import { IntegrationsProvider } from '@renderer/features/integrations/integrations-provider';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
@@ -41,11 +43,14 @@ export const LibraryHostScope = observer(function LibraryHostScope({
  */
 export const LibraryHostDialogStatus = observer(function LibraryHostDialogStatus() {
   const machine = useContext(DialogMachineContext);
-  const state = machine ? headerConnectionState(remoteHostsStore.connectionState(machine.deviceId)) : null;
+  const { translate } = useSessionMessages();
+  const connection = machine ? remoteHostsStore.connectionState(machine.deviceId) : null;
+  const state = headerConnectionState(connection);
   if (!machine || !state) return null;
   return (
     <ConnectionStatus
       state={state}
+      word={isSshAttention(connection) ? translate(`remoteHost.ssh.${connection}`) : undefined}
       lastSeenAt={remoteHostsStore.device(machine.deviceId)?.lastSeenAt ?? null}
       subject={machine.deviceLabel}
       testId="dialog-machine-status"

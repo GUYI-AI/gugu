@@ -25,6 +25,7 @@ export function ConnectionStatus({
   lastSeenAt,
   subject,
   detail,
+  word,
   testId = 'connection-status',
 }: {
   state: ConnectionState
@@ -34,6 +35,7 @@ export function ConnectionStatus({
   subject?: string | null
   /** Why, when known and not a time (a cloud computer's wake failure reason). Replaces the last-seen time. */
   detail?: string | null
+  word?: string
   testId?: string
 }) {
   const { t } = useTranslation('common')
@@ -43,7 +45,7 @@ export function ConnectionStatus({
     <span className="gg-conn-status" role="status" data-state={state} data-testid={testId}>
       <span className="gg-conn-glyph" data-state={state} aria-hidden="true"><span className="gg-conn-glyph-inner" /></span>
       {subject ? <span className="gg-conn-subject" title={subject}>{subject}</span> : null}
-      <span className="gg-conn-word">{t(WORD_KEY[state])}</span>
+      <span className="gg-conn-word">{word ?? t(WORD_KEY[state])}</span>
       {trailing ? <span className="gg-conn-detail" title={trailing} data-testid={`${testId}-detail`}>{trailing}</span> : null}
     </span>
   )

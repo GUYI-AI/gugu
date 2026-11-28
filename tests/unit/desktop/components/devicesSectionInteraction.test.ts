@@ -4,6 +4,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { notifyManager as readModelNotify } from '@tanstack/react-query'
 import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
+import { deviceRecoveryTarget, openDeviceRecovery } from '@/lib/deviceActionsIntent'
+import { UI_EVENTS } from '@/lib/uiEvents'
 import { DevicesSection } from '@/components/settings/DevicesSection'
 import { signInSshMachine } from '@/lib/sshLinkChannel'
 import type { SshLinkOpenResult } from '@/lib/sshLink'
@@ -52,8 +54,14 @@ function buttonByText(root: ParentNode, text: string): HTMLButtonElement {
   if (!button) throw new Error(`button not found: ${text}`)
   return button as HTMLButtonElement
 }
-async function openMenu(row = 0): Promise<void> {
-  const trigger = container.querySelectorAll<HTMLElement>('[data-testid="settings-device-menu-button"]')[row]!
+async function expandDevice(deviceRow: ParentNode): Promise<void> {
+  const summary = deviceRow.querySelector<HTMLButtonElement>('[data-testid="settings-device-summary"]')!
+  if (summary.getAttribute('aria-expanded') === 'false') await act(async () => { summary.click() })
+}
+async function openMenu(row = 0, scope: ParentNode = container): Promise<void> {
+  const deviceRow = scope.querySelectorAll<HTMLElement>('[data-testid="settings-device-row"]')[row]!
+  await expandDevice(deviceRow)
+  const trigger = deviceRow.querySelector<HTMLElement>('[data-testid="settings-device-menu-button"]')!
   await act(async () => {
     trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
     trigger.click()
@@ -84,17 +92,52 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 describe('DevicesSection interaction', () => {
-  it('reports a repeated SSH host key refusal in the device row and clears it after a successful retry', async () => {
-    const deviceId = 'rotated-host'
+  it('opens local permissions inside the device and returns keyboard focus there', async () => {
+    const value = store({ devices: [device({ is_current_device: true })] })
+    await act(async () => { root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection))) })
+    const entry = () => container.querySelector<HTMLButtonElement>('[data-testid="settings-device-actions-entry"]')
+    expect(entry()).toBeNull()
+    await expandDevice(container)
+    expect(container.querySelector('.gg-device-expanded')?.contains(entry())).toBe(true)
+    await act(async () => { entry()!.click() })
+    const back = container.querySelector<HTMLButtonElement>('[data-testid="settings-device-actions-back"]')!
+    await act(async () => { back.click() })
+    expect(document.activeElement).toBe(entry())
+    await act(async () => { entry()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+    expect(entry()).toBeNull()
+    expect(document.activeElement).toBe(container.querySelector('[data-testid="settings-device-summary"]'))
+  })
+
+  it('opens recovery for the requested endpoint when a different configuration is currently shown', async () => {
+    const value = store({ devices: [
+      device({ device_id: 'online-peer', machine_id: 'shared' }),
+      device({ device_id: 'missing-link', machine_id: 'shared', is_online: false, status: 'offline' }),
+    ] })
+    await act(async () => { root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection))) })
+    expect(container.querySelector('[data-device-id="online-peer"]')).not.toBeNull()
+    const receive = vi.fn((event: Event) => deviceRecoveryTarget.set((event as CustomEvent).detail.deviceId))
+    window.addEventListener(UI_EVENTS.openSettings, receive, { once: true })
+    await act(async () => openDeviceRecovery('missing-link'))
+    expect(receive.mock.calls[0]?.[0]).toHaveProperty('detail', { section: 'devices', deviceId: 'missing-link' })
+    const disclosure = container.querySelector('[data-device-id="missing-link"] [data-testid="settings-device-summary"]')
+    expect(document.activeElement).toBe(disclosure)
+    expect(disclosure?.getAttribute('aria-expanded')).toBe('true')
+    expect(deviceRecoveryTarget.get()).toBeNull()
+  })
+
+  it.each(['action', 'search'])('clears a repeated SSH host key refusal and preserves focus after retry from %s', async focus => {
+    const deviceId = 'rotated-host-' + focus
     const refused: SshLinkOpenResult = { ok: false, reason: 'hostKeyChanged', hostKey: { host: 'box', fingerprint: 'SHA256:newKey', location: '/test/known_hosts:17' } }
+    const verifiedIdentity = vi.fn(async (_id: string, _fingerprint?: string) => true)
     const pending = Promise.withResolvers<SshLinkOpenResult>()
     const signIn = vi.fn().mockResolvedValueOnce(refused).mockReturnValueOnce(pending.promise).mockResolvedValueOnce({ ok: true })
     const electron = window as unknown as { electronAPI?: unknown }
     electron.electronAPI = {
       eventOn: () => () => undefined,
-      invoke: (channel: string, id: string) => {
+      invoke: (channel: string, id: string, fingerprint?: string) => {
         if (channel === 'server-ssh-machines:describe') return Promise.resolve([{ deviceId, display: 'user@box' }])
         if (channel === 'ssh-link:sign-in') return signIn(id)
+        if (channel === 'ssh-link:verify-identity') return verifiedIdentity(id, fingerprint)
         return Promise.resolve(null)
       },
     }
@@ -103,17 +146,34 @@ describe('DevicesSection interaction', () => {
       const value = store({ devices: [device({ device_id: deviceId, is_online: false })] })
       await act(async () => { root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection))) })
       await flush()
-      const action = () => container.querySelector<HTMLElement>('[data-testid="settings-device-ssh-sign-in-action"]')!
-      expect(action().parentElement?.textContent).toContain('主机指纹已变更')
+      const summary = container.querySelector<HTMLElement>('[data-testid="settings-device-summary"]')!
+      const action = () => container.querySelector<HTMLButtonElement>('[data-testid="device-recovery-primary"]')!
+      expect(summary.textContent).toContain('待核对指纹')
+      expect(action()).toBeNull()
+      await act(async () => { summary.click() })
       await act(async () => { action().click() })
-      expect(container.querySelector('[role="status"]')?.textContent).toContain('SSH')
+      expect(action().disabled).toBe(true)
       await act(async () => { pending.resolve(refused) })
-      const alert = container.querySelector('[data-testid="settings-device-ssh-sign-in"] [role="alert"]')
-      expect(action().parentElement?.textContent).toContain('管理员')
-      expect(alert?.textContent).toContain('/test/known_hosts:17')
-      expect(alert?.textContent).toContain('SHA256:newKey')
-      await act(async () => { action().click() })
-      expect(container.querySelector('[data-testid="settings-device-ssh-sign-in"]')).toBeNull()
+      expect(container.querySelector('.gg-recovery-fingerprint')?.textContent).toContain('SHA256:newKey')
+      expect(container.querySelector('.gg-device-facts')?.textContent).toContain('/test/known_hosts:17')
+      expect(action().disabled).toBe(true)
+      await act(async () => { container.querySelector<HTMLInputElement>('input[type=checkbox]')!.click() })
+      const search = container.querySelector<HTMLInputElement>('[data-testid="settings-devices-search"]')!
+      await act(async () => {
+        const primary = action()
+        primary.focus()
+        primary.click()
+        if (focus === 'search') search.focus()
+      })
+      expect(summary.textContent).toContain('已连接')
+      expect(document.activeElement).toBe(focus === 'search' ? search : summary)
+      if (focus === 'action') {
+        expect(summary.getAttribute('aria-expanded')).toBe('true')
+        await act(async () => { summary.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+        expect(summary.getAttribute('aria-expanded')).toBe('false')
+        expect(document.activeElement).toBe(summary)
+      }
+      expect(verifiedIdentity.mock.calls).toEqual([[deviceId, refused.hostKey?.fingerprint]])
       expect(signIn.mock.calls).toEqual([[deviceId], [deviceId], [deviceId]])
     } finally {
       delete electron.electronAPI
@@ -130,6 +190,7 @@ describe('DevicesSection interaction', () => {
       await flush()
     }
     await render()
+    await expandDevice(container)
     expect(container.querySelector('[data-testid="settings-device-restarting"]')).not.toBeNull()
     await render({ is_online: false, status: 'offline' })
     expect(container.querySelector('[data-testid="settings-device-restarting"]')).not.toBeNull()
@@ -189,18 +250,31 @@ describe('DevicesSection interaction', () => {
     expect(value.remove).not.toHaveBeenCalled()
   })
 
+  it('Escape cancels a device rename and returns to the expanded row inside Settings', async () => {
+    const value = store({ devices: [device({ is_current_device: true })] })
+    const closeSettings = vi.fn()
+    await act(async () => { root.render(createElement(DevicesContext.Provider, { value },
+      createElement(Sheet, { onClose: closeSettings, children: createElement(DevicesSection) }))) })
+    await openMenu(0, document.body)
+    await act(async () => { document.body.querySelector<HTMLElement>('[data-testid="settings-device-rename-button"]')!.click() })
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="device-rename-input"]')!
+    expect(document.activeElement).toBe(input)
+    await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })) })
+    expect(input.isConnected).toBe(false)
+    expect(value.rename).not.toHaveBeenCalled()
+    expect(closeSettings).not.toHaveBeenCalled()
+    const summary = document.body.querySelector('[data-testid="settings-device-summary"]')
+    expect(summary?.getAttribute('aria-expanded')).toBe('true')
+    expect(document.activeElement).toBe(summary)
+  })
+
   it('Escape closes only the versions list above the settings sheet without removing a version', async () => {
     const value = store({ devices: [device({ device_id: 'old', machine_id: 'same-mac', is_online: false }),
       device({ device_id: 'active', machine_id: 'same-mac', tier: 'beta' })] })
     const closeSettings = vi.fn()
     await act(async () => { root.render(createElement(DevicesContext.Provider, { value },
       createElement(Sheet, { onClose: closeSettings, testId: 'settings-parent', children: createElement(DevicesSection) }))) })
-    await act(async () => {
-      const trigger = document.body.querySelector<HTMLElement>('[data-testid="settings-device-menu-button"]')!
-      trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
-      trigger.click()
-    })
-    await flush()
+    await openMenu(0, document.body)
     await act(async () => { document.body.querySelector<HTMLElement>('[data-testid="settings-device-remove-versions"]')!.click() })
     await flush()
     const dialog = document.body.querySelector('[data-testid="settings-device-versions-dialog"]')!
@@ -217,12 +291,7 @@ describe('DevicesSection interaction', () => {
     const closeSettings = vi.fn()
     await act(async () => { root.render(createElement(DevicesContext.Provider, { value },
       createElement(Sheet, { onClose: closeSettings, testId: 'settings-parent', children: createElement(DevicesSection) }))) })
-    await act(async () => {
-      const trigger = document.body.querySelector<HTMLElement>('[data-testid="settings-device-menu-button"]')!
-      trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
-      trigger.click()
-    })
-    await flush()
+    await openMenu(0, document.body)
     await act(async () => { document.body.querySelector<HTMLElement>('[data-testid="settings-device-remove-versions"]')!.click() })
     await flush()
     const dialog = document.body.querySelector('[data-testid="settings-device-versions-dialog"]')!
@@ -246,8 +315,9 @@ describe('DevicesSection interaction', () => {
       device({ device_id: 'active', machine_id: 'same-mac', tier: 'beta' })] })
     await act(async () => { root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection))) })
     expect(container.querySelectorAll('[data-testid="settings-device-row"]')).toHaveLength(1)
+    await expandDevice(container)
     expect(container.querySelector('[data-testid="settings-device-version-count"]')?.textContent).toBe('2 个版本')
-    await openMenuItem('settings-device-open-actions')
+    await act(async () => { container.querySelector<HTMLElement>('[data-testid="settings-device-open-actions"]')!.click() })
     const configurations = container.querySelector('[data-testid="device-machine-configurations"]')!
     expect(configurations.textContent).toContain('咕咕 Beta')
     expect(configurations.textContent).toContain('acceptance-tasks431')
@@ -327,6 +397,7 @@ describe('DevicesSection interaction', () => {
     await act(async () => { root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection))) })
     const row = (id: string) => container.querySelector(`[data-device-id="${id}"]`) as HTMLElement
     expect(row('new').querySelector('[data-testid="settings-device-replaced"]'), 'the online one is not the one said of').toBeNull()
+    await expandDevice(row('old'))
     const hint = row('old').querySelector<HTMLButtonElement>('[data-testid="settings-device-replaced-hint"]')!
     expect(hint.textContent).toBe('可能已被「GF server」顶替')
     expect(hint.title).toContain('两台机器也可能同名')
@@ -397,14 +468,25 @@ describe('DevicesSection interaction', () => {
       const server = Array.from(rows).find((row) => row.dataset.deviceId === 'srv')!
       expect(server.dataset.kind).toBe('server')
       expect(server.textContent).toContain('Ubuntu 22.04.5 LTS，arm64')
-      expect(server.textContent).toContain('咕咕 server 0.2.99')
+      const summary = server.querySelector<HTMLButtonElement>('[data-testid="settings-device-summary"]')!
+      expect(summary.textContent).not.toContain('新版本已就绪')
+      expect(summary.getAttribute('aria-expanded')).toBe('false')
+      expect(server.querySelectorAll('button')).toHaveLength(1)
+      expect(server.querySelector('[data-testid="settings-device-menu-button"]')).toBeNull()
+      await act(async () => { summary.click() })
+      const expanded = document.getElementById(summary.getAttribute('aria-controls')!)!
+      expect(expanded.querySelector('[data-testid="settings-device-menu-button"]')?.textContent).toBe('设备操作')
+      expect(expanded.querySelector('details')).toBeNull()
+      const details = expanded.querySelector('dl')!
+      expect(details.textContent).toContain('咕咕 server 0.2.99')
       expect(server.textContent).toContain('新版本已就绪')
-      expect(server.textContent).toContain('上次在线 3 小时前')
-      expect(server.textContent).toContain('远程 SSH：alice@box:2222')
+      expect(details.textContent).toContain('上次在线')
+      expect(details.textContent).toContain('3 小时前')
+      expect(details.textContent).toContain('alice@box:2222')
       const me = Array.from(rows).find((row) => row.dataset.deviceId === 'me')!
       expect(me.textContent).toContain('本机')
       expect(me.textContent).not.toContain('远程')
-      // 本机的菜单只有改名,没有移除
+      // 打开本机的设备操作后可以改名，不能移除本机。
       await openMenu(0)
       expect(document.body.querySelector('[data-testid="settings-device-rename-button"]')).not.toBeNull()
       expect(document.body.querySelector('[data-testid="settings-device-remove-button"]')).toBeNull()
@@ -426,6 +508,7 @@ describe('DevicesSection interaction', () => {
       root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection)))
     })
     await flush()
+    await expandDevice(container)
     const row = container.querySelector<HTMLElement>('[data-testid="settings-device-match-failed"]')!
     expect(row.textContent).toContain('更新失败')
     // 不再挂一颗「更新中 / 有新版本」的标签。
@@ -452,6 +535,7 @@ describe('DevicesSection interaction', () => {
       root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection)))
     })
     await flush()
+    await expandDevice(container)
     expect(container.querySelector('[data-testid="settings-device-match-retry"]')).toBeNull()
     await act(async () => {
       container.querySelector<HTMLElement>('[data-testid="settings-device-match-restart-now"]')!.click()
@@ -479,10 +563,13 @@ describe('DevicesSection interaction', () => {
     ;(window as unknown as { electronAPI: unknown }).electronAPI = { invoke, eventOn: () => () => undefined }
     try {
       const server = (id: string) => device({ device_id: id, label: id, platform: 'linux', capabilities: { terminals: [], runtimes: [], host_kind: 'server' } })
+      const otherSsh = server('other-ssh')
+      otherSsh.capabilities.connect_via = 'ssh'
       const value = store({
         devices: [
           server('ssh-srv'),
           server('tunnel-srv'),
+          otherSsh,
           device({ device_id: 'other-mac', label: 'Other Mac', platform: 'darwin', capabilities: { terminals: [], runtimes: [], host_kind: 'desktop' } }),
         ],
       })
@@ -491,13 +578,25 @@ describe('DevicesSection interaction', () => {
       })
       await flush()
       const row = (id: string) => container.querySelector<HTMLElement>(`[data-testid="settings-device-row"][data-device-id="${id}"]`)!
-      expect(row('ssh-srv').textContent).toContain('远程 SSH：alice@box')
+      expect(row('ssh-srv').textContent).toContain('SSH')
+      expect(row('ssh-srv').textContent).not.toContain('alice@box')
+      await act(async () => { row('ssh-srv').querySelector<HTMLButtonElement>('[aria-expanded]')!.click() })
+      expect(row('ssh-srv').querySelector('dl')?.textContent).toContain('alice@box')
       expect(row('ssh-srv').textContent).not.toContain('远程隧道')
+      const otherSummary = row('other-ssh').querySelector<HTMLButtonElement>('[aria-expanded]')!
+      expect(otherSummary.textContent).toContain('SSH')
+      await act(async () => { otherSummary.click() })
+      expect(row('other-ssh').textContent).toContain('咕咕云')
+      expect(row('other-ssh').querySelector('[data-testid=device-recovery-primary]')).toBeNull()
       expect(row('tunnel-srv').textContent).toContain('远程隧道')
+      expect(row('tunnel-srv').querySelectorAll('button')).toHaveLength(1)
+      await expandDevice(row('tunnel-srv'))
+      expect(otherSummary.getAttribute('aria-expanded')).toBe('false')
+      expect(row('tunnel-srv').querySelector('dl')?.textContent).toContain('咕咕云')
       expect(row('other-mac').dataset.kind).toBe('desktop')
       expect(row('other-mac').textContent).not.toContain('远程')
       // 「是台什么机器」写成元信息里的一个词,❌ 只靠一枚带 aria-label 的图标(icon standing in for a label)。
-      expect(row('other-mac').querySelector('[data-testid="settings-device-kind"]')?.textContent).toBe('电脑')
+      expect(row('other-mac').querySelector('[data-testid="settings-device-kind"]')?.textContent).toContain('电脑')
     } finally {
       delete (window as unknown as { electronAPI?: unknown }).electronAPI
     }

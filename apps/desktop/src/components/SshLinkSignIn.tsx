@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { serverMachineNotices, serverSupportsConfirmedRestart } from '@gugu/core/cloud/serverMachineHealth'
 import { readServerVersionSwitchBusyAgents, restartServerVersionNow, retryServerVersionMatch } from '../lib/serverVersionRetry'
 import type { Device } from '@gugu/core/shared/types/chat'
 import { reportedSshUpdate } from '../lib/sshLinkOnline'
+import { openDeviceRecovery } from '@/lib/deviceActionsIntent'
 import type { SshLinkFailure } from '../lib/sshLink'
-import { sshLinkNoticeReason, type SshLinkNotice } from '../lib/sshLinkNotice'
+import { useSshPromptTarget, useSshStatusShown, sshLinkNoticeReason, type SshLinkNotice } from '../lib/sshLinkNotice'
 import {
   answerSshSignInPrompt,
   isSshMachine,
   requestSshServerUpgrade,
-  signInSshMachine,
   sshReinstallCommand,
   subscribeSshSignInPrompts,
   subscribeSshUpgradeEvents,
@@ -73,33 +74,36 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
   const { translate } = useSessionMessages()
   const { toast } = useToast()
   const [dismissed, setDismissed] = useState<SshLinkFailure | null>(null)
-  const [signingIn, setSigningIn] = useState(false)
   const [answered, setAnswered] = useState<string | null>(null)
   const [confirmRestart, setConfirmRestart] = useState<{ deviceId: string; busyAgents?: number | null } | null>(null)
   const ssh = isSshMachine(machine.device_id)
   const update = machine.capabilities?.server_update
   const tunnelWaiting = !ssh && machine.is_online && update?.state === 'ready'
     && serverMachineNotices(machine.capabilities).some(notice => notice.kind === 'server-too-old')
-  const reason = signingIn || prompt ? 'signInRequired' : sshLinkNoticeReason(reportedSshUpdate(machine, problem)) ?? (tunnelWaiting ? 'waitingIdle' : null)
+  const reason = prompt ? 'signInRequired' : sshLinkNoticeReason(reportedSshUpdate(machine, problem)) ?? (tunnelWaiting ? 'waitingIdle' : null)
+  const inPlace = useSshStatusShown(machine.device_id, reason)
+  const promptTarget = useSshPromptTarget(machine.device_id)
   const pendingRestart = reason === 'waitingIdle' || reason === 'confirmationRequired'
   if (confirmRestart && !pendingRestart) setConfirmRestart(null)
   if (dismissed !== null && dismissed !== reason) setDismissed(null)
-  const shown = reason && (prompt || signingIn || reason !== dismissed)
+  const shown = reason && (prompt || reason !== dismissed)
     ? { deviceId: machine.device_id, name: machine.label, reason } : null
-  useNotice(`ssh-link:${machine.device_id}:${reason ?? 'clear'}`, shown && card(shown))
-  return null
+  const question = prompt && <SshPromptCard
+    prompt={prompt}
+    pending={answered === prompt.id}
+    variant={promptTarget ? 'inline' : 'floating'}
+    cancellable
+    onAnswer={(value, extra) => {
+      if (value !== null) setAnswered(prompt.id)
+      answerSshSignInPrompt({ deviceId: machine.device_id, promptId: prompt.id, value, ...(extra?.installKey ? { installKey: true } : {}) })
+    }}
+  />
+  useNotice(`ssh-link:${machine.device_id}`, shown && !(question && promptTarget) ? card(shown) : null)
+  return question && promptTarget ? createPortal(question, promptTarget) : null
 
   function card(shown: SshLinkNotice): Omit<Notice, 'key'> {
     const confirmableUpdate = !ssh && update?.state === 'ready' && canRestartServerUpdate(update, machine.capabilities) ? update : null
 
-    const startSignIn = () => {
-      const deviceId = shown.deviceId
-      setSigningIn(true)
-      void signInSshMachine(deviceId).finally(() => {
-        setSigningIn(false)
-        setAnswered(null)
-      })
-    }
     const dismiss = () => setDismissed(shown.reason)
     const askRestart = () => {
       const question = { deviceId: shown.deviceId, busyAgents: null }
@@ -123,17 +127,16 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
       } catch (error) { failed(error) }
     }
     const activePrompt = prompt
-    const canSignIn = shown.reason === 'signInRequired' || shown.reason === 'hostKeyChanged'
     const reinstall = shown.reason === 'updateFailed' ? sshReinstallCommand(shown.deviceId) : null
 
-    // 关闭钮:在提问就是取消这次提问;在连就只收起「连接中」(有提问来会再出现);其余 = 这台这种原因不再出现(waitingIdle 即「稍后」)。
+    // Clearing this notice in the inbox cancels its outstanding prompt. The deck close button only defers the notice.
     const close = () => {
       if (activePrompt) answerSshSignInPrompt({ deviceId: shown.deviceId, promptId: activePrompt.id, value: null })
-      else if (signingIn) setSigningIn(false)
       else dismiss()
     }
     // 机器名是这条横幅的标题(带服务器图标),下面平铺那一句和按钮 —— ❌ 横幅里再套一张卡。
-    return { ongoing: true, onDismiss: close, title: shown.name, icon: <Server size={16} />, description: (
+    return { ongoing: true, shownInline: inPlace && !prompt, onDismiss: close,
+      title: prompt ? t('devices.recovery.promptTitle', { name: shown.name }) : shown.name, icon: <Server size={16} />, description: (
         <div data-testid="ssh-link-sign-in">
           {pendingRestart && !activePrompt ? (
             // 版本对不上、那台机器在等 agent 空闲:与 SSH 提问同一副卡(机器名一行 + 一句 + 底行按钮),「现在」先当面确认一次。
@@ -161,29 +164,15 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
                     : t(shown.reason === 'confirmationRequired' ? 'devices.link.confirmationRequired' : 'devices.link.waitingIdle', { name: shown.name })}
               </p>
             </SshPromptFrame>
-          ) : activePrompt ? (
-            <SshPromptCard
-              prompt={activePrompt}
-              pending={answered === activePrompt.id}
-              variant="floating"
-              cancellable
-              onAnswer={(value, extra) => {
-                if (value !== null) setAnswered(activePrompt.id)
-                answerSshSignInPrompt({
-                  deviceId: shown.deviceId,
-                  promptId: activePrompt.id,
-                  value,
-                  ...(extra?.installKey ? { installKey: true } : {}),
-                })
-              }}
-            />
+          ) : question ? (
+            question
           ) : (
             <div>
               <p className="m-0 min-w-0 flex-1 text-[length:var(--font-body)] leading-[1.5]">
-                {signingIn || shown.reason === 'updating' ? (
+                {shown.reason === 'updating' ? (
                   <span className="inline-flex items-center gap-2 text-muted-foreground" data-testid="ssh-link-busy">
                     <LoadingIndicator size="inline" />
-                    {t(signingIn ? 'devices.link.connecting' : 'devices.link.updating', { name: shown.name })}
+                    {t('devices.link.updating', { name: shown.name })}
                   </span>
                 ) : reinstall ? (
                   <span className="flex flex-col gap-2" data-testid="ssh-link-reinstall">
@@ -192,20 +181,15 @@ function MachineNotice({ machine, problem, prompt }: { machine: Device; problem:
                   </span>
                 ) : (
                   <>
-                    {t(`devices.link.${shown.reason}`, { name: shown.name })}
+                    {t(shown.reason === 'hostKeyChanged' ? 'devices.recovery.hostKeyChanged.body' : `devices.link.${shown.reason}`, { name: shown.name })}
+                    {['hostKeyChanged', 'notSignedIn', 'notInstalled', 'notRunning', 'refused'].includes(shown.reason) && <>
+                      {' '}<InlineAction onClick={() => { dismiss(); openDeviceRecovery(shown.deviceId) }}>{shown.reason === 'hostKeyChanged' ? t('devices.recovery.hostKeyChanged.action') : translate('remoteHost.ssh.settings')}</InlineAction>
+                    </>}
                     {shown.reason === 'updateFailed' ? (
                       <>
                         {' '}
                         <InlineAction onClick={() => void requestSshServerUpgrade(shown.deviceId, { force: true })} testId="ssh-link-upgrade-retry">
                           {t('devices.link.retryUpdate')}
-                        </InlineAction>
-                      </>
-                    ) : null}
-                    {canSignIn ? (
-                      <>
-                        {' '}
-                        <InlineAction onClick={startSignIn} testId="ssh-link-sign-in-action">
-                          {t('devices.link.signIn')}
                         </InlineAction>
                       </>
                     ) : null}

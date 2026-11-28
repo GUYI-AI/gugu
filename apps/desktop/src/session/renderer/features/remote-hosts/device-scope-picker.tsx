@@ -14,6 +14,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import type { RemoteHostDevice } from '@/session/shared/remote-hosts';
 import { ConnectionStatus } from '@/components/connection/ConnectionStatus';
 import type { DeviceScopeNotice } from './device-scope-notice';
+import { isSshAttention } from './connection-status';
 import { headerConnectionState } from './header-connection-state';
 import { LOCAL_DEVICE_SCOPE, deviceScopeTrayDevices, type DeviceScopeStore } from './device-scope-store';
 import { MachinePicker } from './machine-picker';
@@ -79,7 +80,8 @@ export const DeviceScopeStatus = observer(function DeviceScopeStatus({
 }) {
   const deviceId = store.effective((id) => remoteHostsStore.hosts.has(id));
   const device = deviceId === LOCAL_DEVICE_SCOPE ? null : remoteHostsStore.device(deviceId);
-  const state = device ? headerConnectionState(remoteHostsStore.connectionState(device.id)) : null;
+  const connection = device ? remoteHostsStore.connectionState(device.id) : null;
+  const state = headerConnectionState(connection);
   const { t } = useTranslation('common');
   const { translate } = useSessionMessages();
   if (!device || !state) return null;
@@ -91,6 +93,7 @@ export const DeviceScopeStatus = observer(function DeviceScopeStatus({
   return (
     <ConnectionStatus
       state={state}
+      word={isSshAttention(connection) ? translate(`remoteHost.ssh.${connection}`) : undefined}
       lastSeenAt={device.lastSeenAt}
       subject={withName ? device.label : null}
       detail={detail}
