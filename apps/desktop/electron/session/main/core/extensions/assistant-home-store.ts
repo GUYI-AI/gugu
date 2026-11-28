@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readdir, readFile, rename, rm, rmdir, stat } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, rename, rm, rmdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
 import { createWorkspaceUploads, currentEtag, WorkspaceTransferError } from '@main/core/files/workspace-transfer';
@@ -150,13 +150,19 @@ export function createAssistantHomeStore(input: {
     if (itemId.startsWith(LOCAL_BODY)) return new Uint8Array(await readFile(await at(itemId.slice(LOCAL_BODY.length), domain)));
     throw refused('22023', 'Unknown content');
   }
+  /** The revision `collect` gives the file as it is now (a folder's is 1, a missing file's `absent`). */
+  async function revisionAt(file: string, absent: string) {
+    const info = await stat(file, { bigint: true }).catch((error: unknown) => { if (missing(error)) return null; throw error; });
+    return !info ? absent : info.isDirectory() ? '1' : revisionOf(`${info.mtimeNs}:${sha256(await readFile(file))}`);
+  }
+  async function unchanged(file: string, expectedRevision: string) {
+    if (await revisionAt(file, '0') !== expectedRevision) throw refused('PT409', 'This resource changed: read it again');
+  }
   async function replace(target: string, bytes: Uint8Array, expectedRevision: string, absentRevision = '0') {
     const uploadId = randomUUID();
     const expectedEtag = await currentEtag(target);
     const validate = async (file: string) => {
-      const info = await stat(file, { bigint: true }).catch((error: unknown) => { if (missing(error)) return null; throw error; });
-      const revision = info ? revisionOf(`${info.mtimeNs}:${sha256(await readFile(file))}`) : absentRevision;
-      if (revision !== expectedRevision) throw new WorkspaceTransferError(WORKSPACE_CONFLICT_CODE, 'The assistant file has changed');
+      if (await revisionAt(file, absentRevision) !== expectedRevision) throw new WorkspaceTransferError(WORKSPACE_CONFLICT_CODE, 'The assistant file has changed');
     };
     try {
       let offset = 0;
@@ -189,8 +195,9 @@ export function createAssistantHomeStore(input: {
     if (typeof path !== 'string') throw refused('22023', 'The change names no path');
     if (change.operation === 'remove') {
       if (!item) return;
-      const target = await at(domain === 'skills' ? change.key : path, domain);
-      await rm(target, { recursive: true, force: true });
+      // Checked again just before it goes: the assistant may have written it since the change was read.
+      await unchanged(await at(path, domain), change.expectedRevision);
+      await rm(await at(domain === 'skills' ? change.key : path, domain), { recursive: true, force: true });
       if (domain === 'memory') {
         const index = await at('MEMORY.md', domain);
         const text = await readFile(index, 'utf8').catch((error: unknown) => { if (missing(error)) return null; throw error; });
@@ -210,7 +217,13 @@ export function createAssistantHomeStore(input: {
     }
     if (!change.body) throw refused('22023', 'A file is saved with its content');
     if (change.body.itemId === item?.body_item_id && from && from !== path) {
-      await rename(await at(from, domain), target);
+      // A rename never replaces another file (rename(2) would), only the same one under another case of its name.
+      const source = await at(from, domain);
+      await unchanged(source, change.expectedRevision);
+      const there = await lstat(target, { bigint: true }).catch((error: unknown) => { if (missing(error)) return null; throw error; });
+      const self = await lstat(source, { bigint: true });
+      if (there && (there.ino !== self.ino || there.dev !== self.dev)) throw refused('PT409', 'Another resource already has this name', change.key, domain);
+      await rename(source, target);
       return;
     }
     const bytes = await bytesOf(change.body.itemId, domain);

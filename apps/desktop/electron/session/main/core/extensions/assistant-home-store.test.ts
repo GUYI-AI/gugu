@@ -155,6 +155,39 @@ describe('changing the home', () => {
     expect((await store.client.snapshot(AGENT)).revision).not.toBe(after.revision);
   });
 
+  it('never renames over another file, nor renames a file changed since it was read', async () => {
+    const { paths, store } = open();
+    await writeFile(join(paths.memoryDir, 'a.md'), 'A');
+    await writeFile(join(paths.memoryDir, 'b.md'), 'B');
+    const a = (await store.client.resource(AGENT, 'memory', 'a.md'))!;
+    const rename = (operationId: string, to: string, expectedRevision = a.revision) => store.client.commit(AGENT, { operationId, domain: 'memory', key: 'a.md',
+      expectedRevision, operation: 'save', data: { ...a.data, relativePath: to }, body: { itemId: a.body_item_id!, sha256: a.body_sha256! } });
+    await expect(rename('onto-b', 'b.md')).rejects.toMatchObject({ code: 'PT409' });
+    expect([await readFile(join(paths.memoryDir, 'a.md'), 'utf8'), await readFile(join(paths.memoryDir, 'b.md'), 'utf8')]).toEqual(['A', 'B']);
+    await writeFile(join(paths.memoryDir, 'a.md'), 'A, edited');
+    await expect(rename('stale', 'c.md')).rejects.toMatchObject({ code: 'PT409' });
+    const edited = (await store.client.resource(AGENT, 'memory', 'a.md'))!;
+    await expect(rename('free', 'c.md', edited.revision)).resolves.toMatchObject({ status: 'applied' });
+    expect((await readdir(paths.memoryDir)).sort()).toEqual(['b.md', 'c.md']);
+    expect(await readFile(join(paths.memoryDir, 'c.md'), 'utf8')).toBe('A, edited');
+  });
+
+  it('applies one of a remove and a save made at the same revision from two entries, and refuses the other', async () => {
+    const { paths, store } = open();
+    const file = join(paths.memoryDir, 'shared.md');
+    await writeFile(file, 'initial');
+    const initial = (await store.client.resource(AGENT, 'memory', 'shared.md'))!;
+    const results = await Promise.allSettled([
+      open().store.client.commit(AGENT, { domain: 'memory', key: 'shared.md', operation: 'save', expectedRevision: initial.revision,
+        operationId: 'save', data: { relativePath: 'shared.md' }, body: await store.upload('shared.md', Buffer.from('saved')) }),
+      open().store.client.commit(AGENT, { domain: 'memory', key: 'shared.md', operation: 'remove', expectedRevision: initial.revision, operationId: 'remove' }),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual(['fulfilled', 'rejected']);
+    expect(results.find((result) => result.status === 'rejected')).toMatchObject({ reason: { code: 'PT409' } });
+    const saved = results[0]!.status === 'fulfilled';
+    expect(await readFile(file, 'utf8').catch(() => null)).toBe(saved ? 'saved' : null);
+  });
+
   it('removes a memory and its line in MEMORY.md; saves the personality into its part of the instructions', async () => {
     const { paths, store } = open();
     await writeFile(join(paths.memoryDir, 'tea.md'), '# Tea');
