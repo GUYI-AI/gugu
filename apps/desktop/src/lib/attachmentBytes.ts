@@ -461,13 +461,14 @@ export async function openViewerFromClick(items: ImageViewerItem[], index: numbe
   if (!clicked?.preview && !clicked?.thumb) throw new Error('The clicked image is not among the images to open')
   const click = ++latestClick
   if (box) clicked.thumbRect = box
-  const firstFrame = clicked.size && !clicked.preview ? null : !clicked.preview ? recordedSizeOf(clicked).then(size => size && { url: clicked.url, size }).catch(() => null) : clicked.preview().then(async url => {
+  // A size its caller already knows (the message's) is all the first frame needs from the record.
+  const firstFrame = clicked.preview ? clicked.preview().then(async url => {
     if (clicked.size || clicked.full) return { url, size: clicked.size }
     const image = new Image()
     image.src = url
     await image.decode()
     return { url, size: { width: image.naturalWidth, height: image.naturalHeight } }
-  }).catch(() => null)
+  }).catch(() => null) : clicked.size ? null : recordedSizeOf(clicked).then(size => size && { url: clicked.url, size }).catch(() => null)
   const ready = await Promise.race([firstFrame, new Promise<null>((done) => setTimeout(done, VIEWER_THUMB_WAIT_MS, null))])
   if (click !== latestClick) return items.forEach(item => item.release?.())
   if (ready) Object.assign(clicked, ready)
