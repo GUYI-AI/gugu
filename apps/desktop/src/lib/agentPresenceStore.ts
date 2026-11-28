@@ -192,7 +192,8 @@ export function coverAgentPresence(channel: string): void {
 /** The channel closed, errored or timed out: what it carried is no longer known to be current. */
 export function uncoverAgentPresence(channel: string): void {
   const held = channels.get(channel)
-  if (!held) return
+  // Retries keep failing while it is down: it read once when it went down, not once per retry.
+  if (!held || held.down) return
   held.carried = null
   held.down = true
   // Nothing will read these for whoever is looking at them: read them once, as for any agent outside a channel.

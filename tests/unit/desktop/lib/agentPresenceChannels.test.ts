@@ -122,5 +122,10 @@ describe('agent presence channels', () => {
     realtime.opened[0]!.onStatus('CHANNEL_ERROR')
     await settle()
     expect(server.reads.map((read) => read.ids)).toEqual([['a4']])
+    // Its retries keep failing: no read per retry.
+    realtime.opened[0]!.onStatus('TIMED_OUT')
+    realtime.opened[0]!.onStatus('CHANNEL_ERROR')
+    await settle()
+    expect(server.reads).toHaveLength(1)
   })
 })
