@@ -89,11 +89,11 @@ export function PaneDimensionProvider({
     };
     const observer = new ResizeObserver(() => { if (toCome() === null) measure(); });
     observer.observe(el);
-    const unhear = onPanelRest(el, () => { const grow = toCome(); if (grow !== null) commitMeasurement(last.width + grow, last.height); }); // a move starting: the resting size from what was last measured, ❌ measured again in the task that started it; landing changes nothing
 
     // 初次测量发生在子组件 passive effect 之前；额外等待两帧，覆盖 provider 挂载后
     // 父级 layout effect 才为固定任务帧设置最终尺寸的情况。
     measure();
+    const unhear = onPanelRest(el, () => { const grow = toCome(); if (grow !== null) commitMeasurement(last.width + grow, last.height); }); // a move starting: the resting size from what was last measured, ❌ measured again in the task that started it; landing changes nothing
     let settleFrame: number | null = null;
     const settle = () => {
       settleFrame = requestAnimationFrame(() => {

@@ -12,12 +12,12 @@ import { playSpring } from './panel-clock';
  *  · Between two open sizes content is its drawn size in every frame; one that does not reflow keeps the wider until it lands.
  */
 
-/** What a row's box will rest at through a move — its content's resting size, and how much wider that is than where it last rested (a move turned round part-way has not rested) — and the event the box fires (a microtask on) as that is set or cleared. ❌ An attribute on the box: it restyles all that is in it (a `:has()` above), in the task that starts the move. `onPanelRest` hears it for the boxes around an element as they are when it fires: a placed surface (place-in.tsx) changes boxes without a render, so ❌ the boxes found when subscribing. */
+/** What a row's box will rest at through a move — its content's resting size, and how much wider that is than where it last rested (a move turned round part-way has not rested) — and the event the box fires (a microtask on) as that is set or cleared. ❌ An attribute on the box: it restyles all that is in it (a `:has()` above), in the task that starts the move. `onPanelRest` calls back now and as it fires for a box around an element, as the boxes are then: a placed surface (place-in.tsx) changes boxes without a render, so ❌ the boxes found when subscribing. */
 const PANEL_REST = 'panelrest';
 export const panelRest = new WeakMap<Element, { rest: number; grow: number } | undefined>();
 export function onPanelRest(element: Element, listener: () => void): () => void {
   const root = element.ownerDocument, heard = (event: Event) => { if ((event.composedPath()[0] as Node).contains(element)) listener(); };
-  root.addEventListener(PANEL_REST, heard, true);
+  root.addEventListener(PANEL_REST, heard, true); listener();
   return () => root.removeEventListener(PANEL_REST, heard, true);
 }
 /** A size this close to nothing is nothing. */

@@ -107,23 +107,23 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
     const column = chatColumn.current;
     if (!column || !divided) return setChatRestNarrow(undefined);
     const read = () => { const to = panelRest.get(column.closest('[data-panel-slot], [data-panel-fill]') ?? column); setChatRestNarrow(to && Math.min(to.rest, to.rest - to.grow) < TAB_STRIP_NARROW_PX); };
-    read();
     return onPanelRest(column, read);
   }, [divided, inCells]);
   // @@@card-gap — the conversation's half of the gutter closes with the last pixels of the tools' cell. Written on the two
   // boxes (❌ an inherited variable on the workspace: it restyled the whole conversation, owner 11-26「刚弹出来一点点的那一瞬间卡顿」).
   useLayoutEffect(() => {
-    const cell = heads.tools.closest<HTMLElement>('[data-panel-slot], [data-panel-fill]');
     const workspace = header.current?.closest<HTMLElement>('[data-chat-tool-workspace]');
-    if (!toolCard || !cell || !workspace) return undefined;
+    if (!toolCard || !workspace) return undefined;
     const halfGap = parseFloat(getComputedStyle(workspace).getPropertyValue('--chat-card-half-gap')) || 0;
     const cards = () => [chatColumn.current, [...workspace.querySelectorAll<HTMLElement>('[data-chat-card]')].find((card) => card.closest('[data-chat-tool-workspace]') === workspace)];
     const close = new ResizeObserver(([entry]) => {
       const gap = Math.max(0, Math.min(halfGap, entry.contentRect.width - (leaving ? 0 : 1)));
       for (const card of cards()) if (card) card.style.marginRight = gap < halfGap ? `${gap}px` : '';
     });
-    close.observe(cell);
-    return () => { close.disconnect(); for (const card of cards()) card?.style.removeProperty('margin-right'); };
+    // The tools' cell as a move around it starts (onPanelRest), ❌ as this runs: their strip's host may not be in it yet.
+    const watch = () => { const cell = heads.tools.closest('[data-panel-slot], [data-panel-fill]'); close.disconnect(); if (cell) close.observe(cell); };
+    const unhear = onPanelRest(heads.tools, watch);
+    return () => { unhear(); close.disconnect(); for (const card of cards()) card?.style.removeProperty('margin-right'); };
   }, [toolCard, heads, leaving, inCells]);
   if (!panes || !mode) return null;
   const { chat } = panes;
