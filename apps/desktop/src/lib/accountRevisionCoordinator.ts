@@ -162,10 +162,13 @@ export function readDeliveryRevision(
 // 客户端直接追加进窗口,不再跑一次「断线补洞」。旧行 / 行已硬删 ⇒ message 为 null,调用方按旧路补洞。
 export function readMessageCreatedRevision(
   payload: unknown,
-): { chatId: string; messageId: string; message: RawMessageRow | null } {
+): { chatId: string; messageId: string; message: RawMessageRow | null; gap?: true } {
   const key = readRevisionResourceKey(payload, 'message_created')
   if (!key.entityId) throw new Error('message_created revision requires entity_id')
   const raw = (payload as { message?: unknown }).message
+  // @@@stream-gap - a compacted catch-up names the newest message of a chat whose earlier arrivals it left out. There is
+  // no body to commit or to recover: the stream's coverage ends here, and whoever shows it reads its newest page.
+  if ((payload as { gap?: unknown }).gap === true) return { chatId: key.chatId, messageId: key.entityId, message: null, gap: true }
   if (raw === undefined || raw === null) return { chatId: key.chatId, messageId: key.entityId, message: null }
   if (typeof raw !== 'object' || Array.isArray(raw) || (raw as { id?: unknown }).id !== key.entityId) {
     throw new Error('message_created revision has malformed message')
@@ -293,8 +296,9 @@ export function createAccountRevisionCoordinator(
     registrations.add({ events: new Set(['message_created']), consumed: new Set(), failures: 0, retryAt: null,
       listener: async operations => {
         for (const operation of operations) {
-          if (operation.messageCommitted) continue
-          const message = await messages.recover(readMessageCreatedRevision(operation.payload).messageId)
+          const arrival = readMessageCreatedRevision(operation.payload)
+          if (operation.messageCommitted || arrival.gap) continue
+          const message = await messages.recover(arrival.messageId)
           if (!active || !message) continue // Authoritative RLS/deletion absence; never synthesize a row.
           const live = operation.notify === true && BigInt(operation.revision) > BigInt(baseline)
           commitArrival(operation, message, live)()
