@@ -1,17 +1,14 @@
 import type { RuntimeAuth } from '@gugu/core'
 import type { DeviceRpcHandlers } from '@gugu/core/cloud/deviceRpcResponder'
-import { constants, createWriteStream, openAsBlob } from 'node:fs'
-import { Readable } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
-import { chmod, copyFile, mkdir, rename, rm } from 'node:fs/promises'
+import { mkdir, open, rename, rm } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { readCachedDeviceId } from '@gugu/core/cloud/deviceRuntime'
 import { accountAttachmentsEndpoint, attachmentRequest, offerImagePreviewOf } from '@gugu/core/cloud/attachmentsApi'
 import { getSupabaseAnonKey, getSupabaseUrl } from '@gugu/core/cloud/config'
 import { createFileMetadataLoader } from '@gugu/core/cloud/fileMetadata'
 import { cloudFileProviders } from '@gugu/core/cloud/fileProviders'
-import { createFileChunkCache, createFileSink, createFileSaver, fileStoreDirectory, storeFileBytes, writeFileHandle } from '@gugu/core/local/files/fileSnapshots'
-import { DEVICE_STORE, createFileResolver, type FileActor, type FileBytes, type FileContext, type FileMetadata, type FilePreview, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { createFileCache, createFileChunkCache, createFileSink, createFileSaver, fileCacheDirectory, localCopy, storeFileBytes, writeFileHandle } from '@gugu/core/local/files/fileSnapshots'
+import { DEVICE_STORE, FILE_CHUNK_BYTES, createFileResolver, type FileActor, type FileBytes, type FileContext, type FileMetadata, type FilePreview, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { coreLogger } from '@gugu/core/log'
 import { parseFileStorage } from '@gugu/core/shared/fileStorage'
 import { readUserSettingsConfig, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
@@ -52,8 +49,8 @@ export function createDesktopFileAccess(deps: {
   rpc(name: string, args: Record<string, unknown>): Promise<unknown>
   /** Where this device keeps what it sends into project chats it binds no project to (DEVICE_STORE). */
   deviceStore: string
-  /** This device's Gugu home: its file store (`fileStoreDirectory`) keeps what the desktop read over the network. */
-  home: string
+  /** This device's Gugu home: its file cache (`fileCacheDirectory`) keeps what the window read over the network, up to `cacheBytes`. */
+  home: string; cacheBytes?: number
   /** The identity schema, as the signed-in account: its own settings and projects. */
   identityDb(accessToken: string): ReturnType<typeof makeIdentityClient>
 }) {
@@ -92,71 +89,81 @@ export function createDesktopFileAccess(deps: {
   }
   const saveTo = createFileSaver(providers)
   const resolve = createFileResolver({ ...providers, saveTo })
-  const store = fileStoreDirectory(deps.home), log = coreLogger('file-store')
+  const cache = createFileCache(fileCacheDirectory(deps.home), deps.cacheBytes), log = coreLogger('file-cache')
+  const blobBytes = (blob: Blob): FileBytes => ({ size: blob.size, here: true, read: async (offset, length) => new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()), dispose: async () => {} })
   /**
-   * A cloud file as this desktop's window reads it. What comes over the network is kept in this machine's file store (the
-   * one agents save into), so a later open or download reads it here: a managed object is read straight into the store,
-   * and a copy another device relays, which may be shown before its read is acknowledged, is kept once it is. A historical
-   * object without a sha has no place in the store and is only read.
+   * This machine's bytes of `sha256`, without the network: the file store's copy or an original this machine sent, a
+   * version it holds in a project, else what the window read before (the file cache).
    */
-  const keptRead = async (revision: FileRevision, context: FileContext): Promise<FileBytes> => {
+  const here = async (sha256: string): Promise<FileBytes | null> => {
+    const kept = await localCopy(deps.home, sha256) ?? await held(sha256)
+    return kept ? blobBytes(kept) : cache.read(sha256)
+  }
+  /**
+   * A cloud file as this desktop's window reads it. What comes over the network is kept in this machine's file cache, so a
+   * later open or download reads it here: a managed object is read straight into the cache, and a copy another device
+   * relays, which may be shown before its read is acknowledged, is kept once it is. A historical object without a sha
+   * has no place in the cache and is only read.
+   */
+  const cachedRead = async (revision: FileRevision, context: FileContext): Promise<FileBytes> => {
     if (revision.source !== 'managed-object') {
       const file = await providers.temporary(revision, context)
       // Keeping it only saves a later read: failing to never takes down what was read.
-      const keep = () => storeFileBytes(deps.home, revision.sha256!, revision.file_name, revision.content_type, file)
-        .catch((error: unknown) => log.warn({ error }, 'relayed copy not kept'))
+      const keep = () => cache.read(revision.sha256!, () => storeFileBytes(cache.directory, revision.sha256!, revision.file_name, revision.content_type, file))
+        .then(kept => kept?.dispose(), (error: unknown) => log.warn({ error }, 'relayed copy not kept'))
       const acknowledged = (file.acknowledged ?? Promise.resolve()).then(keep)
       acknowledged.catch(() => undefined)
       return { ...file, here: true, acknowledged }
     }
     if (!revision.sha256) return providers.managed(revision, context)
-    const blob = await openAsBlob((await saveTo(revision, context, store, revision.file_name, true)).file_path)
-    return { size: blob.size, here: true, read: async (offset, length) => new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()), dispose: async () => {} }
+    return (await cache.read(revision.sha256, () => saveTo(revision, context, cache.directory, revision.file_name, true)))!
   }
   /**
    * The window's cloud reads (`nativeFileHost` op `cloud`…). A preview is a video's signed address, which Chromium's media
    * loader reads itself, or an image's small copy as bytes; an image without one is shown from the file, read like any file.
    */
   const cloud = {
-    read: keptRead,
+    read: cachedRead,
     async preview(revision: FileRevision, context: FileContext) {
       const shown = await providers.preview!(revision, context, async () => { throw new Error('File preview is the file itself') })
       return shown instanceof Blob ? new Uint8Array(await shown.arrayBuffer()) : shown
     },
     expiredPreview: async (preview: FilePreview, context: FileContext) => new Uint8Array(await (await providers.expiredPreview!(preview, context)).arrayBuffer()),
   }
-  /** `write` into a private name beside `target`, then into place: a save that fails leaves nothing there. */
-  const place = async (target: string, write: (partial: string) => Promise<void>) => {
+  /** `bytes` written beside `target` under a private name, then into place: a save that fails leaves nothing there. */
+  const save = async (bytes: FileBytes, target: string) => {
     const partial = `${target}.${randomUUID()}.part`
-    try { await write(partial); await chmod(partial, 0o644); await rename(partial, target) }
-    catch (error) { await rm(partial, { force: true }); throw error }
+    try {
+      const output = await open(partial, 'wx', 0o644)
+      try { for (let offset = 0; offset < bytes.size; offset += FILE_CHUNK_BYTES) await output.writeFile(await bytes.read(offset, Math.min(FILE_CHUNK_BYTES, bytes.size - offset))) }
+      finally { await output.close() }
+      await rename(partial, target)
+    } catch (error) { await rm(partial, { force: true }); throw error }
   }
   /**
    * A file saved where the person says (`pick`: the save dialog; `null` saves nothing). The bytes are this machine's.
-   * `here`: its bytes of the version the window already knows, saved without asking the server (local-first, as an open
-   * is). Otherwise the server says which version it is: a file this machine keeps itself is written from where it is,
-   * anything else from the store's copy, read into the store first when it is not there yet. `revision`: the version
-   * saved, for the window to know next time.
+   * `known`: its bytes of the version the window already knows, saved without asking the server (local-first, as an
+   * open is). Otherwise the server says which version it is: a file this machine keeps itself is written from where it
+   * is, anything else from this machine's copy of it, read into the file cache first when it has none. `revision`: the
+   * version saved, for the window to know next time.
    */
-  const download = async (ref: FileRef, actor: FileActor, pick: () => Promise<string | null>, here: Blob | null, signal?: AbortSignal): Promise<{ saved: boolean; revision?: FileRevision } | { status: Exclude<FileMetadata['status'], 'ready'> }> => {
-    if (here) {
-      const target = await pick()
-      if (target) await place(target, partial => pipeline(Readable.fromWeb(here.stream() as import('node:stream/web').ReadableStream<Uint8Array>), createWriteStream(partial)))
-      return { saved: !!target }
+  const download = async (ref: FileRef, actor: FileActor, pick: () => Promise<string | null>, known: FileBytes | null, signal?: AbortSignal): Promise<{ saved: boolean; revision?: FileRevision } | { status: Exclude<FileMetadata['status'], 'ready'> }> => {
+    if (known) {
+      try { const target = await pick(); if (target) await save(known, target); return { saved: !!target } }
+      finally { await known.dispose() }
     }
     const file = await resolve(ref, actor, signal ? { signal } : {})
     if (file.status !== 'ready') return { status: file.status }
     try {
       const target = await pick()
       if (!target) return { saved: false }
-      const context: FileContext = { ref, actor, ...(signal ? { signal } : {}) }
-      if (!file.revision.sha256 || await providers.local(context)) await writeFileHandle(file, target)
+      const context: FileContext = { ref, actor, ...(signal ? { signal } : {}) }, { revision } = file
+      if (!revision.sha256 || await providers.local(context)) await writeFileHandle(file, target)
       else {
-        const stored = (await saveTo(file.revision, context, store, file.revision.file_name, true)).file_path
-        // The store's copy is verified and read-only: cloned where the filesystem can, into a file the person owns.
-        await place(target, partial => copyFile(stored, partial, constants.COPYFILE_FICLONE))
+        const copy = await here(revision.sha256) ?? (await cache.read(revision.sha256, () => saveTo(revision, context, cache.directory, revision.file_name, true)))!
+        try { await save(copy, target) } finally { await copy.dispose() }
       }
-      return { saved: true, revision: file.revision }
+      return { saved: true, revision }
     } finally { await file.dispose() }
   }
   const drain = createProjectTransferHost({ identity, endpoint, read: async request => read(request, (await identity()).accountId), tempRoot: deps.tempRoot, env: deps.env, later })
@@ -191,7 +198,7 @@ export function createDesktopFileAccess(deps: {
     const projectRoot = revision ? await root(revision.host_project_id!) : null
     return revision && projectRoot ? heldFileBlob(revision, projectRoot).catch(() => null) : null
   }
-  return { providers, resolve, resolveAccount, read, stream, drain, publish, held, cloud, download,
+  return { providers, resolve, resolveAccount, read, stream, drain, publish, held, here, cloud, download, cacheIdle: cache.idle,
     handlers: (transport: 'ssh' | 'realtime'): DeviceRpcHandlers => transport === 'ssh' ? sshHandlers : {},
   }
 }

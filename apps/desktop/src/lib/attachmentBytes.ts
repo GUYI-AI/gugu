@@ -505,7 +505,7 @@ export async function openAttachmentInSystemApp(source: AttachmentSource, fileNa
 export const openFileHandle = (file: FileHandle, fileName: string) => platform.openRemoteFile(file, fileName)
 
 /**
- * The one way to this machine's bytes of a sha: on the desktop what main holds on disk (its file store, or an original it
+ * The one way to this machine's bytes of a sha: on the desktop what main holds on disk (its file store or file cache, or an original it
  * sent, checked against the sha); where there is no main process, what the page kept of bytes it read over the network.
  * Never signs or downloads; ACL is checked by the caller.
  */

@@ -19,8 +19,8 @@ export function createNativeFileHost(deps: {
   /** A task attachment's own copy for the agent (`writeTaskCopy`): its path. */
   taskCopy?(name: string, bytes: Uint8Array, mimeType?: string): Promise<{ path: string; name: string; size: number; mimeType?: string }>
   publication?(chatId: string, owner: string): Promise<boolean>
-  /** This machine's bytes of a sha (`localCopy`): asked only for a read already authorized. */
-  stored?(sha256: string): Promise<Blob | null>
+  /** This machine's bytes of a sha (`desktopFileAccess.here`), held until disposed: asked only for a read already authorized. */
+  stored?(sha256: string): Promise<FileBytes | null>
   /**
    * This machine's bytes reach the renderer at an address (`createBytesPreview`, `gugu-preview://<id>/<sha>`), never over
    * this IPC: a `<video>` reads its ranges, a Blob is fetched whole. `release` takes the address down.
@@ -29,14 +29,14 @@ export function createNativeFileHost(deps: {
   /**
    * The window's reads and saves of cloud files, all run here (`desktopFileAccess`): main signs, reads, verifies and keeps
    * the bytes, and the window reads the kept copy at its address. `preview`: a video's signed address, or a small preview's
-   * bytes. `download`: saved where the person says, in the save dialog of the scope's window; `here`: this machine's bytes
-   * of the version the window already knows (`stored`), saved without asking the server.
+   * bytes. `download`: saved where the person says, in the save dialog of the scope's window; `known`: this machine's
+   * bytes of the version the window already knows (`stored`), saved without asking the server.
    */
   cloud?: {
     read(revision: FileRevision, context: FileContext): Promise<FileBytes>
     preview(revision: FileRevision, context: FileContext): Promise<{ url: string; expiresAt: number } | Uint8Array>
     expiredPreview(preview: FilePreview, context: FileContext): Promise<Uint8Array>
-    download(scope: number, context: FileContext, name: string, here: Blob | null): Promise<{ saved: boolean; revision?: FileRevision } | { status: string }>
+    download(scope: number, context: FileContext, name: string, known: FileBytes | null): Promise<{ saved: boolean; revision?: FileRevision } | { status: string }>
   }
 }) {
   type Entry = { scope: number; epoch: number; owner: string; file?: FileBytes; release?: () => void; url?: string; context?: string; name?: string; size?: number; sha?: string;
@@ -124,10 +124,8 @@ export function createNativeFileHost(deps: {
       }
       if (request.op === 'stored') {
         const sha256 = request.sha256!
-        const blob = await deps.stored?.(sha256) ?? null
-        if (!blob) return null
-        const contentType = typeof request.contentType === 'string' ? request.contentType : ''
-        return served(sha256, contentType, { size: blob.size, read: async (offset, length) => new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()), dispose: async () => {} })
+        const file = await deps.stored?.(sha256) ?? null
+        return file ? served(sha256, typeof request.contentType === 'string' ? request.contentType : '', file) : null
       }
       if (request.op === 'local' || request.op === 'open' || request.op === 'ssh') {
         const named = request.progress

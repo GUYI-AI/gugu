@@ -118,7 +118,7 @@ export interface FileBytes {
   dispose(): Promise<void>
   /** Bytes returned before the server acknowledged the read: this settles that acknowledgement. */
   readonly acknowledged?: Promise<void>
-  /** On this machine's disk already (its own file, or the copy the desktop keeps in its file store): nothing keeps another copy of them. */
+  /** On this machine's disk already (its own file, or the copy the desktop keeps in its file cache): nothing keeps another copy of them. */
   readonly here?: true
 }
 export type ResolvedFile = Exclude<FileMetadata, { status: 'ready' }> | {

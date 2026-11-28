@@ -47,7 +47,7 @@ describe('native file capabilities are scoped and never expose incomplete origin
   // This machine's bytes (of a sha, or a file it holds) are served at an address, never in IPC frames; dispose takes it down.
   it('serves this machine\'s bytes at an address, and nothing it does not hold', async () => {
     const root = await mkdtemp(join(tmpdir(), 'gugu-native-file-153-')); roots.push(root)
-    const stored = vi.fn(async (sha256: string) => sha256 === 'a'.repeat(64) ? new Blob([bytes]) : null)
+    const stored = vi.fn(async (sha256: string): Promise<FileBytes | null> => sha256 === 'a'.repeat(64) ? { size: bytes.length, read: async (offset, length) => bytes.slice(offset, offset + length), dispose: async () => {} } : null)
     const host = createNativeFileHost({ root, owner: async () => 'owner', alive: () => true, local: vi.fn(), ssh: vi.fn(), openPath: vi.fn(), published: () => {}, stored, serve })
     const ref = { ref: { attachment_id: 'a'.repeat(64) }, actor: context.actor }
     expect(await host.read(1, ref, { op: 'stored', sha256: 'b'.repeat(64) })).toBeNull()
@@ -196,8 +196,8 @@ describe('the desktop renderer\'s cloud reads run in main', () => {
     expect((await pending).failed.message).toBe('File read cancelled')
   })
   it('saves a download through main, and says a failed one as what it was', async () => {
-    const download = vi.fn(async (_scope: number, _context: FileContext, name: string, _here: Blob | null) => name === 'gone.bin' ? { status: 'gone' } : { saved: name !== 'cancel.bin' })
-    const stored = vi.fn(async (sha256: string) => sha256 === 'a'.repeat(64) ? new Blob([bytes]) : null)
+    const download = vi.fn(async (_scope: number, _context: FileContext, name: string, _known: FileBytes | null) => name === 'gone.bin' ? { status: 'gone' } : { saved: name !== 'cancel.bin' })
+    const stored = vi.fn(async (sha256: string): Promise<FileBytes | null> => sha256 === 'a'.repeat(64) ? { size: bytes.length, read: async (offset, length) => bytes.slice(offset, offset + length), dispose: async () => {} } : null)
     const files = createNativeFileHost({ root: tmpdir(), owner: async () => 'owner', alive: () => true, local: vi.fn(), ssh: vi.fn(), openPath: vi.fn(), published: () => {}, serve, stored, cloud: { read: vi.fn(), preview: vi.fn(), expiredPreview: vi.fn(), download } })
     expect(await files.read(1, context, { op: 'download', read: 'd1', name: 'file.bin' })).toEqual({ saved: true })
     expect(download.mock.calls[0]!.slice(0, 1)).toEqual([1])
@@ -205,7 +205,7 @@ describe('the desktop renderer\'s cloud reads run in main', () => {
     expect(download.mock.calls[0]![3]).toBeNull()
     // A version the window already knows is handed over as this machine's bytes, when it holds them.
     await files.read(1, context, { op: 'download', read: 'd1a', name: 'file.bin', sha256: 'a'.repeat(64) })
-    expect(await download.mock.calls[1]![3]!.arrayBuffer()).toEqual(bytes.buffer)
+    expect(await download.mock.calls[1]![3]!.read(0, bytes.length)).toEqual(bytes)
     await files.read(1, context, { op: 'download', read: 'd1b', name: 'file.bin', sha256: 'b'.repeat(64) })
     expect(download.mock.calls[2]![3]).toBeNull()
     expect(await files.read(1, context, { op: 'download', read: 'd2', name: 'cancel.bin' })).toEqual({ saved: false })

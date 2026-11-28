@@ -17,7 +17,7 @@ const CHUNK_PREFIX = `${attachmentCacheOrigin}/chunks/`
 const CHUNK_WRITTEN_AT = 'x-gugu-written-at'
 const CHUNK_ORPHAN_MS = 24 * 60 * 60_000
 /**
- * On the desktop main keeps every file this machine reads (its file store): the page cache holds only what the page draws
+ * On the desktop main keeps every file this machine reads (its file cache): the page cache holds only what the page draws
  * from (previews, which version a source is). Originals and chunks a version before this kept here are dropped.
  */
 export const mainKeepsFiles = !!globalThis.window?.electronAPI
@@ -92,7 +92,7 @@ const imageCache = { match: async (request: string) => (await attachmentCache())
 type CloudProviders = Pick<FileProviders, 'metadata' | 'managed' | 'temporary' | 'preview' | 'expiredPreview'>
 /**
  * On the desktop main reads and saves every cloud file (`files:read` ops `cloud`…, `download`): it signs, reads, verifies
- * and keeps the bytes in this machine's file store. The window downloads and hashes nothing: it reads the kept copy at its
+ * and keeps the bytes in this machine's file cache. The window downloads and hashes nothing: it reads the kept copy at its
  * address, like this machine's own files, and a `<video>` its signed address, which main signs. A failure comes back as a
  * value and is the same error here (`fileReadError`); a read this side lets go is stopped in main. Hosts with no main
  * process (the web, the phone) read in the page.
@@ -110,7 +110,7 @@ async function mainRead(op: 'cloud' | 'cloud-preview' | 'cloud-expired-preview' 
 function mainCloudProviders(): CloudProviders {
   const read = async (revision: FileRevision, context: FileContext): Promise<FileBytes> => {
     const file = await mainRead('cloud', context, { revision }) as { id: string; size: number; url?: string; ack?: true; here?: true }
-    // `here`: main keeps it in this machine's file store, so nothing here keeps another copy of it.
+    // `here`: main keeps it in this machine's file cache, so nothing here keeps another copy of it.
     const bytes = { ...(file.url ? servedBytes(context, file as ServedFile) : nativeBytes(context, file)), ...(file.here ? { here: true as const } : {}) }
     if (!file.ack) return bytes
     const acknowledged = (native('ack', context, { id: file.id }) as Promise<{ failed?: FileReadFailure } | null>).then(answer => { if (answer?.failed) throw fileReadError(answer.failed) })
@@ -159,7 +159,7 @@ export const resolveFile = createFileResolver({ ...cloud,
 })
 
 /**
- * The bytes of `sha256` the main process holds on this machine (its file store, an original this machine sent, a file it
+ * The bytes of `sha256` the main process holds on this machine (its file store, an original this machine sent, its file cache, a file it
  * holds), checked against the sha: their address, until `release`. No network.
  */
 export async function nativeLocalBytes(sha256: string, contentType = ''): Promise<{ url: string; size: number; blob(): Promise<Blob>; release(): Promise<void> } | null> {
@@ -176,7 +176,7 @@ export async function nativeLocalBytes(sha256: string, contentType = ''): Promis
 
 /**
  * A chat file saved to this computer by main: the save dialog asks where, and the bytes come from this machine's copy, read
- * into its file store first when they are not here. `sha256`: the version this window already knows, saved from this
+ * into its file cache first when they are not here. `sha256`: the version this window already knows, saved from this
  * machine without asking the server when its bytes are here. `saved: false`: the person cancelled; `revision`: the
  * version the server named. Null where the page saves (the web, the phone).
  */
