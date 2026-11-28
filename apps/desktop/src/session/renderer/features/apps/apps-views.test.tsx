@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   params: {} as { appId?: string; tab?: string; agentDetail?: AgentAppDetailLink; agentDetailFrom?: 'apps' },
   setParams: vi.fn(),
   navigate: vi.fn(),
+  configureDevice: undefined as ((id?: string) => void) | undefined,
   openAgent: undefined as ((id: string) => void) | undefined,
   closeAgent: undefined as (() => void) | undefined,
   createWithAgent: undefined as (() => void) | undefined,
@@ -90,8 +91,9 @@ vi.mock('@renderer/features/library/extensions-library-page', () => ({
   },
 }));
 vi.mock('./agent-app-detail-dialog', () => ({
-  AgentAppDetailDialog: ({ agentId, onClose, onCreate }: { agentId: string; onClose(): void; onCreate(): void }) => {
+  AgentAppDetailDialog: ({ agentId, onClose, onCreate, onConfigureDevice }: { agentId: string; onClose(): void; onCreate(): void; onConfigureDevice(id?: string): void }) => {
     mocks.closeAgent = onClose;
+    mocks.configureDevice = onConfigureDevice;
     mocks.createWithAgent = onCreate;
     return <div role="dialog" data-testid="agent-detail">{agentId}</div>;
   },
@@ -304,6 +306,17 @@ describe('an App opened from the far-left rail', () => {
     expect(mocks.navigate).toHaveBeenCalledWith('new-session', { agentId: 'claude', deviceId: undefined });
     mocks.closeAgent?.();
     expect(mocks.setParams).toHaveBeenLastCalledWith({ agentDetail: undefined, agentDetailFrom: undefined });
+  });
+
+  it.each([undefined, 'studio'])('opens settings and Installed on the same selected device (%s)', deviceId => {
+    mocks.params = { agentDetail: { kind: 'agent-app-detail', agentId: 'claude' }, agentDetailFrom: 'apps' };
+    renderToStaticMarkup(<appsView.MainPanel />);
+    mocks.configureDevice!(deviceId);
+    expect(mocks.navigate).toHaveBeenLastCalledWith('apps', {
+      location: { tab: 'agents', installed: { deviceId, focusId: 'claude', layout: undefined } },
+      agentDetail: { kind: 'agent-app-detail', agentId: 'claude', deviceId },
+      agentDetailFrom: 'apps',
+    });
   });
 
   it('an agent detail link keeps its device when the dialog creates a session', () => {

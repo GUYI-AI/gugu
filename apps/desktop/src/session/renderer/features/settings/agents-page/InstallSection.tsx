@@ -46,7 +46,7 @@ export type AgentInstallationHeader = {
   install: (() => void) | undefined;
   /** Existing cleanup UI for the active managed mise copy, reused by the compact details dialog. */
   managedVersions?: ReactNode;
-  /** The 高级设置 rows (extra arguments, env, registry), shown by the compact details dialog as its own view. */
+  /** The 高级设置 rows (source, extra arguments, env, registry), shown by the compact details dialog as its own view. */
   advanced: ReactNode;
   /** Why the last install or update failed; null once a new attempt starts or one succeeds. */
   failure: AgentInstallErrorPresentation | null;
@@ -290,23 +290,23 @@ export const InstallSection = observer(function InstallSection({
     ? <ManagedVersionsRow key={`${host.key}:${agentId}`} agentId={agentId} name={agentPayload?.name ?? agentId} disabled={vm.isInstalling || vm.isUpdating || vm.isUninstalling || host.remote?.online === false} /> : undefined;
   const sources = (
     <AgentSourceList
-        vm={vm}
-        agentPayload={agentPayload}
-        inUse={inUse}
-        local={localCopy}
-        managed={managedCopy}
-        custom={customCopy}
-        canInstall={!!managedInstall}
-        sourceOnly={!!renderPage}
-        canUninstall={canUninstall}
-        installDocs={installDocs}
-        onSelect={onSelect}
-        onInstall={onInstall}
-        onUpdate={onManagedUpdate}
-        onOpenCustom={openManual}
-        customEditor={manualSlot}
-        managedVersions={managedVersions}
-      />
+      vm={vm}
+      agentPayload={agentPayload}
+      inUse={inUse}
+      local={localCopy}
+      managed={managedCopy}
+      custom={customCopy}
+      canInstall={!!managedInstall}
+      sourceOnly={!!renderPage}
+      canUninstall={canUninstall}
+      installDocs={installDocs}
+      onSelect={onSelect}
+      onInstall={onInstall}
+      onUpdate={onManagedUpdate}
+      onOpenCustom={openManual}
+      customEditor={manualSlot}
+      managedVersions={managedVersions}
+    />
   );
   const runnable = vm.status === 'available' && state !== 'broken';
   const busy = vm.isInstalling || vm.isUpdating || vm.isUninstalling;

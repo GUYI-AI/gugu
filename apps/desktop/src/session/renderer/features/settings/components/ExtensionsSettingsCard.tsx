@@ -52,6 +52,7 @@ import { DesktopExtensionMarket, type DesktopMarketShelf } from '@renderer/featu
 import { AgentDetailModal } from '@renderer/features/settings/agents-page/AgentDetailModal';
 import { appLifecycle } from '@renderer/features/extensions/panel/app-lifecycle';
 import { MarketDetailConfirmations } from '@renderer/features/extensions/panel/market-detail-dialog';
+import { openAgentDeviceSettings } from '@renderer/features/apps/agent-app-detail-navigation';
 import { AgentAppDetailDialog } from '@renderer/features/apps/agent-app-detail-dialog';
 import { MarketExtensionDevices } from '@renderer/features/extensions/panel/market-detail-extension-devices';
 import { useBrowseList } from '@renderer/features/extensions/panel/use-browse-list';
@@ -1299,7 +1300,10 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
 
       </fieldset>
       {shown && marketDetail && (
-        <AgentAppDetailDialog agentId={marketDetail.agentId} onClose={closeMarketDetail} onCreate={() => {
+        <AgentAppDetailDialog agentId={marketDetail.agentId} onClose={closeMarketDetail} onConfigureDevice={deviceId => {
+          closeMarketDetail();
+          openAgentDeviceSettings(navigate, marketDetail.agentId, deviceId);
+        }} onCreate={() => {
           closeMarketDetail();
           navigate('new-session', { agentId: marketDetail.agentId });
         }} />

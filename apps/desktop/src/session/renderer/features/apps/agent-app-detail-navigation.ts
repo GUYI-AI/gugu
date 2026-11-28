@@ -17,6 +17,15 @@ export function openAgentAppDetail(navigate: NavigateFnTyped, agentId: string, d
   navigate('apps', { location: { ...currentAppsLocation(), installed: undefined }, agentDetail, ...(fromEmbeddedComposer ? { agentDetailFrom: 'embedded-composer' } : {}) });
 }
 
+export function openAgentDeviceSettings(navigate: NavigateFnTyped, agentId: string, deviceId?: string) {
+  const installed = currentAppsLocation().installed;
+  navigate('apps', {
+    location: { tab: 'agents', installed: { deviceId, focusId: agentId, layout: installed?.layout } },
+    agentDetail: { kind: 'agent-app-detail', agentId, deviceId },
+    agentDetailFrom: 'apps',
+  });
+}
+
 export function restoreAgentDetailComposer() {
   (window as AgentDetailHost).__GUGU_RESTORE_SESSIONPAGE_AGENT_INSTALL__?.();
 }

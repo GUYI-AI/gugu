@@ -1,8 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import { observer } from 'mobx-react-lite'
 import { useTranslation } from 'react-i18next'
 import { MachineList } from '@/components/ui/MachineList'
-import { importDeviceChoices } from '@renderer/features/session-import/import-device'
+import { useInstalledMachines } from './use-installed-machines'
 import { LOCAL_IMPORT_DEVICE } from '@renderer/features/session-import/import-source'
 import { LibraryHostProvider, machineLibraryHost } from '@renderer/features/library/library-host'
 import { orderMachines, type MachineChoice } from '@renderer/features/remote-hosts/machine-choice'
@@ -33,9 +33,7 @@ export const InstalledManager = observer(function InstalledManager({
   const selected = place.deviceId ?? LOCAL_IMPORT_DEVICE
   const setLayout = (next: InventoryView) => onPlace({ ...place, layout: next })
   const setSelected = (id: string) => onPlace({ ...place, deviceId: id === LOCAL_IMPORT_DEVICE ? undefined : id, scroll: undefined, focusId: undefined, query: undefined })
-  const choices = orderMachines(importDeviceChoices(t('installedManager.thisComputer'),
-    [...remoteHostsStore.hosts.values()].map(({ device }) => device).filter((device) => !device.isCurrentMachine)))
-  useEffect(() => { remoteHostsStore.start() }, [])
+  const choices = orderMachines(useInstalledMachines())
 
   const selectedChoice = choices.find(({ id }) => id === selected)
   const machine: MachineChoice = selectedChoice ?? (selected === LOCAL_IMPORT_DEVICE ? choices[0]! : {
