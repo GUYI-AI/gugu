@@ -236,6 +236,62 @@ describe('没连着的机器照账号上记着的那份', () => {
     ...overrides,
   });
 
+  it('keeps the project agent visible while an open link has yet to return the project inventory', async () => {
+    const { roomListsSession } = await import('@renderer/features/sidebar/inner-sidebar-scope');
+    const { accountProjectsStore } = await import('@renderer/features/projects/stores/account-projects-store');
+    const links = await import('@renderer/lib/machine-clients');
+    const ipc = await import('@renderer/lib/ipc');
+    const deviceId = 'host-with-open-link';
+    const project = record({ localProjectId: 'project-on-open-link', chatId: 'project-chat' });
+    const root = {
+      conversationId: 'active-root', projectId: project.localProjectId, projectName: 'repo',
+      title: 'Agent', harness: 'codex', agentStatus: 'working', lastInteractedAt: null, supported: true,
+    };
+    const originalProjects = accountList.projects;
+    accountList.projects = [{
+      chatId: project.chatId, name: 'repo', archived: false,
+      bindings: [{ deviceId, localProjectId: project.localProjectId }],
+    }];
+    const lists = await import('@/session/shared/remote-sessions/session-list-sync');
+    const watch = vi.spyOn(lists, 'startSessionListSync').mockReturnValue({ stop: () => {}, reconnect: () => {} });
+    const link = vi.spyOn(links, 'machineLinkState').mockReturnValue('open');
+    const inventory = Promise.withResolvers<[]>();
+    const getProjects = vi.fn(() => inventory.promise);
+    const rpc = vi.spyOn(ipc, 'rpcOn').mockReturnValue({
+      projects: { getProjects }, app: { getHomeDirectory: async () => '/home/test' },
+      sessionTimeline: { sessionsList: async () => ({ projects: [], sessions: [] }) },
+    } as unknown as ReturnType<typeof ipc.rpcOn>);
+    const store = new RemoteHostsStore();
+    store.start();
+    await accountProjectsStore.refresh();
+    let host = device({ id: deviceId, sessionDigest: [root] });
+    const listeners = new Set<() => void>();
+    const off = installRemoteHostsBridge({
+      listDevices: () => [host],
+      subscribeDevices: listener => (listeners.add(listener), () => listeners.delete(listener)),
+      pickFolder: async () => null,
+    });
+    try {
+      await vi.waitFor(() => expect(getProjects).toHaveBeenCalled());
+      host = { ...host, projects: [project] };
+      for (const listener of listeners) listener();
+      const listsAgent = () => roomListsSession({ kind: 'project', chatId: project.chatId }, root.conversationId, new Map());
+      expect(listsAgent()).toBe(true);
+      // A successful, empty inventory is authoritative even if the account still has the old binding.
+      inventory.resolve([]);
+      await vi.waitFor(() => expect(store.hasReadList(deviceId)).toBe(true));
+      for (const listener of listeners) listener();
+      expect(listsAgent()).toBe(false);
+    } finally {
+      inventory.resolve([]);
+      off();
+      link.mockRestore();
+      watch.mockRestore();
+      rpc.mockRestore();
+      accountList.projects = originalProjects;
+    }
+  });
+
   it('projects a legacy assistant host as Tasks by identity, including late identity and detached projects', async () => {
     const { appState, sidebarStore } = await import('@renderer/lib/stores/app-state');
     const { isWorkspaceProject } = await import('@renderer/features/sessions/session-home-project-constants');

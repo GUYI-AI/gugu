@@ -801,15 +801,15 @@ export class RemoteHostsStore {
 
   /**
    * #113 没连着那台机器时,它的项目清单与群绑定照账号上记着的那份。这一端还没读到过账号上的那份就不动(❌ 拿空清单把侧栏里
-   * 它的项目清掉);连着时以那台机器此刻的回答为准(syncProjects、projectGroupsStore.refresh),这时看到的账号上那份记下来:
+   * 它的项目清掉)。连接已建立但尚未读到机器的项目清单时仍用账号记录。读到后以机器的回答为准,这时看到的账号记录记下来:
    * 断开之后它没变,就照旧列着连着时读到的(见 accountCopyReplacesLive)。
    */
   private applyAccountProjects(deviceId: string): void {
     const state = this.hosts.get(deviceId);
     const records = state?.device.projects;
     if (!state || !records) return;
-    if (machineLinkState(deviceId) === 'open') {
-      if (state.synced) this.accountSeenLive.set(deviceId, accountCopyKey(records));
+    if (state.synced && machineLinkState(deviceId) === 'open') {
+      this.accountSeenLive.set(deviceId, accountCopyKey(records));
       return;
     }
     if (!this.accountIsNewer(deviceId)) return;
