@@ -49,7 +49,7 @@ export function messageWindow(accountId: string, chatId: string, root: string | 
   return accounts.has(accountId) ? accounts.get(accountId)!.get(key(chatId, root))?.rows ?? [] : null
 }
 
-/** Return streams needing a query: deletions can expose older rows outside the bounded map. */
+/** Return streams needing a query: only the store knows which rows connect to a stream's tail, and deletions can expose older rows. */
 export function acceptMessageWrites(accountId: string, writes: readonly ImMessageWrite[]): { chatId: string; root: string | null }[] {
   const windows = accounts.get(accountId)
   if (!windows) return []
@@ -60,10 +60,7 @@ export function acceptMessageWrites(accountId: string, writes: readonly ImMessag
       publishers.get(accountId)?.(write.chatId, null)
     } else if (write.type === 'put') {
       const row = write.message, root = row.thread_root_id ?? null, id = key(row.chat_id, root)
-      if (!root || windows.has(id)) {
-        reads.set(id, { chatId: row.chat_id, root })
-        setMessageWindow(accountId, row.chat_id, root, [...windows.get(id)?.rows.filter(value => value.id !== row.id) ?? [], row])
-      }
+      if (!root || windows.has(id)) reads.set(id, { chatId: row.chat_id, root })
       for (const [threadId, window] of windows) if (window.chatId === row.chat_id && window.root === row.id) {
         reads.set(threadId, { chatId: row.chat_id, root: window.root })
       }

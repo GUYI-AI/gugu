@@ -117,6 +117,22 @@ describe.each(subjects)('IM message store contract (%s)', (_name, open) => {
     expect((await store.page(account, { chatId: 'chat-a', beforeSeq: 10, limit: 4 })).covered).toBe(false)
   })
 
+  it('gives a window the rows from its verified tail range upward, never rows below a hole', async () => {
+    await setup()
+    await store.ingest(account, { ...batch(message('m1', 'a', 1), message('m2', 'b', 2)), ranges: [{ chatId: 'chat-a', fromSeq: 1, toSeq: 2 }] })
+    expect(ids(await store.windows(account, ['chat-a'], 10))).toEqual(['m1', 'm2'])
+    // A newest page read from the server: nothing proves what lies between 2 and 50.
+    await store.ingest(account, { ...batch(message('m50', 'y', 50), message('m51', 'z', 51)), ranges: [{ chatId: 'chat-a', fromSeq: 50, toSeq: 51 }] })
+    expect(ids(await store.windows(account, ['chat-a'], 10))).toEqual(['m50', 'm51'])
+    // An acknowledged send above the range is shown with it; the older rows stay stored for a covered older page.
+    await store.ingest(account, batch(message('m52', 'ack', 52)))
+    expect(ids(await store.windows(account, ['chat-a'], 10))).toEqual(['m50', 'm51', 'm52'])
+    expect((await store.page(account, { chatId: 'chat-a', beforeSeq: 3, limit: 5 })).covered).toBe(true)
+    // A stream with no verified range gives its newest rows.
+    await store.ingest(account, { writes: [{ type: 'truncateRange', chatId: 'chat-a' }], revisions: [] })
+    expect(ids(await store.windows(account, ['chat-a'], 10))).toEqual(['m1', 'm2', 'm50', 'm51', 'm52'])
+  })
+
   it('commits deletion and progress together, rejects late writes, and skips already consumed revision writes', async () => {
     await setup()
     await store.ingest(account, { ...batch(message('one')), throughRevision: '1' })

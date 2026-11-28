@@ -282,10 +282,16 @@ export function messageStoreOperations(store: MessageStoreAdapter, retain: numbe
   return {
     ingest,
     page,
+    /**
+     * Each chat's newest rows, down to where its verified tail range starts: rows below that are not known to connect
+     * to the tail, so a window never shows them next to it. A stream with no verified range gives its newest rows.
+     */
     windows(chatIds: readonly string[], limit: number): MessageItem[] {
       requireLimit(limit)
       chatIds.forEach(requireId)
-      return store.latest(chatIds, limit)
+      const from = new Map(chatIds.map(chatId => [chatId, store.ranges(chatId, '').reduce<SeqRange | null>(
+        (tail, range) => !tail || range.toSeq > tail.toSeq ? range : tail, null)?.fromSeq ?? 0]))
+      return store.latest(chatIds, limit).filter(row => row.seq >= from.get(row.chat_id)!)
     },
     throughRevision: () => store.throughRevision(),
     clear: () => store.transaction(() => store.clear()),

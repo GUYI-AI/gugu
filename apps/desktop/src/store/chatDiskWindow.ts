@@ -11,7 +11,7 @@ export function bindRepositoryMessageCache(repository: AccountImRepository, cach
   // Windows come from the message store (messageIngest); the repository carries no message rows.
   publishMessageWindows(repository.accountId, (chatId, rows, deletedIds) => {
     if (!rows) cache.delete(chatId)
-    else if (!deletedIds) cache.set(chatId, rows)
+    else if (!deletedIds) cache.publishTail(chatId, rows)
     else if (cache.rows(chatId).some(row => deletedIds.includes(row.id))) cache.update(chatId, previous => previous.filter(row => !deletedIds.includes(row.id)))
   })
   let previous: ReturnType<AccountImRepository['snapshot']> | undefined
