@@ -10,7 +10,8 @@ import { markdownPlainText } from './markdownPlainText'
 // the names, and for member-managed which sentence, come from content. A sentence not recognised stays as written.
 // The sentences matched here are written by these gugu-supabase functions: member-joined by chat.insert_group_member,
 // agent-flood by chat.apply_agent_flood_rule and chat.enforce_agent_flood_passive, member-managed (left / removed /
-// made admin / admin revoked / owner transferred) by chat.announce_group_management, topic-opened by chat.create_topic.
+// made admin / admin revoked / owner transferred) by chat.announce_group_management, topic-opened by chat.create_topic,
+// webhook-changed (added / disabled / enabled again / deleted) by chat_private.announce_group_webhook.
 const say = (key: Parameters<typeof i18n.t>[0], values?: Record<string, string>) => i18n.t(key, { ns: 'messaging', ...values })
 
 const JOINED = ' 加入了群聊'
@@ -34,6 +35,13 @@ function memberManagedText(content: string): string {
   return content
 }
 
+const WEBHOOK_ACTIONS = { 添加了: 'webhookAdded', 停用了: 'webhookDisabled', 重新启用了: 'webhookEnabled', 删除了: 'webhookDeleted' } as const
+
+function webhookChangedText(content: string): string {
+  const m = content.match(/^(.*) (添加了|停用了|重新启用了|删除了) Webhook「(.*)」$/s)
+  return m ? say(`group.notice.${WEBHOOK_ACTIONS[m[2] as keyof typeof WEBHOOK_ACTIONS]}`, { actor: m[1]!, name: m[3]! }) : content
+}
+
 export function systemNoticeText(notice: SystemNotice | null, content: string): string {
   switch (notice?.kind) {
     case 'migration-placeholder':
@@ -52,6 +60,8 @@ export function systemNoticeText(notice: SystemNotice | null, content: string): 
     }
     case 'member-managed':
       return memberManagedText(content)
+    case 'webhook-changed':
+      return webhookChangedText(content)
     default:
       return content
   }

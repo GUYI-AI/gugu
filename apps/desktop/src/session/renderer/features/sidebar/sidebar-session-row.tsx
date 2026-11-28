@@ -132,8 +132,9 @@ export function SessionRowShell({
   // 点不开的行(#6264 机器离线)退到被动墨色 —— 列着、看得见,但一眼读得出「此刻点不动」。
   // 这一行的状态画成什么:与聊天、手机同一个 presentAgentStatus(#6448 owner 定表)。
   // 行尾那一格画的是定时那枚钟吗(owner 10-19 C:空闲时盖掉时间,别的状态的标志优先)。与下面那条状态链同一个次序。
+  // 只剩没送到的(不会再响)不画:那是那条定时自己的事,在输入框上方的芯片里。
   const scheduleAtRest =
-    schedule != null &&
+    schedule?.nextAt != null &&
     presentationAttention(presentation) === null &&
     !statusUnavailable &&
     presentation?.tone !== 'running' && presentation?.tone !== 'parked';

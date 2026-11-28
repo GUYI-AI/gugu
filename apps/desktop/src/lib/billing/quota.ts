@@ -1,15 +1,12 @@
 // 额度窗口面:取数 + 画条要的几何。窗口本身怎么推导(上限、余量、时长)在
 // @gugu/core/billing —— 这里不重算,只把领域结果加上进度条需要的比例。
-import { periodUsdFor, quotaSpendWindows, type QuotaWindows, type SpendWindow } from '@gugu/core/billing'
+import { quotaSpendWindows, type QuotaWindows, type SpendWindow } from '@gugu/core/billing'
 import { creditRatio } from './creditGeometry'
 import { activeCreditV2, creditV2, creditV2Read } from './v2/runtime'
 import { CreditV2StateError, quotaProjection } from './v2/active'
 import { getLocaleSnapshot, i18n, type SupportedLocale } from '@/i18n'
 
 export type { QuotaWindows }
-// 「这一档合多少美元」的推导住在领域层:推导,从不存储。
-// 这里只做转出,不在 renderer 里再写一遍除法 —— 再写一遍就又有两处会打架了。
-export { periodUsdFor }
 
 /**
  * 额度是只读投影,走 billing 自读 RPC(#2675)。签发与结算仍在 model-access —— 但"看一眼

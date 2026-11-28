@@ -11,6 +11,7 @@ import { Popover } from '../ui/Popover'
 import type { ActiveMemberProfile } from '../memberProfileModels'
 import { groupRoleRevision, useGroupChatSettings, type GroupChatSettingsState } from './useGroupChatSettings'
 import { GroupMembersSection } from './GroupMembersSection'
+import type { OpenablePage } from './useSettingsPages'
 import { MemberListPanel, type MemberListPanelProps } from './MemberListPanel'
 import { GroupAgentFloodSettings } from './GroupAgentFloodSettings'
 import { ChatManagementActions } from './ChatManagementActions'
@@ -74,7 +75,7 @@ interface ChatRightPanelBodyProps {
   /** Drawn inside the desktop 详情 page (DetailsPage): its parts and margins, ❌ the drawer's own. */
   details?: boolean
   /** Where it opens (the members' button: their list); nothing goes back past it. */
-  initialPage?: 'main' | 'members' | 'announcement'
+  initialPage?: OpenablePage
   messages: MessageItem[]
   onClose: () => void
   onClearMessages: () => Promise<void>

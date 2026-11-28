@@ -25,7 +25,7 @@ export function setInnerSidebarCrowded(value: boolean): void {
   });
 }
 
-/** 收起着,而此刻本该有这一列(挂在一个群 / 项目 / 示例上):展开钮这时才在。InnerSidebar 写。 */
+/** 收起着(或正在收起 / 展开的路上),而此刻本该有这一列(挂在一个群 / 项目 / 示例上):展开钮这时才在(@@@inner-fold-motion)。InnerSidebar 写。 */
 export const innerSidebarFoldedAway = observable.box(false);
 
 export function setInnerSidebarFolded(folded: boolean): void {

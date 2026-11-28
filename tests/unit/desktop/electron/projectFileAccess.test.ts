@@ -10,13 +10,13 @@ vi.mock('node:fs/promises', async importOriginal => {
 })
 import { chmod, mkdtemp, mkdir, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createFileResolver, type FileProviders, type FileRevision } from '../../../../packages/core/src/shared/fileResolver'
 import { ciphertextSize, createFileKey, transformFile } from '../../../../packages/core/src/shared/fileCipher'
 import { createProjectTransferHost } from '../../../../apps/desktop/electron/projectFileTransferHost'
 import { createFileChunkCache, createFileSink } from '../../../../apps/desktop/electron/fileSnapshot'
-import { createNodeFileResolver, saveFileHandle, saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
+import { createFileCache, createNodeFileResolver, saveFileHandle, saveToFileStore, storeFileBytes } from '@gugu/core/local/files/fileSnapshots'
 import { createProjectFileReader, localProjectFileProvider, openProjectFileSource, snapshotProjectFile } from '../../../../apps/desktop/electron/projectFileHost'
 import { ownSshFileProvider } from '../../../../apps/desktop/electron/projectFileSsh'
 import { createDesktopFileAccess } from '../../../../apps/desktop/electron/desktopFileAccess'
@@ -214,11 +214,12 @@ describe('downloads consume one file and leave no cached chunks behind', () => {
     const cached = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>()
     const ranges: string[] = []
     let resolves = 0, objects = 0
-    // Hold the first stream's tail until the second save has inspected the shared cached prefix.
-    fsHooks.rename = async (from, to) => {
-      await actualRename(from, to)
-      if (dirname(to).startsWith(join(cacheRoot, 'open-')) && basename(to) === '0') cached.resolve()
+    // Hold the first stream's tail until the second save has inspected the shared cached prefix (its first chunk recorded).
+    const recorded = async () => {
+      for (const name of await readdir(cacheRoot)) if (name.startsWith('open-') && (await readFile(join(cacheRoot, name, 'done'), 'utf8').catch(() => '')).startsWith('0 ')) return true
+      return false
     }
+    void vi.waitFor(async () => { if (!await recorded()) throw new Error('not yet') }, { timeout: 5000, interval: 5 }).then(() => cached.resolve())
     fetcher.mockImplementation(async (url, init) => {
       if (String(url).endsWith('/file-resolve') && ++resolves === 2) await cached.promise
       if (String(url) === 'https://objects.invalid/file') {
@@ -278,6 +279,42 @@ describe('downloads consume one file and leave no cached chunks behind', () => {
     expect(digest(await readFile(saved.file_path))).toBe(stored.sha256)
     expect(ranges).toEqual([0, 2 * 512 * 1024])
     expect(await chunksLeft()).toEqual([])
+  })
+  it('a large file read on three connections is written once: the saved file is the chunk file itself, moved', async () => {
+    const large = Uint8Array.from({ length: 17 * 1024 * 1024 + 11 }, (_, i) => (i * 31) % 251)
+    const stored = { ...revision, source: 'managed-object' as const, size_bytes: large.length, sha256: digest(large) }
+    const asked: string[] = [], moved: number[] = []
+    fsHooks.rename = async (from, to) => { if (from.endsWith('.taken')) moved.push((await stat(from)).ino); return actualRename(from, to) }
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url).endsWith('/file-resolve')) return Response.json({ status: 'ready', ...stored })
+      if (String(url).endsWith('/file-download')) return Response.json({ status: 'ready', url: 'https://objects.invalid/large', size_bytes: large.length, sha256: stored.sha256, download_id: 'download' })
+      const [, from, to] = /^bytes=(\d+)-(\d*)$/.exec(new Headers(init?.headers).get('range') ?? '')!
+      asked.push(`${from}-${to}`)
+      const end = to ? Number(to) : large.length - 1
+      return new Response(large.subarray(Number(from), end + 1) as Uint8Array<ArrayBuffer>, { status: 206, headers: { 'content-range': `bytes ${from}-${end}/${large.length}` } })
+    })
+    const resolve = createNodeFileResolver(tempRoot, async () => ({ supabaseUrl: 'https://files.invalid', anonKey: 'public', token: 'test', fetch: fetcher as typeof fetch }))
+    const file = await resolve(ref, actor)
+    if (file.status !== 'ready') throw new Error('Missing fixture')
+    const saved = await saveToFileStore(file, home, 'large.bin')
+    expect(digest(await readFile(saved.file_path))).toBe(stored.sha256)
+    expect(asked).toHaveLength(3)
+    // The chunk file itself went into place, not a second write of its bytes; and it is the store's alone.
+    const kept = await stat(saved.file_path)
+    expect([moved, kept.nlink]).toEqual([[kept.ino], 1])
+    expect(await chunksLeft()).toEqual([])
+  })
+  it('does not ask again when the account\'s download quota is used up', async () => {
+    const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).endsWith('/file-resolve')) return Response.json({ status: 'ready', ...revision, source: 'managed-object' })
+      if (String(url).endsWith('/file-download')) return Response.json({ error: 'account_download_full', message: 'File transfer account download quota is exhausted' }, { status: 429 })
+      throw new Error('Unexpected file request')
+    })
+    const resolve = createNodeFileResolver(tempRoot, async () => ({ supabaseUrl: 'https://files.invalid', anonKey: 'public', token: 'test', fetch: fetcher as typeof fetch }))
+    const file = await resolve(ref, actor)
+    if (file.status !== 'ready') throw new Error('Missing fixture')
+    await expect(saveFileHandle(file, join(home, 'attachments'), 'file.bin')).rejects.toMatchObject({ status: 429, code: 'account_download_full' })
+    expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith('/file-download'))).toHaveLength(1)
   })
   it('removes the partial on a digest mismatch and never publishes corrupted content', async () => {
     const { resolve } = remote(Buffer.alloc(bytes.length, 9))
@@ -442,7 +479,7 @@ describe('the database\'s version record decides what this device holds', () => 
   it('finds a held version by its sha, read in place, and not once the file no longer holds it', async () => {
     await writeDeviceIdCache(deviceFile(env, 'owner'), 'host-device')
     const never = vi.fn(async () => { throw Error('Network must remain unused') })
-    const access = createDesktopFileAccess({ auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links: () => null, tempRoot, fetch: never as typeof fetch, rpc: never as never, env, deviceStore: join(home, 'project-files'), identityDb: never as never })
+    const access = createDesktopFileAccess({ auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links: () => null, tempRoot, fetch: never as typeof fetch, rpc: never as never, env, home, deviceStore: join(home, 'project-files'), identityDb: never as never })
     expect(digest(new Uint8Array(await (await access.held(revision.sha256!))!.arrayBuffer()))).toBe(revision.sha256)
     expect(await access.held('f'.repeat(64))).toBeNull()
     await writeFile(join(root, 'file.bin'), Buffer.alloc(bytes.length, 9))
@@ -456,7 +493,7 @@ describe('the database\'s version record decides what this device holds', () => 
       expect(JSON.parse(String(init?.body))).toEqual({ ref: { item_id: 'item', version: 2 }, as: 'owner' })
       return Response.json({ ...renamed(), status: 'ready' })
     })
-    const access = createDesktopFileAccess({ auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links: () => null, tempRoot, fetch: network as typeof fetch, rpc: network as never, env, deviceStore: join(home, 'project-files'), identityDb: network as never })
+    const access = createDesktopFileAccess({ auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links: () => null, tempRoot, fetch: network as typeof fetch, rpc: network as never, env, home, deviceStore: join(home, 'project-files'), identityDb: network as never })
     const file = await access.resolveAccount({ id: 'item' }, null, { version: 2, localOnly: true })
     if (file?.status !== 'ready') throw Error('ready expected')
     expect(file.revision.file_name).toBe('renamed.bin')
@@ -484,6 +521,130 @@ describe('the database\'s version record decides what this device holds', () => 
   })
 })
 
+describe('what the window reads over the network is kept in this machine\'s file cache', () => {
+  /** A cloud of managed objects by item id, and how many times each object's bytes were asked for. */
+  const cloud = (files: Record<string, Uint8Array>) => {
+    const revisions = Object.fromEntries(Object.entries(files).map(([id, content]): [string, FileRevision] => [id, { source: 'managed-object', item_id: id, version: 1, chat_id: 'group', file_name: `${id}.bin`, content_type: 'application/octet-stream', size_bytes: content.length, sha256: digest(content) }]))
+    const reads: Record<string, number> = {}, state = { status: 'ready' }
+    const network = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input), body = init?.body ? JSON.parse(String(init.body)) as { ref?: { item_id: string }; refs?: { item_id: string }[] } : {}
+      const row = (ref: { item_id: string }) => state.status === 'ready' ? { ...revisions[ref.item_id]!, status: 'ready' } : { status: state.status, sha256: revisions[ref.item_id]!.sha256 }
+      if (url.endsWith('/file-resolve')) return Response.json(body.refs ? { files: body.refs.map(ref => ({ ...row(ref), ref })) } : row(body.ref!))
+      if (url.endsWith('/file-download')) { const { size_bytes, sha256 } = revisions[body.ref!.item_id]!; return Response.json({ status: 'ready', url: `https://objects.invalid/${body.ref!.item_id}`, size_bytes, sha256, download_id: 'download' }) }
+      const id = /^https:\/\/objects\.invalid\/(.+)$/.exec(url)?.[1], content = id ? files[id] : undefined
+      if (!id || !content) throw new Error(`Unexpected request ${url}`)
+      reads[id] = (reads[id] ?? 0) + 1
+      const range = /^bytes=(\d+)-(\d*)$/.exec(new Headers(init?.headers).get('range') ?? '')
+      if (!range) return new Response(content as Uint8Array<ArrayBuffer>)
+      const from = Number(range[1]), to = range[2] ? Number(range[2]) : content.length - 1
+      return new Response(content.subarray(from, to + 1) as Uint8Array<ArrayBuffer>, { status: 206, headers: { 'content-range': `bytes ${from}-${to}/${content.length}` } })
+    })
+    const never = vi.fn(async () => { throw new Error('Unexpected request') })
+    const access = createDesktopFileAccess({ auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links: () => null, tempRoot, fetch: network as typeof fetch, rpc: never, env, home, deviceStore: join(home, 'project-files'), identityDb: never as never })
+    const read = (id: string) => access.cloud.read(revisions[id]!, { ref: { item_id: id, version: 1 }, actor })
+    return { access, revisions, reads, state, network, read }
+  }
+  const cached = () => readdir(join(home, 'file-cache')).then(names => names.sort())
+  it('reads a cloud object once: a second open and a download read the cache, a cancelled save writes nothing, and a file that is gone is said so', async () => {
+    await writeDeviceIdCache(deviceFile(env, 'owner'), 'host-device')
+    const content = Buffer.alloc(600_001, 7)
+    const { access, revisions, reads, state, network, read } = cloud({ remote: content }), sha = revisions.remote!.sha256!
+    const first = await read('remote')
+    expect(first.here).toBe(true)
+    expect(digest(await first.read(0, first.size))).toBe(sha)
+    await first.dispose()
+    // In the cache, not in the store agents are handed paths into.
+    expect(await cached()).toEqual([sha])
+    await expect(stat(join(home, 'file-store'))).rejects.toMatchObject({ code: 'ENOENT' })
+    const second = await read('remote')
+    expect(digest(await second.read(0, second.size))).toBe(sha)
+    await second.dispose()
+    const cloudRef = { item_id: 'remote', version: 1 }, target = join(home, 'Downloads', 'saved.bin')
+    await mkdir(dirname(target))
+    expect(await access.download(cloudRef, actor, async () => null, null)).toEqual({ saved: false })
+    await expect(stat(target)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await access.download(cloudRef, actor, async () => target, null)).toMatchObject({ saved: true, revision: { sha256: sha } })
+    expect(digest(await readFile(target))).toBe(sha)
+    // The person's own file, not the cache's read-only one.
+    expect((await stat(target)).mode & 0o200).toBe(0o200)
+    expect(await readdir(dirname(target))).toEqual(['saved.bin'])
+    expect(reads.remote).toBe(1)
+    state.status = 'expired'
+    const asked = vi.fn(async () => target)
+    expect(await access.download(cloudRef, actor, asked, null)).toEqual({ status: 'expired' })
+    expect(asked).not.toHaveBeenCalled()
+    // A version the window already knows is saved from this machine's bytes: the server is not asked at all.
+    const asks = network.mock.calls.length, again = join(home, 'Downloads', 'again.bin')
+    expect(await access.download(cloudRef, actor, async () => again, await access.here(sha))).toEqual({ saved: true })
+    expect(digest(await readFile(again))).toBe(sha)
+    expect(network.mock.calls.length).toBe(asks)
+  })
+  it('past its byte budget drops the copy used longest ago, never one being read, and a dropped one is written again when it is wanted', async () => {
+    const files = { a: Buffer.alloc(400_000, 1), b: Buffer.alloc(400_000, 2), c: Buffer.alloc(400_000, 3), d: Buffer.alloc(400_000, 4), e: Buffer.alloc(400_000, 5) }
+    const sha = (id: keyof typeof files) => digest(files[id]), writes: Record<string, number> = {}
+    const cache = createFileCache(join(home, 'file-cache'), 1_000_000)
+    // What a read over the network does: the bytes go into the cache's directory, verified as they are written.
+    const read = async (id: keyof typeof files) => (await cache.read(sha(id), async () => {
+      writes[id] = (writes[id] ?? 0) + 1
+      await storeFileBytes(cache.directory, sha(id), `${id}.bin`, '', { size: files[id].length, read: async (offset, length) => files[id].subarray(offset, offset + length) })
+    }))!
+    const settle = async () => { await new Promise(done => setTimeout(done, 20)); await cache.idle() }
+    for (const id of ['a', 'b'] as const) { await (await read(id)).dispose(); await settle() }
+    // `a` is read again, and held: `b` is now the copy used longest ago.
+    const held = await read('a')
+    await settle()
+    await (await read('c')).dispose(); await settle()
+    expect(await cached()).toEqual([sha('a'), sha('c')].sort())
+    // While `a` is being read nothing takes it, though the two newer copies alone fill the budget.
+    await (await read('b')).dispose(); await settle()
+    expect(await cached()).toEqual([sha('a'), sha('b'), sha('c')].sort())
+    expect(digest(await held.read(0, held.size))).toBe(sha('a'))
+    // Let go, the cache is over its budget and trims at once, without waiting for the next write. What goes is the copy
+    // used longest ago, which is `c`: `a` was in use until this moment, whether or not the system counted its reads.
+    await held.dispose(); await settle()
+    expect(await cached()).toEqual([sha('a'), sha('b')].sort())
+    for (const id of ['d', 'e'] as const) { await (await read(id)).dispose(); await settle() }
+    expect(await cached()).toEqual([sha('d'), sha('e')].sort())
+    // A dropped copy is not lost: it is written again the next time it is wanted. A copy still here is not.
+    expect(writes).toEqual({ a: 1, b: 2, c: 1, d: 1, e: 1 })
+    const again = await read('a')
+    expect(digest(await again.read(0, again.size))).toBe(sha('a'))
+    await again.dispose()
+    expect(writes.a).toBe(2)
+    expect(await cache.read('f'.repeat(64))).toBeNull()
+  })
+  it('reads a copy over the network once when two ask for it at the same time', async () => {
+    const content = Buffer.alloc(200_000, 6), sha = digest(content), cache = createFileCache(join(home, 'file-cache'))
+    let fills = 0
+    const fill = async () => {
+      fills++
+      await new Promise(done => setTimeout(done, 20))
+      await storeFileBytes(cache.directory, sha, 'both.bin', '', { size: content.length, read: async (offset, length) => content.subarray(offset, offset + length) })
+    }
+    const [one, other] = await Promise.all([cache.read(sha, fill), cache.read(sha, fill)])
+    expect(fills).toBe(1)
+    for (const copy of [one!, other!]) { expect(digest(await copy.read(0, copy.size))).toBe(sha); await copy.dispose() }
+    // Whoever waited on a read that failed reads for itself.
+    const lost = digest(Buffer.alloc(10, 1)), failing = vi.fn(async () => { await new Promise(done => setTimeout(done, 20)); throw new Error('cut') })
+    const [first, second] = await Promise.allSettled([cache.read(lost, failing), cache.read(lost, failing)])
+    expect([first.status, second.status]).toEqual(['rejected', 'rejected'])
+    expect(failing).toHaveBeenCalledTimes(2)
+  })
+  it('reads the file store before the cache: what an agent saved there is not cached again', async () => {
+    await writeDeviceIdCache(deviceFile(env, 'owner'), 'host-device')
+    const content = Buffer.alloc(300_000, 9)
+    const { access, revisions, reads } = cloud({ remote: content }), sha = revisions.remote!.sha256!
+    const file = await access.resolve({ item_id: 'remote', version: 1 }, actor)
+    if (file.status !== 'ready') throw new Error('Missing fixture')
+    await saveToFileStore(file, home)
+    const kept = await access.here(sha)
+    expect(digest(await kept!.read(0, kept!.size))).toBe(sha)
+    await kept!.dispose()
+    await expect(stat(join(home, 'file-cache'))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(reads.remote).toBe(1)
+  })
+})
+
 describe('local read fence and verified snapshot', () => {
   it('the production composition root opens by item or folder path asking only which version is current, without bytes from the cloud, auth refresh or an SSH dial', async () => {
     await writeDeviceIdCache(deviceFile(env, 'owner'), 'host-device')
@@ -495,7 +656,7 @@ describe('local read fence and verified snapshot', () => {
     })
     const network = vi.fn(async () => { throw new Error('Unexpected network request') })
     const links = vi.fn(() => null)
-    const access = createDesktopFileAccess({ auth: async () => ({ userId: accountId, accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links, tempRoot, fetch: current as typeof fetch, rpc: network, env, deviceStore: join(home, 'project-files'), identityDb: network as never })
+    const access = createDesktopFileAccess({ auth: async () => ({ userId: accountId, accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links, tempRoot, fetch: current as typeof fetch, rpc: network, env, home, deviceStore: join(home, 'project-files'), identityDb: network as never })
     expect(access.handlers('realtime')).toEqual({})
     expect(Object.keys(access.handlers('ssh'))).toEqual(['file.read'])
     for (const named of [{ id: 'item' }, { chat: 'group', name: 'file.bin' }]) {
@@ -511,22 +672,85 @@ describe('local read fence and verified snapshot', () => {
     await expect(access.resolveAccount({ id: 'item' }, null, { localOnly: true })).rejects.toThrow('device.json missing')
     expect(network).not.toHaveBeenCalled()
   })
-  it('persists only bounded raw chunks in the existing private cache across provider restarts', async () => {
+  it('keeps a read\'s chunks in one private file, each at its offset, and goes on from the ones recorded there', async () => {
     const key = 'ab'.repeat(32), first = createFileChunkCache(tempRoot)
     expect(await first.get(key, 0)).toBeNull()
-    await first.put(key, 0, new Uint8Array([1, 2, 3]))
+    expect(await readdir(tempRoot).catch(() => []), 'looking makes nothing').toEqual([])
+    // Out of order and at once, as a read's connections write them.
+    const tail = new Uint8Array([7, 8, 9]), head = new Uint8Array(512 * 1024).fill(5)
+    await Promise.all([first.put(key, 1, tail), first.put(key, 0, head)])
     const second = createFileChunkCache(tempRoot)
-    expect(await second.get(key, 0)).toEqual(new Uint8Array([1, 2, 3]))
+    expect(await second.get(key, 1)).toEqual(tail)
+    expect(await second.get(key, 2)).toBeNull()
     expect((await stat(join(tempRoot, `open-${key}`))).mode & 0o777).toBe(0o700)
-    expect((await stat(join(tempRoot, `open-${key}`, '0'))).mode & 0o777).toBe(0o600)
+    expect((await stat(join(tempRoot, `open-${key}`, 'data'))).mode & 0o777).toBe(0o600)
+    expect((await readdir(join(tempRoot, `open-${key}`))).sort()).toEqual(['data', 'done'])
+    expect((await stat(join(tempRoot, `open-${key}`, 'data'))).size).toBe(512 * 1024 + 3)
+    // A chunk is written once: the same bytes again are fine, other bytes are refused and change nothing.
+    await second.put(key, 1, tail)
+    await expect(second.put(key, 1, new Uint8Array([7, 8, 0]))).rejects.toThrow('SHA-256')
+    expect(await first.get(key, 1)).toEqual(tail)
+    // Handed over only when every chunk is there: then it is the file itself, out of the cache, to one taker.
+    expect(await first.take!(key, 3)).toBeNull()
+    expect(await first.get(key, 1)).toEqual(tail)
+    const whole = await first.take!(key, 2)
+    expect(await readFile(whole!)).toEqual(Buffer.concat([head, tail]))
+    expect(await second.take!(key, 2)).toBeNull()
+    expect(await second.get(key, 1)).toBeNull()
+    // Whoever puts under this key next starts a new file: the one handed over is not written to.
+    await second.put(key, 1, new Uint8Array([1, 1, 1]))
+    expect(await readFile(whole!)).toEqual(Buffer.concat([head, tail]))
+    expect(await second.get(key, 0)).toBeNull()
     for (const [badKey, index] of [['../project/file.bin', 0], [key, -1], [key, 0.5]] as const) {
       await expect(second.get(badKey, index)).rejects.toThrow('Invalid file cache key')
       await expect(second.put(badKey, index, new Uint8Array([7]))).rejects.toThrow('Invalid file cache key')
     }
-    await expect(second.put(key, 1, new Uint8Array(524_289))).rejects.toThrow('Invalid file range')
-    await writeFile(join(tempRoot, `open-${key}`, '1'), new Uint8Array(524_289))
-    await expect(second.get(key, 1)).rejects.toThrow('Invalid file range')
+    await expect(second.put(key, 2, new Uint8Array(524_289))).rejects.toThrow('Invalid file range')
     await second.clear(key); expect(await readdir(tempRoot)).toEqual([])
+    // What an earlier run left: the chunks its record names are read, nothing else.
+    const left = 'cd'.repeat(32)
+    await mkdir(join(tempRoot, `open-${left}`), { recursive: true })
+    await writeFile(join(tempRoot, `open-${left}`, 'data'), Buffer.concat([head, tail]))
+    await writeFile(join(tempRoot, `open-${left}`, 'done'), '1 3\n9')
+    expect(await first.get(left, 1)).toEqual(tail)
+    expect(await first.get(left, 0)).toBeNull()
+    await first.clear(left)
+  })
+  it('a sink makes the complete chunk file its own: moved, not written again, and no one else\'s', async () => {
+    const key = 'ef'.repeat(32), cache = createFileChunkCache(tempRoot), content = new Uint8Array(512 * 1024 + 5).fill(3)
+    await cache.put(key, 0, content.subarray(0, 512 * 1024)); await cache.put(key, 1, content.subarray(512 * 1024))
+    const staged = (await cache.take!(key, 2))!, inode = await stat(staged)
+    const sink = await createFileSink(tempRoot, content.length)
+    await sink.adopt!(staged)
+    await expect(sink.write(new Uint8Array(1))).rejects.toThrow('Invalid file staging write')
+    const file = await sink.commit()
+    const adopted = await stat(sink.path())
+    expect([adopted.ino, adopted.nlink]).toEqual([inode.ino, 1])
+    await expect(stat(staged)).rejects.toMatchObject({ code: 'ENOENT' })
+    await cache.clear(key)
+    expect(await file.read(512 * 1024 - 1, 3)).toEqual(new Uint8Array([3, 3, 3]))
+    await file.dispose()
+    // A file that is gone (another read took it, or the key was cleared) leaves the sink as it was: it is written instead.
+    const other = await createFileSink(tempRoot, 3)
+    await expect(other.adopt!(staged)).rejects.toMatchObject({ code: 'ENOENT' })
+    await other.write(new Uint8Array([1, 2, 3]))
+    const written = await other.commit()
+    expect(await written.read(0, 3)).toEqual(new Uint8Array([1, 2, 3]))
+    await written.dispose()
+    const short = await createFileSink(tempRoot, content.length + 1)
+    await cache.put(key, 0, content.subarray(0, 512 * 1024))
+    await expect(short.adopt!(join(tempRoot, `open-${key}`, 'data'))).rejects.toThrow('Incomplete file snapshot')
+    await short.abort(); await cache.clear(key)
+    expect(await readdir(tempRoot)).toEqual([])
+  })
+  it('a read that stopped leaves its chunks and nothing open: the next one reads them from the file', async () => {
+    const key = '12'.repeat(32), cache = createFileChunkCache(tempRoot), chunk = new Uint8Array([4, 5, 6])
+    await cache.put(key, 0, chunk)
+    await cache.rest!(key)
+    expect((await readdir(join(tempRoot, `open-${key}`))).sort()).toEqual(['data', 'done'])
+    expect(await cache.get(key, 0)).toEqual(chunk)
+    await cache.clear(key)
+    expect(await readdir(tempRoot)).toEqual([])
   })
   it('an agent reading by message gets the file on this disk, with no temporary transfer through the cloud', async () => {
     const read = createProjectFileReader({ identity, root: async () => root, env, later: noRecord })
@@ -617,7 +841,7 @@ describe('the owner’s already-held SSH link', () => {
 
 describe('the host’s on-demand client-encrypted transfer', () => {
   function fixture(options: { denied?: boolean; changed?: boolean; late?: boolean; bothFail?: boolean } = {}) {
-    const calls: string[] = [], commitBodies: Record<string, unknown>[] = []
+    const calls: string[] = [], commitBodies: Record<string, unknown>[] = [], declines: Record<string, unknown>[] = []
     let uploaded: Uint8Array | undefined
     const read = vi.fn(async (request: Parameters<ReturnType<typeof createProjectFileReader>>[0]) => reader()(request, 'owner'))
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -652,11 +876,12 @@ describe('the host’s on-demand client-encrypted transfer', () => {
         commitBodies.push(body)
         return Response.json({ status: 'ready' })
       }
+      if (route === 'file-decline') { declines.push(body); return Response.json({}) }
       throw Error(`Unexpected fake route ${route}`)
     })
     let late: Promise<void> | undefined
     const drain = createProjectTransferHost({ identity, read, tempRoot, env, later: noRecord, endpoint: async () => ({ supabaseUrl: 'https://api.invalid', anonKey: 'test-anon', token: 'test-token', fetch: fetcher as typeof fetch }) })
-    return { drain, calls, read, commitBodies, uploaded: () => uploaded, late: () => late }
+    return { drain, calls, read, commitBodies, declines, uploaded: () => uploaded, late: () => late }
   }
   it('reserves before disk/bytes, uses one upload executor, transfers the key only in commit and removes staging', async () => {
     const f = fixture()
@@ -696,12 +921,15 @@ describe('the host’s on-demand client-encrypted transfer', () => {
     const failure = await f.drain().then(() => null, (error: Error) => error.message)
     expect(failure).toMatch(/^1 project file transfer\(s\) failed; .*\(transfer: \w+\)$/)
     expect(failure).not.toContain(root)
+    expect(f.declines).toEqual([{ transfer_id: 'transfer', reason: 'The file is no longer on that computer' }])
   })
-  it.each(['quota', 'revision', 'source-sha'])('does not upload or commit when %s fails', async failure => {
+  it.each(['quota', 'revision', 'source-sha'])('declines without uploading or committing when %s fails', async failure => {
     const f = fixture({ denied: failure === 'quota', changed: failure === 'revision' })
     if (failure === 'source-sha') await writeFile(join(root, 'file.bin'), Buffer.alloc(bytes.length, 9))
     await expect(f.drain()).rejects.toThrow(failure === 'quota' ? '(transfer: file-accept 403 quota: Quota exhausted)' : failure === 'revision' ? '(transfer: Transfer revision changed)' : '(transfer: integrity_failed)')
     expect(f.calls).not.toContain('object'); expect(f.calls).not.toContain('file-commit')
+    // The reader's next poll ends with this cause instead of waiting out its whole bound: the server's code, or a fixed phrase.
+    expect(f.declines).toEqual([{ transfer_id: 'transfer', reason: failure === 'quota' ? 'quota' : 'The file changed on that computer' }])
     if (failure !== 'source-sha') expect(f.read).not.toHaveBeenCalled()
     expect(await readdir(tempRoot).catch(() => [])).toEqual([])
   })

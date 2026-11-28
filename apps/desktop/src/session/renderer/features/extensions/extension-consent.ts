@@ -1,4 +1,4 @@
-import type { useSessionMessages } from '@renderer/localization/use-session-messages';
+import type { SessionTranslate } from '@renderer/localization/use-session-messages';
 import { compareExtensionVersions, isConfinedToolProgram, programLine, type ExtensionCapability, type ExtensionManifest } from '@shared/extensions/manifest';
 import { localizedManifestText } from '@shared/extensions/catalog';
 import { addedPermissions } from '@shared/extensions/upgrade';
@@ -15,7 +15,7 @@ import { siteHosts } from '@shared/extensions/app-credentials';
  * product promise, not a detail of how the card renders. Refs #2374.
  */
 
-export type SessionTranslate = ReturnType<typeof useSessionMessages>['translate'];
+export type { SessionTranslate };
 
 export interface ConsentPrompt {
   title: string;

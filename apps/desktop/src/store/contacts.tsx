@@ -20,8 +20,6 @@ import { friendRequestEntries } from '../lib/requestHistory'
 import { type AgentLook } from '../components/agentAvatar/look'
 import { recordContactsRender } from '../lib/perfCounters'
 import { myAssistant } from '../lib/myAssistant'
-import { reportAssistantAppChange } from '../components/assistant/assistant-app-client'
-import { machineRpc } from '../components/session-watch/sessionpage-rpc'
 import { renameOwnedAgent } from '../lib/archiveOwnedAgent'
 import { i18n } from '../i18n'
 
@@ -239,7 +237,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
   // tab and the sidebar make), which publishes it and tells the agent; a task elsewhere (maybe off) or none is renamed on
   // the identity here, and the device running the task adopts it. Bio and avatar are the identity's own.
   const updateAgentProfile = useCallback(async (agentId: string, fields: { name?: string; bio?: string; avatar?: string | null }) => {
-    const ownerId = userId
     const name = fields.name?.trim()
     if (fields.name !== undefined && !name) throw new Error(i18n.t('errors.nameRequired', { ns: 'contacts' }))
     const renamedOn = name !== undefined ? await renameOwnedAgent(agentId, name) : null
@@ -250,20 +247,10 @@ export function ContactsProvider({ children, active = true }: { children: React.
       ...(fields.avatar !== undefined ? { avatar: fields.avatar } : {}),
     }
     const updated = Object.keys(identityFields).length > 0 ? await contactsService.updateOwnedAgentProfile(agentId, identityFields) : null
-    const deviceId = updated?.device_id ?? renamedOn?.deviceId
-    // Decided after the write (a failed assistant read never blocks a profile edit), ❌ guessed from what may not be read yet.
-    const personal = !!ownerId && await myAssistant.fetch().then((mine) => mine.agentId === agentId, (error: unknown) => {
-      rendererLogger('contacts/profile').error({ error: String(error), agentId }, 'Profile saved; whether it is the assistant could not be read, so the assistant App is not told')
-      return false
-    })
-    if (personal) await reportAssistantAppChange(deviceId ? { rpc: machineRpc(deviceId) } : null, agentId, {
-      resource: 'assistant', operation: 'edited', id: agentId, section: fields.avatar !== undefined ? 'appearance' : 'profile',
-      ...(name !== undefined ? { after: { name } } : {}),
-    }, ownerId)
     if (updated) await applyAgentProfileUpdate(updated)
     else await contactRelations.refresh()
     await refreshChats()
-  }, [applyAgentProfileUpdate, refreshChats, userId])
+  }, [applyAgentProfileUpdate, refreshChats])
 
   const uploadAgentAvatar = useCallback(async (agentId: string, file: File, profile?: { name?: string; bio?: string }) => {
     // The name (if any) goes the one rename way (updateAgentProfile → renameOwnedAgent); the upload carries the rest.

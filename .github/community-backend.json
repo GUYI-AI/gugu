@@ -1,5 +1,5 @@
 {
   "repository": "GUYI-AI/gugu-supabase",
-  "ref": "a30552694b6d479c84b05e2e98b84c5b76a837f7",
-  "status": "Backend #413 merged on dev: owner-scoped App agent bindings and my_app_agent, including legacy provision compatibility and cancel cleanup; retains #409 annotations."
+  "ref": "38f13321dbd0dfa656695bdcc7f04370a7c8d798",
+  "status": "Backend #428 merged on dev (webhook agent delivery fix, #420): contains #425 (group webhooks), #426, #421 and every earlier dev commit; the same commit staging runs."
 }

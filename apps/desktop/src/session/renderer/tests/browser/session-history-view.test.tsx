@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from 'react';
-import { CommandShortcutBinder } from '@renderer/lib/commands/command-shortcut-binder';
+import { KeyboardDispatcher } from '@renderer/lib/commands/keyboard-dispatcher';
 import { useFindBar } from '@renderer/lib/ui/use-find-bar';
 import { FindBar } from '@renderer/lib/ui/find-bar';
 import { page, userEvent } from '@vitest/browser/context';
@@ -28,6 +28,14 @@ const mocks = vi.hoisted(() => ({
   remoteImport: vi.fn(),
   syncProjects: vi.fn(),
   openLink: vi.fn(async () => true),
+  // 批量(设计稿第 2 稿):归档确认框、永久删除框、归档 / 永久删除两条主进程路径。
+  confirmArchive: vi.fn(),
+  showModal: vi.fn(),
+  archiveSession: vi.fn(),
+  permanentlyDeleteSessions: vi.fn(),
+  tellChildrenNotReached: vi.fn(),
+  toast: vi.fn(),
+  dismissNotice: vi.fn(),
 }));
 /** 这次进会话历史带的那一部分(useParams('session-history'));默认什么都不带。 */
 const entry = vi.hoisted(() => ({ params: {} as Record<string, unknown> }));
@@ -53,6 +61,10 @@ vi.mock('@renderer/lib/ipc', () => {
       previewLocalSession: mocks.previewLocalSession,
       importLocalSession: mocks.importLocalSession,
     },
+    sessions: {
+      archiveSession: (...args: unknown[]) => mocks.archiveSession(null, ...args),
+      permanentlyDeleteSessions: (...args: unknown[]) => mocks.permanentlyDeleteSessions(null, ...args),
+    },
   };
   return {
     rpc,
@@ -67,6 +79,10 @@ vi.mock('@renderer/lib/ipc', () => {
             sessionImport: {
               previewLocalSession: mocks.previewLocalSession,
               importLocalSession: (params: unknown) => mocks.remoteImport(machine, params),
+            },
+            sessions: {
+              archiveSession: (...args: unknown[]) => mocks.archiveSession(machine, ...args),
+              permanentlyDeleteSessions: (...args: unknown[]) => mocks.permanentlyDeleteSessions(machine, ...args),
             },
           }
         : rpc,
@@ -122,6 +138,16 @@ vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
 }));
 vi.mock('@renderer/lib/stores/app-state', () => ({
   sidebarStore: {},
+}));
+vi.mock('@renderer/features/sessions/archive-session-flow', () => ({ confirmArchive: mocks.confirmArchive }));
+vi.mock('@renderer/features/sessions/leave-session-view', () => ({ leaveSessionView: () => {} }));
+vi.mock('@renderer/features/sessions/children-not-reached', () => ({ tellChildrenNotReached: mocks.tellChildrenNotReached }));
+vi.mock('@renderer/lib/modal/modal-provider', () => ({ showModal: mocks.showModal }));
+// 提示条:用例直接读批量递给它的标题与「撤销」/「重试」。
+vi.mock('@renderer/lib/hooks/use-toast', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@renderer/lib/hooks/use-toast')>()),
+  toast: mocks.toast,
+  dismissNotice: mocks.dismissNotice,
 }));
 vi.mock('@renderer/lib/machine-routing', () => ({
   machineRegistry: { machineOf: (id: string) => world.projectMachine[id] ?? null },
@@ -310,6 +336,18 @@ async function pick(triggerId: string, optionId: string): Promise<void> {
 }
 const keydown = (el: HTMLElement, key: string) =>
   el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+/** 节默认收起(设计稿第 2 稿):要看行先点开节头。晚到的节也点开,直到 `check` 过。 */
+async function expandUntil(check: () => void, timeout?: number): Promise<void> {
+  await vi.waitFor(
+    () => {
+      for (const head of screen.getByTestId('session-history-section-head').all()) {
+        if (head.element().getAttribute('aria-expanded') !== 'true') (head.element() as HTMLElement).click();
+      }
+      check();
+    },
+    timeout ? { timeout } : undefined
+  );
+}
 const rowKeys = () =>
   screen.getByTestId('session-history-row').all().map((row) => row.element().getAttribute('data-row-key'));
 
@@ -365,10 +403,11 @@ describe('会话历史(按目录分节)核心合同', () => {
 
   it('k4/k5 routes find by focus while the real history SearchInput stays mounted', async () => {
     const findShortcut = isMacHost() ? '{Meta>}f{/Meta}' : '{Control>}f{/Control}';
-    render(<><CommandShortcutBinder /><TranscriptFindControl /></>);
+    render(<><KeyboardDispatcher /><TranscriptFindControl /></>);
     await expect.element(screen.getByTestId('session-history-search')).toBeVisible();
     const history = screen.getByTestId('session-history-search').element();
-    const filter = screen.getByTestId('session-history-filter').element() as HTMLElement;
+    // 搜索框后面是「时间」(第 2 稿筛选栏:搜索 → 时间 → 筛选 → 机器)。
+    const filter = screen.getByTestId('session-history-time').element() as HTMLElement;
     await screen.getByTestId('session-history-search').click();
     await userEvent.keyboard('{Tab}');
     expect(document.activeElement).toBe(filter);
@@ -383,7 +422,7 @@ describe('会话历史(按目录分节)核心合同', () => {
     expect(screen.getByTestId('session-history-search').all()).toHaveLength(1);
   });
 
-  it('默认一目录一节、全展开:节头有名字 / agent 图标 / 条数,节内按主进程给的顺序两行一条,动作按状态', async () => {
+  it('默认一目录一节、收起:节头有名字 / agent 图标 / 各状态条数;点开按主进程给的顺序两行一条,动作按状态', async () => {
     render();
     const list = screen.getByTestId('session-history-list');
     await vi.waitFor(() => expect(list.getByTestId('session-history-section').all()).toHaveLength(2));
@@ -396,18 +435,21 @@ describe('会话历史(按目录分节)核心合同', () => {
     expect(
       list.getByTestId('session-history-section-name').all().map((el) => el.element().getAttribute('title'))
     ).toEqual([null, BILLING]);
-    // 只有一台机器的行:行上不标机器。
-    expect(list.getByTestId('session-history-row-machine').all()).toHaveLength(0);
+    // 第 2 稿:节默认收起,一行都不画;节头一行写各状态几条(当前筛选下)。
+    expect(list.getByTestId('session-history-section-head').all().map((h) => h.element().getAttribute('aria-expanded'))).toEqual(['false', 'false']);
+    expect(screen.getByTestId('session-history-row').all()).toHaveLength(0);
+    expect(list.getByTestId('session-history-section-count').all().map((el) => el.element().textContent)).toEqual([
+      '活跃 1 条，已归档 1 条',
+      '未导入 2 条',
+    ]);
     // 节头的 agent 图标:webapp 那节两个 provider。
     expect(sections[0].getByTestId('session-history-section-agents').getByTestId('agent-icon').all().map((el) => el.element().getAttribute('data-agent-id'))).toEqual(['claude', 'codex']);
-    await expect.element(sections[0].getByText('2 个会话', { exact: true })).toBeVisible();
-    // 一次 RPC 把每节的会话一起带回(模板一节全列,上限 100),❌ 每节各拉一次;默认只看咕咕会话。
-    // 每节随目录页只带回露出来的那几条(❌ 每节先拉上百条进内存)。
-    expect(directoryParams()[0]).toMatchObject({ limit: 50, sessionsPerDirectory: 5, source: 'gugu' });
+    // 一次 RPC 把每节的头一页(20 条)一起带回,❌ 每节各拉一次;默认只看咕咕会话。
+    expect(directoryParams()[0]).toMatchObject({ limit: 50, sessionsPerDirectory: 20, source: 'gugu' });
     expect(mocks.list).not.toHaveBeenCalled();
 
-    // 节内的行:顺序照主进程给的,两行 = 标题 / 时间(模板),动作按状态;session id、父子范围只在详情里。
-    expect(rowKeys()).toEqual(ROWS.map((row) => row.key));
+    // 点开:节内的行顺序照主进程给的,两行 = 标题 / 时间(模板),动作按状态;session id、父子范围只在详情里。
+    await expandUntil(() => expect(rowKeys()).toEqual(ROWS.map((row) => row.key)));
     expect(screen.getByTestId('session-history-row').all().map((row) => row.element().getAttribute('data-status'))).toEqual([
       'archived', 'active', 'not-imported', 'not-imported',
     ]);
@@ -416,12 +458,17 @@ describe('会话历史(按目录分节)核心合同', () => {
     expect(screen.getByTestId('session-history-row').first().element().querySelector('time')?.textContent).toMatch(
       /^\d{4}年\d{1,2}月\d{1,2}日 \d{2}:\d{2}$/
     );
-    // 状态不另贴标签(动作钮就是状态),行上也没有勾选框。
+    // 状态不另贴标签(动作钮就是状态)。勾选框在行外那一格:只有咕咕的活跃 / 已归档行有(未导入的要先导入),平时透明。
     expect(list.getByText('已归档', { exact: true }).all()).toHaveLength(0);
-    expect(screen.getByTestId('session-history-checkbox').all()).toHaveLength(0);
+    const boxes = screen.getByTestId('session-history-checkbox').all();
+    expect(boxes).toHaveLength(2);
+    expect(boxes.every((box) => box.element().className.includes('opacity-0'))).toBe(true);
     const actions = list.getByTestId('session-history-action').all();
     expect(actions.map((action) => action.element().textContent)).toEqual(['恢复', '打开', '导入', '导入']);
     await expect.element(screen.getByTestId('session-history-total')).toHaveTextContent('共 2 个目录');
+    // 再点节头收起。
+    (list.getByTestId('session-history-section-head').first().element() as HTMLElement).click();
+    await vi.waitFor(() => expect(rowKeys()).toEqual(BILLING_ROWS.map((row) => row.key)));
   });
 
   it('「咕咕独立会话」那一节:节名是「咕咕独立会话」,不把内部 key 当路径露出来', async () => {
@@ -439,6 +486,8 @@ describe('会话历史(按目录分节)核心合同', () => {
   it('筛选菜单(来源 / 状态 / 排序)与搜索都传给主进程,渲染层自己不排;触发钮写着生效的筛选', async () => {
     render();
     await vi.waitFor(() => expect(screen.getByTestId('session-history-section').all()).toHaveLength(2));
+    // 点开的节换筛选也照旧开着(第 2 稿)。
+    await expandUntil(() => expect(rowKeys()).toHaveLength(4));
     await expect.element(screen.getByTestId('session-history-filter')).toHaveTextContent('咕咕会话');
     await pick('session-history-filter', 'session-history-filter-source-codex');
     await vi.waitFor(() => expect(directoryParams().some((p) => p.source === 'codex')).toBe(true));
@@ -512,7 +561,7 @@ describe('会话历史(按目录分节)核心合同', () => {
       new Error("Error invoking remote method 'sessionImport.previewLocalSession': TranscriptAccessError: transcript-unreadable:imp-8.jsonl")
     );
     render();
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
+    await expandUntil(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
     // 第三行是 not-imported:点开就读预览。
     (screen.getByTestId('session-history-row').all()[2].element() as HTMLElement).click();
     const detail = screen.getByTestId('session-history-detail');
@@ -532,7 +581,7 @@ describe('会话历史(按目录分节)核心合同', () => {
       new Error("Error invoking remote method 'sessionImport.importLocalSession': Error: project-permission-denied:webapp")
     );
     render();
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
+    await expandUntil(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
     // 第三行是 not-imported:它的动作是「导入」。
     (screen.getByTestId('session-history-action').all()[2].element() as HTMLElement).click();
     await expect.element(screen.getByText(sentence)).toBeVisible();
@@ -548,7 +597,7 @@ describe('会话历史(按目录分节)核心合同', () => {
       directoryPageOf([{ ...DIRS[0], sessions: [{ ...WEBAPP_ROWS[0], providerSessionId: 'sess-zebra-42' }, WEBAPP_ROWS[1]] }, DIRS[1]])
     );
     render();
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
+    await expandUntil(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
     const first = screen.getByTestId('session-history-row').first();
     (first.element() as HTMLElement).click();
     await expect.element(screen.getByTestId('session-history-detail')).toBeVisible();
@@ -566,7 +615,7 @@ describe('会话历史(按目录分节)核心合同', () => {
 
   it('#6956 面板开着时在别处归档(手机、侧栏、agent):跟着问得到的每台机器的 session:changed 重拉;别的字段、离线的机器不重拉', async () => {
     render();
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
+    await expandUntil(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
     const calls = () => mocks.listDirectories.mock.calls.length;
     // Opening reads twice by itself: the cache first, then one scan of the disk (gugu-dev#1487).
     await vi.waitFor(() => expect(mocks.listDirectories.mock.calls.map(([params]) => params.mode)).toEqual(['cached', 'fresh']));
@@ -600,7 +649,7 @@ describe('会话历史(按目录分节)核心合同', () => {
 
   it('活跃的行:打开 = 进这条会话并打开它', async () => {
     render();
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-action').all()).toHaveLength(4));
+    await expandUntil(() => expect(screen.getByTestId('session-history-action').all()).toHaveLength(4));
     (screen.getByTestId('session-history-action').nth(1).element() as HTMLElement).click();
     await vi.waitFor(() =>
       expect(mocks.openLink).toHaveBeenCalledWith({ kind: 'session', sessionId: 'alpha', projectId: 'p1' })
@@ -609,7 +658,7 @@ describe('会话历史(按目录分节)核心合同', () => {
 
   it('未导入的行:方向键 + 回车导入光标那条', async () => {
     render();
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
+    await expandUntil(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
     mocks.importLocalSession.mockImplementation((_params: { providerSessionId: string }) =>
       Promise.resolve({
         projectId: 'p1', sessionId: 'c1', workingDirectory: '/w', alreadyImported: false,
@@ -632,7 +681,7 @@ describe('会话历史(按目录分节)核心合同', () => {
 
   it('搜索词是某条的 session id 前缀:光标直接落在那条并上色', async () => {
     render();
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
+    await expandUntil(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(4));
     const searchEl = screen.getByTestId('session-history-search').element() as HTMLInputElement;
     await screen.getByTestId('session-history-search').fill('codex-2');
     await vi.waitFor(() => expect(directoryParams().some((p) => p.query === 'codex-2')).toBe(true));
@@ -654,23 +703,23 @@ describe('会话历史(按目录分节)核心合同', () => {
     mocks.remoteListDirectories.mockImplementation((machine: string) =>
       Promise.resolve(
         machine === 'dev-d22'
-          ? directoryPageOf([dir({ key: WEBAPP_SECTION, projectName: 'webapp', sessionCount: 1, providers: ['claude'], updatedAt: remoteRow.updatedAt, sessions: [remoteRow] })])
+          ? directoryPageOf([dir({ key: WEBAPP_SECTION, projectName: 'webapp', sessionCount: 1, countsByStatus: { active: 1, archived: 0, 'not-imported': 0 }, providers: ['claude'], updatedAt: remoteRow.updatedAt, sessions: [remoteRow] })])
           : directoryPageOf([], { directories: [] })
       )
     );
     render();
     const list = screen.getByTestId('session-history-list');
-    await vi.waitFor(() => expect(rowKeys()).toContain('dev-d22/gugu:remote-w'));
+    await expandUntil(() => expect(rowKeys()).toContain('dev-d22/gugu:remote-w'));
     const sections = list.getByTestId('session-history-section').all();
     expect(sections.map((s) => s.element().getAttribute('data-section-key'))).toEqual(['project:chat-webapp', `dir:local:${BILLING}`]);
     // 一节三条:按更新时间跨机器归并(zebra 3h 前 → d22 那条 5h 前 → alpha 10h 前)。
     expect(sections[0].getByTestId('session-history-row').all().map((row) => row.element().getAttribute('data-row-key'))).toEqual([
       'gugu:zebra', 'dev-d22/gugu:remote-w', 'gugu:alpha',
     ]);
-    await expect.element(sections[0].getByText('3 个会话', { exact: true })).toBeVisible();
+    await expect.element(sections[0].getByTestId('session-history-section-count')).toHaveTextContent('活跃 2 条，已归档 1 条');
     expect(sections[0].getByTestId('session-history-row-machine').all().map((el) => el.element().textContent)).toEqual(['本机', 'd22', '本机']);
     // 每台问得到的都问了;离线的 off ❌ 去问(只会挂满超时)。
-    expect(mocks.remoteListDirectories).toHaveBeenCalledWith('dev-d22', expect.objectContaining({ sessionsPerDirectory: 5, source: 'gugu' }));
+    expect(mocks.remoteListDirectories).toHaveBeenCalledWith('dev-d22', expect.objectContaining({ sessionsPerDirectory: 20, source: 'gugu' }));
     expect(mocks.remoteListDirectories).toHaveBeenCalledWith('dev-tunnel', expect.anything());
     expect(mocks.remoteListDirectories.mock.calls.some(([machine]) => machine === 'dev-off')).toBe(false);
 
@@ -696,7 +745,7 @@ describe('会话历史(按目录分节)核心合同', () => {
   // first frame, while the new read is still on its way (❌ a loading frame, then one machine, then the next).
   it('再进页:首帧就是上次那份完整的页,不等这一次的读', async () => {
     render();
-    await vi.waitFor(() => expect(rowKeys()).toEqual(ROWS.map((row) => row.key)), { timeout: 10_000 });
+    await expandUntil(() => expect(rowKeys()).toEqual(ROWS.map((row) => row.key)), 10_000);
     root?.unmount();
     container?.remove();
     // This visit's reads never answer: whatever is drawn comes from the last visit.
@@ -705,7 +754,11 @@ describe('会话历史(按目录分节)核心合同', () => {
     render();
     // The list's first commit already carries the rows (❌ a loading frame first).
     await vi.waitFor(() => expect(container?.querySelector('[data-testid="session-history-list"]')).not.toBeNull());
-    expect(rowKeys()).toEqual(ROWS.map((row) => row.key));
+    // 节默认收起:首帧就是上次那两节(❌ 先一帧空的),点开就是上次的行。
+    expect(screen.getByTestId('session-history-section').all().map((s) => s.element().getAttribute('data-section-key'))).toEqual([
+      'project:chat-webapp', `dir:local:${BILLING}`,
+    ]);
+    await expandUntil(() => expect(rowKeys()).toEqual(ROWS.map((row) => row.key)));
     expect(screen.getByTestId('session-history-machine-reading').all()).toHaveLength(0);
   });
 
@@ -718,7 +771,7 @@ describe('会话历史(按目录分节)核心合同', () => {
         : new Promise(() => undefined)
     );
     render();
-    await vi.waitFor(() => expect(rowKeys()).toEqual(ROWS.map((row) => row.key)), { timeout: 10_000 });
+    await expandUntil(() => expect(rowKeys()).toEqual(ROWS.map((row) => row.key)), 10_000);
     expect(mocks.listDirectories.mock.calls[0]?.[0]).toMatchObject({ mode: 'cached' });
     // The scan follows; until it answers there is no progress to count.
     await vi.waitFor(() => expect(mocks.listDirectories.mock.calls.some(([params]) => params.mode === 'fresh')).toBe(true));
@@ -768,7 +821,7 @@ describe('会话历史(按目录分节)核心合同', () => {
     render();
     // 离线那台的行当场就有(心跳摘要),本机的行要等主进程回来:等整节到齐再比次序。
     const webapp = screen.getByTestId('session-history-section').first();
-    await vi.waitFor(() =>
+    await expandUntil(() =>
       expect(webapp.getByTestId('session-history-row').all().map((row) => row.element().getAttribute('data-row-key'))).toEqual([
         'dev-off/gugu:off-1', 'gugu:zebra', 'gugu:alpha', 'dev-off/gugu:off-2',
       ])
@@ -806,7 +859,7 @@ describe('会话历史(按目录分节)核心合同', () => {
       )
     );
     render();
-    await vi.waitFor(() => expect(rowKeys()).toContain('dev-d22/gugu:remote-z'));
+    await expandUntil(() => expect(rowKeys()).toContain('dev-d22/gugu:remote-z'));
     const rowAction = (key: string) =>
       screen.getByTestId('session-history-row').all().find((row) => row.element().getAttribute('data-row-key') === key)!
         .getByTestId('session-history-action').element() as HTMLElement;
@@ -840,12 +893,165 @@ describe('会话历史(按目录分节)核心合同', () => {
       )
     );
     render();
-    await vi.waitFor(() => expect(rowKeys()).toContain('dev-tunnel/local:remote-1'));
+    await expandUntil(() => expect(rowKeys()).toContain('dev-tunnel/local:remote-1'));
     await pick('session-history-machine', 'session-history-machine-dev-tunnel');
     await vi.waitFor(() => expect(rowKeys()).toEqual(['dev-tunnel/local:remote-1']));
     click('session-history-action');
     await vi.waitFor(() =>
       expect(mocks.remoteImport).toHaveBeenCalledWith('dev-tunnel', expect.objectContaining({ sessionView: 'general' }))
     );
+  });
+
+  // ── 批量(设计稿第 2 稿「范围 × 行为」,owner 2026-11-27 01:16 认可) ──
+  /** webapp 一节:30 条已归档 + 2 条活跃;目录页只带回头 20 条(节头勾选要连没展开的一起拿)。 */
+  function seedBigSection() {
+    const archived = Array.from({ length: 30 }, (_, i) =>
+      gugu({ key: `gugu:a${i}`, title: `归档的 ${i}`, status: 'archived', archivedAt: NOW - i, updatedAt: NOW - (i + 1) * 60_000 })
+    );
+    const active = [gugu({ key: 'gugu:live-1', title: '活跃的 1' }), gugu({ key: 'gugu:live-2', title: '活跃的 2' })];
+    const all = [...active, ...archived];
+    mocks.listDirectories.mockImplementation((params: SessionHistoryDirectoryParams) => {
+      const pick = all.filter((row) => !params.status || row.status === params.status);
+      const per = params.sessionsPerDirectory ?? 0;
+      const counts = { active: pick.filter((r) => r.status === 'active').length, archived: pick.filter((r) => r.status === 'archived').length, 'not-imported': 0 };
+      return Promise.resolve(
+        directoryPageOf([
+          dir({ key: WEBAPP_SECTION, projectName: 'webapp', sessionCount: pick.length, countsBySource: { gugu: pick.length, 'claude-code': 0, codex: 0 }, countsByStatus: counts, providers: ['claude'], sessions: pick.slice(0, per) }),
+        ])
+      );
+    });
+    mocks.list.mockImplementation((params: { status?: string; limit?: number }) => {
+      const pick = all.filter((row) => !params.status || row.status === params.status);
+      return Promise.resolve(pageOf(pick.slice(0, params.limit ?? 50), { matched: pick.length }));
+    });
+    return { archived, active };
+  }
+  const bar = () => screen.getByTestId('session-history-bulk');
+  const sectionCheck = () => screen.getByTestId('session-history-section-check').first();
+
+  it('节头勾选:收起着也能勾,连没展开的一起选(按当前筛选);底部条按状态给动作,混着选只给两个收窄按钮', async () => {
+    seedBigSection();
+    render();
+    await vi.waitFor(() => expect(screen.getByTestId('session-history-section-count').first().element().textContent).toBe('活跃 2 条，已归档 30 条'));
+    // 只看已归档 ⇒ 节头勾选 = 这一节已归档的 30 条(目录页只带回了 20 条,剩下的按这一节去要)。
+    await pick('session-history-filter', 'session-history-filter-status-archived');
+    await vi.waitFor(() => expect(screen.getByTestId('session-history-section-count').first().element().textContent).toBe('已归档 30 条'));
+    (sectionCheck().element() as HTMLElement).click();
+    await expect.element(screen.getByTestId('session-history-bulk-count')).toHaveTextContent('已选 30 条');
+    expect(mocks.list).toHaveBeenCalledWith(expect.objectContaining({ directory: WEBAPP_SECTION, status: 'archived', limit: 100_000 }));
+    expect(sectionCheck().element().getAttribute('data-state')).toBe('on');
+    await expect.element(screen.getByTestId('session-history-section-picked')).toHaveTextContent('已选 30');
+    // 全是已归档:恢复 | 永久删除;没有归档、没有「移到项目」。
+    expect(bar().element().getAttribute('data-mode')).toBe('single');
+    expect(screen.getByTestId('session-history-bulk-restore').all()).toHaveLength(1);
+    expect(screen.getByTestId('session-history-bulk-delete').all()).toHaveLength(1);
+    expect(screen.getByTestId('session-history-bulk-archive').all()).toHaveLength(0);
+    // 点开这一节、取消勾一行 ⇒ 节头横杠(选了一部分);再点节头 = 整节全选。
+    await expandUntil(() => expect(screen.getByTestId('session-history-row').all()).toHaveLength(20));
+    await expect.element(screen.getByTestId('session-history-section-load-more')).toHaveTextContent('再加载 10 条（还有 10 条没展开）');
+    (screen.getByTestId('session-history-checkbox').first().element() as HTMLElement).click();
+    await vi.waitFor(() => expect(sectionCheck().element().getAttribute('data-state')).toBe('mixed'));
+    (sectionCheck().element() as HTMLElement).click();
+    await vi.waitFor(() => expect(sectionCheck().element().getAttribute('data-state')).toBe('on'));
+    // Esc 退出多选。
+    keydown(screen.getByTestId('session-history-search').element() as HTMLElement, 'Escape');
+    await vi.waitFor(() => expect(bar().element().getAttribute('aria-hidden')).toBe('true'));
+
+    // 回到全部状态,勾一条活跃 + 一条已归档 ⇒ 混着选:什么动作都没有,只有说明和两个收窄按钮。
+    await pick('session-history-filter', 'session-history-filter-status-all');
+    await expandUntil(() => expect(rowKeys()).toContain('gugu:live-1'));
+    const rowBox = (key: string) =>
+      screen.getByTestId('session-history-row').all().find((row) => row.element().getAttribute('data-row-key') === key)!
+        .getByTestId('session-history-checkbox').element() as HTMLElement;
+    rowBox('gugu:live-1').click();
+    await vi.waitFor(() => expect(bar().element().getAttribute('data-mode')).toBe('single'));
+    expect(screen.getByTestId('session-history-bulk-archive').all()).toHaveLength(1);
+    rowBox('gugu:a0').click();
+    await vi.waitFor(() => expect(bar().element().getAttribute('data-mode')).toBe('mixed'));
+    await expect.element(screen.getByTestId('session-history-bulk-mixed')).toHaveTextContent('其中 1 条已归档，没有两边都能做的操作');
+    expect(screen.getByTestId('session-history-bulk-archive').all()).toHaveLength(0);
+    expect(screen.getByTestId('session-history-bulk-delete').all()).toHaveLength(0);
+    click('session-history-bulk-keep-archived');
+    await vi.waitFor(() => expect(bar().element().getAttribute('data-mode')).toBe('single'));
+    await expect.element(screen.getByTestId('session-history-bulk-count')).toHaveTextContent('已选 1 条');
+    expect(screen.getByTestId('session-history-bulk-delete').all()).toHaveLength(1);
+    // 「选中筛选出的全部 32 条」:当前筛选下能勾的一共几条(每台数一次,不带行)。
+    await expect.element(screen.getByTestId('session-history-bulk-all')).toHaveTextContent('选中筛选出的全部 32 条');
+  });
+
+  it('永久删除一条:行上垃圾桶,不弹框,8 秒内可撤销;两条以上问一次(只有取消 / 永久删除),确认后同样先给撤销', async () => {
+    const { archived } = seedBigSection();
+    mocks.permanentlyDeleteSessions.mockImplementation(async (_machine: string | null, targets: Array<{ projectId: string; sessionId: string }>) => ({
+      deleted: targets, failed: [], unreached: [],
+    }));
+    render();
+    await expandUntil(() => expect(rowKeys()).toContain('gugu:a0'));
+    const trashOf = (key: string) =>
+      screen.getByTestId('session-history-row').all().find((row) => row.element().getAttribute('data-row-key') === key)!
+        .getByTestId('session-history-trash').element() as HTMLElement;
+    trashOf('gugu:a0').click();
+    // 不弹框;那一行当场收起,提示条带「撤销」。
+    expect(mocks.showModal).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(rowKeys()).not.toContain('gugu:a0'));
+    const undoToast = mocks.toast.mock.calls.map(([arg]) => arg).find((arg) => arg.key === 'session-history-permanent-delete');
+    expect(undoToast.title).toBe(`已永久删除「${archived[0].title}」`);
+    expect(undoToast.action.label).toBe('撤销');
+    undoToast.action.onClick();
+    await vi.waitFor(() => expect(rowKeys()).toContain('gugu:a0'));
+    expect(mocks.permanentlyDeleteSessions).not.toHaveBeenCalled();
+
+    // 两条:问一次,只写条数。
+    mocks.toast.mockClear();
+    keydown(screen.getByTestId('session-history-search').element() as HTMLElement, 'Escape');
+    const rowBox = (key: string) =>
+      screen.getByTestId('session-history-row').all().find((row) => row.element().getAttribute('data-row-key') === key)!
+        .getByTestId('session-history-checkbox').element() as HTMLElement;
+    rowBox('gugu:a1').click();
+    rowBox('gugu:a2').click();
+    await vi.waitFor(() => expect(screen.getByTestId('session-history-bulk-delete').all()).toHaveLength(1));
+    click('session-history-bulk-delete');
+    await vi.waitFor(() => expect(mocks.showModal).toHaveBeenCalledWith('permanentDeleteSessionsModal', expect.objectContaining({ count: 2 })));
+    const [, args] = mocks.showModal.mock.calls.at(-1)! as [string, { onSuccess: () => void }];
+    args.onSuccess();
+    await vi.waitFor(() => expect(rowKeys()).not.toContain('gugu:a1'));
+    expect(mocks.permanentlyDeleteSessions).not.toHaveBeenCalled();
+    // 撤销窗口里又删一条:上一次的不再等,当场删(同一时间只等一个撤销)。
+    trashOf('gugu:a3').click();
+    await vi.waitFor(() =>
+      expect(mocks.permanentlyDeleteSessions).toHaveBeenCalledWith(null, [
+        { projectId: 'p1', sessionId: 'a1' },
+        { projectId: 'p1', sessionId: 'a2' },
+      ], { withChildren: false })
+    );
+  });
+
+  it('归档:沿用现有归档确认框(带范围标题),确认后在行所在的机器上逐条归档', async () => {
+    seedBigSection();
+    mocks.confirmArchive.mockImplementation(({ proceed }: { proceed: (withChildren: boolean, removeSocialIdentity: boolean) => void }) => proceed(false, true));
+    mocks.archiveSession.mockResolvedValue({ archived: [], unreached: [] });
+    render();
+    await expect.element(screen.getByTestId('session-history-filter')).toBeVisible();
+    await pick('session-history-filter', 'session-history-filter-status-active');
+    await vi.waitFor(() => expect(screen.getByTestId('session-history-section-count').first().element().textContent).toBe('活跃 2 条'));
+    (sectionCheck().element() as HTMLElement).click();
+    await expect.element(screen.getByTestId('session-history-bulk-count')).toHaveTextContent('已选 2 条');
+    click('session-history-bulk-archive');
+    await vi.waitFor(() => expect(mocks.confirmArchive).toHaveBeenCalledWith(expect.objectContaining({ title: '归档 webapp 项目里的 2 条会话' })));
+    await vi.waitFor(() => expect(mocks.archiveSession).toHaveBeenCalledTimes(2));
+    expect(mocks.archiveSession).toHaveBeenCalledWith(null, 'p1', 'live-1', expect.objectContaining({ removeSocialIdentity: true }));
+  });
+
+  it('时间筛选:最后更新在那之前,交给主进程(与来源 / 状态叠加);触发钮写着那一档', async () => {
+    render();
+    await vi.waitFor(() => expect(directoryParams().length).toBeGreaterThan(0));
+    const before = Date.now();
+    await pick('session-history-time', 'session-history-time-30');
+    await vi.waitFor(() => expect(directoryParams().some((p) => p.before !== undefined)).toBe(true));
+    const cutoff = directoryParams().find((p) => p.before !== undefined)!.before!;
+    expect(Math.abs(cutoff - (before - 30 * 24 * 60 * 60 * 1000))).toBeLessThan(2 * 60_000);
+    expect(directoryParams().at(-1)).toMatchObject({ source: 'gugu' });
+    await expect.element(screen.getByTestId('session-history-time')).toHaveTextContent('一个月前');
+    await pick('session-history-time', 'session-history-time-any');
+    await vi.waitFor(() => expect(directoryParams().at(-1)?.before).toBeUndefined());
   });
 });

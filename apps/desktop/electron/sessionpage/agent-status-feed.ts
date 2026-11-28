@@ -22,6 +22,11 @@ export type AgentStatusFeedEntry = Omit<AgentStatusChange, 'reading' | 'projectI
   reading: AgentStatusReading | null
   /** 绑的那条会话最后一次有动静的时刻(ISO,会话行 lastInteractedAt);null = 还没有过。 */
   lastInteractedAt: string | null
+  /**
+   * #3938 The model the bound session runs, as the model list names it (presence `model_name`). '' = it names no
+   * concrete model; null = not known yet (not read, not live): the host then says nothing about it.
+   */
+  modelName: string | null
   /** The bound session's lifecycle; null = session-life does not own it (terminal legs). */
   life: LifeStatus | null
 }
@@ -32,6 +37,10 @@ export interface AgentStatusFeedSource {
   onSessionsGone(cb: (scope: SessionScope) => void): () => void
   onSessionLifeView(cb: (view: LifeView) => void): () => void
   sessionLifeStatusOf(sessionId: string): LifeStatus | null
+  /** #3938 The session's model by the model list's name; null = not known (see `sessionModelName`). */
+  sessionModelName(sessionId: string): Promise<string | null>
+  /** The session's model may have changed: ask `sessionModelName` again. Returns the unsubscribe. */
+  onSessionModelChanged(cb: (sessionId: string) => void): () => void
 }
 
 /**
@@ -49,6 +58,13 @@ export class AgentStatusFeed {
   private readonly changes = new Map<string, AgentStatusChange>()
   /** 每条会话最后一次动静的时刻:变化与快照谁先到都取较新的那个(读数会被没有动静的变化盖掉,这一格不会)。 */
   private readonly activityAt = new Map<string, number>()
+  /** #3938 每条会话最后一次读到的模型名;读不出(null)不进表,上一次读到的照旧代表它。 */
+  private readonly modelOf = new Map<string, string>()
+  /** 每条会话最近一次发起的模型读:晚到的旧读丢掉(谁先答都一样,❌ 按到达顺序)。 */
+  private readonly modelReads = new Map<string, number>()
+  private modelReadSeq = 0
+  private modelChain: Promise<void> = Promise.resolve()
+  private readModel: (sessionId: string) => void = () => {}
   private readonly agentOf = new Map<string, string>()
   private readonly sessionOf = new Map<string, string>()
   private readonly entries = new Map<string, AgentStatusFeedEntry>()
@@ -83,7 +99,29 @@ export class AgentStatusFeed {
   attach(source: AgentStatusFeedSource, deps: { env: NodeJS.ProcessEnv; warn?: (message: string) => void }): void {
     this.dispose()
     this.lifeOf = (sessionId) => source.sessionLifeStatusOf(sessionId)
+    // One read at a time: the runtime reports every live session at once when it comes up, and each read asks it for
+    // that session's options. A read superseded before its turn is skipped, so a burst costs one read per session.
+    this.readModel = (sessionId) => {
+      const read = ++this.modelReadSeq
+      this.modelReads.set(sessionId, read)
+      this.modelChain = this.modelChain.then(async () => {
+        if (this.modelReads.get(sessionId) !== read) return
+        try {
+          const name = await source.sessionModelName(sessionId)
+          if (this.modelReads.get(sessionId) !== read || name === null) return
+          this.modelOf.set(sessionId, name)
+          const agentUserId = this.agentOf.get(sessionId)
+          if (agentUserId) this.publish(agentUserId)
+        } catch (error) {
+          deps.warn?.(`[agent-status-feed] model read failed for ${sessionId}: ${String((error as Error)?.message ?? error)}`)
+        }
+      })
+    }
     this.disposers.push(
+      // Only a bound session's model is anyone's: binding reads it, so an unbound one waits for that.
+      source.onSessionModelChanged((sessionId) => {
+        if (this.agentOf.has(sessionId)) this.readModel(sessionId)
+      }),
       source.onAgentStatus((change) => void this.observe(change, deps)),
       source.onSessionLifeView((view) => {
         const agentUserId = this.agentOf.get(view.sessionId)
@@ -106,6 +144,9 @@ export class AgentStatusFeed {
     for (const dispose of this.disposers.splice(0)) dispose()
     this.changes.clear()
     this.activityAt.clear()
+    this.modelOf.clear()
+    this.modelReads.clear()
+    this.readModel = () => {}
     this.agentOf.clear()
     this.sessionOf.clear()
     this.entries.clear()
@@ -145,6 +186,7 @@ export class AgentStatusFeed {
     this.sessionOf.set(agentUserId, sessionId)
     this.agentOf.set(sessionId, agentUserId)
     this.publish(agentUserId)
+    this.readModel(sessionId)
   }
 
   private forget(scope: SessionScope): void {
@@ -152,6 +194,8 @@ export class AgentStatusFeed {
       if (!sessionInScope(change, scope)) continue
       this.changes.delete(sessionId)
       this.activityAt.delete(sessionId)
+      this.modelOf.delete(sessionId)
+      this.modelReads.delete(sessionId)
       const agentUserId = this.agentOf.get(sessionId)
       if (!agentUserId) continue
       this.agentOf.delete(sessionId)
@@ -171,6 +215,7 @@ export class AgentStatusFeed {
       ? { sessionId, agentUserId, reading: change?.reading ?? null, unseen: change?.unseen ?? false, reviewGate: change?.reviewGate ?? null,
         providerBlocker: change?.providerBlocker ?? null, statusSourceFault: change?.statusSourceFault ?? null,
         lastInteractedAt: activityAt === undefined ? null : new Date(activityAt).toISOString(),
+        modelName: this.modelOf.get(sessionId) ?? null,
         life: life ? { kind: life.kind, stage: life.stage, ...(life.processExited ? { processExited: true } : {}) } : null }
       : null
     if (previous === null && next === null) return
@@ -197,6 +242,7 @@ function sameEntry(a: AgentStatusFeedEntry, b: AgentStatusFeedEntry): boolean {
     && a.providerBlocker?.message === b.providerBlocker?.message
     && a.statusSourceFault === b.statusSourceFault
     && a.lastInteractedAt === b.lastInteractedAt
+    && a.modelName === b.modelName
     && JSON.stringify(a.reading) === JSON.stringify(b.reading)
     && JSON.stringify(a.life) === JSON.stringify(b.life)
   )

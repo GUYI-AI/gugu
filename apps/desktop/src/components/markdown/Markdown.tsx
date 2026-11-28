@@ -13,7 +13,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CodeBlock, defaultComponents, Streamdown, type CustomRendererProps, type PluginConfig } from 'streamdown'
+import { CodeBlock, defaultComponents, defaultRemarkPlugins, Streamdown, type CustomRendererProps, type PluginConfig } from 'streamdown'
 import 'katex/dist/katex.min.css'
 import '@gugu/session-shared/markdown.css'
 import {
@@ -35,6 +35,8 @@ import { markdownCodeHighlighter } from './codeHighlight'
 import { PlatformCodeBlock } from './PlatformCodeBlock'
 import { PlatformCopyButton } from './PlatformCopyButton'
 import { PlatformTable } from './PlatformTable'
+import { HtmlRenderFrame } from './HtmlRenderFrame'
+import { HTML_RENDER_LANGUAGE, HTML_RENDER_MAX_BYTES, readHtmlRenderDeclaredHeight } from '@gugu/session-chat-ui/html-render'
 import { MarkdownStreamingContext } from './markdownStreaming'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { FILE_PILL_CLASS, hookFilePillCopy, rehypeGroupFilePills } from './filePills'
@@ -76,7 +78,7 @@ export interface MarkdownProps {
   className?: string
   /** File previews only: project a selected DOM range back to its original source lines. */
   sourceLines?: boolean
-  /** A chat message: the chat its `msg:<prefix>` ids resolve in (the dialect's messageChat). */
+  /** A chat message: its `msg:` / `session:` ids are pills, messages resolved in this chat (the dialect's messageChat). */
   messageChat?: string
 }
 
@@ -123,11 +125,22 @@ function SvgRenderer({ code, isIncomplete }: CustomRendererProps) {
   )
 }
 
+/** A ```html-render fence: the agent's page in a sandboxed frame (HtmlRenderFrame); while it streams, its source. */
+function HtmlRenderRenderer({ code, isIncomplete, meta }: CustomRendererProps) {
+  if (!isIncomplete && new Blob([code]).size <= HTML_RENDER_MAX_BYTES) return <HtmlRenderFrame code={code} declaredHeight={readHtmlRenderDeclaredHeight(meta)} />
+  return (
+    <CodeBlock code={code} language="html" isIncomplete={isIncomplete} lineNumbers={false}>
+      <PlatformCopyButton key={code} text={code} kind="code" />
+    </CodeBlock>
+  )
+}
+
 const PLUGINS: PluginConfig = {
   code: markdownCodeHighlighter,
   renderers: [
     { language: 'mermaid', component: MermaidRenderer },
     { language: 'svg', component: SvgRenderer },
+    { language: HTML_RENDER_LANGUAGE, component: HtmlRenderRenderer },
   ],
 }
 
@@ -144,7 +157,8 @@ function pluginsFor(options: MarkdownDialectOptions) {
   let entry = pluginCache.get(key)
   if (!entry) {
     // Link pills are a chat bubble's: documents and previews keep their links as written.
-    entry = { remark: markdownRemarkPlugins(options), rehype: markdownRehypePlugins(options, options.trust === 'chat' ? [rehypeGroupFilePills, rehypeLinkPills, rehypeLinkIcons] : [rehypeGroupFilePills]) }
+    // codeMeta hands a fence's header to its renderer (`meta`): ```html-render height=320.
+    entry = { remark: [...markdownRemarkPlugins(options), defaultRemarkPlugins.codeMeta!], rehype: markdownRehypePlugins(options, options.trust === 'chat' ? [rehypeGroupFilePills, rehypeLinkPills, rehypeLinkIcons] : [rehypeGroupFilePills]) }
     pluginCache.set(key, entry)
   }
   return entry
@@ -157,7 +171,8 @@ function pluginsFor(options: MarkdownDialectOptions) {
 function LinkPillGate({ plain, ...props }: { plain: ReactNode } & Omit<ComponentProps<typeof LinkPill>, 'accountId'>) {
   const { user } = useAuth()
   const { chatsRead } = useChatStore('chatsRead')
-  if (!user || (linkPillTarget(props.href)?.kind === 'chat' && !chatsRead)) return <>{plain}</>
+  const kind = linkPillTarget(props.href)?.kind
+  if (!user || ((kind === 'chat' || kind === 'msg') && !chatsRead)) return <>{plain}</>
   return <Suspense fallback={plain}><LinkPill {...props} accountId={user.id} /></Suspense>
 }
 
@@ -264,7 +279,7 @@ export const Markdown = memo(function Markdown({
         )
         // A chat link to a file, chat or message is drawn in place as the file pill, read as the person reading (linkPills.ts).
         if (href && classes.includes(LINK_PILL_CLASS)) {
-          return <LinkPillGate href={href} onClick={onClick} plain={plain} rest={attributes}>{children}</LinkPillGate>
+          return <LinkPillGate href={href} onClick={onClick} plain={plain} rest={attributes} messageChat={messageChat}>{children}</LinkPillGate>
         }
         return plain
       },
@@ -275,7 +290,7 @@ export const Markdown = memo(function Markdown({
         return <DefaultImage {...rest} node={node as never} src={src} alt={alt} />
       },
     }),
-    [mentionMarker, hasImageRenderer, copyCode, phoneTable]
+    [mentionMarker, hasImageRenderer, copyCode, phoneTable, messageChat]
   )
 
   if (!content) return null

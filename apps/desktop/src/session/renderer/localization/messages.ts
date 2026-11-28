@@ -8,6 +8,7 @@ import { enUSRemotePortMessages, zhCNRemotePortMessages } from './messages-remot
 import { enUSSubscriptionMessages, zhCNSubscriptionMessages } from './messages-subscriptions';
 import { enUSSessionWorkflowMessages, zhCNSessionWorkflowMessages } from './messages-session-workflows';
 import { enUSLegacyDmMessages, zhCNLegacyDmMessages } from './messages-legacy-dm';
+import { enUSSessionHistoryBatchMessages, zhCNSessionHistoryBatchMessages } from './messages-session-history-batch';
 import { enUSSessionScheduleMessages, zhCNSessionScheduleMessages } from './messages-session-schedules';
 import { enUSAgentStatusMessages, zhCNAgentStatusMessages } from './messages-agent-status';
 import { enUSResourceKindMessages, zhCNResourceKindMessages } from './messages-resource-kinds';
@@ -80,6 +81,7 @@ const enUSCoreMessages = {
   // #2548 内层侧栏(打开一个群 / 项目时列表右边那一列)。
   'sidebar.topics': 'My topics',
   'sidebar.expandTopics': 'Expand topics',
+  'sidebar.resizeTopics': 'Resize topic list',
   'sidebar.collapseTopics': 'Collapse topics',
   'sidebar.allTopics': 'All',
   'sidebar.noTopics': 'No topics yet',
@@ -857,6 +859,7 @@ const enUSCoreMessages = {
   'composer.autoCompactCustom': 'Enter a custom threshold',
   'composer.clearAutoCompactThreshold': 'Clear custom threshold',
   'composer.contextWindowThreshold': 'Context window',
+  'composer.contextMaxOption': 'Max ({value})',
   'composer.contextThresholdRange': 'Enter {minimum}–{maximum} tokens.',
   'composer.contextTokensUsed': 'Used {used} / {size}',
   'composer.contextThresholdUnsupported': 'Automatic compaction is unavailable for this harness',
@@ -982,6 +985,9 @@ const enUSCoreMessages = {
   'transcript.showFullText': 'Show all',
   'transcript.collapseFullText': 'Collapse',
   'transcript.copied': 'Copied',
+  'transcript.htmlRenderTitle': 'Rendered page',
+  'transcript.htmlRenderExpand': 'Expand',
+  'transcript.htmlRenderClose': 'Close',
   'transcript.outputDocument': 'Document',
   'transcript.outputImage': 'Image',
   'transcript.outputPage': 'Web page',
@@ -1216,7 +1222,6 @@ const enUSCoreMessages = {
   'transcript.reasonSetConfigFailed': 'the configuration could not be applied',
   'transcript.reasonSetModeFailed': 'the mode could not be changed',
   'transcript.reasonCancelledByUser': 'Stopped',
-  'transcript.reasonInterruptedForMessage': 'paused to take a new message',
   'transcript.continueTurn': 'Continue',
   'transcript.continueTurnHint': 'Ask the agent to pick up where it stopped (sends a new prompt)',
   'transcript.discardTurn': 'Discard',
@@ -1475,6 +1480,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'sidebar.unreadCount': '{count} 条未读',
   'sidebar.topics': '我的话题',
   'sidebar.expandTopics': '展开话题',
+  'sidebar.resizeTopics': '调整话题列表高度',
   'sidebar.collapseTopics': '收起话题',
   'sidebar.allTopics': '全部',
   'sidebar.noTopics': '暂无话题',
@@ -2193,6 +2199,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'composer.autoCompactCustom': '输入自定义阈值',
   'composer.clearAutoCompactThreshold': '清除自定义阈值',
   'composer.contextWindowThreshold': '上下文窗口',
+  'composer.contextMaxOption': '最大（{value}）',
   'composer.contextThresholdRange': '请输入 {minimum}–{maximum} 个令牌。',
   'composer.contextTokensUsed': '已使用 {used} / {size}',
   'composer.contextThresholdUnsupported': '此 harness 不支持设置',
@@ -2312,6 +2319,9 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'transcript.showFullText': '展开全文',
   'transcript.collapseFullText': '收起全文',
   'transcript.copied': '已复制',
+  'transcript.htmlRenderTitle': '渲染的页面',
+  'transcript.htmlRenderExpand': '展开',
+  'transcript.htmlRenderClose': '关闭',
   'transcript.outputDocument': '文档',
   'transcript.outputImage': '图片',
   'transcript.outputPage': '网页',
@@ -2545,7 +2555,6 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'transcript.reasonSetConfigFailed': '配置未能应用',
   'transcript.reasonSetModeFailed': '模式未能切换',
   'transcript.reasonCancelledByUser': '已停止',
-  'transcript.reasonInterruptedForMessage': '因新消息而暂停',
   'transcript.continueTurn': '继续',
   'transcript.continueTurnHint': '让 agent 从停止处继续（会发送一条新指令）',
   'transcript.discardTurn': '丢弃',
@@ -2748,6 +2757,7 @@ export const enUSMessages = {
   ...enUSCoreMessages,
   ...enUSAnnotationMessages,
   ...enUSSessionWorkflowMessages,
+  ...enUSSessionHistoryBatchMessages,
   ...enUSLegacyDmMessages,
   ...enUSProjectMessages,
   ...enUSCapabilityMessages,
@@ -2776,6 +2786,7 @@ export const zhCNMessages: Record<SessionMessageKey, string> = {
   ...zhCNCoreMessages,
   ...zhCNAnnotationMessages,
   ...zhCNSessionWorkflowMessages,
+  ...zhCNSessionHistoryBatchMessages,
   ...zhCNLegacyDmMessages,
   ...zhCNProjectMessages,
   ...zhCNCapabilityMessages,

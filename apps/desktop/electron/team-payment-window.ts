@@ -37,6 +37,10 @@ export function openTeamPaymentWindow(parent: BrowserWindow, title: string, inpu
   const ready = root.loadURL(input.url, {
     postData: [{ type: 'rawData', bytes: Buffer.from(new URLSearchParams(input.parameters).toString(), 'utf8') }],
     extraHeaders: 'Content-Type: application/x-www-form-urlencoded\r\n',
+  }).catch((error: unknown) => {
+    // The provider can immediately navigate to its cashier, superseding the initial POST.
+    const failure = error as { code?: unknown; errno?: unknown } | null
+    if (failure?.code !== 'ERR_ABORTED' && failure?.errno !== -3) throw error
   }).then(() => { if (!root.isDestroyed()) root.show() })
   return { ready, close }
 }

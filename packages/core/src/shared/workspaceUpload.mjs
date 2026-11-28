@@ -1,9 +1,9 @@
 // @@@workspace-upload-kind — 一个文件进工作区时,是「活的文本文件」(document:和 files.create 建出来的同一种东西,
-// App 能打开来一起改,agent 能 edit(old, new))还是「一包字节」(file)。
+// 人和 App 能打开来一起改)还是「一包字节」(file)。
 // 摩擦单 F19(L7-g,S11):agent 在 /tmp 生成 36 KB 的看板 JSON 传进群,落成 file,工具一声不吭;A 点开,App 报
 // 「… is not a document that can be opened for editing」。上传一个 .json 和新建一个 .json 是同一种东西(原则 4)。
-// 所以只有这一个判据:files.upload(app-files-core)问它 —— 人在群文件夹里上传,群文件夹 App 的工具替 agent 放文件,
-// 都走这一个;app_install 的数据文件也问它。
+// 所以只有这一个判据:服务端登记上传时(attachments 的 commit / place)按它定,客户端只拿它选路(文本不走本机发布)——
+// message_send 和 file_put 的 file_path、人在群文件夹里上传、App 的 files.upload,都走这一个;app_install 的数据文件也问它。
 
 import { mimeTypeFromName, normalizeMimeType } from './imageMime.mjs'
 

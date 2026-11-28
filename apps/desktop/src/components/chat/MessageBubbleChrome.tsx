@@ -12,10 +12,14 @@ import { fmtMsgTime } from './messageRowTime'
 import './messageBubbleChrome.css'
 import { useMessageSenderTarget } from './MessageSenderContext'
 import { openMessageSender } from '../../lib/openMessageSender'
+import { shownMemberName } from '../../lib/memberFallbackName'
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
+import { WebhookSenderName } from './WebhookSenderCard'
 
 // 气泡自己的「谁说的 / 什么时候」(owner 10-25「名字进气泡、时间进右下角」,照 Telegram):
 // 名字在气泡第一行、小一号、按这个人的颜色;时间在气泡右下角,和最后一行正文同一行。
+// #3934 Webhook 不是人:名字取一个固定色相(设计稿),旁边一直带「Webhook」标签。
+const WEBHOOK_NAME_HUE = 250
 
 // @@@owner-fit-batch - every sender row shares one observer: its first delivery comes after layout and before paint, and it
 // measures all rows before toggling any. A per-row measure read layout right after the previous row's write, so opening a
@@ -42,19 +46,20 @@ function ownerLabelOverflows(row: HTMLElement): boolean {
 }
 
 /** 群里收到的消息、组首那一条:名字 + 归属小标签(「我的 agent」「Alice 的 agent」),标签悬停在这条消息上才浮出(设计稿 #67)。
+ *  已移除的身份:名字本身一直带「（已移除）」(#4028),不靠悬停标签说。
  *  桌面上点名字和点头像一样,打开这个人的名片(名片里写着主人);手机上点名字仍是原来的跳转。
  *  色相来自头像实际身体色;助理沿已保存的形象,亮度/彩度随主题(tokens.css)。 */
-export function BubbleSender({ member, displayName, senderId, replyMark, profile }: { member: MemberProfileCardModel | null; displayName?: string; senderId: string | null; replyMark?: ReactNode; profile?: { handle: MemberProfileHandle; payload: ActiveMemberProfile } | null }) {
+export function BubbleSender({ member, displayName, senderId, replyMark, profile, webhook }: { member: MemberProfileCardModel | null; displayName?: string; senderId: string | null; replyMark?: ReactNode; profile?: { handle: MemberProfileHandle; payload: ActiveMemberProfile } | null; webhook?: { chatId: string; id: string } | null }) {
   const { t } = useTranslation('messaging')
   const { user } = useAuth()
   const target = useMessageSenderTarget()
   const rowRef = useRef<HTMLDivElement>(null)
   const hasReply = Boolean(replyMark)
-  const name = displayName ?? member?.displayName ?? ''
+  const name = shownMemberName(displayName ?? member?.displayName ?? '', member?.removedAt)
   const assistant = useIsAssistantAvatar(senderId ?? '')
   const assistantLook = useAgentLook(assistant ? senderId ?? '' : '', undefined, member?.avatar)
-  const hue = memberNameHue({ id: senderId, avatar: member?.avatar, isAgent: member?.type === 'agent', assistantLook: assistant ? assistantLook : undefined })
-  const tag = member?.removedAt ? t('message.removedIdentityTag') : member?.type !== 'agent' ? null
+  const hue = webhook ? WEBHOOK_NAME_HUE : memberNameHue({ id: senderId, avatar: member?.avatar, isAgent: member?.type === 'agent', assistantLook: assistant ? assistantLook : undefined })
+  const tag = webhook || member?.removedAt || member?.type !== 'agent' ? null
     : member.ownerUserId && member.ownerUserId === user?.id ? t('message.myAgentTag')
     : member.ownerDisplayName ? t('message.agentOwnerTag', { owner: member.ownerDisplayName })
     : t('message.agentOwnerUnavailableTag')
@@ -68,10 +73,12 @@ export function BubbleSender({ member, displayName, senderId, replyMark, profile
   }, [tag, name, hasReply, target])
   return (
     <div ref={rowRef} data-message-who="true" data-message-sender-name="true" className="msg-sender" style={{ '--member-hue': hue } as React.CSSProperties}>
-      {profile ? <Popover.Trigger handle={profile.handle} payload={profile.payload} className="msg-sender-name msg-sender-link" onClick={event => event.stopPropagation()}><span className="msg-sender-name">{name}</span></Popover.Trigger>
+      {webhook ? <WebhookSenderName chatId={webhook.chatId} webhookId={webhook.id} name={name} />
+        : profile ? <Popover.Trigger handle={profile.handle} payload={profile.payload} className="msg-sender-name msg-sender-link" onClick={event => event.stopPropagation()}><span className="msg-sender-name">{name}</span></Popover.Trigger>
         : target ? <Button variant="ghost" size="sm" className="msg-sender-name msg-sender-link" onClick={event => { event.stopPropagation(); openMessageSender(target) }}><span className="msg-sender-name">{name}</span></Button>
         : <span className="msg-sender-name">{name}</span>}
       {replyMark}
+      {webhook ? <Chip appearance="filled" data-message-webhook-tag="true">{t('message.webhookTag')}</Chip> : null}
       {tag && <Chip appearance="filled" data-message-agent-owner="true">{tag}</Chip>}
     </div>
   )

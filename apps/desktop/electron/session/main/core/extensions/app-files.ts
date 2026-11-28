@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import { canonicalPath, placeUnder, type CanonicalPath } from '@gugu/session-core/files';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { BrowserWindow, dialog, shell, type WebContents } from 'electron';
+import { app, BrowserWindow, dialog, shell, type WebContents } from 'electron';
 import { userIdFromSupabaseAccessToken } from '@gugu/core';
 import { attachmentFileRef } from '@gugu/core/shared/ui/attachmentModels';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
@@ -25,6 +25,7 @@ import {
   workspaceAppFileChunk,
   type AppFileChunk,
   fileRefOf,
+  chatListOptionsOf,
   fileSearchOf,
   folderOf,
   isWorkspace,
@@ -379,10 +380,11 @@ export async function changedGroupFiles(chatId: string, asAgent: string | null, 
   return files.groupChange(chatId, wanted, { asAgent });
 }
 
-export async function listAppFiles(page: DesktopFilePage, args: { place?: unknown; folder?: unknown }): Promise<AppFileEntry[]> {
+export async function listAppFiles(page: DesktopFilePage, args: { place?: unknown } & Record<string, unknown>): Promise<AppFileEntry[]> {
   const place = placeOf(args.place);
-  const folder = folderOf(args.folder);
-  if ('chat' in place) return files.groupFiles(place.chat, { asAgent: page.asAgent ?? null, ...(folder === undefined ? {} : { folder }) });
+  const options = chatListOptionsOf(args, 'chat' in place);
+  if ('chat' in place) return files.groupFiles(place.chat, { asAgent: page.asAgent ?? null, ...options });
+  const { folder } = options;
   const there = await onItsMachine(page, place, 'filesList', { place, ...(folder === undefined ? {} : { folder }) });
   if (there.there) return there.value as AppFileEntry[];
   const { listWorkingCopy } = await import('./working-copy-files');
@@ -710,10 +712,10 @@ function noSourceMessagesInWorkingCopy(sourceMessageIds: unknown): void {
 
 export async function createAppFile(
   page: DesktopFilePage,
-  args: { place?: unknown; name: string; content: string; contentType?: string; sourceMessageIds?: unknown; folder?: unknown; ifExists?: unknown },
+  args: { place?: unknown; name: string; content: string; sourceMessageIds?: unknown; folder?: unknown; ifExists?: unknown },
 ): Promise<AppFileEntry> {
   const place = placeOf(args.place);
-  const file = { name: args.name, content: args.content, ...(args.contentType ? { contentType: args.contentType } : {}) };
+  const file = { name: args.name, content: args.content };
   if ('chat' in place) return files.create(place.chat, { ...file, sourceMessageIds: args.sourceMessageIds, folder: args.folder, ifExists: args.ifExists }, { asAgent: page.asAgent ?? null, extensionId: page.extensionId });
   noSourceMessagesInWorkingCopy(args.sourceMessageIds);
   if (args.ifExists !== undefined) throw new AppFileError('invalid', "ifExists is for a chat's files: a working copy's name already there is name-taken");
@@ -1027,7 +1029,8 @@ export async function pickFilesToUpload(owner: WebContents | null): Promise<AppF
  * copy's, as the call names it. Gated like opening it read-only — checked before the dialog shows. Cancelled is `false`,
  * not an error.
  */
-type SaveSource = Awaited<ReturnType<typeof files.downloadSource>> | { name: string; ref: WorkspaceFileRef; page: DesktopFilePage; kind: 'pieces' };
+type SaveSource = Awaited<ReturnType<typeof files.downloadSource>> | { name: string; ref: WorkspaceFileRef; page: DesktopFilePage; kind: 'pieces' }
+  | { name: string; kind: 'bytes'; bytes: Uint8Array };
 
 async function downloadSourceOf(page: DesktopFilePage, given: unknown): Promise<SaveSource> {
   const ref = fileRefOf(given);
@@ -1140,6 +1143,7 @@ export function stopAppFileDownload(page: DesktopFilePage, args: { transferId?: 
 /** `wx`: written only where nothing is yet, not even a link to elsewhere; that one call is what finds the name free (`EEXIST`). */
 async function saveTo(source: SaveSource, filePath: string, flag: 'w' | 'wx', saving?: Saving): Promise<void> {
   if (source.kind === 'text') return fs.writeFile(filePath, source.text, { encoding: 'utf8', flag });
+  if (source.kind === 'bytes') return fs.writeFile(filePath, source.bytes, { flag });
   if (source.kind === 'pieces') return savePieces(source.page, source.ref, filePath, flag, saving);
   // A chat's file is written beside and renamed into place: the name is claimed first, and given back if that fails.
   if (flag === 'wx') await (await fs.open(filePath, 'wx')).close();
@@ -1228,11 +1232,39 @@ export async function downloadAppFile(page: DesktopFilePage, args: { ref?: unkno
     return saved;
   }
   const source = await downloadSourceOf(page, args.ref);
-  const options = { defaultPath: source.name };
-  const target = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
-  if (target.canceled || !target.filePath) { if (source.kind === 'file') await source.file.dispose(); return false; }
   let done = 0;
-  await following(() => saveTo(source, target.filePath as string, 'w', { signal: stop.signal, saved: (bytes, size) => told(done += bytes, size) }));
-  savedAt?.(target.filePath);
+  const target = await saveAsked(window, source, (filePath) => following(() => saveTo(source, filePath, 'w', { signal: stop.signal, saved: (bytes, size) => told(done += bytes, size) })));
+  if (!target) return false;
+  savedAt?.(target);
   return true;
+}
+
+/**
+ * One file where the person says, in the host's save dialog (inside their gesture); `null` = they cancelled. It opens in
+ * Downloads, as a browser's does: a bare name opens wherever the process stands, which on a fresh Windows profile is the
+ * app's own data folder, so a plain Save hid the file there.
+ */
+async function saveAsked(window: BrowserWindow | null, source: SaveSource, write: (filePath: string) => Promise<void>): Promise<string | null> {
+  const target = await askSaveTarget(window?.webContents ?? null, source.name);
+  if (!target) { if (source.kind === 'file') await source.file.dispose(); return null; }
+  await write(target);
+  return target;
+}
+
+/** The save dialog alone, for a file whose writer is elsewhere (a chat file's Download, `desktopFileAccess`): where, or `null`. */
+export async function askSaveTarget(owner: WebContents | null, name: string): Promise<string | null> {
+  const window = owner ? BrowserWindow.fromWebContents(owner) : null;
+  // basename: a name carrying separators (`../x`) must not point the dialog outside Downloads.
+  const options = { defaultPath: path.join(app.getPath('downloads'), path.basename(name)) };
+  const target = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
+  return target.canceled || !target.filePath ? null : target.filePath;
+}
+
+/**
+ * Bytes the host window already holds (a chat attachment, a file preview, a session's output) saved to this computer: the
+ * same save dialog and write as an App's `files.download`, the desktop's one way to save. `null` = the person cancelled.
+ */
+export async function saveBytesAs(owner: WebContents | null, name: string, bytes: Uint8Array): Promise<string | null> {
+  const source = { name, kind: 'bytes' as const, bytes };
+  return saveAsked(owner ? BrowserWindow.fromWebContents(owner) : null, source, (filePath) => saveTo(source, filePath, 'w'));
 }

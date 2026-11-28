@@ -5,7 +5,7 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type PhotoSwipe from 'photoswipe'
 import { detectPlatform } from '@tanstack/react-hotkeys'
-import { CommandShortcutBinder } from '../../../../apps/desktop/src/session/renderer/lib/commands/command-shortcut-binder'
+import { KeyboardDispatcher } from '../../../../apps/desktop/src/session/renderer/lib/commands/keyboard-dispatcher'
 import { commandRegistry } from '../../../../apps/desktop/src/session/renderer/lib/commands/registry'
 import { ImagePreviewProvider } from '../../../../apps/desktop/src/components/ImagePreviewProvider'
 import { openImageViewer } from '../../../../apps/desktop/src/lib/imageViewer'
@@ -15,7 +15,6 @@ import { Dialog } from '../../../../apps/desktop/src/components/ui/Dialog'
 import { Sheet } from '../../../../apps/desktop/src/components/ui/Sheet'
 import type { ToastContextValue } from '../../../../apps/desktop/src/components/toastContext'
 import * as platformMock from '../../../support/capacitorPlatformTestDouble'
-import { anchorDownload } from '../../../../apps/desktop/src/platform/anchorDownload'
 import { readFileZoom } from '../../../../apps/desktop/src/components/preview/file-content-zoom'
 import { fileZoomScript } from '../../../../apps/desktop/src/session/shared/preview/file-zoom'
 import * as fileHost from '../../../../apps/desktop/src/lib/fileHost'
@@ -40,8 +39,8 @@ beforeEach(() => {
   harness = createReactHarness()
   platformMock.platform.kind = 'desktop'
   platformMock.platform.capabilities.readingZoomMemory = true
-  // 桌面的 saveFile 就是这一份 a[download](安卓壳的另走原生,见 shareWithApps.test)。
-  Object.assign(platformMock.platform, { saveFile: anchorDownload })
+  // The viewer saves through the platform's saveFile (desktop: main's save dialog, see desktopSaveFile1623.test.ts).
+  Object.assign(platformMock.platform, { saveFile: vi.fn(async () => ({ saved: true })) })
   // jsdom 没有 matchMedia;按「减少动态效果」回答,PhotoSwipe 的开合就不走动画,开关立即落定。
   vi.stubGlobal('matchMedia', (query: string) => ({ matches: true, media: query, addEventListener() {}, removeEventListener() {} }))
 })
@@ -181,14 +180,36 @@ describe('ImagePreviewProvider', () => {
       await waitForCondition(() => !pswp.opener.isOpening && full.mock.calls.length === 1, 'the original never started')
     })
     const slide = pswp.currSlide!
+    // Over the thumbnail it opened from, the viewer says the original is still coming (after a short delay: data-preview).
+    await waitForCondition(() => !!document.querySelector('.gg-image-viewer__read[role=status][data-preview]'), 'no loading while the original is read')
     await act(async () => finish('blob:original'))
     await waitForCondition(() => document.querySelector('img.pswp__img[src="blob:original"]') !== null, 'original bytes were not displayed')
     const image = slide.content.element as HTMLImageElement
     Object.defineProperties(image, { naturalWidth: { value: 3000 }, naturalHeight: { value: 2000 } })
     await act(async () => image.dispatchEvent(new Event('load')))
+    await waitForCondition(() => !document.querySelector('.gg-image-viewer__read'), 'loading stayed after the original arrived')
     expect(slide.width).toBe(3000)
     expect(slide.currZoomLevel).toBe(slide.zoomLevels.initial)
     await act(async () => pswp.destroy())
+    thumb.remove()
+  })
+
+  it('an original that cannot be read over the thumbnail it opened from keeps the thumbnail and can be read again', async () => {
+    const full = vi.fn(async () => 'blob:original').mockRejectedValueOnce(new Error('original unavailable')), toast = vi.fn()
+    const thumb = document.body.appendChild(document.createElement('img'))
+    Object.defineProperties(thumb, { complete: { value: true }, naturalWidth: { value: 300 }, naturalHeight: { value: 200 } })
+    await openViewer({ toast, images: [{ url: 'blob:thumbnail', alt: 'small', thumb, full, size: { width: 3000, height: 2000 } }] })
+    const retry = await vi.waitFor(() => {
+      const button = document.querySelector<HTMLButtonElement>('.gg-image-viewer__read button')
+      if (!button) throw new Error('no way to read the original again')
+      return button
+    }, 5000)
+    expect(document.querySelector('img.pswp__img[src="blob:thumbnail"]'), 'the thumbnail stays').not.toBeNull()
+    expect(document.querySelector('.pswp__error-msg')).toBeNull()
+    expect(toast).toHaveBeenCalledTimes(1)
+    await clickElement(retry)
+    await waitForCondition(() => !!document.querySelector('img.pswp__img[src="blob:original"]'), 'reading again did not bring the original')
+    expect(full).toHaveBeenCalledTimes(2)
     thumb.remove()
   })
 
@@ -527,7 +548,7 @@ describe('ImagePreviewProvider', () => {
       }))
     })
     try {
-      await renderWithAppProviders(harness, createNode(ImagePreviewProvider, null, createNode(CommandShortcutBinder, null)))
+      await renderWithAppProviders(harness, createNode(ImagePreviewProvider, null, createNode(KeyboardDispatcher, null)))
       await pressClose(document.body)
       expect(tabs).toEqual(['conversation', 'first file'])
 
@@ -595,35 +616,25 @@ describe('ImagePreviewProvider', () => {
     }
   })
 
-  // @@@1892 - 跨域 URL 上 <a download> 会被 Chromium 忽略并整窗导航到裸图,
-  // 下载必须先取 blob 换成同源 object URL 再点击。
+  // @@@1892 - the image is fetched as a blob first (a cross-origin URL is never handed to a download), then saved by the
+  // platform under the file's own name.
   it.each([
     ['file metadata', { name: '截图.v2', contentType: 'image/png' }, '截图.v2.png'],
     ['the original blob MIME', { name: '截图.v2', contentType: undefined }, '截图.v2.png'],
     ['a JPEG alias', { name: 'photo.jpeg', contentType: 'image/jpeg' }, 'photo.jpeg'],
     ['the URL without file metadata', undefined, 'one.png'],
-  ] as const)('downloads %s via a blob object URL, independently of alt text', async (_label, file, expected) => {
+  ] as const)('saves %s as the fetched blob, independently of alt text', async (_label, file, expected) => {
     const pngBlob = new Blob(['png-bytes'], { type: file?.contentType ?? 'image/png' })
     const fetchMock = vi.fn(async () => ({ ok: true, blob: async () => pngBlob }))
     vi.stubGlobal('fetch', fetchMock)
-    const createObjectURL = vi.fn(() => 'blob:mock-download')
-    const revokeObjectURL = vi.fn()
-    // jsdom 的 URL 没有 createObjectURL/revokeObjectURL,直接补在真 URL 上
-    Object.defineProperty(URL, 'createObjectURL', { value: createObjectURL, configurable: true, writable: true })
-    Object.defineProperty(URL, 'revokeObjectURL', { value: revokeObjectURL, configurable: true, writable: true })
-    let clickedAnchor: { href: string; download: string } | null = null
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-      clickedAnchor = { href: this.getAttribute('href') ?? '', download: this.download }
-    })
+    const saveFile = vi.fn(async () => ({ saved: true }))
+    Object.assign(platformMock.platform, { saveFile })
     await openViewer({ images: [{ ...IMAGES[0]!, file }] })
     await clickElement(byTestId(AUTOMATION_TEST_IDS.imagePreviewDownload)!)
-    await waitForCondition(() => clickedAnchor !== null, 'download anchor was never clicked')
-    expect(clickedAnchor).toEqual({ href: 'blob:mock-download', download: expected })
+    await waitForCondition(() => saveFile.mock.calls.length > 0, 'the image was never saved')
+    expect(saveFile).toHaveBeenCalledWith(pngBlob, expected)
     // credentials: 'include' 配 storage 的 Access-Control-Allow-Origin: * 会直接 CORS 失败
     expect(fetchMock).toHaveBeenCalledWith('https://example.test/one.png')
-    // revoke 是延迟的(给非 Chromium 引擎解引用 blob URL 的时间),条件等待而非立即断言
-    await waitForCondition(() => revokeObjectURL.mock.calls.length > 0, 'object URL was never revoked')
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-download')
   })
 
   it('shows the sanitized download cause instead of a generic failure', async () => {

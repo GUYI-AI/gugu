@@ -28,6 +28,7 @@
     "./highlight": "./src/core/highlight/highlighter.ts",
     "./mermaid": "./src/core/mermaid/render.ts",
     "./svg": "./src/core/svg/figure.ts",
+    "./html-render": "./src/core/html-render/page.ts",
     "./composer-layout": "./src/chat-root.css.ts",
     "./styles/effects": "./src/styles/effects.css.ts",
     "./password-card": "./src/password-card-mount.tsx"

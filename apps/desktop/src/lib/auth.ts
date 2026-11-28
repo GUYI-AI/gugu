@@ -150,7 +150,8 @@ export const authService = {
     // 别的客户端在下一次读身份之前手里还是旧 URL。
     const ext = file.name.split('.').pop() ?? 'jpg'
     const path = `${userId}.${crypto.randomUUID()}.${ext}`
-    const { error: uploadError } = await dataClient.storage.from('avatars').upload(path, file)
+    // 新 key 的字节永不再变:让客户端缓存一年(与 agent 头像同),重登时直接读本地缓存、不再回源等图。
+    const { error: uploadError } = await dataClient.storage.from('avatars').upload(path, file, { cacheControl: '31536000' })
     if (uploadError) return { success: false, error: uploadError.message }
     const { data: { publicUrl } } = dataClient.storage.from('avatars').getPublicUrl(path)
     const { error: updateError } = await supabase.auth.updateUser({ data: { avatar_url: publicUrl } })

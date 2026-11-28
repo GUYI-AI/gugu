@@ -47,6 +47,15 @@ beforeEach(() => {
 });
 
 describe('preinstalled Apps', () => {
+  // The folder this build ships, as it is: every App in it installs. A manifest the parser refuses (an instructions line
+  // over its 160 characters) would leave that App uninstalled on every computer, with only a log line saying so.
+  it('installs every App this build ships, none failing', () => {
+    const repo = fileURLToPath(new URL('../../../../../preinstalled-apps', import.meta.url));
+    const report = ensurePreinstalledApps(service, repo);
+    expect(report.failed).toEqual([]);
+    expect(report.installed).toEqual(expect.arrayContaining(readdirSync(repo, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)));
+  });
+
   it('installs what gugu shipped, as `preinstalled`, switched on, with its declared capabilities', () => {
     bundle(path.join(shipped, 'workspace'), 'workspace', '1.0.0');
     const report = ensurePreinstalledApps(service, shipped);

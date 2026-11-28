@@ -7,6 +7,7 @@ import { learnHarnessConfigRoot } from '@main/core/agent-hooks/harness-config-ro
 import { agentStatusWriter } from '@main/core/agent-status/agent-status-writer';
 import { log } from '@main/lib/logger';
 import { applyHarnessTitle } from '../sessions/renameSession';
+import { announceSessionModelChanged } from '../sessions/session-model-events';
 import { SessionActivityObserver } from '../activity/session-observation';
 import {
   applyContextUsageChange,
@@ -152,6 +153,8 @@ class AcpAgentStatusBridge {
       }
       this.applyContextUsage(summary);
       this.summaries.set(summary.sessionId, summary);
+      // #3938 A session the runtime now holds has options to name its model from; a harness may also switch on its own.
+      if (!previous || (summary.modelId ?? null) !== (previous.modelId ?? null)) announceSessionModelChanged(summary.sessionId);
       if (summary !== previous) this.notify(summary.sessionId, summary);
     }
 
@@ -194,7 +197,7 @@ class AcpAgentStatusBridge {
     });
   }
 
-  /** 一轮落定时把最后那份上下文读数记进会话记录,换了模型就作废 —— 判据在 `contextUsageChange`。 */
+  /** 一轮落定时把最后那份上下文读数记进会话记录(换了模型不作废,新模型报了读数再覆盖)—— 判据在 `contextUsageChange`。 */
   private applyContextUsage(summary: SessionSummary): void {
     try {
       const { sessionId } = summary;

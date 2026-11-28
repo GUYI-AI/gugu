@@ -11,6 +11,7 @@ import { isChatSearchTarget } from '@/lib/chatSearchTarget'
 export function useChatSearch(chatId: string | null, enabled: boolean, surface: RefObject<HTMLElement | null>) {
   useCommandProvider({
     scopeId: 'app',
+    surface: 'shell',
     isActive: (element) => enabled && !!chatId && isChatSearchTarget(surface.current, chatId, element),
     getCommands: () => !chatId ? [] : [{ id: 'app.find', hideFromPalette: true, execute: () => searchInChat(chatId) }],
   })

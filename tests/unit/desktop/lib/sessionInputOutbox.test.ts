@@ -14,7 +14,6 @@ import { importLegacyWrites } from '../../../../apps/desktop/src/lib/outbox/lega
 import { installSessionInputOutbox, memoryOutboxStorage, settle, type InstalledSessionInputs } from '../../../helpers/sessionInputOutbox'
 
 // Only session inputs are under test; the App-notice kind reaches the cloud client.
-vi.mock('../../../../apps/desktop/src/lib/outbox/kinds/assistantNotice', () => ({ enqueueAssistantNotice: vi.fn() }))
 
 let installed: InstalledSessionInputs | undefined
 const install = (...args: Parameters<typeof installSessionInputOutbox>) => (installed = installSessionInputOutbox(...args))

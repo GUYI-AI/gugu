@@ -134,6 +134,7 @@ export type {
   AcpClientFactory,
   AcpClient,
   AcpPermissionParams,
+  AcpReviewContext,
   LiveSettingCapability,
   LiveSettingChannel,
   LiveSettingDimension,

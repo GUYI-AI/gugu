@@ -16,6 +16,7 @@ $priorTemp = $env:TEMP; $priorTmp = $env:TMP
 $priorEntry = $env:GUGU_INSTALLER_ENTRY; $priorHelper = $env:GUGU_INSTALLER_HELPER; $priorRequest = $env:GUGU_INSTALLER_REQUEST
 $links = Join-Path $root 'links.ini'
 $failLog = Join-Path $root 'installer\fixture.log'
+$package = Join-Path $root 'app-x64.zip'
 # The installer runs the helper from its plugin directory, next to NSIS's 32-bit System.dll; run it from such a directory.
 $plugins = Join-Path $root 'plugins'
 $oldLink = Join-Path $root 'old.lnk'
@@ -27,7 +28,7 @@ function Invoke-Phase($phase, [int]$expected = 0) {
     $ErrorActionPreference='Continue' # Expected fault cases intentionally write native stderr.
     Push-Location $plugins
     $request = Join-Path $root 'request.ini'
-    [IO.File]::WriteAllText($request, "[transaction]`r`nPhase=$phase`r`nTarget=$target`r`nAppId=$app`r`nExecutable=fixture.exe`r`nVersion=0.3.5`r`nInstallKey=$key`r`nUninstallKey=$uninstall`r`nMode=CurrentUser`r`nLinkManifest=$links`r`nFailureLog=$failLog`r`n", [Text.Encoding]::Unicode)
+    [IO.File]::WriteAllText($request, "[transaction]`r`nPhase=$phase`r`nTarget=$target`r`nAppId=$app`r`nExecutable=fixture.exe`r`nVersion=0.3.5`r`nInstallKey=$key`r`nUninstallKey=$uninstall`r`nMode=CurrentUser`r`nLinkManifest=$links`r`nPackage=$package`r`nFailureLog=$failLog`r`n", [Text.Encoding]::Unicode)
     $env:GUGU_INSTALLER_ENTRY = $Entry
     $env:GUGU_INSTALLER_HELPER = $Helper
     $env:GUGU_INSTALLER_REQUEST = $request
@@ -185,13 +186,59 @@ try {
   Invoke-Phase finish
   $results += 'a transient holder is waited out instead of aborting'
 
+  # @@@extract-diagnostics - the package is extracted by the extract phase, which names a file it cannot write.
+  $content = Join-Path $root 'package-content'
+  Payload $content 'zipped'
+  New-Item -ItemType Directory -Path (Join-Path $content 'resources\app\node_modules\deep\中文') -Force | Out-Null
+  [IO.File]::WriteAllText((Join-Path $content 'resources\app\node_modules\deep\中文\index.js'), 'nested')
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  [IO.Compression.ZipFile]::CreateFromDirectory($content, $package)
+  Invoke-Phase prepare
+  Invoke-Phase extract
+  Invoke-Phase commit
+  Registration '0.3.5'
+  Invoke-Phase finish
+  Assert (([IO.File]::ReadAllText((Join-Path $target 'fixture.exe'))) -eq 'zipped') 'Extracted package was not published'
+  Assert (([IO.File]::ReadAllText((Join-Path $target 'resources\app\node_modules\deep\中文\index.js'))) -eq 'nested') 'Nested Unicode entry was not extracted'
+  $results += 'the extract phase unpacks the package into the stage'
+
+  function Hold-StageFile([int]$seconds) {
+    $file = Join-Path $stage 'fixture.exe'
+    $p = Start-Process -FilePath $powershell -ArgumentList '-NoProfile','-Command',"`$f=[IO.File]::Open('$file','OpenOrCreate','ReadWrite','None'); Start-Sleep $seconds; `$f.Dispose()" -WindowStyle Hidden -PassThru
+    for ($i = 0; $i -lt 100 -and -not (Test-Path -LiteralPath $file); $i++) { Start-Sleep -Milliseconds 100 }
+    Start-Sleep -Milliseconds 500
+    return $p
+  }
+  # A writer blocked briefly (antivirus scanning a fresh file) is retried, not fatal.
+  Invoke-Phase prepare
+  $brief = Hold-StageFile 2
+  Invoke-Phase extract
+  $brief.WaitForExit()
+  Invoke-Phase commit
+  Invoke-Phase finish
+  Assert (([IO.File]::ReadAllText((Join-Path $target 'fixture.exe'))) -eq 'zipped') 'Briefly blocked file was not extracted'
+  $results += 'a file blocked briefly during extraction is retried'
+
+  # A writer blocked for good fails the install naming the file, the cause and the holding process; nothing is lost.
+  Invoke-Phase prepare
+  $blocker = Hold-StageFile 120
+  try { Invoke-Phase extract 5 } finally { Stop-Process -Id $blocker.Id -Force; $blocker.WaitForExit() }
+  $last = Get-Content -LiteralPath $failLog -Encoding UTF8 | Select-Object -Last 1 | ConvertFrom-Json
+  Assert ($last.phase -eq 'extract' -and $last.step -eq "extract $(Join-Path $stage 'fixture.exe')") "Blocked extraction did not name the file: $($last.step)"
+  Assert ($last.error -match 'after 6 attempts' -and $last.error -match "Held by: powershell\.exe \(pid $($blocker.Id)\)") "Blocked extraction did not name the cause and holder: $($last.error)"
+  Assert (@($last.holders | Where-Object { $_ -match "^$($blocker.Id) " }).Count -ge 1) "Blocked extraction did not record the holder: $($last.holders -join ' | ')"
+  Invoke-Phase rollback  # the held file kept the stage; the journal recovers it once the holder is gone
+  Assert (-not (Test-Path -LiteralPath $stage) -and -not (Test-Path -LiteralPath $journal)) 'Blocked extraction left a stage or journal behind'
+  Assert (([IO.File]::ReadAllText((Join-Path $target 'fixture.exe'))) -eq 'zipped') 'Blocked extraction changed the installed application'
+  $results += 'a file blocked for good fails extraction naming the file, cause and holder'
+
   # NSIS may recreate a missing destination before prepare recovers a journal.
   Invoke-Phase prepare
   Payload $stage 'not-published'
   [IO.Directory]::Move($target, (Backup))
   New-Item -ItemType Directory -Path $target | Out-Null
   Invoke-Phase prepare
-  Assert (([IO.File]::ReadAllText((Join-Path $target 'fixture.exe'))) -eq 'transient') 'Empty recreated target blocked recovery'
+  Assert (([IO.File]::ReadAllText((Join-Path $target 'fixture.exe'))) -eq 'zipped') 'Empty recreated target blocked recovery'
   Invoke-Phase rollback
   $results += 'a missing destination recovers through the empty directory NSIS recreated'
 

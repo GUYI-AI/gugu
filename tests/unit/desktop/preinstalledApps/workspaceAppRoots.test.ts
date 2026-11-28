@@ -43,7 +43,7 @@ const gugu = {
   files: {
     viewPreferences: vi.fn(async () => ({ showAppData: false })),
     list: vi.fn(async (place: { chat?: string; workspace?: string; folder?: string }) =>
-      place.workspace ? (TREE[place.folder ?? ''] ?? []).map((e) => ({ ...e })) : [{ ...chatNote }]),
+      place.workspace ? (TREE[place.folder ?? ''] ?? []).map((e) => ({ ...e })) : 'kind' in place ? [] : [{ ...chatNote }]),
     onChanged: vi.fn((place: { workspace?: string }, fn: (change: unknown) => void) => {
       if (place.workspace) hear = fn
       return () => {}
@@ -59,6 +59,8 @@ const names = () => [...$('file-list').querySelectorAll('.file .file-name')].map
 const press = (name: string) => ([...$('file-list').querySelectorAll('.file')].find((li) => li.querySelector('.file-name')?.textContent === name)!.querySelector('.file-open') as HTMLButtonElement).click()
 const crumbs = () => ($('crumbs').hidden ? null : [...$('crumbs').querySelectorAll('.crumb')].map((c) => c.textContent))
 const crumb = (i: number) => ($('crumbs').querySelectorAll('.crumb')[i] as HTMLButtonElement).click()
+// A chat folder is read as its first page and its folders (workspace/app.js readFolders).
+const CHAT_TOP_READ = [{ chat: 'dm-1', folder: '', limit: 100 }, { chat: 'dm-1', folder: '', kind: 'folder' }]
 const listed = () => gugu.files.list.mock.calls.map(([place]) => place)
 const switchRoot = (root: string) => (document.querySelector(`#place-switch [data-root="${root}"]`) as HTMLButtonElement).click()
 const workspaceListed = () => listed().filter((place) => place.workspace)
@@ -79,7 +81,7 @@ afterAll(() => vi.unstubAllGlobals())
 describe('a session\'s tab: one folder, two roots', () => {
   test('the two buttons stay above the chat files, with no roots page to enter', () => {
     expect(names()).toEqual(['plan.md'])
-    expect(listed()).toEqual([{ chat: 'dm-1', folder: '' }])
+    expect(listed()).toEqual(CHAT_TOP_READ)
     expect([...$('place-switch').querySelectorAll('button')].map((button) => button.title)).toEqual(['聊天文件', '电脑文件'])
     expect($('place-switch').querySelector('[aria-pressed="true"]')?.getAttribute('data-root')).toBe('chat')
     expect(crumbs()).toBeNull()
@@ -118,7 +120,7 @@ describe('a session\'s tab: one folder, two roots', () => {
     const calls = listed().length
     switchRoot('chat')
     await until('the chat listed', () => names().includes('plan.md'))
-    expect(listed().slice(calls)).toEqual([{ chat: 'dm-1', folder: '' }])
+    expect(listed().slice(calls)).toEqual(CHAT_TOP_READ)
     expect(crumbs()).toBeNull()
   })
 
@@ -131,7 +133,7 @@ describe('a session\'s tab: one folder, two roots', () => {
     switchRoot('chat')
     await until('drawn', () => names().includes('附件'))
     expect(names()).toEqual(['附件', 'plan.md'])
-    expect(listed().slice(calls)).toEqual([{ chat: 'dm-1', folder: '' }])
+    expect(listed().slice(calls)).toEqual(CHAT_TOP_READ)
   })
 
   test('its conversation arriving later keeps the person where they are in the working copy (no jump to the top)', async () => {

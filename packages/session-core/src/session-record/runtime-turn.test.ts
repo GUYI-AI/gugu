@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TranscriptTurn } from '../acp/models/turns/turn';
 import { endedTurnIds, recordHolds, sameTurnAs, withDrawnTurns } from './runtime-turn';
+import { HOST_PROMPT_HASH } from '../acp/native-prompt-key';
 
 const withRuntimeTurn = (turns: readonly TranscriptTurn[], runtime: TranscriptTurn | null, before: ReadonlySet<string> = new Set()) =>
   withDrawnTurns(turns, runtime ? [{ turn: runtime, before }] : []);
@@ -66,6 +67,28 @@ describe('a turn its runtime ended is shown until the record holds it', () => {
     const running = turn('S:turn:2', 'second', { ended: false });
     const record = [turn('rec-0', 'zero'), turn('rec-1', 'first', { ended: false, tool: 'call-1' }), turn('rec-2', 'second', { ended: false })];
     expect(withDrawnTurns(record, [{ turn: first, before: none }, { turn: running, before: none }]).map((t) => t.id)).toEqual(['rec-0', 'S:turn:1', 'S:turn:2']);
+  });
+});
+
+// gugu-dev#1642: Codex records a /goal as a thread goal, not a user message, so its record appends the goal's work to the
+// turn before and opens no turn for it. The runtime's ended /goal turn then had no copy and stayed drawn, running, for good;
+// the journal's turn for the person's input (`journalUnrecordedInput`) is that copy.
+describe('a /goal turn the record holds no input for', () => {
+  const none = new Set<string>();
+  const goalLine = { kind: 'message' as const, id: 'S:turn:2:message:goal:c1', seq: 0, role: 'user' as const, text: '/goal ship it',
+    _meta: { [HOST_PROMPT_HASH]: 'f'.repeat(64), guguUnrecorded: true } };
+  const runtime = { id: 'S:turn:2', seq: 2, initiator: 'user', startedAt: 20_000, outcome: { kind: 'done' },
+    items: [goalLine, { kind: 'message', id: 'S:turn:2:message:msg_goal', seq: 1, role: 'assistant', text: 'shipped' }] } as TranscriptTurn;
+  // The record: the turn before, with the goal's work appended to it.
+  const record = [{ ...turn('rec-1', 'seed', { message: 'msg_goal' }), startedAt: 10_000 }];
+
+  it('is not held by the record alone, however far it was read', () => {
+    expect(recordHolds(record, { turn: runtime, before: none }, true)).toBe(false);
+  });
+
+  it('is held once the journal has the input as a turn of its own', () => {
+    const input = { ...runtime, id: 'S:turn:2~input', items: [goalLine], endedAt: 20_000 } as TranscriptTurn;
+    expect(recordHolds([...record, input], { turn: runtime, before: none }, true)).toBe(true);
   });
 });
 

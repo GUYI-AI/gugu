@@ -5,8 +5,6 @@ import { projectFoldersChangedChannel, projectGroupBindingChangedChannel } from 
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { onMachineEvent, rpc } from '@renderer/lib/ipc';
 import { machineRegistry } from '@renderer/lib/machine-routing';
-import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client';
-import { cachedDevicesAccount } from '@/store/devicesCache';
 
 /**
  * 项目首页的文件夹卡与输入框的文件夹选择器共用的数据(product spec「项目首页」,#7341)。
@@ -231,12 +229,9 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
 
   const attach = useCallback(
     async (projectId: string, path: string): Promise<AttachResult> => {
-      const ownerId = cachedDevicesAccount();
       try {
         const result = await rpc.projects.attachProjectFolder(projectId, path);
         if (!result.success) return { ok: false, error: result.error };
-        void reportAssistantAppChange({ rpc }, undefined, { resource: 'projects', operation: 'edited', section: 'folders', id: projectId,
-          deviceId: machineRegistry.machineOf(projectId) ?? undefined, after: { path: result.data.path } }, ownerId);
         freshFolders.set(rowId, result.data.workspaceId);
         setFresh(result.data.workspaceId);
         // Every member is read again; only the machine that attached it is waited for (❌ one out of reach holds the toast).
@@ -252,11 +247,8 @@ export function useProjectFolders(rowId: string, memberIds: readonly string[] = 
 
   const detach = useCallback(
     async (folder: ProjectFolder): Promise<boolean> => {
-      const ownerId = cachedDevicesAccount();
       const result = await rpc.projects.detachProjectFolder(folder.projectId, folder.workspaceId);
       if (!result.success) throw new Error(result.error.message, { cause: result.error });
-      void reportAssistantAppChange({ rpc }, undefined, { resource: 'projects', operation: 'edited', section: 'folders', id: folder.projectId,
-        deviceId: machineRegistry.machineOf(folder.projectId) ?? undefined, before: { path: folder.path } }, ownerId);
       if (freshFolders.get(rowId) === folder.workspaceId) {
         freshFolders.delete(rowId);
         setFresh(undefined);

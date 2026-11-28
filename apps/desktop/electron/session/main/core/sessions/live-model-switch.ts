@@ -4,6 +4,7 @@ import { sessions } from '@main/db/schema';
 import { events } from '@main/lib/events';
 import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
 import { recordSessionPlatformModel } from './platform-model-selection';
+import { announceSessionModelChanged } from './session-model-events';
 import { armSwitchedModelMemory } from './switched-model-memory';
 
 /**
@@ -13,6 +14,8 @@ import { armSwitchedModelMemory } from './switched-model-memory';
  */
 export function announceSessionModel(sessionId: string, projectId: string, model: string | undefined): void {
   events.emit(sessionChangedChannel, { sessionId, projectId, changes: { model: model ?? null } });
+  // #3938 The agent's card names the model too (presence `model_name`); `events` only reaches renderers.
+  announceSessionModelChanged(sessionId);
 }
 
 /**

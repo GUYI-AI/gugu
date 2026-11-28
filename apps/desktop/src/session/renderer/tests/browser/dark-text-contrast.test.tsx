@@ -9,12 +9,15 @@ import '@/i18n/registerMessagingCatalog';
 import '@/i18n/registerContactsCatalog';
 import '@/i18n/registerMainCatalog';
 import { until } from '../../../../../../../tests/support/awaitCondition';
+import { clearAgentModelNameOverrides, setAgentModelNameOverride } from '../../../../../../../tests/support/agentModelNameTestDouble';
 import '@/styles/tokens.css';
 
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@/lib/chat', () => import('../../../../../../../tests/support/contactsChatServiceTestDouble'));
 vi.mock('@/store/devicesContext', async (original) => ({ ...(await original<object>()), useDevicesStore: () => ({ devices: [], phones: [] }) }));
 vi.mock('@/hooks/useAgentDisplayStatus', () => import('../../../../../../../tests/support/agentDisplayStatusTestDouble'));
+// #3938 The member panel's model cell reads presence model_name.
+vi.mock('@/hooks/useAgentModelName', () => import('../../../../../../../tests/support/agentModelNameTestDouble'));
 
 const { BubbleTime } = await import('@/components/chat/MessageBubbleChrome');
 const { MemberListPanel } = await import('@/components/chat/MemberListPanel');
@@ -34,6 +37,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   harness.cleanup();
+  clearAgentModelNameOverrides();
   if (previousTheme === null) document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', previousTheme);
 });
@@ -107,9 +111,10 @@ describe('dark informational text contrast (#916)', () => {
     const snapshot: GroupCollabSnapshot = {
       scheduler: { chat_id: 'group', paused: false, queue_count: 0, blocked_count: 0, summary: null, updated_at: '2026-10-29T10:00:00Z' },
       humans: [{ id: 'owner', role: 'owner', type: 'human', account_status: null }],
-      agents: [{ id: 'helper', role: 'member', type: 'agent', account_status: 'active', client: 'Codex', model_source: 'Test model', tools: [], permission_scope: null, current_task_id: null, current_task_title: null, last_action: null, last_active_at: null, listen_mode: 'active' }],
+      agents: [{ id: 'helper', role: 'member', type: 'agent', account_status: 'active', client: 'Codex', model_source: null, tools: [], permission_scope: null, current_task_id: null, current_task_title: null, last_action: null, last_active_at: null, listen_mode: 'active' }],
       tasks: [],
     };
+    setAgentModelNameOverride('helper', 'Test model');
     await renderWithAppProviders(harness, createNode(MemberListPanel, {
       chatId: 'group', chatKind: 'group', snapshot, onReload: vi.fn(async () => {}),
       head: (title: ReactNode, actions: ReactNode) => createNode(Fragment, null, title, actions),

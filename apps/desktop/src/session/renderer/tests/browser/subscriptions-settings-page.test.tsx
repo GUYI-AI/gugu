@@ -152,7 +152,8 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
     listCustomModels: async () => ({ success: true, data: [] }),
     listConnections: async ({ providerId }: { providerId?: string } = {}) => control.connectionsError
       ? { success: false, error: { message: 'Connections offline' } }
-      : { success: true, data: [...connectionsOf(providerId)] },
+      // Copies, as the real host's answer is after IPC: the cache keeps (and in development freezes) what it is handed.
+      : { success: true, data: connectionsOf(providerId).map(connection => ({ ...connection })) },
     refreshAuthStatus: async ({ providerId }: { providerId: string }) => ({ success: true, data: control.signedOut ? { kind: 'unauthenticated', ...(control.expired ? { reason: 'expired' } : {}) } : { kind: 'authenticated', account: 'me@example.test', ...(providerId === 'antigravity' ? { credentialKind: 'subscription' } : {}), ...(control.origin ? { credentialSource: control.origin } : {}) } }),
     createConnection: async (input: Record<string, unknown>) => {
       control.created = input;

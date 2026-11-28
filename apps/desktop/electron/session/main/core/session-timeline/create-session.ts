@@ -1,5 +1,4 @@
 import { buildSessionPermissionOptions } from '@shared/session-permission-options';
-import { customClaudeReviewSource } from '@gugu/session-core/models/auto-review-source';
 import { customModelEfforts, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { createFailureLogFields } from './create-failure-log-fields';
 import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
@@ -277,6 +276,20 @@ const defaultCreateModelsDeps: CreateModelsDeps = {
   readAuth: async (providerId) => (await import('@main/core/agent-config/runtime-process/host')).readAgentAuthStatus(providerId),
 };
 
+/**
+ * Why Auto mode is off on the create menu (a message key). A gateway session's reviewer is the host's verdict: the native
+ * login (signed out on a machine that only uses Gugu models) and the native reviewer say nothing about it, so only the
+ * CLI version comes before the host's reason (#3940).
+ */
+export function autoReviewOffReason(input: { cliVersion: string | undefined; versionTooOld: boolean; hostVerdict: boolean;
+  hostReason: string | undefined; nativeReady: boolean; nativeReviewer: boolean }): string {
+  if (!input.cliVersion) return 'taskConfig.reviewEligibilityUnknown';
+  if (input.versionTooOld) return 'taskConfig.reviewVersionUnsupported';
+  if (input.hostVerdict) return input.hostReason ?? 'taskConfig.reviewUnavailable';
+  if (!input.nativeReady) return 'taskConfig.reviewEligibilityUnknown';
+  return input.nativeReviewer ? 'taskConfig.reviewUnavailable' : 'taskConfig.reviewNativeUnavailable';
+}
+
 export async function createModels(
   request: SessionpageSessionCreateModelsRequest,
   deps: CreateModelsDeps = defaultCreateModelsDeps
@@ -304,10 +317,20 @@ export async function createModels(
     const customRef = customModelRefFromOption(requestedModel);
     const customRecords = await (await import('@main/core/agents/custom-models')).listCustomModels();
     const reviewConnection = customRef ? customRecords.find(record => record.id === customRef.connectionId) : undefined;
-    const reviewEndpoint = reviewConnection?.endpoints.find(endpoint => endpoint.protocol === 'anthropic-messages');
-    const customReview = request.harness === 'claude' && customRef && reviewConnection?.keySaved && reviewEndpoint
-      ? customClaudeReviewSource({ connectionId: customRef.connectionId, endpoint: reviewEndpoint.baseUrl, selectedModel: customRef.modelId, models: reviewConnection.models,
-        preference: await (await import('@main/core/settings/settings-service')).appSettingsService.get('autoReviewModel') }) : null;
+    // Claude on a gateway (a Gugu model or a connection): the host's reviewer decides, the one the session launches with.
+    const reviewRoute = platformModel ? 'platform' as const : customRef ? 'custom' as const : 'own' as const;
+    const reviewer = await import('@main/core/agents/claude-reviewer');
+    const customFacts = customRef && reviewConnection
+      ? (await import('@main/core/agents/custom-models')).claudeReviewSessionFacts(reviewConnection, customRef.modelId) : undefined;
+    const hostReview = request.harness === 'claude' && reviewRoute !== 'own'
+      ? await reviewer.resolveHostClaudeReviewer({
+        route: reviewRoute,
+        mainModel: platformModel ? requestedModel!.replace(/^platform:/, '') : customRef?.modelId,
+        platformModels: reviewer.platformReviewCandidates(catalog.models),
+        connections: customRecords,
+        ...(customFacts ? { session: customFacts } : {}),
+      })
+      : null;
     const customEntry = customRef && customRecords.find(({ id }) => id === customRef.connectionId)?.models.find(({ id }) => id === customRef.modelId);
     const customEfforts = customRef ? customModelEfforts(customEntry ?? undefined, agent.capabilities?.effort) : null;
     const resolvedEfforts = customRef && !customEfforts ? null : resolveCreateEfforts({
@@ -324,9 +347,13 @@ export async function createModels(
     const fast = customRef ? null : platformModel
       ? await platformCreationFastGroup(request.harness, requestedModel!)
       : creationFastGroup(agent.capabilities, requestedModel ?? catalog.selected, state);
-    const reviewQualified = (!customRef || request.harness !== 'claude' || customReview !== null) && catalogAllowsAutoReview(agent.capabilities?.autoApprove?.modes, state,
-          platformModel ? 'platform' : customRef ? 'custom' : 'own', runtimeModelId(requestedModel) ?? (state.kind === 'ready' ? state.selected : null));
-    const reviewAllowed = reviewQualified && customReview?.kind !== 'platform-fallback';
+    // The CLI facts decide whether Auto mode is shown at all; the host's reviewer whether it can be picked.
+    const reviewQualified = catalogAllowsAutoReview(agent.capabilities?.autoApprove?.modes, state, reviewRoute,
+      runtimeModelId(requestedModel) ?? (state.kind === 'ready' ? state.selected : null), hostReview ? { ok: true } : undefined);
+    const reviewAllowed = reviewQualified && hostReview?.ok !== false;
+    const hostReviewer = hostReview?.ok ? hostReview.reviewer : undefined;
+    const reviewByHaiku = hostReviewer?.kind === 'connection' && hostReviewer.byHaiku === true;
+    const reviewReason = hostReview && !hostReview.ok ? reviewer.CLAUDE_REVIEW_REASON_KEYS[hostReview.reason] : undefined;
     const cliVersion = state.kind === 'ready' || state.kind === 'auth-required' ? state.cliVersion : undefined;
     const floor = agent.capabilities?.autoApprove?.modes?.['ai-review']?.reviewRequirements?.minimumCliVersion;
     const versionTooOld = cliVersion && floor && cliVersion.split('.').reduce((n, part) => n * 10000 + Number(part), 0) < floor.split('.').reduce((n, part) => n * 10000 + Number(part), 0);
@@ -335,9 +362,10 @@ export async function createModels(
       native: state.kind === 'ready' || state.kind === 'auth-required' ? state.permissionModes : undefined,
       structuralFullAccess: request.harness === 'grok',
       leg: sessionpageLegOfView(view.view),
-      review: { allowed: reviewAllowed, byHaiku: customReview?.kind === 'own' && customReview.byHaiku,
-        reason: !cliVersion ? 'taskConfig.reviewEligibilityUnknown' : versionTooOld ? 'taskConfig.reviewVersionUnsupported'
-          : state.kind !== 'ready' ? 'taskConfig.reviewEligibilityUnknown' : !state.reviewerAvailable ? 'taskConfig.reviewNativeUnavailable' : 'taskConfig.reviewUnavailable' },
+      review: { allowed: reviewAllowed, byHaiku: reviewByHaiku,
+        ...(hostReviewer ? { reviewer: { label: hostReviewer.label, kind: hostReviewer.kind } } : {}),
+        reason: autoReviewOffReason({ cliVersion, versionTooOld: !!versionTooOld, hostVerdict: hostReview !== null, hostReason: reviewReason,
+          nativeReady: state.kind === 'ready', nativeReviewer: state.kind === 'ready' && state.reviewerAvailable === true }) },
     });
     return {
       ok: true,
@@ -359,7 +387,12 @@ export async function createModels(
           ...(m.hidden ? { hidden: true } : {}),
         })),
         selected: catalog.selected,
-        ...(reviewQualified ? { autoReview: { model: requestedModel ?? (state.kind === 'ready' ? state.selected! : ''), ...(customReview?.kind === 'platform-fallback' ? { disabled: true } : {}), ...(customReview?.kind === 'own' && customReview.byHaiku ? { reviewByHaiku: true } : {}) } } : {}),
+        ...(reviewQualified ? { autoReview: {
+          model: requestedModel ?? (state.kind === 'ready' ? state.selected! : ''),
+          ...(reviewReason ? { disabled: true, reason: reviewReason } : {}),
+          ...(reviewByHaiku ? { reviewByHaiku: true } : {}),
+          ...(hostReviewer ? { reviewer: { label: hostReviewer.label, kind: hostReviewer.kind } } : {}),
+        } } : {}),
         efforts: Object.entries(resolvedEfforts?.options ?? {}).map(([id, option]) => ({
           id,
           name: option.name,

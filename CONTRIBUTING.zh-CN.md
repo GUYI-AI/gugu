@@ -15,11 +15,11 @@
 
 ## 协作规则
 
-- Issue first：动手前先提或认领 issue；关闭时附实现说明。
+- 问题、建议和提问请发到 [Discussions](https://github.com/GUYI-AI/gugu/discussions)。
 - 从最新 origin/dev 切个人分支，普通 PR 明确使用 dev 作为 base。main 是发布通道，由维护者安排 promotion。
 - 合并需要检查通过和内容审核，不自合；具体必需检查以仓库当前配置为准。
 - 使用专用测试账号和隔离数据，不操作生产、其他人的实例或共享工具安装。
-- 密钥、账号登录态和私人运维资料不得进入 Git、issue 或聊天。
-- 产品规格由维护者私下维护；改变用户可见行为的改动，请在 issue / PR 里写清预期行为。
+- 密钥、账号登录态和私人运维资料不得进入 Git、讨论区或聊天。
+- 产品规格由维护者私下维护；改变用户可见行为的改动，请在 PR 里写清预期行为。
 
 公共 App 开发与接入说明见 docs/guides/writing-a-tab-extension.md。

@@ -6,9 +6,9 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { nativeHomeRoots } from '@gugu/session-core/agents/plugins/helpers';
 import { requireNativeHome } from '@gugu/session-plugins/agents';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '@main/db/client';
-import { sessions, workspaces } from '@main/db/schema';
+import { kv, sessions, workspaces } from '@main/db/schema';
 import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
 import { sessionCreatedChannel } from '@shared/core/sessions/sessionEvents';
@@ -66,16 +66,27 @@ const CODEX_FIRST_LINE_MAX_BYTES = 128 * 1024;
 const CONTINUATION_MATCH_WINDOW_MS = 5 * 60_000;
 const DAY_MS = 86_400_000;
 
-// In-app-deleted sessions whose transcripts still exist on disk must not resurrect as
-// "external forks". In-memory only for v1: after an app restart a deleted fork whose
-// transcript survives can reappear once (delete it again, or remove the transcript).
-const tombstonedProviderSessionIds = new Set<string>();
+// In-app-deleted sessions whose transcripts still exist on disk (a user's own CLI record, a file the delete could
+// not remove) must not resurrect as "external forks" — not even after a restart: the tombstones live in kv.
+const TOMBSTONE_PREFIX = 'fork-capture-tombstone:';
 
-/** Called by the permanent Agent task removal entry so the capture scan never re-registers a deleted session. */
+/** Called by the permanent delete (已归档 → 永久删除) so the capture scan never re-registers a deleted session. */
 export function tombstoneDeletedSession(providerSessionIds: Array<string | null | undefined>): void {
-  for (const providerSessionId of providerSessionIds) {
-    if (providerSessionId) tombstonedProviderSessionIds.add(providerSessionId);
-  }
+  const ids = [...new Set(providerSessionIds.filter((id): id is string => !!id))];
+  if (!ids.length) return;
+  db.insert(kv).values(ids.map((id) => ({ key: `${TOMBSTONE_PREFIX}${id}`, value: '1', updatedAt: Date.now() })))
+    .onConflictDoNothing().run();
+}
+
+/** This session id was permanently deleted on this machine (its tombstone row is there). */
+export function sessionWasPermanentlyDeleted(sessionId: string): boolean {
+  return !!db.select({ key: kv.key }).from(kv).where(eq(kv.key, `${TOMBSTONE_PREFIX}${sessionId}`)).get();
+}
+
+function tombstonedProviderSessionIds(): string[] {
+  return db.select({ key: kv.key }).from(kv)
+    .where(sql`substr(${kv.key}, 1, ${TOMBSTONE_PREFIX.length}) = ${TOMBSTONE_PREFIX}`).all()
+    .map((row) => row.key.slice(TOMBSTONE_PREFIX.length));
 }
 
 /**
@@ -498,7 +509,7 @@ export async function captureExternalForks(projectId: string, ...sessionIds: str
   // 只拿盯着的当「已知」,来源那一趟会把分叉的记录当成外部 fork 再登记一遍,分叉那一趟
   // 又会把来源的记录认成自己的 fork。咕咕管着的任何会话,都不是「外部」。认不认识只读这几列;带 config 的整行
   // 只在真有不认识的记录时才读(#3340:稳态下每一趟的开销不随项目里的会话数长)。
-  const knownProviderSessionIds = new Set<string>(tombstonedProviderSessionIds);
+  const knownProviderSessionIds = new Set<string>(tombstonedProviderSessionIds());
   const asked = new Set(sessionIds);
   const watchedIds: string[] = [];
   for (const row of db.select({ id: sessions.id, providerSessionId: sessions.providerSessionId, provider: sessions.provider, archivedAt: sessions.archivedAt })

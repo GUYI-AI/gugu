@@ -7,8 +7,9 @@ import { normalizeDeviceRow } from '@gugu/core/cloud/devices'
 import type { HumanAuthSession } from '@gugu/core'
 import type { AppPlatform, FeedbackLogTail } from './types'
 import { writeBrowserClipboardText } from './browserClipboard'
+import { desktopIpc } from './desktopIpc'
+import { DEVICE_ACTIONS_CHANNELS } from '../lib/deviceActionsIpc'
 import { unavailableCapability } from './errors'
-import { anchorDownload } from './anchorDownload'
 import { systemSettingsUrl, type HostOs } from '../../shared/system-settings-urls'
 import { detectHostOs } from '@shared/host-os'
 import type { SystemPermission } from './types'
@@ -49,6 +50,19 @@ function unavailable(feature: string): Error {
  * 准备好了」,主进程每个扩展宿主动作都等到超时。加一个域就得记得加一个分支,而忘了
  * 不会有任何声音,这种形状迟早还会再咬一次。
  */
+
+/**
+ * The desktop's one way to save a file: main's save dialog and write, the same as the Files App's `files.download`
+ * (app-files.ts `saveBytesAs`). An `<a download>` here was handed to Electron's own download, which showed no dialog and
+ * wrote nothing, so every Save did nothing at all (gugu-dev#1623). Cancelled = `saved: false`; a failure throws, for the
+ * caller's own error line.
+ */
+async function saveThroughMainDialog(blob: Blob, filename: string): Promise<{ saved: boolean }> {
+  const { rpc } = await import('@renderer/lib/ipc')
+  const result = await rpc.extensions.saveFile({ name: filename, bytes: new Uint8Array(await blob.arrayBuffer()) })
+  if (!result.success) throw new Error(result.error)
+  return { saved: result.target !== null }
+}
 
 export const electronPlatform: AppPlatform = {
   accountClosure: nativeDesktopAccountClosure,
@@ -168,7 +182,7 @@ export const electronPlatform: AppPlatform = {
     const api = electronApi()
     return api?.getAppVersion ? api.getAppVersion() : ''
   },
-  saveFile: anchorDownload,
+  saveFile: saveThroughMainDialog,
   async openRemoteFile(file, filename) {
     const api = electronApi()
     if (!api?.invoke) throw unavailable('External file open')
@@ -205,13 +219,11 @@ export const electronPlatform: AppPlatform = {
   },
   async openSystemPermissionSettings(permission) {
     // 「去系统里开这项权限」桌面也做得到,走的是全仓唯一那份地址表。
-    // window.open 在 Electron 里被 main.ts 的 setWindowOpenHandler 接走 → shell.openExternal,
-    // 自定义 scheme 照样走得通,不需要另开一条 IPC。
+    // 走设备能力页「打开系统设置」那条 IPC(主进程只放行系统设置的 scheme);主窗的 window.open 只放行网页、邮件、电话。
     if (permission !== 'notifications' && permission !== 'fileAccess') return false
     const url = systemSettingsUrl(permission, hostOs())
     if (!url) return false
-    window.open(url)
-    return true
+    return await desktopIpc()?.invoke(DEVICE_ACTIONS_CHANNELS.openSystemSettings, url) === true
   },
   async setBackgroundWatch() {
     // 桌面上没有这个概念:窗口最小化了进程照样在跑,连接不会被系统掐。

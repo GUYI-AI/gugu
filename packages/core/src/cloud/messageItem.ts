@@ -13,8 +13,9 @@ import { turnAnnotationSchema } from '@gugu/session-core/acp/client'
 //       file_blob_id：悄悄话的附件不进文件夹,消息直接指字节（能读这条消息的人才签得到）。
 // #2581 send_group_id / send_group_size：一次发出的几个文件各占一行,同一个组号 + 这次一共几个(gugu-supabase 20261112170000)。
 // annotations：话旁边的评论(gugu-supabase 20261124090000)。
+// #3934 via_webhook / via_webhook_name：群 Webhook 送来的行(发送者为空)是哪个 Webhook、它现在叫什么(gugu-supabase #420)。
 export const MESSAGES_VIEW_SELECT =
-  'id, chat_id, sender_user_id, to_user_ids, seq, content, content_type, reply_to_message_id, reply_to_sender_user_id, reply_to_content, retracted_at, created_at, forwarded_from_message_id, thread_root_id, edited_at, is_whisper, is_thread_root, client_message_id, via_app, sent_by_agent, agent_sender, file_item_id, file_version, file_blob_id, file_metadata, send_group_id, send_group_size, annotations'
+  'id, chat_id, sender_user_id, to_user_ids, seq, content, content_type, reply_to_message_id, reply_to_sender_user_id, reply_to_content, retracted_at, created_at, forwarded_from_message_id, thread_root_id, edited_at, is_whisper, is_thread_root, client_message_id, via_app, sent_by_agent, agent_sender, file_item_id, file_version, file_blob_id, file_metadata, send_group_id, send_group_size, annotations, via_webhook, via_webhook_name'
 
 export type RawMessageRow = {
   id?: unknown
@@ -45,6 +46,8 @@ export type RawMessageRow = {
   send_group_id?: unknown
   send_group_size?: unknown
   annotations?: unknown
+  via_webhook?: unknown
+  via_webhook_name?: unknown
 }
 
 /** The database checks the shape (messages_annotations_shape); a row that still does not parse is a broken row. */
@@ -88,6 +91,9 @@ export function messageItemFromRow(raw: RawMessageRow, currentUserId: string): M
     to_user_ids: nullableTextArray(raw.to_user_ids),
     is_whisper: raw.is_whisper === true,
     via_app: nullableText(raw.via_app),
+    // A webhook row is the only sender-less row that is not a notice or a closed account.
+    via_webhook: senderUserId === null ? nullableText(raw.via_webhook) : null,
+    via_webhook_name: senderUserId === null ? nullableText(raw.via_webhook_name) : null,
     sent_by_agent: raw.sent_by_agent === true,
     agent_sender: senderUserId === currentUserId && raw.sent_by_agent === true
       ? agentSenderFromRow(raw.agent_sender) : null,

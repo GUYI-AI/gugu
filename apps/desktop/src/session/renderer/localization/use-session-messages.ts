@@ -15,3 +15,6 @@ export function useSessionMessages() {
     translate: (key: SessionMessageLookupKey, values?: SessionMessageValues) => translateSessionMessage(key, values),
   }), [locale]);
 }
+
+/** The session page's words in one language: a computation that keeps its result takes this as an input. */
+export type SessionTranslate = ReturnType<typeof useSessionMessages>['translate'];

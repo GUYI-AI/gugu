@@ -29,7 +29,7 @@ import {
   userIdFromSupabaseAccessToken,
   type DeviceHeartbeatTableClient,
 } from '@gugu/core'
-import { adoptDeviceName, type DeviceLabelClient } from '@gugu/core/cloud/devices'
+import { adoptDeviceName, renameDevice, type DeviceLabelClient, type DeviceRpcClient } from '@gugu/core/cloud/devices'
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase'
 import { getSupabaseAnonKey, getSupabaseUrl } from '@gugu/core/cloud/config'
 import { writeStoredServerSession } from './server-auth'
@@ -100,10 +100,9 @@ async function exchangeTokenHash(tokenHash: string, type: string): Promise<{ acc
  *
  * 用的是账号进程**同一个**解析函数、同一套输入:数据目录已经指到这个账号(applyAccountEnv 之后),
  * tier 与 main.ts 同一个来源(server 入口已设 GUGU_TIER);云端已有这台机器这个人的设备行就沿用它。
- * 解析不出来(网络抖了)⇒ null:装机照旧成功,只是这台机器在这张桌面上暂时只有「通用」。
+ * 读不到就抛错，由调用方决定这次操作是否依赖设备行。
  */
-/** 读不到(网络、库)就抛:注销要据此分清「这台没有设备行」和「连不上」。 */
-export async function deviceIdForAccount(userId: string, accessToken: string): Promise<string | null> {
+export async function deviceIdForAccount(userId: string, accessToken: string): Promise<string> {
   const heartbeatClient = createGuguSupabaseClient({
     schema: 'identity',
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -143,9 +142,12 @@ export async function runServerLogin(out: Out = defaultOut, args: readonly strin
     out(`This server is already signed in as ${existing.email ?? existing.userId}. To sign in again or change accounts, run gugu-server logout first.`)
     return 1
   }
-  // #6264 人给这台机器的名字(桌面经 SSH 带来的别名,或手敲的 `--name`):两种登法都按它命名。
   const nameAt = args.indexOf('--name')
   const name = nameAt >= 0 ? args[nameAt + 1]?.trim() || null : null
+  if (nameAt >= 0 && (!name || name === '--grant-stdin' || name === '--name')) {
+    out('请在 --name 后填写设备名。')
+    return 2
+  }
   if (args.includes('--grant-stdin')) {
     const deviceCode = await readFirstStdinLine()
     // device_code 是 base64url;形状不对就当场说,❌ 拿去 poll 换一个含糊的 invalid_request。
@@ -212,20 +214,29 @@ async function pollUntilDone(
       prepareAccountLogin(serverHome(), userId)
       applyAccountEnv(userId)
       writeAccountMeta(userId, email)
+      // Save the name before publishing the session: a waiting server can start its heartbeat as soon as the session appears.
+      writeServerConnectVia(accountDataDir(), fromGrant ? 'ssh' : 'tunnel', { name })
+      if (!fromGrant && name) {
+        try {
+          // Resolving the id can reserve a row with the hostname. Use the owner-scoped rename RPC so heartbeats keep the explicit name.
+          const deviceId = await deviceIdForAccount(userId, tokens.accessToken)
+          const client = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${tokens.accessToken}` } })
+          await renameDevice(client as unknown as DeviceRpcClient, deviceId, name)
+        } catch (error) {
+          out(`无法设置设备名 ${JSON.stringify(name)}：${error instanceof Error ? error.message : String(error)}。请重新执行 gugu-server login。`)
+          return 1
+        }
+      }
       writeStoredServerSession(tokens)
       // 重新登上了:之前「登录已失效 / 被移除」的说法作废。
       clearSignedOutMark(accountDataDir())
-      // #6264 远程 SSH(桌面经 SSH 递来的凭证)/ 远程隧道(一行命令 + 确认页):最近一次登录说了算。
-      // 名字随它一起记:账号进程第一次心跳据此报名字(core/cloud/serverConnectVia.ts serverDeviceLabel)。
-      writeServerConnectVia(accountDataDir(), fromGrant ? 'ssh' : 'tunnel', { name })
-      // 设备行只用来改名与回报;读不到不挡登录(回报里 deviceId 为 null,桌面按没有处理)。
-      const deviceId = fromGrant || name ? await deviceIdForAccount(userId, tokens.accessToken).catch(() => null) : null
-      // 这一行早就有了(重装 / 重新登录)、名字还是库取的 `Linux 2`:换成人给的名字。改不成不挡登录。
-      if (deviceId && name) {
-        const client = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${tokens.accessToken}` } })
-        await adoptDeviceName(client as unknown as DeviceLabelClient, deviceId, name).catch(() => false)
-      }
       if (fromGrant) {
+        // The desktop supplies an SSH alias as a default, so a stored custom name takes precedence.
+        const deviceId = await deviceIdForAccount(userId, tokens.accessToken).catch(() => null)
+        if (deviceId && name) {
+          const client = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${tokens.accessToken}` } })
+          await adoptDeviceName(client as unknown as DeviceLabelClient, deviceId, name).catch(() => false)
+        }
         out(
           `${LOGIN_RESULT_MARK}${JSON.stringify({
             userId,

@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { type AssistantPanelClient, type AssistantPanelItem, type AssistantPanelReceipt } from '@gugu/core/cloud/assistantPanel';
-import { readAssistantPanelBody, uploadAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies';
 import { ASSISTANT_PANEL_PATHS, createAssistantPanelFiles } from '@gugu/core/cloud/assistantPanelFiles';
 import { resourceRejection } from '@gugu/core/shared/assistantResourceRules';
 import { VOICE_NOTE_META_FILE, VOICE_NOTE_SUMMARY_FILE, VOICE_NOTE_TRANSCRIPT_FILE, VOICE_NOTES_DIR, parseVoiceNoteMeta } from '@gugu/core/shared/voiceNotes';
@@ -10,8 +9,7 @@ import {
   type AppExportAnswer, type AppFolderAnswer, type AppRemoveAllAnswer, type AppRenameAnswer, type AppTranscribeAnswer, type AppUploadAnswer,
   type Unavailable,
 } from '@shared/extensions/resources-management';
-import { account } from './app-unread-bindings';
-import { boundAgent, discard, reasonOf, refusedOrUnavailable, storeOf, unavailable, type Bound, type ResourceCallAction } from './app-bound-resources';
+import { boundAgent, reasonOf, refusedOrUnavailable, unavailable, type Bound, type ResourceCallAction } from './app-bound-resources';
 import { manageHost } from './app-bound-resources-host';
 import { extensionsService } from './extensions-root';
 
@@ -42,25 +40,24 @@ const receiptOf = ({ operationId, revision, status, terminal }: AssistantPanelRe
 
 type Panel = { files: ReturnType<typeof createAssistantPanelFiles>; receipts: AssistantPanelReceipt[] };
 
-/** The assistant pages' own store view, as this person, its every commit's receipt kept for the answer. */
-function panelOf(bound: Bound): Panel {
-  const store = storeOf(bound.ownerId);
+/** The assistant pages' own file view over its home's store (app-bound-resources.ts `store`), every commit's receipt kept. */
+async function panelOf(bound: Bound): Promise<Panel> {
+  const store = await bound.store();
   const receipts: AssistantPanelReceipt[] = [];
   const cloud: AssistantPanelClient = {
-    ...store,
+    ...store.client,
     commit: async (assistant, change) => {
-      const receipt = await store.commit(assistant, change);
+      const receipt = await store.client.commit(assistant, change);
       receipts.push(receipt);
       return receipt;
     },
   };
-  const access = () => ({ token: bound.token, ownerId: bound.ownerId, chatId: bound.chatId, accountId: async () => (await account().catch(() => null))?.ownerId ?? null });
   const files = createAssistantPanelFiles({
     assistantId: bound.agentId, deviceId: bound.deviceId, ownerId: bound.ownerId, cloud,
     assertCurrent: bound.recheck,
-    readBody: (item, signal) => readAssistantPanelBody(item, { ...access(), signal }),
-    upload: (label, bytes) => uploadAssistantPanelBody({ ...access(), label, bytes }),
-    discard: (itemId) => discard(bound, itemId),
+    readBody: (item) => store.readBody(item),
+    upload: (label, bytes) => store.upload(label, bytes),
+    discard: (itemId) => store.discard(itemId),
     changed: () => undefined,
   });
   return { files, receipts };
@@ -84,7 +81,7 @@ async function under<T extends object>(
   if (!bound) return { name, state: 'unbound' };
   if ('state' in bound) return { name, ...bound };
   try {
-    const value = await use(bound, panelOf(bound));
+    const value = await use(bound, await panelOf(bound));
     await bound.recheck();
     return value;
   } catch (error) {

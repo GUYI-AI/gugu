@@ -1,8 +1,13 @@
 /* 看图查看器(PhotoSwipe)的皮。覆盖 photoswipe.css 的规则都以 `.pswp.gg-image-viewer` 起头:两份 CSS
    在产物里谁先谁后不固定,同权重时输了,工具栏层就会吃掉全屏指针、根的 z-index 会压住 toast。
-   底是模态遮罩 --bg-overlay-modal:对话压暗后透在后面(owner 2026-11-24),遮罩和投影同类,不是面色(docs/design/ui-visual-spec.md §6.5)。 */
+   底是压暗的黑(--gg-viewer-scrim):对话压暗后透在后面(owner 2026-11-24),但比对话框的 --bg-overlay-modal 深,
+   图片边沿在两套主题下都看得清(owner 2026-11-27);遮罩和投影同类,不是面色(docs/design/ui-visual-spec.md §6.5)。 */
+.pswp.gg-image-viewer,
+.gg-image-flight {
+  --gg-viewer-scrim: color-mix(in srgb, var(--image-bg) 80%, transparent);
+}
 .pswp.gg-image-viewer {
-  --pswp-bg: var(--bg-overlay-modal);
+  --pswp-bg: var(--gg-viewer-scrim);
   --pswp-placeholder-bg: color-mix(in oklab, var(--color-white) 8%, transparent);
   --pswp-root-z-index: var(--z-overlay);
   --pswp-error-text-color: color-mix(in oklab, var(--color-white) 72%, transparent);
@@ -135,7 +140,7 @@
 .gg-image-flight__backdrop {
   position: absolute;
   inset: 0;
-  background: var(--bg-overlay-modal);
+  background: var(--gg-viewer-scrim);
 }
 .gg-image-flight__frame {
   position: absolute;

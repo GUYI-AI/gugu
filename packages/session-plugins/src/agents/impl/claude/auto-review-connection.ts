@@ -3,14 +3,15 @@ import type { AcpAgentApi, AcpClientFactory, AcpProcessIo } from '@gugu/session-
 import { flattenSelectOptions } from '@gugu/session-core/acp';
 import { connectStdioAcpV2 } from '../../helpers/acp-v2';
 import { createClaudeSessionDecoder } from './acp-transform';
-import { claudeReviewConfig, claudeReviewModelAvailable } from './auto-review';
+import { claudeReviewConfig, claudeReviewModelAllowed, type ClaudeReviewVerdict } from './auto-review';
 
 /** A connection is pinned to the actual executable selected at launch, including after reconnect. */
-export function connectClaudeWithReview(io: AcpProcessIo, toClient: AcpClientFactory, version?: string, autoReviewAllowed?: boolean, unavailable?: boolean, byHaiku?: boolean): AcpAgentApi {
+export function connectClaudeWithReview(io: AcpProcessIo, toClient: AcpClientFactory, version?: string, verdict: ClaudeReviewVerdict = {}): AcpAgentApi {
+  const autoReviewAllowed = verdict.allowed;
   const denied = new Map<string, Set<string>>();
   const configs = new Map<string, readonly SessionConfigOption[]>();
   const filter = (id: string, options: readonly SessionConfigOption[]) => {
-    const filtered = claudeReviewConfig(options, version, autoReviewAllowed, unavailable, byHaiku);
+    const filtered = claudeReviewConfig(options, version, verdict);
     configs.set(id, filtered);
     return filtered;
   };
@@ -64,7 +65,7 @@ export function connectClaudeWithReview(io: AcpProcessIo, toClient: AcpClientFac
       const mode = current?.find(option => option.category === 'mode' && option.type === 'select');
       const model = current?.find(option => option.category === 'model');
       if (params.configId === model?.id && mode?.type === 'select' && mode.currentValue === 'auto'
-        && !claudeReviewModelAvailable(current ?? [], version, typeof params.value === 'string' ? params.value : undefined)) {
+        && !claudeReviewModelAllowed(current ?? [], version, typeof params.value === 'string' ? params.value : undefined, autoReviewAllowed !== undefined)) {
         throw new Error('Change permissions before selecting a model without AI review support');
       }
       const result = await api.setSessionConfigOption!(params);

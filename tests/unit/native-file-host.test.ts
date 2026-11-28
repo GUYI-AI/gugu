@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createNativeFileHost } from '../../apps/desktop/electron/nativeFileHost'
-import { FILE_CHUNK_BYTES, type FileBytes, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileReadError, type FileBytes, type FileContext, type FileReadFailure, type FileRevision } from '@gugu/core/shared/fileResolver'
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
@@ -47,7 +47,7 @@ describe('native file capabilities are scoped and never expose incomplete origin
   // This machine's bytes (of a sha, or a file it holds) are served at an address, never in IPC frames; dispose takes it down.
   it('serves this machine\'s bytes at an address, and nothing it does not hold', async () => {
     const root = await mkdtemp(join(tmpdir(), 'gugu-native-file-153-')); roots.push(root)
-    const stored = vi.fn(async (sha256: string) => sha256 === 'a'.repeat(64) ? new Blob([bytes]) : null)
+    const stored = vi.fn(async (sha256: string): Promise<FileBytes | null> => sha256 === 'a'.repeat(64) ? { size: bytes.length, read: async (offset, length) => bytes.slice(offset, offset + length), dispose: async () => {} } : null)
     const host = createNativeFileHost({ root, owner: async () => 'owner', alive: () => true, local: vi.fn(), ssh: vi.fn(), openPath: vi.fn(), published: () => {}, stored, serve })
     const ref = { ref: { attachment_id: 'a'.repeat(64) }, actor: context.actor }
     expect(await host.read(1, ref, { op: 'stored', sha256: 'b'.repeat(64) })).toBeNull()
@@ -156,5 +156,79 @@ describe('native file capabilities are scoped and never expose incomplete origin
     await f.host.stage(2, { op: 'commit', id: other.id })
     await f.host.open(2, other.id)
     expect(f.openPath).toHaveBeenCalledOnce()
+  })
+})
+
+describe('the desktop renderer\'s cloud reads run in main', () => {
+  const cloudRevision: FileRevision = { ...commitment, source: 'managed-object', item_id: 'item', version: 1, chat_id: 'group', file_name: 'file.bin' }
+  const host = (cloud: NonNullable<Parameters<typeof createNativeFileHost>[0]['cloud']>) => createNativeFileHost({ root: tmpdir(), owner: async () => 'owner', alive: () => true, local: vi.fn(), ssh: vi.fn(), openPath: vi.fn(), published: () => {}, serve, cloud })
+  it('hands the renderer the verified snapshot at its address, and the acknowledgement\'s refusal as itself', async () => {
+    let refuse!: (error: Error) => void
+    const acknowledged = new Promise<void>((_, reject) => { refuse = reject }); acknowledged.catch(() => undefined)
+    const file: FileBytes = { size: bytes.length, read: async (offset, length) => bytes.slice(offset, offset + length), dispose: vi.fn(async () => {}), acknowledged }
+    const read = vi.fn(async (_revision: FileRevision, _context: FileContext) => file)
+    const files = host({ read, preview: vi.fn(), expiredPreview: vi.fn(), download: vi.fn() })
+    const opened = await files.read(1, context, { op: 'cloud', read: 'r1', revision: cloudRevision }) as { id: string; size: number; url: string; ack?: true }
+    expect(opened).toMatchObject({ size: bytes.length, url: `gugu-preview://served/${commitment.sha256}`, ack: true })
+    expect(read.mock.calls[0]![1].actor).toEqual(context.actor)
+    const ack = files.read(1, context, { op: 'ack', id: opened.id }) as Promise<{ failed?: FileReadFailure } | null>
+    refuse(new FileReadRevokedError('gone'))
+    const failure = (await ack)!.failed!
+    expect(fileReadError(failure)).toBeInstanceOf(FileReadRevokedError)
+    expect((fileReadError(failure) as FileReadRevokedError).reason).toBe('gone')
+    await files.read(1, context, { op: 'dispose', id: opened.id })
+    expect(file.dispose).toHaveBeenCalledOnce()
+  })
+  it('lets go of this machine\'s bytes when their address cannot be made', async () => {
+    const dispose = vi.fn(async () => {})
+    const stored = async (): Promise<FileBytes> => ({ size: bytes.length, read: async (offset, length) => bytes.slice(offset, offset + length), dispose })
+    const files = createNativeFileHost({ root: tmpdir(), owner: async () => 'owner', alive: () => true, local: vi.fn(), ssh: vi.fn(), openPath: vi.fn(), published: () => {}, stored,
+      serve: async () => { throw new Error('no address') } })
+    await expect(files.read(1, { ref: { attachment_id: 'a'.repeat(64) }, actor: context.actor }, { op: 'stored', sha256: 'a'.repeat(64) })).rejects.toThrow('no address')
+    expect(dispose).toHaveBeenCalledOnce()
+  })
+  it('says a failed read as what it was, and a cancelled read stops main\'s', async () => {
+    const files = host({ read: async () => { throw Object.assign(new MissingFileObjectError()) }, preview: vi.fn(), expiredPreview: vi.fn(), download: vi.fn() })
+    const missing = await files.read(1, context, { op: 'cloud', read: 'r2', revision: cloudRevision }) as { failed: FileReadFailure }
+    expect(fileReadError(missing.failed)).toBeInstanceOf(MissingFileObjectError)
+    const refused = await host({ read: async () => { throw Object.assign(new Error('attachments/file-download: forbidden'), { status: 403, code: 'forbidden' }) }, preview: vi.fn(), expiredPreview: vi.fn(), download: vi.fn() })
+      .read(1, context, { op: 'cloud', read: 'r3', revision: cloudRevision }) as { failed: FileReadFailure }
+    expect(fileReadError(refused.failed)).toMatchObject({ message: 'attachments/file-download: forbidden', status: 403, code: 'forbidden' })
+    let seen!: AbortSignal
+    const stalled = host({ read: (_revision, reading) => new Promise((_, reject) => { seen = reading.signal!; seen.addEventListener('abort', () => reject(seen.reason)) }), preview: vi.fn(), expiredPreview: vi.fn(), download: vi.fn() })
+    const pending = stalled.read(1, context, { op: 'cloud', read: 'r4', revision: cloudRevision }) as Promise<{ failed: FileReadFailure }>
+    await vi.waitFor(() => expect(seen).toBeDefined())
+    await stalled.read(2, context, { op: 'cancel', read: 'r4' }) // another window's cancel is not this read's
+    expect(seen.aborted).toBe(false)
+    await stalled.read(1, context, { op: 'cancel', read: 'r4' })
+    expect((await pending).failed.message).toBe('File read cancelled')
+  })
+  it('saves a download through main, and says a failed one as what it was', async () => {
+    const download = vi.fn(async (_scope: number, _context: FileContext, name: string, _known: FileBytes | null) => name === 'gone.bin' ? { status: 'gone' } : { saved: name !== 'cancel.bin' })
+    const stored = vi.fn(async (sha256: string): Promise<FileBytes | null> => sha256 === 'a'.repeat(64) ? { size: bytes.length, read: async (offset, length) => bytes.slice(offset, offset + length), dispose: async () => {} } : null)
+    const files = createNativeFileHost({ root: tmpdir(), owner: async () => 'owner', alive: () => true, local: vi.fn(), ssh: vi.fn(), openPath: vi.fn(), published: () => {}, serve, stored, cloud: { read: vi.fn(), preview: vi.fn(), expiredPreview: vi.fn(), download } })
+    expect(await files.read(1, context, { op: 'download', read: 'd1', name: 'file.bin' })).toEqual({ saved: true })
+    expect(download.mock.calls[0]!.slice(0, 1)).toEqual([1])
+    expect(download.mock.calls[0]![1].actor).toEqual(context.actor)
+    expect(download.mock.calls[0]![3]).toBeNull()
+    // A version the window already knows is handed over as this machine's bytes, when it holds them.
+    await files.read(1, context, { op: 'download', read: 'd1a', name: 'file.bin', sha256: 'a'.repeat(64) })
+    expect(await download.mock.calls[1]![3]!.read(0, bytes.length)).toEqual(bytes)
+    await files.read(1, context, { op: 'download', read: 'd1b', name: 'file.bin', sha256: 'b'.repeat(64) })
+    expect(download.mock.calls[2]![3]).toBeNull()
+    expect(await files.read(1, context, { op: 'download', read: 'd2', name: 'cancel.bin' })).toEqual({ saved: false })
+    expect(await files.read(1, context, { op: 'download', read: 'd3', name: 'gone.bin' })).toEqual({ status: 'gone' })
+    download.mockRejectedValueOnce(new MissingFileObjectError())
+    expect(fileReadError((await files.read(1, context, { op: 'download', read: 'd4', name: 'file.bin' }) as { failed: FileReadFailure }).failed)).toBeInstanceOf(MissingFileObjectError)
+    await expect(files.read(1, context, { op: 'download', read: 'd5' })).rejects.toThrow('A download needs its file name')
+  })
+  it('stops a save still running when its window goes away', async () => {
+    let seen!: AbortSignal
+    const download = (_scope: number, saving: FileContext) => new Promise<{ saved: boolean }>((_, reject) => { seen = saving.signal!; seen.addEventListener('abort', () => reject(seen.reason)) })
+    const files = host({ read: vi.fn(), preview: vi.fn(), expiredPreview: vi.fn(), download })
+    const pending = files.read(1, context, { op: 'download', read: 'd6', name: 'file.bin' }) as Promise<{ failed: FileReadFailure }>
+    await vi.waitFor(() => expect(seen).toBeDefined())
+    await files.drop(1)
+    expect((await pending).failed.message).toBe('File reader account or window changed')
   })
 })

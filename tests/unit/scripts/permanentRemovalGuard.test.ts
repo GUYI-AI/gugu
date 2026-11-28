@@ -25,6 +25,16 @@ describe('permanent removal call-site guard', () => {
     expect(removalViolations(file, 'async function permanentlyDeleteAgentSession() { db.delete(sessions).run() }')).toHaveLength(1)
     expect(removalViolations(file, 'async function automaticCleanup() { db.delete(sessions).run() }')).toHaveLength(1)
   })
+  it('allows deleting session rows and purging DM history only in the explicit permanent delete of an archived session', () => {
+    const file = 'apps/desktop/electron/session/main/core/sessions/permanently-delete-session.ts'
+    expect(removalViolations(file, 'function deleteLocalSessionRows() { db.transaction((tx) => { tx.delete(sessions).run() }) }')).toEqual([])
+    expect(removalViolations(file, 'function cleanupStaleSessions() { db.delete(sessions).run() }')).toHaveLength(1)
+    expect(removalViolations('apps/desktop/electron/session/main/core/sessions/archiveSession.ts', 'function deleteLocalSessionRows() { db.delete(sessions).run() }')).toHaveLength(1)
+    const host = 'apps/desktop/electron/sessionpage/sessionpage-identity-host.ts'
+    expect(removalViolations(host, 'const h = { async purgeHistory(ids) { await purgeOwnedAgentHistory(client, ids, op) } }')).toEqual([])
+    expect(removalViolations(host, 'const h = { async archive(ids) { await purgeOwnedAgentHistory(client, ids, op) } }')).toHaveLength(1)
+    expect(removalViolations('apps/desktop/electron/main.ts', `client.rpc('purge_owned_agent_history', args)`)).toHaveLength(1)
+  })
   it('limits confirmed account-local roster erasure to its one named entry', () => {
     const file = 'apps/desktop/electron/account-closure/roster.ts'
     expect(removalViolations(file, 'async function eraseClosedAccountRoster(scope) { await removeAgents(match) }')).toEqual([])

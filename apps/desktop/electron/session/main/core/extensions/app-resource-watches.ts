@@ -19,6 +19,7 @@ export interface ResourceWatch {
   ownerId: string;
   handle: string;
   agentId: string;
+  lifetime: AbortController;
   hear(event: AppResourceEvent): void;
 }
 
@@ -29,10 +30,11 @@ function all(): ResourceWatch[] {
   return [...watches.values()].flatMap((page) => [...page.values()]);
 }
 
-function forget(watch: ResourceWatch): boolean {
+export function forgetResourceWatch(watch: ResourceWatch): boolean {
   const page = watches.get(watch.pageId);
   if (page?.get(watch.watchId) !== watch) return false;
   page.delete(watch.watchId);
+  watch.lifetime.abort();
   if (page.size === 0) watches.delete(watch.pageId);
   if (watches.size === 0) {
     stopHearingService?.();
@@ -56,7 +58,7 @@ async function signedIn(): Promise<string | null> {
 }
 
 function end(watch: ResourceWatch): void {
-  if (forget(watch)) watch.hear({ name: watch.name, state: 'ended' });
+  if (forgetResourceWatch(watch)) watch.hear({ name: watch.name, state: 'ended' });
 }
 
 /** Check every watch `which` picks again; those whose authority went end. */
@@ -71,7 +73,7 @@ export async function revalidateResourceWatches(which: (watch: ResourceWatch) =>
  */
 export function addResourceWatch(watch: ResourceWatch): boolean {
   const previous = watches.get(watch.pageId)?.get(watch.watchId);
-  if (previous) forget(previous);
+  if (previous) forgetResourceWatch(previous);
   let page = watches.get(watch.pageId);
   if (!page) watches.set(watch.pageId, page = new Map());
   page.set(watch.watchId, watch);
@@ -79,33 +81,37 @@ export function addResourceWatch(watch: ResourceWatch): boolean {
     void revalidateResourceWatches((held) => held.extensionId === extensionId);
   });
   if (holds(watch)) return true;
-  forget(watch);
+  forgetResourceWatch(watch);
   return false;
 }
 
 /** The page stopped this watch itself: nothing to tell it. */
 export function stopResourceWatch(pageId: number, watchId: string): void {
   const watch = watches.get(pageId)?.get(watchId);
-  if (watch) forget(watch);
+  if (watch) forgetResourceWatch(watch);
 }
 
 /** The page went (navigated, closed, unbound). */
 export function stopResourceWatches(pageId: number): void {
-  for (const watch of [...watches.get(pageId)?.values() ?? []]) forget(watch);
+  for (const watch of [...watches.get(pageId)?.values() ?? []]) forgetResourceWatch(watch);
 }
 
-/**
- * The account's event bus said these agents' resources changed (`assistant_panel_changed`), or — `'all'` — it joined
- * again, or the signed-in account changed: whatever was missed, read again. Each watch still holding its authority hears
- * `changed`; the others end.
- */
+function notify(watch: ResourceWatch, owner: string | null): void {
+  if (watch.lifetime.signal.aborted) return;
+  if (owner !== watch.ownerId || !holds(watch)) end(watch);
+  else watch.hear({ name: watch.name, state: 'changed' });
+}
+
+/** A workspace change belongs to the page that subscribed to the home. */
+export async function notifyResourceWatch(watch: ResourceWatch): Promise<void> {
+  notify(watch, await signedIn());
+}
+
 export async function notifyAgentResourcesChanged(agentIds: readonly string[] | 'all'): Promise<void> {
+  const held = all().filter(watch => agentIds === 'all' || agentIds.includes(watch.agentId));
+  if (!held.length) return;
   const owner = await signedIn();
-  for (const watch of all()) {
-    if (agentIds !== 'all' && !agentIds.includes(watch.agentId)) continue;
-    if (owner !== watch.ownerId || !holds(watch)) end(watch);
-    else watch.hear({ name: watch.name, state: 'changed' });
-  }
+  for (const watch of held) notify(watch, owner);
 }
 
 /** Test seam: how many watches are held. */

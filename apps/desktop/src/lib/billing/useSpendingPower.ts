@@ -18,7 +18,7 @@ import type { QuotaWindows } from './quota'
 import { membershipProjection, type Membership } from './membership'
 import { readCreditV2Account } from './v2/runtime'
 import { rendererLogger } from '../log'
-import { i18n } from '@/i18n'
+import { i18n, useLocale } from '@/i18n'
 
 const planLog = rendererLogger('billing/plan')
 
@@ -157,6 +157,8 @@ export function membershipFailure(spending: SpendingSnapshot): string | null {
 export function useSpendingPower(user: { id: string } | null): SpendingSnapshot {
   const userId = officialServicesEnabled() ? user?.id ?? null : null
   const reading = useReplica(creditAccount, userId ? [] : null)
+  // The snapshot holds words in the app's language (membershipError): redrawn when the language changes.
+  const { resolvedLocale } = useLocale()
   const revision = useSyncExternalStore(
     (listener) => { revisionListeners.add(listener); return () => { revisionListeners.delete(listener) } },
     () => activityRevision,
@@ -174,7 +176,7 @@ export function useSpendingPower(user: { id: string } | null): SpendingSnapshot 
     return {
       state: 'value',
       membership: plan?.state === 'value' ? plan.value : null,
-      membershipError: plan?.state === 'unreadable' ? i18n.t('membership.invalidTier', { ns: 'settings' }) : null,
+      membershipError: plan?.state === 'unreadable' ? i18n.t('membership.invalidTier', { ns: 'settings', lng: resolvedLocale }) : null,
       creditVersion: account.creditVersion,
       balance: account.balance,
       balanceError: account.balanceError,
@@ -183,5 +185,5 @@ export function useSpendingPower(user: { id: string } | null): SpendingSnapshot 
       power: account.balance === null || account.windows === null ? null : deriveSpendingPower(account.balance, account.windows),
       activityRevision: revision,
     }
-  }, [reading, revision])
+  }, [reading, revision, resolvedLocale])
 }

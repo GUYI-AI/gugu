@@ -59,7 +59,7 @@ import { currentAccountAccessToken } from '@main/core/extensions/account-token';
 import { endCallsIn } from '@main/core/extensions/extension-program-surface';
 import { userIdFromSupabaseAccessToken } from '@gugu/core';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
-import { fileRefOf, folderOf, isWorkspace, openingNameOf, openingViewOf, opensAsLink, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceFolder, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileOpened, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
+import { chatListOptionsOf, fileRefOf, folderOf, isWorkspace, openingNameOf, openingViewOf, opensAsLink, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceFolder, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileOpened, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type ChatListOptions, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
 import { placeFor, placeLink, type FileOpenerCandidate } from '@shared/extensions/file-openers';
 import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
 import { rosterMoved, type MemberChange } from '@shared/extensions/app-files-core';
@@ -1284,9 +1284,11 @@ const chatIsRead = (binding: SurfaceBinding) => {
 
 /**
  * The folder's first reads belong to this binding, consumed once even on failure. Machine presence may move before that first call.
- * What the App reads first: the top, one folder — never the whole tree.
+ * What the Files App reads first (workspace/app.js `readFolders`): the top's first page and its folders — never the whole tree.
+ * Keyed by the list's options, as the App's call names them.
  */
-const OPENING_FOLDERS = [''] as const;
+const OPENING_LISTS: readonly ChatListOptions[] = [{ folder: '', limit: 100 }, { folder: '', kind: 'folder' }];
+const listKey = (options: ChatListOptions) => JSON.stringify(Object.entries(options).sort(([a], [b]) => a.localeCompare(b)));
 const openingFolders = new WeakMap<SurfaceBinding, { lists: Map<string, Promise<AppFileEntry[]>>; preferences?: Promise<{ showAppData: boolean }> }>();
 function preloadFolder(binding: SurfaceBinding, pageId: number): void {
   if (binding.extensionId !== 'workspace' || binding.tabName !== 'main' || !binding.resourceChat || binding.workspace || binding.itemId || binding.modal
@@ -1294,7 +1296,7 @@ function preloadFolder(binding: SurfaceBinding, pageId: number): void {
   const page = pageCaller(binding, pageId, false).filePage({});
   const args = { place: { chat: binding.resourceChat } };
   const files = import('@main/core/extensions/app-files');
-  const lists = new Map(OPENING_FOLDERS.map((folder) => [folder, files.then((files) => files.listAppFiles(page, { ...args, folder }))] as const));
+  const lists = new Map(OPENING_LISTS.map((options) => [listKey(options), files.then((files) => files.listAppFiles(page, { ...args, ...options }))] as const));
   const preferences = files.then((files) => files.appFileViewPreferences(page, args));
   openingFolders.set(binding, { lists, preferences });
   // Observe rejection while the App is loading; the original promises still deliver those same errors to its calls.
@@ -1896,6 +1898,16 @@ async function operatorSession(caller: BridgeCaller): Promise<string | undefined
   const roster = await import('@main/core/sessionpage/sessionpage-session-agent');
   for (const [sessionId, agentId] of await roster.agentIdsBySession(process.env)) if (agentId === operator.id) return sessionId;
   throw new Error(`${operator.id}, the agent working this page, is no longer on this computer`);
+}
+
+/** `showSession`'s `orChatWith`: an agent's id as a tool call's `_meta['gugu/agent']` gives it (`user:<uuid>`), or bare. */
+function chatPeerOf(value: unknown): string | null {
+  if (value === undefined) return null;
+  const id = typeof value === 'string' ? value.replace(/^user:/, '') : '';
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    throw Object.assign(new Error('orChatWith names an agent by its id, as a tool call\'s gugu/agent gives it'), { code: 'invalid' });
+  }
+  return id.toLowerCase();
 }
 
 /** The page a page's own verb is about (`VerbFacts.only: 'page'`): `answerCall` let no other caller through. */
@@ -2506,12 +2518,12 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       const page = method === 'filesClose' ? caller.filePage(args) : asCallingAgent(caller, await caller.resourcePage(args), args);
       if (binding && (method === 'filesList' || method === 'filesViewPreferences')) {
         const opening = openingFolders.get(binding);
-        const folder = typeof args.folder === 'string' ? args.folder : undefined;
         let read: Promise<unknown> | undefined;
         if (method === 'filesList') {
           // A list it did not read ahead (the whole tree, another folder): what it did is not the App's to be handed later.
-          read = folder === undefined ? undefined : opening?.lists.get(folder);
-          if (read) opening?.lists.delete(folder!);
+          const key = (() => { try { return listKey(chatListOptionsOf(args, true)); } catch { return undefined; } })();
+          read = key === undefined ? undefined : opening?.lists.get(key);
+          if (read) opening?.lists.delete(key!);
           else opening?.lists.clear();
         } else if (method === 'filesViewPreferences') {
           read = opening?.preferences;
@@ -2689,9 +2701,17 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
         await showSession(args.id, { projectHere: sessionHere, projectListed: listedSessionProject, bringUp });
         return undefined;
       }
+      const sessionId = sessionIdOf(args.id), chatWith = chatPeerOf(args.orChatWith);
+      // A surface floats over another App, outside gugu's window: its click brings gugu forward first, as a banner's does.
+      if (caller.binding?.surface) (await import('@main/core/agent-hooks/notification')).focusAppFromNotification();
       // Otherwise it opens the one way every session is opened (gugu-links.openLink); its failure in this API's codes.
       const { openLink } = await import('./gugu-links');
-      const outcome = await openLink({ kind: 'session', sessionId: sessionIdOf(args.id) });
+      const outcome = await openLink({ kind: 'session', sessionId });
+      // `orChatWith` (66): no such session here — that agent's private chat, as a click on its name in a chat opens it.
+      if (chatWith && outcome.kind === 'failed' && outcome.reason === 'no-session') {
+        await (await import('./extension-bridge-relay')).actInWindow({ kind: 'openLinkTarget', target: { kind: 'sender', userId: chatWith } });
+        return undefined;
+      }
       if (outcome.kind === 'failed') {
         throw Object.assign(new Error(outcome.reason === 'no-session'
           ? `Session ${sessionIdOf(args.id)} is not on this computer or in your task list`

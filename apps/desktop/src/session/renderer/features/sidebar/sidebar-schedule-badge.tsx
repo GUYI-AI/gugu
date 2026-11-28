@@ -1,5 +1,5 @@
 import { metadataSeparator } from '@/i18n/format'
-import { AlertTriangle, Clock } from '@/lib/icons';
+import { Clock } from '@/lib/icons';
 import type { SessionpageScheduleDigest } from '@gugu/session-core/session-record/contract';
 import { formatScheduleWhen } from '@renderer/features/automations/session-schedule-format';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
@@ -8,7 +8,8 @@ import { cn } from '@renderer/utils/utils';
 
 /**
  * 这个任务还会回来:它给自己排了定时(#7221 schedule_create)。行尾那一格只画一枚图标 —— 空闲时盖掉「3h」那个时间,
- * 别的状态(在跑、需要你、出错…)时让位给那个状态的标志(owner 10-19 C);最近一次没送到(失败 / 错过)是 ⚠。
+ * 别的状态(在跑、需要你、出错…)时让位给那个状态的标志(owner 10-19 C)。只画「还会回来」:行上的标志只说这个 agent
+ * 此刻怎样,某一次没送到挂在那条定时自己身上(输入框上方的芯片与弹层:原因、重试),❌ 在行上画 ⚠(owner 11-28)。
  * 不写时间:那一格窄,写字挤标题(owner 10-19:「有定时标志的时候就不用具体时间了」)。几点、做什么、几条在 tooltip 里。
  *
  * 那一格一 hover 就让给置顶 / 归档(pointer-events-none 加淡出),所以 tooltip 不挂在这里,挂在 hover 层里接过来的那一枚
@@ -20,12 +21,12 @@ export function SidebarScheduleMark({ digest, emphasized }: { digest: Sessionpag
     <span
       className={cn(
         'flex size-5 items-center justify-center',
-        digest.attention ? 'text-[var(--warn-fg)]' : emphasized ? 'text-foreground-muted' : 'text-foreground-passive'
+        emphasized ? 'text-foreground-muted' : 'text-foreground-passive'
       )}
-      data-session-schedule={digest.attention ? 'attention' : 'pending'}
+      data-session-schedule="pending"
       aria-label={lines.join(metadataSeparator())}
     >
-      {digest.attention ? <AlertTriangle className="size-3" /> : <Clock className="size-3" />}
+      <Clock className="size-3" />
     </span>
   );
 }
@@ -42,13 +43,10 @@ export function SidebarScheduleHoverMark({ digest }: { digest: SessionpageSchedu
         render={
           <span
             aria-hidden
-            data-session-schedule-hover={digest.attention ? 'attention' : 'pending'}
-            className={cn(
-              'flex size-6 items-center justify-center rounded-sm',
-              digest.attention ? 'text-[var(--warn-fg)]' : 'text-foreground-tertiary-passive'
-            )}
+            data-session-schedule-hover="pending"
+            className="flex size-6 items-center justify-center rounded-sm text-foreground-tertiary-passive"
           >
-            {digest.attention ? <AlertTriangle className="size-3.5" /> : <Clock className="size-3.5" />}
+            <Clock className="size-3.5" />
           </span>
         }
       />
@@ -59,18 +57,11 @@ export function SidebarScheduleHoverMark({ digest }: { digest: SessionpageSchedu
   );
 }
 
-/** 没送到的那条(有就先说)、下一个几点回来做什么、几条。 */
+/** 下一个几点回来做什么、几条。 */
 function useScheduleLines(digest: SessionpageScheduleDigest): string[] {
   const { locale, translate } = useSessionMessages();
   const nextAt = digest.nextAt ? Date.parse(digest.nextAt) : null;
   const lines: string[] = [];
-  if (digest.attention) {
-    lines.push(
-      translate(digest.attention.kind === 'failed' ? 'sessionSchedule.badgeFailed' : 'sessionSchedule.badgeMissed', {
-        title: digest.attention.title,
-      })
-    );
-  }
   if (nextAt != null) {
     const when = formatScheduleWhen(nextAt, locale, translate);
     lines.push(

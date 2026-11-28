@@ -132,11 +132,8 @@ export async function restoreSession(
   sessionId: string
 ): Promise<Session> {
   const restored = await serializeSessionArchival(sessionId, () => restoreSessionLocked(projectId, sessionId));
-  // ACP: session-life restores to dormant without starting (its archived rows already failed).
-  if (restored.runtime === 'acp') {
-    sessionLife().restore(sessionId);
-    return restored;
-  }
+  // ACP was restored together with its archival metadata while holding the lock.
+  if (restored.runtime === 'acp') return restored;
   // Run after releasing the archival lock: the existing router may wake this task through that lock.
   // Restore admits the retained outbox exactly once, without replaying any dispatching receipt.
   await sessionBootTasks.run('restore-outbox', sessionId, () => drainSessionMessageOutbox({ projectId, sessionId }));
@@ -145,18 +142,22 @@ export async function restoreSession(
 
 async function restoreSessionLocked(projectId: string, sessionId: string): Promise<Session> {
   const [row] = await db
-    .select({ id: sessions.id })
+    .select({ runtime: sessions.runtime, archivedAt: sessions.archivedAt })
     .from(sessions)
     .where(and(eq(sessions.id, sessionId), eq(sessions.projectId, projectId)))
     .limit(1);
   if (!row) throw new Error(`Session not found: ${sessionId}`);
   const removedIdentity = sessionArchivalState(sessionId)?.removedIdentity;
   if (removedIdentity) await sessionIdentityHost().restore({ projectId, sessionId }, removedIdentity);
-  // A closed interval and the restored row become visible in one transaction.
-  db.transaction((tx) => {
+  // Hydrate/validate the lifecycle while the row is still archived. Commit its
+  // receipts, archival interval and project visibility together before publishing.
+  const commit = (commitLife: () => void = () => {}) => db.transaction((tx) => {
     setSessionArchival(sessionId, false);
     tx.update(projects).set({ archivedAt: null }).where(eq(projects.id, projectId)).run();
+    commitLife();
   });
+  if (row.runtime === 'acp' && row.archivedAt) await sessionLife().restore(sessionId, commit);
+  else commit();
   const restored = db.select().from(sessions).where(eq(sessions.id, sessionId)).get()!;
 
   events.emit(sessionChangedChannel, {

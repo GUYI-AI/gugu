@@ -46,6 +46,8 @@ export async function settleSwitchedModelMemory(sessionId: string, outcome: Tran
       ...(model && { model }),
       ...(platform && { platformModel: platform.modelId }),
       ...(effort && { effort }),
+      // A model switch is not a level pick (gugu-dev#1579): the level picked before it still is the person's.
+      ...(previous?.pickedEffort && { pickedEffort: previous.pickedEffort }),
       ...(previous?.permissionMode && { permissionMode: previous.permissionMode }),
       // A model switch is not an engine pick: another engine's switch must not outrank settings' default agent.
       providerChosenByUser: previous?.providerChosenByUser ?? false,

@@ -428,6 +428,25 @@ export function folderOf(value: unknown): string | undefined {
 }
 
 /**
+ * What `files.list({ chat, … })` reads besides its place: `folder` (above), `kind: 'folder'` only folders, `name` only names
+ * containing it, and `limit` (1–1000) — one page, newest change first, from `offset`; a full page may have more after it.
+ * Without `limit`, every row. A working copy's list takes `folder` alone.
+ */
+export type ChatListOptions = { folder?: string; kind?: 'folder'; name?: string; offset?: number; limit?: number };
+export function chatListOptionsOf(value: unknown, chat: boolean): ChatListOptions {
+  const { folder, kind, name, offset, limit } = (value ?? {}) as Record<string, unknown>;
+  const count = (n: unknown, least: number, most: number) => n === undefined || (Number.isInteger(n) && (n as number) >= least && (n as number) <= most);
+  if (!chat && [kind, name, offset, limit].some((option) => option !== undefined)) throw invalidPlace('kind, name, offset and limit list a chat; a working copy lists one folder at a time');
+  if (kind !== undefined && kind !== 'folder') throw invalidPlace("kind lists only folders: kind: 'folder'");
+  if (name !== undefined && (typeof name !== 'string' || !name.trim())) throw invalidPlace('name is a piece of a name to look for');
+  if (!count(limit, 1, 1000) || !count(offset, 0, Number.MAX_SAFE_INTEGER) || (offset !== undefined && limit === undefined)) {
+    throw invalidPlace('limit is a whole number from 1 to 1000; offset, 0 or more, goes with it');
+  }
+  return Object.fromEntries(Object.entries({ folder: folderOf(folder), kind, name: (name as string | undefined)?.trim(), offset, limit })
+    .filter(([, option]) => option !== undefined)) as ChatListOptions;
+}
+
+/**
  * `files.search(options)` across every chat whoever reads is in: `query` a piece of the path (any case; none, every file),
  * `suffixes` the kinds kept (`['.md']`; none, all), `limit` at most so many (1-200, else 50). `files.recent({ limit })`
  * takes the `limit` alone. What is not one of these throws.
@@ -823,8 +842,10 @@ function ownSuffix(name: string): string {
 
 /**
  * What kind of file this is, as a suffix — the one answer for who opens it and how it shows (摩擦单 F41): its content
- * type's, when the type names one — the type is also what the file is served as (`fileTypeOf`), and a document's name is
- * a title (`栖页 2.0 发布页` has no suffix `.0 发布页`). Only a type that names none (stored bytes) goes by the name's.
+ * type's, when the type names one — the type is also what the file is served as (`fileTypeOf`). A document's type comes
+ * from its name (the folder refuses a name without a text suffix), so the two agree; one made before that may still have
+ * a bare title (`栖页 2.0 发布页` has no suffix `.0 发布页`), and its type answers for it. Only a type that names none
+ * (stored bytes) goes by the name's.
  * The file is never renamed: names are people's and agents'.
  */
 export function fileSuffixOf(file: { name: string; contentType?: string | null }): string {

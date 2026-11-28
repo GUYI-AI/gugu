@@ -4,9 +4,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { FileTextContent } from '@/components/preview/FileTextContent'
 import { until } from '../../../../../../../tests/support/awaitCondition'
-import { ChatStoreProvider } from '@/store/chatContext'
 import { SelectionLineLayer } from '@renderer/features/sessions/annotations/selection-line'
-import { chatStore } from '../../../../../../../tests/support/testHarness'
+import { sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
 import '@gugu/session-ui/styles/global'
 import '@gugu/session-ui/theme/theme.css'
 import '@gugu/session-ui/theme/semantic.css'
@@ -49,18 +48,18 @@ it.each([390, 1000])('keeps native source selection and the one menu (a phone\'s
   await until('the action closes once cited', () => !document.querySelector('.gugu-selection-menu'))
 })
 
-it('sends a source selection with the person\'s line into the conversation, the file named where it is', async () => {
+it('comments on a source selection into the conversation\'s draft: the file where it is, its lines and words; nothing is sent', async () => {
   await page.viewport(960, 700)
   const chatId = crypto.randomUUID(), path = '/home/task/docs/pricing.txt'
-  const sendMessageToChat = vi.fn(async () => 'message-1')
+  const draft = sessionAnnotations.forConversation({ kind: 'chat', chatId })
   host = document.createElement('div')
   host.className = 'gugu-skin'
   Object.assign(host.style, { width: '480px', paddingTop: '130px' })
   document.body.append(host)
   root = createRoot(host)
   await act(async () => {
-    root.render(<ChatStoreProvider value={chatStore({ sendMessageToChat })}><FileTextContent kind="text" content={'same line\nselected words\nselected words'}
-      selectable={{ conversation: { kind: 'chat', chatId }, file: { name: 'pricing.txt', target: path }, cite: vi.fn(), sends: true }} /><SelectionLineLayer /></ChatStoreProvider>)
+    root.render(<><FileTextContent kind="text" content={'same line\nselected words\nselected words'}
+      selectable={{ conversation: { kind: 'chat', chatId }, file: { name: 'pricing.txt', target: path }, cite: vi.fn(), sends: true }} /><SelectionLineLayer /></>)
   })
   const range = document.createRange()
   const selected = host.querySelector('[data-file-line="3"]')!.firstChild!
@@ -68,14 +67,14 @@ it('sends a source selection with the person\'s line into the conversation, the 
   range.setEnd(selected, 8)
   document.getSelection()?.addRange(range)
   document.dispatchEvent(new Event('selectionchange'))
-  await until('the file offers Copy · Cite · Send', () => document.querySelectorAll('.gugu-selection-menu button').length === 3)
+  await until('the file offers Copy · Cite · Comment', () => document.querySelectorAll('.gugu-selection-menu button').length === 3)
   expect([...document.querySelectorAll<HTMLElement>('.gugu-selection-menu button')].map(button => button.dataset.fileSelectionAction)).toEqual(['copy', 'cite', 'send'])
   await act(async () => { await userEvent.click(document.querySelector('.gugu-selection-menu [data-file-selection-action="send"]')!) })
   const editor = () => document.querySelector<HTMLFormElement>('[data-annotation-editor]')
   await until('the line is open at the selection', () => !!editor())
   await act(async () => { await userEvent.keyboard('Clarify the pricing{Enter}') })
-  await until('sent into the chat', () => sendMessageToChat.mock.calls.length === 1)
-  // The cite as Cite makes it (a code file's lines whole, fenced; in a chat a computer's file by its path), then the line.
-  expect(sendMessageToChat).toHaveBeenCalledWith(chatId, expect.stringMatching(/^> ```\n> selected words\n> ```\n\npricing\.txt \([^)]+\): \/home\/task\/docs\/pricing\.txt\n\nClarify the pricing$/), { toUserIds: [] })
-  await until('the line goes once sent', () => !editor())
+  await until('the comment joins the draft', () => draft.items.length === 1)
+  expect(draft.items[0]).toMatchObject({ kind: 'file', file: { name: 'pricing.txt', target: path }, places: [{ at: { lines: '3' } }], text: 'selected words', annotation: 'Clarify the pricing' })
+  await until('the box goes once saved', () => !editor())
+  draft.clear()
 })

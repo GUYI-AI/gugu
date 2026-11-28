@@ -8,7 +8,7 @@ import { isMacHost, isWindowsHost } from '@shared/host-os';
 import { reaction } from 'mobx';
 import { useCallback, useContext, useEffect, useRef } from 'react';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
-import { dispatchMatchingHotkeys } from '@renderer/lib/hotkeys/dispatch-matching-hotkeys';
+import { dispatchKey } from '@renderer/lib/commands/keyboard-dispatcher';
 import { events, rpc } from '@renderer/lib/ipc';
 import { observePtyOutput } from '../session-output-observers';
 import { log } from '@renderer/utils/logger';
@@ -31,6 +31,7 @@ import {
 } from './pty-keybindings';
 import { sendTerminalInput } from './send-terminal-input';
 import { getTerminalContextLink } from './terminal-context-link';
+import { openWebLink } from '@renderer/lib/open-web-link';
 import { handleTerminalKeyboardExit } from './terminal-keyboard-exit';
 import { buildTerminalFontFamily, flushTerminalWidthCache } from './terminal-font';
 import { getCellMetrics } from './xterm-cell-metrics';
@@ -41,7 +42,7 @@ const LAST_SELECTION_COPY_GRACE_MS = 2_000;
 
 function dispatchTerminalAppHotkey(event: KeyboardEvent): boolean {
   if (!shouldDispatchAppHotkeyFromTerminal(event, IS_MAC_PLATFORM)) return false;
-  return dispatchMatchingHotkeys(event, { dispatch: 'first' });
+  return dispatchKey(event, 'terminal');
 }
 
 function getRecentSelection(selection: { text: string; capturedAt: number } | null): string {
@@ -531,6 +532,7 @@ export function usePty(
       });
 
       // ── Native context menu ────────────────────────────────────────────────
+      let contextMenuLink: string | null = null;
       const handleContextMenuMouseDown = (event: MouseEvent) => {
         if (event.button !== 2) return;
         event.preventDefault();
@@ -545,6 +547,7 @@ export function usePty(
         const selectionText =
           terminal.getSelection() || getRecentSelection(lastSelectionRef.current);
         const linkText = getTerminalContextLink(terminal, event);
+        contextMenuLink = linkText;
         void rpc.app.showTerminalContextMenu({
           requestId,
           selectionText,
@@ -569,7 +572,9 @@ export function usePty(
           }
           if (payload.action === 'clear') {
             frontendPty.clear();
+            return;
           }
+          if (payload.action === 'open-link' && contextMenuLink) openWebLink(contextMenuLink, 'app');
         }
       );
       frontendPty.ownedContainer.addEventListener('mousedown', handleContextMenuMouseDown, true);

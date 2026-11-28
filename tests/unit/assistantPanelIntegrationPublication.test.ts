@@ -1,14 +1,8 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 const fixture = vi.hoisted(() => ({ meta: undefined as Record<string, string> | undefined, verified: null as { checkedAt: number; checks: { accountId: string; connected: boolean; errorType?: string }[] } | null }))
-vi.mock('@main/db/client',() => ({ db: {} }))
-vi.mock('@main/core/sessions/getSessions',() => ({ getSessions: vi.fn() }))
-vi.mock('@main/core/session-timeline/service',() => ({ listSessionStates: vi.fn() }))
-vi.mock('@main/core/automations/repo',() => ({ listSessionSchedules: vi.fn() }))
-vi.mock('@main/core/automations/automations-service',() => ({ automationsService: {} }))
 vi.mock('@main/core/provider-accounts/provider-account-registry-instance',() => ({ providerAccountRegistry: { listAccounts: async () => [{ accountId: 'one',createdAt: 10,updatedAt: 30,isDefault: true,meta: fixture.meta }] } }))
 vi.mock('@gugu/session-plugins/integrations',() => ({ integrationPluginRegistry: { getAll: () => [{ metadata: { id: 'mail' } }] } }))
 vi.mock('@main/core/integrations/integration-payload-builder',() => ({ buildIntegrationListPayload: vi.fn() }))
-vi.mock('@gugu/core',() => ({ listAgents: vi.fn() }))
 vi.mock('../../apps/desktop/electron/session/main/core/app/assistant-panel-integration-checks',() => ({ panelIntegrationChecks: () => fixture.verified,integrationAccountSignature: vi.fn(() => 'generation') }))
 import { assistantPanelLocal } from '../../apps/desktop/electron/session/main/core/app/assistant-panel-local'
 beforeEach(() => { fixture.verified = null; fixture.meta = undefined })

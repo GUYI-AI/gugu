@@ -15,7 +15,6 @@ import { phoneOsState, refreshPhoneDevice } from './phoneDeviceRuntime'
 import { useReplica } from '@/lib/replica'
 import { rendererLogger } from '@/lib/log'
 import { PHONE_PERMISSION_ROWS, type PhonePermissionRow } from './phonePermissionRows'
-import { usePhonePermissionReporter } from './usePhonePermissionReporter'
 
 const log = rendererLogger('phone-permissions')
 
@@ -28,7 +27,6 @@ export function PhonePermissionsList({ ownerId }: { ownerId: string }) {
   const { t } = useTranslation('mobileWorkspace')
   const { t: tMain } = useTranslation('main')
   const settings = usePhoneDeviceSettings(ownerId)
-  const report = usePhonePermissionReporter(ownerId)
   const osReading = useReplica(phoneOsState, [])
   // Read on open and again back from the system settings; a failed read again ❌ shows the earlier answer as now.
   const read: 'loading' | 'ready' | 'failed' = osReading.state === 'unknown' ? 'loading' : osReading.state === 'value' && !osReading.error ? 'ready' : 'failed'
@@ -49,7 +47,7 @@ export function PhonePermissionsList({ ownerId }: { ownerId: string }) {
     if (!os || read !== 'ready') return
     const selected = settings.enabled && settings.groups[group]
     if (group === 'alarm' && selected) {
-      setPhoneActionGroup(ownerId, group, false); report('group-enabled', false, group); return
+      setPhoneActionGroup(ownerId, group, false); return
     }
     if (!requirementGranted(requirement, os)) {
       await requestPhoneRequirement(requirement, os)
@@ -61,7 +59,6 @@ export function PhonePermissionsList({ ownerId }: { ownerId: string }) {
       else if (group !== 'alarm') await openPhonePermissionSettings(requirement === 'notification_listener' ? 'notification_listener' : requirement === 'dnd_access' ? 'dnd' : group === 'health' ? 'health' : 'app')
     }
     if (!selected) await resumePhoneAfterAccountClosure(ownerId, () => connectPhoneActionGroupChoice(ownerId, group))
-    report('group-enabled', true, group)
   }
   const status = ({ group, requirement }: PhonePermissionRow) => {
     if (read === 'failed') return t('phonePermissions.unreadable')

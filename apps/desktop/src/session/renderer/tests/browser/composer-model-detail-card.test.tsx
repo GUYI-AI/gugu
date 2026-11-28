@@ -162,7 +162,8 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
     ))
     expect(submenu.getBoundingClientRect().right).toBeCloseTo(card.getBoundingClientRect().left, 0)
     await low.click()
-    expect(onModelChange).toHaveBeenCalledExactlyOnceWith('opus', 'low')
+    // A level picked here is the person's (gugu-dev#1579): it follows later model switches.
+    expect(onModelChange).toHaveBeenCalledExactlyOnceWith('opus', 'low', true)
     await until('model picker closes', () => panel() === null)
     await expect.element(page.getByTestId('composer-model-trigger')).toHaveFocus()
   })
@@ -184,7 +185,8 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
     await expect.element(high).toHaveFocus()
     expect(onModelChange).not.toHaveBeenCalled()
     await userEvent.keyboard('{Enter}')
-    expect(onModelChange).toHaveBeenCalledExactlyOnceWith('opus', 'high')
+    // A level picked here is the person's (gugu-dev#1579): it follows later model switches.
+    expect(onModelChange).toHaveBeenCalledExactlyOnceWith('opus', 'high', true)
     await until('model picker closes', () => panel() === null)
     await expect.element(page.getByTestId('composer-model-trigger')).toHaveFocus()
   })

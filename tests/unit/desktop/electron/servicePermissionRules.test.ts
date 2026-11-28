@@ -67,6 +67,14 @@ describe('Gugu service permission order', () => {
     policy.agents['agent-a'] = { rules: [{ id: 'agent-all', tool: '*', effect: 'allow' }] }
     expect(decide(policy, name, { confirmed: true, text: '用户已同意' })).toMatchObject({ effect: 'ask', reason: 'mandatory_person_confirmation' })
   })
+  it('keeps webhook listing read-only and binds management to the action and webhook', () => {
+    expect(permissionOperation(caller, 'group_webhook', { action: 'list', chat_id: 'group' }))
+      .toMatchObject({ risk: 'medium', effect: 'read', resource: { action: 'list', chat_id: 'group' } })
+    for (const action of ['create', 'update', 'address', 'rotate', 'disable', 'delete']) {
+      expect(permissionOperation(caller, 'catalog_call', { tool: 'group_webhook', args: { action, webhook_id: 'hook' } }))
+        .toMatchObject({ risk: 'high', effect: 'permission', resource: { action, webhook_id: 'hook' } })
+    }
+  })
   it('distinguishes archiving with identity removal from the explicit keep-identity variant', () => {
     const policy = defaultPermissionPolicy()
     policy.user.rules = [{ id: 'archive', tool: 'session_archive', effect: 'allow' }]

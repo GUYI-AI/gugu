@@ -490,7 +490,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     >
       {/* 会话头共用 PaneHeader 尺寸和窗控留白，与正文同色，只用 divider 分隔。
           ChatBlockHead 把同一份标题和动作放进块头。 */}
-      {blockHost && <ChatBlockHead host={blockHost} chat={activeChat} name={shownActiveChatName} avatar={activeChatAvatar} isAgent={peerIdentity?.type === 'agent'} />}
+      {blockHost && <ChatBlockHead key={activeChat.id} host={blockHost} chat={activeChat} name={shownActiveChatName} avatar={activeChatAvatar} isAgent={peerIdentity?.type === 'agent'} />}
       {blockTabs}
       {!chrome && !blockHost && <PaneHeader
         divider data-chat-area-header="" data-chat-context-id={activeChat.id} mobile={mobile} centered={mobile}
@@ -609,6 +609,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
           // @@@6357 悬浮 token = MessagePreview(它最近在做的事,不按 chat 过滤,#6573)。
           previewChatId={activeChatId}
           tokens={groupRunTokens}
+          onTokenOpen={onOpenUserChat}
           onTokenClick={(id) => {
             const agent = groupCollabSnapshot?.agents.find((a) => a.id === id)
             if (agent) setMentionToInsert({ id: agent.id, name: identitiesById[agent.id]?.display_name ?? '' })

@@ -6,9 +6,9 @@ import { Button } from '../ui/Button'
 import { useBackLayer } from '../ui/sheetStack'
 import type { AnnotationConversation } from '@/session/shared/browser-annotation'
 import { selectionMenu, type FileReference } from '@/session/shared/extensions/file-selection'
-import { i18n } from '@/i18n'
+import { useLocale } from '@/i18n'
 import { fileTextRange, sourceLineRange, type FileTextRange } from './file-text-range'
-import { openSendLine } from '@renderer/features/sessions/annotations/file-selection-overlay'
+import { openCommentLine } from '@renderer/features/sessions/annotations/selection-line'
 import { FileSelectionMenu } from './FileSelectionMenu'
 import { linesPlace, selectionCite, type SelectionCite } from './quote-preview-file'
 import { useOpenWebLink } from '@/hooks/useOpenWebLink'
@@ -18,7 +18,7 @@ type Selection = { range: Range; quote: FileTextRange }
 
 /**
  * What a file's text preview can do with a selection: whose conversation it is and how its readers name the file
- * (file-selection.ts), where a cite goes on this platform, and whether a Send can go out from here.
+ * (file-selection.ts), where a cite goes on this platform, and whether its composer sends comments (`sends`).
  */
 export interface FileTextSelection {
   conversation: AnnotationConversation | null
@@ -35,6 +35,7 @@ export function FileTextContent({ content, kind, style, selectable }: {
   selectable?: FileTextSelection
 }) {
   const { t } = useTranslation('messaging')
+  const { resolvedLocale } = useLocale()
   const openWebLink = useOpenWebLink('newTab')
   const container = useUiPortalContainer()
   const root = useRef<HTMLDivElement>(null)
@@ -93,9 +94,9 @@ export function FileTextContent({ content, kind, style, selectable }: {
     setSelection({ range, quote })
   }
   const conversation = selectable?.conversation, file = selectable?.file
-  const items = useMemo(() => selectable ? selectionMenu(selectable.conversation, Boolean(selectable.file), selectable.sends, i18n.language) : [],
+  const items = useMemo(() => selectable ? selectionMenu(selectable.conversation, Boolean(selectable.file), selectable.sends, resolvedLocale) : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps -- by value: callers hand a new object each render
-    [JSON.stringify(selectable?.conversation ?? null), Boolean(selectable?.file), selectable?.sends])
+    [JSON.stringify(selectable?.conversation ?? null), Boolean(selectable?.file), selectable?.sends, resolvedLocale])
   const citeOf = ({ quote: { startLine, endLine, text } }: Selection) =>
     selectionCite(conversation!, file!, { text, places: [linesPlace(startLine, endLine)], ...(kind === 'text' ? { code: true } : {}) })
   return <>
@@ -136,7 +137,8 @@ export function FileTextContent({ content, kind, style, selectable }: {
         root.current?.ownerDocument.getSelection()?.removeAllRanges()
       }}
       onSend={() => {
-        if (conversation && root.current) openSendLine({ at: selection.range.getBoundingClientRect(), within: root.current, container: container ?? null, conversation, cite: citeOf(selection) })
+        const { quote: { startLine, endLine, text } } = selection
+        if (conversation && file && root.current) openCommentLine(conversation, selection.range, root.current, { kind: 'file', file, places: [linesPlace(startLine, endLine)], ...(text ? { text } : {}) }, container ?? null)
         root.current?.ownerDocument.getSelection()?.removeAllRanges()
       }} /> : null}
   </>

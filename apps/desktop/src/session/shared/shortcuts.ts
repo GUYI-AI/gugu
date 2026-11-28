@@ -32,11 +32,6 @@ export function sessionActionDefault(
 
 export type TabNavigationDirection = 'next' | 'previous';
 
-export const TAB_NAVIGATION_HOTKEYS = {
-  next: 'Control+Tab',
-  previous: 'Control+Shift+Tab',
-} as const;
-
 export interface DomTabNavigationInput {
   type: string;
   key: string;
@@ -125,6 +120,22 @@ export const INTENTIONALLY_SHARED_CHORDS: ReadonlyArray<{
     keys: ['session.projectHome', 'session.backToList'],
     why: 'Disjoint by focus layer: a keypress is either in the composer or in the nav layer.',
   },
+  {
+    keys: ['chat.scrollToTop', 'session.previous'],
+    why: 'A focused transcript scrolls; from a text field or the list the same key walks the list.',
+  },
+  {
+    keys: ['chat.scrollToBottom', 'session.next'],
+    why: 'A focused transcript scrolls; from a text field or the list the same key walks the list.',
+  },
+  {
+    keys: ['session.tabClose', 'app.closeWindow'],
+    why: 'The focused pane closes its tab first; the window closes only when no pane with tabs has the focus.',
+  },
+  ...([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map((n) => ({
+    keys: [`session.tab${n}`, `chat.select${n}`] as const,
+    why: 'The focused pane with tabs answers first; the conversation list only when no pane with tabs has the focus.',
+  })),
 ];
 
 /** Whether these two shortcuts are allowed to answer to the same chord. */

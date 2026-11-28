@@ -22,7 +22,7 @@ import { platformWireProtocol } from '@gugu/session-plugins/agents/platform-prot
 import { edgeFunctionError } from './edgeFunctionError'
 import { identityDb, dataClient } from './supabase'
 import { modelContextLengths } from "@gugu/session-core/models/context-threshold"
-import { PLATFORM_MODELS_CHANGED_EVENT, parsePlatformCreditMultipliers, parsePlatformReasoningEfforts } from '@/session/shared/core/agents/platform-model'
+import { PLATFORM_MODELS_CHANGED_EVENT, parsePlatformCreditMultipliers, parsePlatformReasoningEfforts, platformDefaultReasoningEffort } from '@/session/shared/core/agents/platform-model'
 import { chatService } from './chat'
 import type { SessionpageSessionCreateModels, SessionpageSessionView } from '@gugu/session-core/session-record/contract'
 import { rpcOn } from '@/session/renderer/lib/ipc'
@@ -47,6 +47,8 @@ export interface PlatformCatalogModel {
   defaultContextLength?: number
   /** The reasoning levels this model accepts (#6447); null = the catalog does not say. */
   reasoningEfforts?: string[] | null
+  /** The catalog's default level, one of `reasoningEfforts` (gugu-dev#1556); absent from older servers. */
+  defaultReasoningEffort?: string
 }
 
 export interface AgentModelSelectionState {
@@ -94,6 +96,7 @@ export async function fetchPlatformModelCatalog(): Promise<PlatformCatalogModel[
           creditMultipliers: parsePlatformCreditMultipliers(row.credit_multipliers),
           contextWindow: typeof row.context_window === 'number' ? row.context_window : null,
           reasoningEfforts: parsePlatformReasoningEfforts(row.reasoning_efforts),
+          ...platformDefaultReasoningEffort(row.default_reasoning_effort, parsePlatformReasoningEfforts(row.reasoning_efforts)),
           ...modelContextLengths(row.context_lengths, row.default_context_length,
             typeof row.context_window === "number" ? row.context_window : null),
         }]

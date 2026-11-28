@@ -120,8 +120,8 @@ export type DeliveryMode = 'notice' | 'task'
 type CommonEnvelopeFacts = {
   /** 人读的发信方；`null` = 可展示内容只剩 `fromId` 本身，那一格已经把事实带到了。 */
   from: string | null
-  /** Platform-resolved actor kind; absent when the identity directory did not report it. */
-  fromType?: 'human' | 'agent'
+  /** Platform-resolved actor kind; absent when the identity directory did not report it. `webhook` = a group webhook (#3934). */
+  fromType?: 'human' | 'agent' | 'webhook'
   /** 人读的送达时刻。 */
   at: string
   /** chat 路由的群号锚（服务端认它）；其余渠道缺席。 */
@@ -712,6 +712,8 @@ export interface AgentDeliveryEnvelopeInput {
   whisperTo?: readonly string[] | null
   /** App 代发（`gugu.dispatch`）的 App id；不是 = null。 */
   viaApp?: string | null
+  /** 群 Webhook 送来的（#3934）：这一行没有发送者，发信方是这个 Webhook；不是 = null。 */
+  viaWebhook?: { id: string; name: string } | null
 }
 
 export type AgentDeliveryToolNames = {
@@ -802,9 +804,11 @@ export function buildAgentDeliveryEnvelope(
   const messageTool = toolNames.message.trim()
   if (!messageTool) throw new Error('delivery tool names must be non-empty')
   const isSessionDirect = delivery?.kind === 'session-direct'
-  const systemSender = input.senderUserId === null && input.contentType === 'system' && !isSessionDirect
-  if (input.senderUserId === null && !systemSender) {
-    throw new Error('only a system chat message may omit its sender identity')
+  // #3934 a group webhook's message has no identity.users sender either: the webhook itself is the sender.
+  const webhookSender = !isSessionDirect && input.senderUserId === null ? input.viaWebhook ?? null : null
+  const systemSender = input.senderUserId === null && !webhookSender && input.contentType === 'system' && !isSessionDirect
+  if (input.senderUserId === null && !systemSender && !webhookSender) {
+    throw new Error('only a system or webhook chat message may omit its sender identity')
   }
   const chatId = isSessionDirect ? null : input.chatId?.trim() || null
   if (!isSessionDirect && !chatId) throw new Error('chat delivery envelope requires a real chat id')
@@ -816,11 +820,13 @@ export function buildAgentDeliveryEnvelope(
   return renderDeliveryEnvelope({
     route: isSessionDirect ? 'session-direct' : 'chat',
     // @@@envelope-names (#952 回港 #4282) - lead with the human name; keep gugu:N / 群号 as copy-paste CLI anchors.
-    from: systemSender ? 'Gugu' : identityShown(guguIds, input.senderUserId!),
-    // A system event has no addressable identity.users row. Never fabricate user:null.
-    fromId: systemSender ? 'system:gugu' : encodeTypedId('user', input.senderUserId!),
-    ...(!systemSender && guguIds.get(input.senderUserId!)?.isAgent !== undefined
-      ? { fromType: guguIds.get(input.senderUserId!)!.isAgent ? 'agent' as const : 'human' as const } : {}),
+    from: webhookSender ? webhookSender.name : systemSender ? 'Gugu' : identityShown(guguIds, input.senderUserId!),
+    // A system event or a webhook has no addressable identity.users row. Never fabricate user:null.
+    // `webhook:` names the sender and is not an address: nobody can message a webhook (not a TYPED_ID_KINDS entry).
+    fromId: webhookSender ? `webhook:${webhookSender.id}` : systemSender ? 'system:gugu' : encodeTypedId('user', input.senderUserId!),
+    ...(webhookSender ? { fromType: 'webhook' as const }
+      : !systemSender && guguIds.get(input.senderUserId!)?.isAgent !== undefined
+        ? { fromType: guguIds.get(input.senderUserId!)!.isAgent ? 'agent' as const : 'human' as const } : {}),
     messageId: encodeTypedId('msg', input.messageId),
     ...(!isSessionDirect && input.contentType === 'widget' && input.widgetId
       ? { widgetId: input.widgetId } : {}),
@@ -832,7 +838,7 @@ export function buildAgentDeliveryEnvelope(
     // 会话直发那条本地合成行的 is_whisper 是传输细节，不是人说的悄悄话。
     whisperTo: isSessionDirect || !input.whisperTo?.length ? null : input.whisperTo.map((id) => encodeTypedId('user', id)).join(' '),
     viaApp: isSessionDirect ? null : input.viaApp ?? null,
-    thread: isSessionDirect ? null : input.threadRootId,
+    thread: isSessionDirect || !input.threadRootId ? null : encodeTypedId('msg', input.threadRootId),
     listenMode: context.listenMode ?? null,
     replyTo: input.replyTo
       ? {

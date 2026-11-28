@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { cachedMentionRender } from '../../lib/mentionRenderModel'
-import { getLocaleSnapshot } from '../../i18n/runtime'
+import { useLocale } from '../../i18n/useLocale'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 
@@ -22,7 +22,7 @@ export function useMentionRender(
   isGroup: boolean,
   memberProfiles: Record<string, MemberProfileCardModel> | undefined,
 ): MentionRender {
-  const locale = getLocaleSnapshot().resolvedLocale
+  const { resolvedLocale: locale } = useLocale()
   return useMemo(() => {
     if (!isGroup || msg.is_whisper) return { content: undefined, mentionMarker: undefined, fallbackLabels: [] }
     const model = cachedMentionRender(msg.content ?? '', msg.to_user_ids, {

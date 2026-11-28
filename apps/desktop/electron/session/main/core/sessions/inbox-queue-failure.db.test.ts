@@ -80,7 +80,7 @@ it('an archived queue row stays unread and is not delivered again after a restar
   await life.interrupt('s', { k: 'interrupt', reason: 'archive' });
   expect(reportFailure).toHaveBeenCalledOnce();
   expect(lifeStore.pending('s').queued).toEqual([]);
-  life.restore('s'); await life.quiescent('s');
+  await life.restore('s'); await life.quiescent('s');
   resetAgentInboxReaderStateForTests();
   await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ pulled: 1, injected: 0 });
   expect(inject).not.toHaveBeenCalled();

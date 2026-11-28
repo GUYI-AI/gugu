@@ -1,7 +1,12 @@
 import { useTranslation } from 'react-i18next'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import { isRoomChat } from '@gugu/core/shared/ui/chatModels'
-import { Search } from '@/lib/icons'
+import { Plus, Search } from '@/lib/icons'
+import { groupInviteAccess } from '@/lib/groupMemberPermissions'
+import { openGroupMemberPicker } from '@/lib/uiEvents'
+import { GroupAvatarControl } from './GroupAvatarEditor'
+import { useToast } from '../toastContext'
+import { IconButton } from '../ui/IconButton'
 import { useChatStore } from '@/store/chatContext'
 import { searchInChat } from '@renderer/features/global-search/search-session'
 import { getAppSettingValueSnapshot } from '@renderer/features/settings/app-settings-client'
@@ -17,29 +22,39 @@ import { useGroupChatSettings } from './useGroupChatSettings'
  * The card of a chat (a person, a group, a topic). Mounted only while open: the group's settings are read then.
  * Its second row is 搜索聊天记录 (a chat has no restart, 第 16 版 #41); rename is the group's own rename (managers only).
  */
-export function ChatConversationCard({ chat, name, avatar, isAgent, onClose }: {
+export function ChatConversationCard({ chat, name, avatar, isAgent, onClose, onInvite }: {
   chat: ChatItem
   name: string
   avatar: string | null
   isAgent: boolean
   onClose: () => void
+  onInvite: () => void
 }) {
   const { t } = useTranslation('messaging')
   const { setChatNotificationLevel } = useChatStore('setChatNotificationLevel')
   const room = isRoomChat(chat.kind)
-  const { settings, update } = useGroupChatSettings(room ? chat.id : null)
+  const { toast } = useToast()
+  const { settings, update, setAvatarUrl } = useGroupChatSettings(room ? chat.id : null)
   const findHotkey = getEffectiveHotkey('app.find', getAppSettingValueSnapshot('keyboard'))
   const { identitiesById } = useChatStore('identitiesById')
-  const members = chat.member_user_ids ?? []
+  const members = chat.member_user_ids
+  const canAdd = chat.status === 'active' && (chat.kind === 'topic'
+    ? Boolean(chat.source_chat_id && settings?.my_role)
+    : chat.kind === 'group' && groupInviteAccess(chat.id, 'group', settings).showInvite)
   // 设计稿名片第二行(群 / 话题):三个叠着的头像 + 「N 名成员」。私聊没有这一行。
-  const subtitle = room && members.length > 0 ? <>
-    <span className="flex ps-1.5">{members.slice(0, 3).map((id) => <span key={id} className="-ms-1.5 flex rounded-full ring-[1.5px] ring-[var(--popover)]">
+  const subtitle = room && (members || canAdd) ? <>
+    <span className="flex ps-1.5">{members?.slice(0, 3).map((id) => <span key={id} className="-ms-1.5 flex rounded-full ring-[1.5px] ring-[var(--popover)]">
       <Avatar name={identitiesById[id]?.display_name ?? ''} avatarUrl={identitiesById[id]?.avatar ?? null} seed={id} size={18} />
     </span>)}</span>
-    {t(chat.kind === 'topic' ? 'groupDetails.topicSummary' : 'group.settings.memberCount', { count: members.length })}
+    {members && <span className="min-w-0 truncate">{t(chat.kind === 'topic' ? 'groupDetails.topicSummary' : 'group.settings.memberCount', { count: members.length })}</span>}
+    {canAdd && <IconButton aria-label={t('group.memberList.addMembers')} title={t('group.memberList.addMembers')} size="sm" shape="pill" tone="strong"
+      data-testid="conversation-card-add" onClick={() => { if (chat.kind === 'topic') onInvite(); else { onClose(); openGroupMemberPicker(chat.id) } }}><Plus /></IconButton>}
   </> : null
   return <ConversationCard
-    avatar={chat.kind === 'topic' ? <TopicMark size={44} /> : <Avatar name={name} avatarUrl={avatar} seed={room ? chat.id : chat.peer_user_id ?? undefined} isAgent={isAgent} variant={room ? 'group' : 'default'} size={44} still />}
+    avatar={chat.kind === 'topic' ? <TopicMark size={44} /> : chat.kind === 'group'
+      ? <GroupAvatarControl chatId={chat.id} name={name} settings={chat.status === 'active' ? settings : null} fallbackUrl={avatar}
+          size={44} still testId="conversation-card-avatar" setAvatarUrl={setAvatarUrl} onError={(error) => { if (error) toast(error, 'error') }} />
+      : <Avatar name={name} avatarUrl={avatar} seed={chat.peer_user_id ?? undefined} isAgent={isAgent} size={44} still />}
     name={name}
     subtitle={subtitle}
     onRename={room && settings?.can_manage ? async (next) => { if (!(await update({ name: next }))) throw new Error('group rename failed') } : null}

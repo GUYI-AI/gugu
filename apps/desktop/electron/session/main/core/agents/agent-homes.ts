@@ -31,6 +31,13 @@ function homeFor(providerId: string) {
   return resolveAgentHome({ providerId, injectionMode: bundle.injectionMode, configRoot: bundle.configRoot,
     guguHome: process.env.GUGU_HOME ?? '', osHomeDir: homedir(), sourceEnv: { ...process.env, ...loginShellEnv() } });
 }
+/**
+ * 咕咕替这一家管着的配置根(`configRoot`,在 GUGU_HOME 下)和它认会话记录的规则(`historySession`)。永久删除只在
+ * `configRoot` 里删引擎记录;`userConfigRoot`(用户自己的 ~/.claude、~/.codex,导入的会话原件在那里)❌ 碰。
+ */
+export function managedAgentHome(providerId: string) {
+  return homeFor(providerId);
+}
 function hasOldTasks(providerId: string): boolean {
   return db.select({ id: sessions.id }).from(sessions).where(eq(sessions.provider, providerId)).limit(1).all().length > 0;
 }

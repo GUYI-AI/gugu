@@ -1,4 +1,5 @@
 import { translateSessionMessage } from '@renderer/localization/locale-store'
+import { autoReviewReason } from '@renderer/features/sessions/acp/auto-review-permission-hint'
 import { useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionpageSessionCreateModels, SessionpageSessionCreateOptions } from '@gugu/session-core/session-record/contract'
@@ -152,7 +153,7 @@ export function CreateTarget({ projects, project, onProject, machines, machine, 
       </div> : view === 'permission' && configuration && <div role="radiogroup">
         <Choice id="" dimension="permission" name={tm('agentWatch.create.modelDefault')} selected={!configuration.selection.permissionMode} onClick={() => select({ ...configuration.selection, permissionMode: null })} />
         {selectedHarness?.permissionModes.map((mode) => <Choice key={mode} id={mode} dimension="permission" name={tm(`agentWatch.create.permission.${mode}.name`)}
-          description={mode === 'ai-review' && configuration.models?.autoReview?.disabled ? translateSessionMessage('taskConfig.reviewUnavailable') : undefined}
+          description={mode === 'ai-review' && configuration.models?.autoReview?.disabled ? translateSessionMessage(autoReviewReason(configuration.models.autoReview.reason)) : undefined}
           disabled={mode === 'ai-review' && configuration.models?.autoReview?.disabled}
           selected={configuration.selection.permissionMode === mode} onClick={() => select({ ...configuration.selection, permissionMode: mode })} />)}
       </div>}

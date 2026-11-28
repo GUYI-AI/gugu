@@ -7,6 +7,8 @@ export const turnFileRefSchema = z.object({
   name: z.string().min(1),
   mimeType: z.string(),
   sizeBytes: z.number().int().nonnegative(),
+  /** A picture's pixel size, read where it was attached: the transcript draws its box before the bytes arrive. */
+  imageDimensions: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).optional(),
   path: z.string().optional(),
   workspacePath: z.string().startsWith('.gugu/attachments/').optional(),
   /** Host-pinned first-input placement. A failed read must stop dispatch, rather than sending only its caption. */

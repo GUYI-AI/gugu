@@ -1,8 +1,9 @@
-import { QueryClient, QueryObserver, focusManager, hashKey, keepPreviousData, useIsFetching, useQueries, useQuery, type Query, type QueryFunctionContext, type QueryKey, type UseQueryResult } from '@tanstack/react-query'
-import { useMemo, useSyncExternalStore } from 'react'
+import { QueryClient, QueryObserver, focusManager, hashKey, keepPreviousData, replaceEqualDeep, useIsFetching, useQueries, useQuery, type Query, type QueryFunctionContext, type QueryKey, type UseQueryResult } from '@tanstack/react-query'
+import { useMemo, useRef, useSyncExternalStore } from 'react'
 import { observeRendererSession } from './sessionPublication'
 import { recordSnapshotRefusal } from './perfCounters'
 import { rendererLogger } from './log'
+import { freezeInDev } from './freeze-in-dev'
 
 /**
  * @@@replica — one replica per kind of data a surface shows (open-flicker, owner 2026-11-14).
@@ -532,6 +533,11 @@ export type Replica<A extends unknown[], V> = {
   key(...args: A): QueryKey | null
   /** What a surface opening now would show, synchronously. */
   peek(...args: A): Reading<V>
+  /**
+   * Only the value held now for these arguments (undefined when none), without judging its staleness or building a
+   * reading: for a hot read that keeps its own result and checks it against this value on every read.
+   */
+  peekValue(...args: A): V | undefined
   /** Read now unless fresh; never throws (the error lands in the reading). */
   prefetch(...args: A): Promise<void>
   /** Read now unless fresh, and return the value. */
@@ -624,7 +630,15 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
   const first = !definitions.has(definition.name)
   definitions.set(definition.name, definition as Definition<unknown[], unknown>)
   if (first) pruneSnapshot(definition as Definition<unknown[], unknown>)
-  queryClient.setQueryDefaults([definition.name], { gcTime: definition.keep ?? Infinity })
+  // Sharing is react-query's own, as it always was: a write (setQueryData, an optimistic write, a restored snapshot) keeps
+  // equal data's existing object (`replaceEqualDeep`); a read also goes through the model's `merge`. The only addition:
+  // in development the result is frozen — readers keep values by identity (`useReplica`), so a value changed in place
+  // would never reach them.
+  const written = (shown: unknown, next: unknown) => freezeInDev(replaceEqualDeep(shown, next))
+  const read = definition.merge
+    ? (shown: unknown, next: unknown) => freezeInDev(shown === undefined ? next : definition.merge!(shown as V, next as V))
+    : written
+  queryClient.setQueryDefaults([definition.name], { gcTime: definition.keep ?? Infinity, structuralSharing: written })
   const options = (key: QueryKey) => ({
     queryKey: key,
     staleTime: definition.fresh ?? 0,
@@ -635,7 +649,7 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
     refetchOnWindowFocus: definition.refreshOnFocus ? (definition.fresh === Infinity ? 'always' as const : true) : false,
     networkMode: typeof definition.networkMode === 'function' ? definition.networkMode(...(key.slice(2) as Later<A>))
       : definition.networkMode ?? (definition.scope === DEVICE ? 'always' : 'online'),
-    ...(definition.merge ? { structuralSharing: (shown: unknown, next: unknown) => shown === undefined ? next : definition.merge!(shown as V, next as V) } : {}),
+    structuralSharing: read,
   })
   const key = (...args: A): QueryKey | null => {
     const owner = ownerOf(definition.scope)
@@ -663,6 +677,10 @@ export function replica<A extends unknown[], V>(definition: Definition<A, V>): R
       const k = key(...args)
       // Judged by `fresh`, not by react-query's observers: a value nobody shows is not fresh because nobody watches it.
       return k ? readingOfState(queryClient.getQueryState(k), queryClient.getQueryCache().find({ queryKey: k, exact: true })?.isStaleByTime(definition.fresh ?? 0) ?? true, k) : UNKNOWN
+    },
+    peekValue: (...args) => {
+      const k = key(...args)
+      return k ? queryClient.getQueryCache().get(hashKey(k))?.state.data as V | undefined : undefined
     },
     prefetch: (...args) => {
       const k = key(...args)
@@ -785,7 +803,18 @@ export function useReplica<A extends unknown[], V>(model: Replica<A, V>, args: A
   const canRead = !!k && options.read !== false && (definition.scope === DEVICE || current.live)
   const query = { ...(model.options(k ?? IDLE_KEY) as { queryKey: QueryKey }), enabled: canRead, ...(options.keepPrevious ? { placeholderData: keepPreviousData } : {}) }
   const result = useQuery(query, queryClient) as UseQueryResult<V>
-  return k ? readingOf(result, k) : UNKNOWN
+  // The same reading while nothing in it changed: a render that memoizes on it (a catalog built from it) is not redone
+  // on every redraw of its component.
+  const held = useRef<Reading<V>>(UNKNOWN)
+  const reading = k ? readingOf(result, k) : UNKNOWN
+  if (!sameReading(held.current, reading)) held.current = reading
+  return held.current
+}
+
+const sameReading = (a: Reading<unknown>, b: Reading<unknown>): boolean => {
+  if (a === b) return true
+  const fields = Object.keys(a) as (keyof typeof a)[]
+  return fields.length === Object.keys(b).length && fields.every((field) => Object.is(a[field], (b as typeof a)[field]))
 }
 
 /**

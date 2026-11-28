@@ -3,6 +3,7 @@ import type { ExitFact, Gen, ProcessLease, StageOut } from '@gugu/core/local/ses
 
 type Summary = { lifecycle: string; failure?: { kind: string; message: string; exitCode?: number | null; signal?: string | null } | null };
 const h = vi.hoisted(() => ({
+  catalog: { kind: 'unknown' } as unknown,
   watchers: new Map<string, (summary: Summary | undefined) => void>(),
   gone: null as ((cause: string) => void) | null,
   client: { tag: 'worker-client' },
@@ -24,6 +25,8 @@ const h = vi.hoisted(() => ({
   piWrites: vi.fn(async (_id: string) => {}),
   /** The session's queue as the channel stage reads it when it is admitted. */
   pending: { queued: [] as number[], dispatching: [] as number[] },
+  platformInjection: vi.fn(async (command: unknown): Promise<{ command: unknown; injected: boolean; autoReview?: unknown }> => ({ command, injected: false })),
+  resolvedCli: vi.fn(async (command: { input: object }, _review?: unknown) => ({ ...command, input: { ...command.input, runContext: {} } })),
 }));
 
 vi.mock('./agent-status-bridge', () => ({
@@ -38,6 +41,8 @@ vi.mock('./runtime-process/host', () => ({
   stopAcpSessionAndSettle: h.stopAndSettle,
   readSessionInjectionFacts: async () => ({ agentDisplayName: undefined, platformModel: h.platformModel }),
   provisionStartIdentity: async (input: { cwd: string }) => { h.identityCwd = input.cwd; return h.identity; },
+  withEmdashPlatformInjection: h.platformInjection,
+  withHostResolvedCli: h.resolvedCli,
   withEmdashMcpInjection: async (command: { input: { sessionId: string } }, _lifecycle: unknown, _facts: unknown, _identity: unknown, _text: unknown, _files: unknown, apply?: (write: () => Promise<void>) => Promise<void>) => {
     if (apply) {
       h.piPrepared(command.input.sessionId);
@@ -48,6 +53,7 @@ vi.mock('./runtime-process/host', () => ({
 }));
 vi.mock('../session-timeline/turn-files', () => ({ turnFileText: h.turnFiles }));
 vi.mock('./inject-prompt', () => ({ injectEmdashPromptDetached: h.inject }));
+vi.mock('../agents/harness-model-catalog', () => ({ lookupHarnessModelCatalog: async () => ({ state: h.catalog, refreshing: false }) }));
 vi.mock('@main/lib/logger', () => ({ log: { error: h.logError } }));
 vi.mock('./emdash-platform-injector', async original => ({
   ...await original<typeof import('./emdash-platform-injector')>(), prepareEmdashPlatformSession: h.preparePlatform,
@@ -195,6 +201,17 @@ describe('session-life ACP leg', () => {
     expect(h.preparePlatform).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: 's', projectId: 'p', providerId: 'claude', cwd: '/repo', platformModel: h.platformModel,
     }));
+  });
+
+  it("carries the launch's Auto mode verdict from the platform stage to the run context the menu reads", async () => {
+    const verdict = { autoReviewAllowed: false, autoReviewUnavailable: true, autoReviewReason: 'taskConfig.reviewNoReviewer' };
+    const command = { input: { sessionId: 's', providerId: 'claude' } };
+    h.platformInjection.mockResolvedValueOnce({ command, injected: true, autoReview: verdict });
+    const adapter = await boundAdapter();
+    const platform = await adapter.run('platform', { capabilities: { injection: { command }, facts: {} } } as never, ctx());
+    expect(platform).toMatchObject({ injected: true, autoReview: verdict });
+    await adapter.run('cli', { platform } as never, ctx());
+    expect(h.resolvedCli).toHaveBeenCalledWith(command, verdict);
   });
 
   it('carries an early platform refusal into the existing startup failure path', async () => {
@@ -353,6 +370,32 @@ describe('session-life ACP leg', () => {
     await expect(adapter.dispatch({ capabilities: { injection: {} } } as never, first, ctx())).rejects.toThrow(/did not land/);
   });
 
+  // gugu-dev#1644: in a group, a task card's first sentence that is one of the harness's commands runs as that command;
+  // inside the card's envelope it would be words only. The command goes first, the envelope after it.
+  it('sends a task card that opens with a harness command as the command, then the card\'s envelope', async () => {
+    const adapter = await boundAdapter();
+    h.inject.mockResolvedValue({ outcome: 'started', completion: Promise.resolve({ success: true, data: undefined }), turnId: 't' });
+    const envelope = { kind: 'envelope', envelope: { guguUserId: '11111111-1111-4111-8111-111111111111', chatId: '22222222-2222-4222-8222-222222222222', messageId: '33333333-3333-4333-8333-333333333333', senderUserId: '44444444-4444-4444-8444-444444444444', replyTo: null, threadRootId: null },
+      identities: new Map(), chat: { publicId: 1, name: 'group', kind: 'group' }, timestamp: '2026-11-27 09:00 UTC+0' };
+    const first = (text: string) => ({ ...(row as object), message: { id: 'm', text }, turn: { kind: 'chat-page-first-turn' } }) as never;
+    const have = { capabilities: { injection: { firstTurn: envelope } } } as never;
+    h.catalog = { kind: 'ready', models: [], selected: null, efforts: [], selectedEffort: null, commands: [{ name: 'goal', description: 'Set a goal' }] };
+
+    h.inject.mockClear();
+    await adapter.dispatch(have, first('/goal ship it'), ctx());
+    expect(h.inject.mock.calls.map((call) => [call[1].startsWith('<gugu_delivery') ? 'envelope' : call[1], call[2].origin])).toEqual([
+      ['/goal ship it', 'manual'], ['envelope', 'communication']]);
+
+    // Words, a path, or a harness that advertised nothing: the card's envelope alone, as before.
+    for (const [text, catalog] of [['ship it', h.catalog], ['/Users/me/a.txt look', h.catalog], ['/goal ship it', { kind: 'unknown' }]] as const) {
+      h.catalog = catalog;
+      h.inject.mockClear();
+      await adapter.dispatch(have, first(text), ctx());
+      expect(h.inject).toHaveBeenCalledOnce();
+      expect(h.inject.mock.calls[0]![2].origin).toBe('communication');
+    }
+  });
+
   it('#2558 a turn whose files are still being placed waits for them before preparing them; a stop while it waits refuses it', async () => {
     const adapter = await boundAdapter();
     h.inject.mockResolvedValue({ outcome: 'started', completion: Promise.resolve({ success: true, data: undefined }), turnId: 't' });
@@ -403,6 +446,24 @@ describe('session-life ACP leg', () => {
     await expect(channel).rejects.toMatchObject({ name: 'AcpStartFailed', data: expect.stringContaining('provider_session_missing'), awaitsPerson: true });
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(exits).toEqual([]);
+  });
+
+  it.each(['tools listed', 'stop'] as const)('#4038: the channel is admitted only after Gugu\'s tools are listed; %s ends the wait', async (ending) => {
+    const adapter = await boundAdapter();
+    const process = { ...(await processLease()), client: { startSession: h.startSession } } as unknown as ProcessLease;
+    h.startSession.mockResolvedValueOnce({ success: true, data: { providerSessionId: 'native' } });
+    const listed = Promise.withResolvers<void>();
+    const controller = new AbortController();
+    const have = { process, cli: { command: { input: { providerId: 'antigravity', projectId: 'p', cwd: '/repo' } } },
+      platform: { injected: false }, capabilities: { injection: { awaitToolsListed: () => listed.promise }, facts: {} } } as never;
+    let admitted = false;
+    const channel = adapter.run('channel', have, { gen, signal: controller.signal }).then(value => { admitted = true; return value; });
+    await vi.waitFor(() => expect(h.startSession).toHaveBeenCalled());
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(admitted).toBe(false);
+    if (ending === 'stop') controller.abort(new Error('owner stopped'));
+    else listed.resolve();
+    await expect(channel).resolves.toMatchObject({ gen });
   });
 
   it('#552: an exit seen while a missing dispatch is out is subsumed by the lost channel', async () => {

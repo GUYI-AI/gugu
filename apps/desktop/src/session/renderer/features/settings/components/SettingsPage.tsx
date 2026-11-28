@@ -7,7 +7,7 @@ import { InSettingsPanelProvider, PageHeader } from '@renderer/lib/components/pa
 import { modalStore } from '@renderer/lib/modal/modal-store';
 import { queryClient } from '@/lib/replica';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
-import { ThemePackSettings } from '@renderer/features/library/themes/themes-library-page';
+import { FirstRunThemePackGrid, ThemePackSettings } from '@renderer/features/library/themes/themes-library-page';
 import { BrowserSettingsCard } from './BrowserSettingsCard';
 import HiddenToolsSettingsCard from './HiddenToolsSettingsCard';
 import InterfaceSettingsCard from './InterfaceSettingsCard';
@@ -74,6 +74,8 @@ function InterfaceSettingsPage() {
       <PageHeader
         title={translate('settings.interface')}
       />
+      {/* 「主题」在这一页最上面(owner 11-26:从「通用」整块挪来;「通用」里的浅色 / 深色 / 跟随系统不动)。 */}
+      <ThemePackSettings />
       <SettingsGroup>
         <SidebarTintRow />
       </SettingsGroup>
@@ -108,7 +110,7 @@ function BrowserSettingsPage() {
 // ---------------------------------------------------------------------------
 
 /** 设置弹窗里由本页画的那几格(product spec);键与壳的 ActiveSection 同名。 */
-export type SessionSettingsSection = 'theme-packs' | 'sessions' | 'prompts' | 'interface' | 'browser' | 'subscriptions' | 'connectors' | 'resource-monitor' | 'auxiliary-models';
+export type SessionSettingsSection = 'theme-packs-first-run' | 'sessions' | 'prompts' | 'interface' | 'browser' | 'subscriptions' | 'connectors' | 'resource-monitor' | 'auxiliary-models';
 
 /** 个别格要壳告诉它的事实(「连接应用」要知道咕咕住的那台云端宿主是谁);其余格不用。 */
 export type SessionSettingsContext = {
@@ -134,7 +136,7 @@ function RoutedConnectors(context: SessionSettingsContext) {
 }
 
 const SECTION_CONTENT: Record<SessionSettingsSection, (context: SessionSettingsContext) => ReactNode> = {
-  'theme-packs': () => <ThemePackSettings />,
+  'theme-packs-first-run': () => <FirstRunThemePackGrid />,
   sessions: () => <GeneralSettingsPage />,
   prompts: () => <PromptLibraryView />,
   interface: () => <InterfaceSettingsPage />,

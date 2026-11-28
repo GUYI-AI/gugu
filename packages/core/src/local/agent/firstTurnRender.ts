@@ -13,6 +13,8 @@ export type FirstTurnRender =
     chat: ChatEnvelopeInfo
     timestamp: string
     messageContext?: string
+    /** The room's rules as read at landing (#3641): a first turn is always a fresh context, so it carries the text. */
+    groupRules?: { version: string; text: string | null }
   }>
 
 /** Pure: the same row and context always render the same turn. */
@@ -20,8 +22,10 @@ export function renderFirstTurn(text: string, render: FirstTurnRender): { text: 
   switch (render.kind) {
     case 'plain': return { text, origin: 'manual' }
     case 'envelope': return {
-      text: buildAgentDeliveryEnvelope({ ...render.envelope, content: text }, render.identities, render.chat, render.timestamp, null, undefined,
-        render.messageContext ? { messageContext: render.messageContext } : {}),
+      text: buildAgentDeliveryEnvelope({ ...render.envelope, content: text }, render.identities, render.chat, render.timestamp, null, undefined, {
+        ...(render.messageContext ? { messageContext: render.messageContext } : {}),
+        ...(render.groupRules ? { groupRules: render.groupRules } : {}),
+      }),
       origin: 'communication',
     }
   }

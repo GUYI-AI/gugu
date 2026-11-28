@@ -12,6 +12,7 @@ import {
 } from '@/session/shared/lib/ipc/host-ws-protocol'
 import {
   createSessionHostClient,
+  type SessionHostClientOptions,
   type SessionHostConnectionState as SharedConnectionState,
   type SessionHostPipe,
   type SessionHostPipeOpener,
@@ -19,16 +20,6 @@ import {
 import { rendererLogger } from './log'
 
 const log = rendererLogger('task-host/ws')
-
-/**
- * 用户可见的三句断连文案。传输层不认 i18n(壳的 i18n 引导会把 localStorage / window 事件一并拖进来,
- * node 测试里直接炸),由壳在建客户端时注入本地化文案。
- */
-export type SessionHostWsClientMessages = {
-  hostNotConnected: string
-  hostConnectionLost: string
-  hostUnreachable: string
-}
 
 /** 会话页真正用到的桥面(preload 那五个成员);咕咕壳自己的那些方法不在此列。 */
 export type SessionHostWsElectronApi = Pick<
@@ -133,7 +124,8 @@ function openWebSocketPipe(endpoint: SessionHostEndpoint): SessionHostPipeOpener
 
 export function createSessionHostWsClient(
   endpoint: SessionHostEndpoint,
-  options: { messages?: Partial<SessionHostWsClientMessages>; staleMs?: number } = {},
+  // 断连文案由壳注入(传输层不认 i18n:壳的 i18n 引导会把 localStorage / window 事件一并拖进来,node 测试里直接炸)。
+  options: Pick<SessionHostClientOptions, 'messages' | 'staleMs'> = {},
 ): SessionHostWsClient {
   const client = createSessionHostClient(openWebSocketPipe(endpoint), {
     messages: options.messages,

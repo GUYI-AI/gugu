@@ -1,15 +1,14 @@
-import { useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatItem, GroupChatSettings, NotificationLevel } from '@gugu/core/shared/types/chat'
 import { BookOpen, FileText, Info, LogOut, Shield } from '@/lib/icons'
-import { Avatar } from '../Avatar'
 import { DetailsGroupTitle, DetailsHero, DetailsList, DetailsPage, DetailsRow } from '../details/DetailsParts'
 import { Button } from '../ui/Button'
 import { useReplica } from '../../lib/replica'
 import { groupAnnouncements } from '../../lib/groupAnnouncements'
 import { ChatDetailsQuickActions } from './ChatDetailsQuickActions'
 import { ChatManagementActions } from './ChatManagementActions'
-import { GroupAvatarEditor } from './GroupAvatarEditor'
+import { GroupAvatarControl } from './GroupAvatarEditor'
 import { GroupMembersBlock } from './GroupInfoRows'
 import { GroupNameRow } from './GroupNameRow'
 
@@ -23,7 +22,8 @@ export interface GroupDetailsMainProps {
   /** People and agents in it (the roster); null until it is read. */
   people: number | null
   agents: number | null
-  avatar: { uploading: boolean; onFile: (file: File | undefined) => Promise<void>; onReset: () => Promise<void> }
+  setAvatarUrl: (url: string | null) => void
+  onAvatarError: (error: string | null) => void
   onRename: (name: string) => Promise<void>
   onOpenPage: (page: 'members' | 'announcement' | 'manage') => void
   onOpenText: (page: 'rules' | 'description') => void
@@ -47,10 +47,8 @@ function firstLine(text: string | null | undefined): string | null {
  * 动作(GroupMembersSection 把它们交进来),这里只管画法。手机的群信息页照旧。
  */
 export function GroupDetailsMain(props: GroupDetailsMainProps) {
-  const { chat, name, settings, manager, memberIds, total, avatar, exit } = props
+  const { chat, name, settings, manager, memberIds, total, exit } = props
   const { t } = useTranslation('messaging')
-  const [editingAvatar, setEditingAvatar] = useState(false)
-  const [dragOver, setDragOver] = useState(false)
   const shownName = name ?? t('group.settings.groupFallback')
   // 公告行的预览(设计稿):置顶的、否则最新的那一条的第一行(同公告页那份读数,排序是服务端给的:置顶在前、新的在前)。
   const announcements = useReplica(groupAnnouncements, [chat.id])
@@ -58,21 +56,10 @@ export function GroupDetailsMain(props: GroupDetailsMainProps) {
   return (
     <DetailsPage testId="group-details">
       <DetailsHero
-        avatar={(
-          <div data-testid="group-avatar" title={manager ? t('group.settings.changeAvatar') : undefined}
-            onClick={manager && !avatar.uploading ? () => setEditingAvatar(true) : undefined}
-            onDragOver={manager ? (event) => { event.preventDefault(); setDragOver(true) } : undefined}
-            onDragLeave={manager ? () => setDragOver(false) : undefined}
-            onDrop={manager ? (event) => { event.preventDefault(); setDragOver(false); void avatar.onFile(event.dataTransfer.files?.[0]) } : undefined}
-            className={`relative grid size-16 place-items-center overflow-hidden rounded-full ${manager && !avatar.uploading ? 'cursor-pointer' : ''} ${dragOver ? 'outline-1 outline-dashed outline-[var(--primary)]' : ''}`}>
-            <Avatar variant="group" name={shownName} avatarUrl={settings?.avatar_url ?? null} seed={chat.id} size={64} />
-            {avatar.uploading ? <div className="absolute inset-0 grid place-items-center bg-[var(--bg-overlay-modal)] text-[length:var(--font-caption)] text-[var(--color-white)]">{t('group.settings.uploading')}</div> : null}
-          </div>
-        )}
+        avatar={<GroupAvatarControl chatId={chat.id} name={shownName} settings={settings} size={64}
+          setAvatarUrl={props.setAvatarUrl} onError={props.onAvatarError} />}
         name={<GroupNameRow hero chat={chat} name={name} canEdit={manager && Boolean(settings)} onCommit={props.onRename} />}
       />
-      {editingAvatar ? <GroupAvatarEditor chatId={chat.id} groupName={name ?? ''} avatarUrl={settings?.avatar_url ?? null} busy={avatar.uploading}
-        onFile={(file) => avatar.onFile(file)} onReset={avatar.onReset} onClose={() => setEditingAvatar(false)} /> : null}
       <GroupMembersBlock chatId={chat.id} settings={settings} memberIds={memberIds} total={total} people={props.people} agents={props.agents} onOpen={() => props.onOpenPage('members')} />
       <ChatDetailsQuickActions chatId={chat.id} isGroup />
       <DetailsList>

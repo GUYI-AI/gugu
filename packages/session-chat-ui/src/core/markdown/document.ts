@@ -62,6 +62,19 @@ export type SvgBlock = {
 };
 
 /**
+ * A closed ```html-render fence: the agent's page in a sandboxed frame (core/html-render/page.ts). Its height is the
+ * page's own, known only once it runs; until then the frame keeps a minimum. A fence still streaming is code.
+ */
+export type HtmlRenderBlock = {
+  kind: 'html-render';
+  id: BlockId;
+  /** Raw HTML source text. */
+  source: string;
+  /** The height its header declares (```html-render height=320), clamped; the frame opens at it before the page reports. */
+  height?: number;
+};
+
+/**
  * A display LaTeX block (`$$…$$`), typeset by KaTeX in display mode.
  *
  * Like Mermaid, its height cannot be derived from a formula — it depends on the
@@ -76,4 +89,4 @@ export type MathBlock = {
   tex: string;
 };
 
-export type Block = HtmlBlock | CodeBlock | MermaidBlock | SvgBlock | MathBlock;
+export type Block = HtmlBlock | CodeBlock | MermaidBlock | SvgBlock | HtmlRenderBlock | MathBlock;

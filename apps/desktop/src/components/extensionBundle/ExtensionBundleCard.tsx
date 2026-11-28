@@ -11,6 +11,7 @@ import { describePermissions } from '@/session/renderer/features/extensions/exte
 import { useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
 import { useLocale } from '@/i18n'
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
+import { useSessionMessages } from '@/session/renderer/localization/use-session-messages'
 import { askInShell, installConsentPrompt } from '@/session/renderer/features/extensions/install-consent'
 import { rpcOn } from '@/session/renderer/lib/ipc'
 import { deviceScopeTrayDevices, LOCAL_DEVICE_SCOPE } from '@/session/renderer/features/remote-hosts/device-scope-store'
@@ -45,11 +46,12 @@ const log = rendererLogger('chat/extension-bundle')
  */
 const InstallTarget = observer(function InstallTarget({ selectedId, onSelect }: { selectedId: string; onSelect: (id: string) => void }) {
   useEffect(() => remoteHostsStore.start(), [])
+  const { translate } = useSessionMessages()
   const { theme } = useTheme()
   const hosts = [...remoteHostsStore.hosts.values()]
   if (hosts.length === 0) return null
   const machines = deviceScopeTrayDevices(
-    translateSessionMessage('task.deviceLocal'),
+    translate('task.deviceLocal'),
     hosts.map(({ device }) => ({ device, connection: remoteHostsStore.connectionState(device.id) })),
   )
   return <SessionUiTheme theme={theme}><MachinePicker machines={machines} selectedId={selectedId} onSelect={onSelect} size="compact" side="bottom" testId="extension-bundle-card-machine" /></SessionUiTheme>

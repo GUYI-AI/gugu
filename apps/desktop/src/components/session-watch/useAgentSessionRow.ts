@@ -1,4 +1,7 @@
 import { useMemo } from 'react'
+import { useMobileShell } from '@/hooks/useMobileShell'
+import { useAgentSession } from '@/lib/projectGroupChatsBridge'
+import type { AgentSession } from '@/session/renderer/features/projects/stores/project-group-chats-bridge'
 import { useDevicesStore } from '@/store/devicesContext'
 import { directoryRows, useLiveDeviceSessions, type SessionDirectoryRow } from '@/session/shared/remote-sessions/session-directory'
 
@@ -23,4 +26,16 @@ export function latestAgentSessionRow(rows: readonly SessionDirectoryRow[], agen
     if (!latest || (row.session.lastInteractedAt ?? '') > (latest.session.lastInteractedAt ?? '')) latest = row
   }
   return latest
+}
+
+/**
+ * The session an agent's entry opens (its profile card's 发消息, a running pill's card): on a computer the session bridge
+ * the task bundle publishes; a phone has no such bundle and finds it in its session directory (#673, #658). undefined =
+ * none found, so the entry is not offered. agentUserId null = do not look.
+ */
+export function useAgentSessionEntry(agentUserId: string | null): AgentSession | undefined {
+  const phone = useMobileShell()
+  const bridged = useAgentSession(!phone ? agentUserId : null)
+  const row = useAgentSessionRow(phone ? agentUserId : null)
+  return phone ? (row ? { projectId: row.session.projectId, sessionId: row.session.conversationId } : undefined) : bridged
 }

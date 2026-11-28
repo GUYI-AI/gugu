@@ -17,8 +17,8 @@ import { CLAUDE_TUI_BASE_SETTINGS } from './claude-tui-settings'
 
 import type { Server } from 'node:http'
 import { randomUUID } from 'node:crypto'
-import { access, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { homedir, tmpdir } from 'node:os'
+import { access, readdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { RuntimeAuthError, type AgentModelSelection, type RuntimeAuthProvider } from '@gugu/core'
 import type { AcpPlatformInjection } from '@gugu/session-core/acp'
@@ -72,6 +72,11 @@ import { quoteShellArg } from '../session/main/utils/shellEscape'
 import { serverNow } from '@gugu/core/shared/serverClock'
 
 import { proxyPlatformCredentialRequest, withinCredentialDeadline } from './platform-credential-proxy'
+import { forgetReviewRoute, reviewDivert } from '../session/main/core/agents/review-routes'
+import {
+  armReviewer, claudeReviewRunContext, platformReviewCandidates, readUserModelAllowlist, resolveHostClaudeReviewer,
+  type ClaudeReviewRunContext,
+} from '../session/main/core/agents/claude-reviewer'
 import { assertTeamTaskSession, readTeamModelContext, teamModelStopReason, TeamFundingError, type TeamTaskIdentity } from '../team-model-funding'
 import { requireRuntimeAuth } from '@gugu/core'
 
@@ -439,6 +444,9 @@ async function proxyPlatformRequest(
   await proxyPlatformCredentialRequest(request, response, {
     upstream: () => new URL(`${held.relayUrl.replace(/\/$/, '')}${suffix}${search}`),
     localOnlyHeaders: LOCAL_ONLY_REQUEST_HEADERS,
+    // The Auto mode reviewer the user picked on one of their own connections leaves here, under its alias.
+    divert: reviewDivert(sessionId, suffix, search, async (connectionId) =>
+      (await import('../session/main/core/agents/custom-models')).customReviewTarget(connectionId)),
     credential: async () => {
       const token = await credential()
       await tellCredentialRefusal(sessionId, null)
@@ -990,37 +998,12 @@ export async function assertUserModelAllowed(
 ): Promise<void> {
   const model = modelId.trim()
   if (!model) return
-  const models = pluginRegistry.get(providerId)?.capabilities.models
-  const allowlist = models?.kind === 'selectable' ? models.userAllowlist : undefined
-  if (!allowlist) return
-  const configuredRoot = allowlist.envVar ? env[allowlist.envVar]?.trim() : undefined
-  const file = configuredRoot
-    ? join(configuredRoot, allowlist.file.split('/').at(-1)!)
-    : join(env.HOME?.trim() || homedir(), allowlist.file)
-  let document: unknown
-  try {
-    document = JSON.parse(await readFile(file, 'utf8'))
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
-    throw new Error(
-      `无法读取用户设置 ${file}: `
-      + `${error instanceof Error ? error.message : String(error)}`,
-    )
-  }
-  let current: unknown = document
-  for (const segment of allowlist.pointer.slice(1).split('/')) {
-    current = current && typeof current === 'object' ? (current as Record<string, unknown>)[segment] : undefined
-  }
-  const availableModels = current
-  if (!Array.isArray(availableModels)) return
-  const allowed = availableModels.some((entry) => typeof entry === 'string' && entry.trim() === model)
-  if (!allowed) {
-    const pointer = allowlist.pointer.slice(1).split('/').filter(Boolean).join('.')
-    throw new Error(
-      `你的 ~/${allowlist.file} ${pointer} 排除了该模型 '${model}'。`
-      + '请移除该限制或在引擎设置中加入该模型。',
-    )
-  }
+  const allowlist = await readUserModelAllowlist(env, providerId)
+  if (!allowlist || allowlist.models.includes(model)) return
+  throw new Error(
+    `你的 ~/${allowlist.file} ${allowlist.pointer} 排除了该模型 '${model}'。`
+    + '请移除该限制或在引擎设置中加入该模型。',
+  )
 }
 /**
  * 会话页 claude **TUI** 会话的 settings 基线:关掉 agent view。
@@ -1461,6 +1444,11 @@ export interface SessionpagePlatformModel {
    * 「字段加在这里还不够,schema 必须同时声明它」)。
    */
   switchableModels: readonly PlatformSwitchableModel[]
+  /**
+   * Claude's Auto mode verdict as this launch armed it from the ticket's switchable models; absent for other
+   * harnesses. The Chat UI menu takes it over the account catalog's verdict (`withLaunchedReview`).
+   */
+  autoReview?: ClaudeReviewRunContext
 }
 
 /** One entry of the switchable set: each model carries its OWN window and reasoning levels. */
@@ -1713,6 +1701,36 @@ export async function platformModelForSession(input: PlatformModelForSessionInpu
   return platform
 }
 
+/**
+ * The Auto mode reviewer of a Claude session on this ticket, and the verdict the menu shows for it.
+ * Picks and the review rule read the stable model id (what Settings store); the CLI is told the gateway alias,
+ * so the user's allowlist is matched on the alias. A null model = none: the session's settings remove Auto mode
+ * rather than name a reviewer the CLI would swap, and the verdict says so.
+ */
+async function platformLaunchReviewer(
+  sessionId: string,
+  mainModelId: string,
+  ticket: readonly { id?: string; alias: string; displayName: string }[],
+  membershipLocked: readonly string[],
+  env: NodeJS.ProcessEnv,
+): Promise<{ model: string | null; review: ClaudeReviewRunContext }> {
+  const models = ticket.map((entry) => ({ ...entry, id: entry.id || entry.alias }))
+  const aliasOf = (modelId: string) => models.find((entry) => entry.id === modelId)?.alias ?? modelId
+  const resolution = await resolveHostClaudeReviewer({
+    route: 'platform',
+    mainModel: mainModelId,
+    platformModels: platformReviewCandidates(models.map((entry) => ({
+      id: entry.id, displayName: entry.displayName, requiresMembership: membershipLocked.includes(entry.alias),
+    }))),
+    env,
+    cliModelName: (reviewer) => reviewer.kind === 'platform' ? aliasOf(reviewer.modelId) : reviewer.modelId,
+  })
+  const review = claudeReviewRunContext(resolution)
+  const reviewer = armReviewer(sessionId, resolution)
+  if (!reviewer) return { model: null, review }
+  return { model: resolution.ok && resolution.reviewer.kind === 'platform' ? aliasOf(reviewer) : reviewer, review }
+}
+
 async function resolvePlatformModelForSession(input: PlatformModelForSessionInput): Promise<SessionpagePlatformModel> {
   const env = input.env ?? process.env
   // 选了 harness 自家模型 = 这次会话不上平台。在问 agent 之前就返回:agent 级配置在这条路上已经
@@ -1869,12 +1887,19 @@ async function resolvePlatformModelForSession(input: PlatformModelForSessionInpu
     }, 'platform switchable set is empty — server returned no switchable_models; '
       + 'this session can only use its designated model')
   }
+  // Claude's Auto mode reviewer, armed in the settings document with the allowlist entry the CLI needs to honour it.
+  const launchReview = input.providerId === 'claude'
+    ? await platformLaunchReviewer(input.sessionId, selection?.source === 'platform' ? selection.modelId : launch.access.modelId ?? launch.access.model,
+      launch.access.switchableModels, launch.access.membershipLocked, env)
+    : undefined
+  const autoReviewModel = launchReview?.model
   const modelCapability = buildAcpModelCapability({
     dialect,
     engineId: input.providerId,
     model: launch.access.model,
     env,
     ...(switchableModels.length > 0 ? { platformModels: switchableModels } : {}),
+    ...(autoReviewModel !== undefined ? { autoReviewModel } : {}),
     platformAccess: {
       relayUrl: platformProvider.baseUrl.replace(/\/v1$/, ''),
       token: platformProvider.apiKey,
@@ -1999,6 +2024,7 @@ async function resolvePlatformModelForSession(input: PlatformModelForSessionInpu
     reasoningEfforts: launch.access.reasoningEfforts,
     modelCapability,
     switchableModels,
+    ...(launchReview ? { autoReview: launchReview.review } : {}),
   }
   platformClosureReleaseProofs.open(input.sessionId, launch.access.accessSessionId)
   if (credentialProxyRoute) credentialRoutes.set(credentialProxyRoute, input.sessionId)
@@ -2174,6 +2200,7 @@ export async function releasePlatformModelForSession(
     )
     return
   }
+  forgetReviewRoute(sessionId)
   await performPlatformRelease(platformClosureReleaseProofs, sessionId, held, {
     log,
     detachLive: () => { activeAccessSessions.delete(sessionId); relayPersistence?.sessions.remove(sessionId) },

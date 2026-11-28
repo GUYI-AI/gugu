@@ -119,6 +119,9 @@ export interface MessageItem {
   is_whisper?: boolean
   // App 用 gugu.dispatch 以人的名义发的那一行:App 的 id(= manifest id);其余 null(#6835)。
   via_app?: string | null
+  /** #3934 a group webhook posted this row (sender_user_id is null): the webhook's id and its current name. */
+  via_webhook?: string | null
+  via_webhook_name?: string | null
   /** Public AI-sent marker; the source identity is visible only to the human sender. */
   sent_by_agent?: boolean
   agent_sender?: { id: string | null; name: string } | null

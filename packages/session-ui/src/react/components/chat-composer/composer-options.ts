@@ -267,6 +267,8 @@ export interface ComposerPermissionModeOption {
   icon?: ReactNode;
   disabled?: boolean;
   reviewByHaiku?: boolean;
+  /** Who reviews Auto mode, when the host resolved one. */
+  reviewer?: { label: string; kind: 'platform' | 'connection' };
   /**
    * Marks a mode that lets the agent act without asking (bypass / full-access / yolo).
    * The trigger then renders in warning color with an alert icon instead of the neutral
@@ -285,6 +287,8 @@ export interface ComposerPermissionModeItem {
   icon?: ReactNode;
   disabled?: boolean;
   reviewByHaiku?: boolean;
+  /** Who reviews Auto mode, when the host resolved one. */
+  reviewer?: { label: string; kind: 'platform' | 'connection' };
   destructive?: boolean;
 }
 

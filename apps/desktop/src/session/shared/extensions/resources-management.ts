@@ -29,10 +29,10 @@ export const VOICE_NOTES_MANAGE_CAPABILITY = 'chat:voice-notes:manage';
  * show for it: `stale` its home has not brought it up to date; `not-applied` a change to it failed to apply there;
  * `timed-out` the store did not answer in time; `unreadable` the store or the publication could not be read; `access-unverified`
  * this account's access could not be checked; `owner-unknown` whose assistant it is could not be told; `too-large` past
- * what the store answers at once. `timed-out` and `unreadable` pass by themselves (read again); the others change only
- * when the assistant's home publishes again.
+ * what the store answers at once; `elsewhere` the assistant lives on another computer, where its resources are read and
+ * changed (this one has no up-to-date copy of them). `timed-out` and `unreadable` pass by themselves (read again).
  */
-export const READ_FAILURE_REASONS = ['stale', 'not-applied', 'timed-out', 'unreadable', 'access-unverified', 'owner-unknown', 'too-large'] as const;
+export const READ_FAILURE_REASONS = ['stale', 'not-applied', 'timed-out', 'unreadable', 'access-unverified', 'owner-unknown', 'too-large', 'elsewhere'] as const;
 export type ReadFailureReason = (typeof READ_FAILURE_REASONS)[number];
 export type Unavailable = { state: 'unavailable'; reason: ReadFailureReason };
 

@@ -39,6 +39,7 @@ import {
   workspaceFolder,
   workspaceSession,
   workspaceAppFileChunk,
+  chatListOptionsOf,
   placeOf,
   sessionIdOf,
   type AppFileUpload,
@@ -854,7 +855,7 @@ export function hostAppFrame(
       case 'filesRead':
         return files.read(surface(), { ref: { ...chatRef(args.ref), version: (args.ref as { version?: number })?.version }, offset: Number(args.offset), length: Number(args.length) })
       case 'filesList':
-        return files.groupFiles(chatPlace(args.place), typeof args.folder === 'string' ? { folder: args.folder } : {})
+        return files.groupFiles(chatPlace(args.place), chatListOptionsOf(args, true))
       case 'filesSearch':
         return Promise.resolve().then(() => files.search(fileSearchOf(args)))
       case 'filesRecent':

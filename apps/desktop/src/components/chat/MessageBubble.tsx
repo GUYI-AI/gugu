@@ -35,7 +35,7 @@ import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reaso
 import { keepAction } from './messageKeep'
 import { buildBubbleStyle } from './messageBubbleStyle'
 import { MessageBody } from './MessageBody'
-import { parseQuotedContent } from './messageQuoteContent'
+import { parseQuotedContent, selectionActions, type QuoteSelection } from './messageQuoteContent'
 import { openCommentLine } from '@renderer/features/sessions/annotations/selection-line'
 import { DirectMessageQuote, MessageQuote } from './MessageQuote'
 import { parseComposerCard } from '@gugu/core/shared/ui/taskCardModels'
@@ -49,6 +49,7 @@ import { canSourceTopic } from './topicAnchorModels' // @@@5856 与顶栏那颗�
 import { SystemMessageNotice } from './SystemMessageNotice'
 import { BubbleSender, BubbleTime, ReadReceiptRing } from './MessageBubbleChrome'
 import { fmtMsgTime } from './messageRowTime'
+import { messageLinkActions, selectLinkForMenu } from './messageLink'
 // Sending/failed state and its retry/discard menu live in MessageSendStatus.
 
 interface BubbleProps {
@@ -65,7 +66,7 @@ interface BubbleProps {
   readReceiptTotal?: number
   // @@@1313 点开已读名单（谁读谁没读）：环是父层（持 roster+profiles）那张名单浮层的 Trigger，稳定 handle，避免把 reader 列表作对象 prop 传进破 memo。
   readReceiptHandle?: ReadReceiptHandle
-  onQuote: (msg: MessageItem) => void; onShowMessage?: (id: string) => void
+  onQuote: (msg: MessageItem, selection?: QuoteSelection) => void; onShowMessage?: (id: string) => void
   onForward: (msg: MessageItem) => void
   onDelete: (messageId: string) => void
   isAgent?: boolean; hideAvatar?: boolean; streaming?: boolean // Live IM text shares the settled bubble's layout.
@@ -166,14 +167,16 @@ export const MessageBubble = memo(function MessageBubble({
       document.removeEventListener(UI_EVENTS.closeContextMenus, closeFromSharedEvent as EventListener)
     }
   }, [showMenu, showMoreMenu, showEmojiPicker])
+  // Words a person can pick: a text message's, or a picture's caption under it. One menu for both (复制 · 引用 · 评论).
+  const hasWords = msg.content_type === 'text' || !!sendCaption(album ?? [msg])
   const messageActions = (close: () => void) => ({
     isRetracted: !!msg.retracted_at, content: copyText, hasHoverBar: !compactMobile, hasSelection: !compactMobile && !!menuSelection, onClose: close,
     onReply: () => { onQuote(msg); close() },
     onReact: (emoji: string) => { onReaction(msg.id, emoji); close() },
-    onCommentSelection: menuSelection && msg.content_type === 'text' && menuSelectionAt.current ? () => { commentOn(menuSelectionAt.current!, menuSelection); close() } : undefined,
+    ...(hasWords ? selectionActions(menuSelection, menuSelectionAt.current, () => onQuote({ ...msg, content: menuSelection }, { originalContent: msg.content }), commentOn, close) : {}),
     onCopy: (content = menuSelection || undefined) => { void handleCopyText(content); close() },
-    onSelectText: compactMobile && (msg.content_type === 'text' || !!sendCaption(album ?? [msg])) && phone.source ? () => { phone.setSelecting(true); close() } : undefined,
-    onCopyLink: menuLink ? () => { void handleCopyText(menuLink.href); close() } : undefined, onOpenLink: menuLink ? () => { menuLink.click(); close() } : undefined,
+    onSelectText: compactMobile && hasWords && phone.source ? () => { phone.setSelecting(true); close() } : undefined,
+    ...messageLinkActions(menuLink, (text) => void handleCopyText(text), close),
     onForward: () => { onForward(msg); close() }, onKeep: keepAction({ id: msg.id, mine: msg.is_mine, live: !!mediaAttachment && mediaAttachment.source.kind !== 'gone' }, close, toast, t),
     onDownload: mediaAttachment && mediaAttachment.source.kind !== 'gone' ? () => { void (album ? downloadSendFiles(album) : downloadAttachment(mediaAttachment.source, mediaAttachment.fileName)).catch((error) => toast(t('chatArea.downloadFailed'), 'error', safeFailureLine(String((error as Error)?.message ?? error)))); close() } : undefined,
     onDelete: () => { onDelete(msg.id); close() },
@@ -188,6 +191,7 @@ export const MessageBubble = memo(function MessageBubble({
   }
 
   const openMenuAt = (x: number, y: number) => {
+    if (!compactMobile) selectLinkForMenu(menuLink)
     captureMenuSelection()
     if (compactMobile) phone.captureAt(bubbleRef.current, x, y)
     document.dispatchEvent(new CustomEvent(UI_EVENTS.closeContextMenus))
@@ -229,7 +233,7 @@ export const MessageBubble = memo(function MessageBubble({
 
   const avatarIsAgent = memberProfile?.type === 'agent' || (!msg.is_mine && isAgent)
   const senderIdentity = useAvatarIdentity(avatarIsAgent ? msg.sender_user_id ?? '' : '')
-  const avatarName = useShownAgentName({ name: memberProfile?.displayName ?? '', createdAt: avatarIsAgent ? senderIdentity?.created_at ?? undefined : undefined })
+  const avatarName = useShownAgentName({ name: memberProfile?.displayName ?? msg.via_webhook_name ?? '', createdAt: avatarIsAgent ? senderIdentity?.created_at ?? undefined : undefined })
   const avatarUrl = memberProfile?.avatar ?? null
   // @@@avatar-status-badge (#793 rollout) - the agent sender's status lives on its memberProfile
   // (populated for both group agents and the DM peer in ChatAreaPanel's messageMemberProfiles).
@@ -237,7 +241,7 @@ export const MessageBubble = memo(function MessageBubble({
   // @@@msg-avatar (#1102) - 消息头像对齐设计稿 .av.s(28–32px 小号);原 md=40 偏大显「旧/重」。
   // @@@1355 sender avatars are projected only from the canonical sender URL.
   // Display-only naming never changes the sender id or profile actions.
-  const avatar = <MessageSenderAvatar senderUserId={msg.sender_user_id} name={avatarName} avatarUrl={avatarUrl} seed={msg.is_mine ? user?.id : (msg.sender_user_id ?? undefined)} size="sm" isAgent={avatarIsAgent} agentStatus={avatarIsAgent ? memberProfile?.agentStatus : undefined} still />
+  const avatar = <MessageSenderAvatar senderUserId={msg.sender_user_id} webhook={!!msg.via_webhook} name={avatarName} avatarUrl={avatarUrl} seed={msg.is_mine ? user?.id : (msg.sender_user_id ?? undefined)} size="sm" isAgent={avatarIsAgent} agentStatus={avatarIsAgent ? memberProfile?.agentStatus : undefined} still />
   const profile = memberProfile && memberProfileOpener ? { handle: memberProfileOpener.handle, payload: { member: memberProfile, preferredSide: msg.is_mine ? 'left' as const : 'right' as const } } : null
 
   if (msg.content_type === 'system') return <SystemMessageNotice message={msg} senderName={avatarName} onOpenTopic={onOpenTopicAnchor} />
@@ -370,7 +374,7 @@ export const MessageBubble = memo(function MessageBubble({
             onPointerDownCapture={(e) => setMenuLink(e.target instanceof Element ? e.target.closest<HTMLAnchorElement>('a[href]') : null)}
           >
             {/* 名字只在群里收到的、一组的第一条上(DM 头栏已经说了是谁);任务卡自己写着是谁发的。 */}
-            {showSender && <BubbleSender member={memberProfile} displayName={avatarName} senderId={msg.sender_user_id} replyMark={replyQuote} profile={compactMobile ? null : profile} />}
+            {showSender && <BubbleSender member={memberProfile} displayName={avatarName} senderId={msg.sender_user_id} replyMark={replyQuote} profile={compactMobile ? null : profile} webhook={msg.via_webhook ? { chatId: msg.chat_id, id: msg.via_webhook } : null} />}
             {isRetracted ? (
               // #1323 模块3 — 撤回文字 --text-tertiary→--muted-fg(原偏淡)
               <span className="msg-time-room-inline" style={{ color: 'var(--muted-fg)', fontStyle: 'italic', '--msg-time-room': timeRoom } as React.CSSProperties}>{t('message.retracted')}</span>
@@ -400,7 +404,7 @@ export const MessageBubble = memo(function MessageBubble({
       {compactMobile
         ? phone.mounted && !phone.selecting && <MsgMoreMenu lift={{ open: showMenu, bubble: bubbleRef, touchY: menuPos.y, mine: msg.is_mine }} {...messageActions(() => setShowMenu(false))} />
         : showMenu && <MsgMoreMenu x={menuPos.x} y={menuPos.y} {...messageActions(() => setShowMenu(false))} />}
-      {phone.selecting && phone.source && <PhoneTextSelection source={phone.source} onDone={() => phone.setSelecting(false)} onComment={msg.content_type === 'text' ? (words) => commentOn(bubbleRef.current!.getBoundingClientRect(), words) : undefined} />}
+      {phone.selecting && phone.source && <PhoneTextSelection source={phone.source} onDone={() => phone.setSelecting(false)} onComment={hasWords ? (words) => commentOn(bubbleRef.current!.getBoundingClientRect(), words) : undefined} />}
 
     </MessageHoverRegion>
   )

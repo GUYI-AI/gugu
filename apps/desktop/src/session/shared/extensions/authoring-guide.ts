@@ -53,8 +53,9 @@ When one of these tools is not in your tool list, it is in \`catalog_list\`.
    cards) is a map keyed by id (\`f.data.votes[me] = choice\`), never an array index.
    \`html\`…\`\` is markup only: no \`@click\` / \`onclick=\${fn}\` — a function goes in as text. Listen once, by
    delegation: \`$('#shared').addEventListener('click', (e) => { const b = e.target.closest('[data-vote]'); if (b) f.data.votes[me] = b.dataset.vote })\`.
-2. \`app_install\` with \`source_dir\`, \`chat_id\` and \`data\` (the starting JSON, or \`{item_id}\` of a file
-   already in the chat): one call makes the data file, checks the App on it and posts its card.
+2. \`app_install\` with \`source_dir\`, \`chat_id\` and \`data\` (\`{file_path}\` of the starting file, written on this
+   computer and named with the App's file type, or \`{item_id}\` of a file already in the chat): one call makes the data
+   file, checks the App on it and posts its card.
 3. \`app_check\` — runs a tab as a hidden page (a chat App: on its file, \`item_id\`) and reads back whether
    it loaded, its errors (a \`hint\` is advice), console, a snapshot and pictures. After every install:
    fix, reinstall and check until \`ok\` and it looks right; only then tell the person it is done.
@@ -276,9 +277,9 @@ export const follow = {
   worker has none (relay through the main thread yourself). It opens a chat file it
   is handed by its id, \`{ id }\`, and \`gugu.dispatch(text, { to: { chat, member }, refs })\` whispers in that file's chat.
   A file it makes goes in with \`gugu.files.upload(place, file)\` (\`files:write\`) — into the chat of a file an agent
-  handed it, as that agent, judged by the agent's membership; a stored file it is handed
+  handed it, as that agent, judged by the agent's membership; a file it is handed
   gets its next version with \`gugu.files.replace(file, blob, { expectedVersion: entry.version })\` (needed;
-  \`content-changed\` if another write came first) — the agent's write, its old version kept
+  \`content-changed\` if a write or edit came first) — the agent's write, its old version kept
   (\`gugu.files.versions(file)\` lists them, \`gugu.files.readVersion(file, n)\` reads one).
 - A parameter \`{ "type": "string", "format": "gugu-file" }\` is a chat file the agent hands you:
   gugu checks the agent can open it, and for that call your program opens it with no capability, as that

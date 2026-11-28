@@ -2,7 +2,7 @@ import { permissionModeSupportsBillingRoute, type ProviderPermissionModeMap } fr
 
 export type ReviewModeRequirements = { minimumCliVersion: string; modelPattern: string };
 
-function meetsReviewModeVersion(requirements: ReviewModeRequirements | undefined, cliVersion?: string): boolean {
+export function meetsReviewModeVersion(requirements: ReviewModeRequirements | undefined, cliVersion?: string): boolean {
   if (!requirements) return true;
   const version = cliVersion?.match(/^(\d+)\.(\d+)\.(\d+)$/)?.slice(1).map(Number);
   const floor = requirements.minimumCliVersion.split('.').map(Number);
@@ -22,12 +22,18 @@ export function meetsReviewModeRequirements(
   return new RegExp(requirements.modelPattern, 'i').test((facts.model ?? '').replace(/\[.*\]$/, ''));
 }
 
-/** Official login and a platform-model route are separate facts, shared by desktop and phone. */
+/**
+ * Official login and a platform-model route are separate facts, shared by desktop and phone.
+ * `reviewer`: the host's verdict on who reviews a gateway session (platform / custom). When given it replaces the
+ * main-model name rule: any model may run Auto mode once a model that can review is resolved for it.
+ * Omitted (another harness, an older caller) = the declared requirements decide, unchanged.
+ */
 export function catalogAllowsAutoReview(
   map: ProviderPermissionModeMap | undefined,
   catalog: { kind: string; selected?: string | null; autoReview?: boolean; reviewerAvailable?: boolean; cliVersion?: string },
   route: 'own' | 'custom' | 'platform' | 'unknown',
   model: string | null | undefined,
+  reviewer?: { ok: boolean },
 ): boolean {
   const entry = map?.['ai-review'];
   if (!entry || route === 'unknown' || !permissionModeSupportsBillingRoute('ai-review', map, route === 'custom' ? 'own' : route)) return false;
@@ -36,9 +42,10 @@ export function catalogAllowsAutoReview(
     // autoReview is the native filter's verdict for this exact selection, including
     // any alias resolved from its own choice. Recheck the CLI floor, not the raw alias.
     && meetsReviewModeVersion(entry.reviewRequirements, catalog.cliVersion);
-  return (catalog.kind === 'ready' || catalog.kind === 'auth-required')
-    && catalog.reviewerAvailable === true && !!model
-    && meetsReviewModeRequirements(entry.reviewRequirements, {
+  if (!((catalog.kind === 'ready' || catalog.kind === 'auth-required') && catalog.reviewerAvailable === true && !!model)) return false;
+  return reviewer
+    ? reviewer.ok && meetsReviewModeVersion(entry.reviewRequirements, catalog.cliVersion)
+    : meetsReviewModeRequirements(entry.reviewRequirements, {
       cliVersion: catalog.cliVersion, model: model.replace(/^platform:/, ''),
     });
 }

@@ -150,6 +150,7 @@ describe('session composer in a narrow pane', () => {
     expect(tag.getAttribute('title')).toBe('新建智能体')
     expect(shown(tag.querySelector('[data-slot="composer-foldable-label"]'))).toBe(false)
     expect(shown(document.querySelector('[data-testid="tag-cancel"]'))).toBe(true)
+    expect(tag.firstElementChild!.getBoundingClientRect().left - tag.getBoundingClientRect().left).toBe(6)
     // 父版实测编辑区只剩 30px,placeholder 一行两个字。
     const editor = document.querySelector('[data-testid="prompt-editor"]')!.getBoundingClientRect()
     expect(editor.width).toBeGreaterThan(80)

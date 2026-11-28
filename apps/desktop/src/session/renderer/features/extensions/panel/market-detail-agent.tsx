@@ -5,7 +5,7 @@ import { AppIcon } from '@renderer/lib/components/app-icon';
 import { Button } from '@renderer/lib/ui/button';
 import { Spinner } from '@renderer/lib/ui/spinner';
 import { DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog';
-import { confirmOpenExternalLink } from '@renderer/lib/open-external-link';
+import { openWebLink } from '@renderer/lib/open-web-link';
 import { useManagementAgent } from '@renderer/lib/stores/use-agents';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { agentMarketCategoryOf } from '@shared/extensions/catalog';
@@ -87,7 +87,7 @@ function AgentCard({ agent, installation, onCreate, notice, readOnly }: {
   ) : update || install ? (
     <Button disabled={busy} onClick={update ?? install}>{translate(failure ? 'extensions.retry' : update ? 'extensions.updateAction' : 'extensions.installAction')}</Button>
   ) : agent.installDocs ? (
-    <Button variant="outline" onClick={() => { if (agent.installDocs) confirmOpenExternalLink(agent.installDocs); }}>
+    <Button variant="outline" onClick={() => { if (agent.installDocs) openWebLink(agent.installDocs, 'app'); }}>
       {translate('agentsPage.installDocsLink')}
     </Button>
   ) : undefined;

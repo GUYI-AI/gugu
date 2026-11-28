@@ -16,6 +16,9 @@ export { createServerPasswordAgent } from '../password-vault/server-agent'
 export { passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
 export { serverTaskPrivateLogin } from '../session/main/core/extensions/task-page-host'
 export { archiveSession } from '../session/main/core/sessions/archiveSession'
+// #3938 The bound session's model for the agent's card (presence `model_name`), and when to ask again.
+export { sessionModelName } from '../session/main/core/sessions/session-model-name'
+export { onSessionModelChanged } from '../session/main/core/sessions/session-model-events'
 // #3884 The host's quit intent reaches session starts before the shutdown closes what an engine needs.
 export { beginSessionLifeHostQuit } from '../session/main/core/sessions/session-life'
 export { createDesktopAccountClosureHost } from '../session/main/core/desktop-account-closure'

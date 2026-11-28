@@ -179,6 +179,9 @@ export const DispatchSheet = observer(function DispatchSheet() {
       title={pick ? pick.title : asked.draft ? t('composePick.title') : t('dispatchPick.title')}
       onClose={() => finish(null)}
       testId="dispatch-sheet"
+      // Mounted by the consent host, outside the page that asked: an App's own page is a page modal (--z-settings), and on
+      // the default --z-modal the sheet opened under it — the click looked dead. Same layer as the consent sheet (#3857).
+      zIndex="var(--z-settings-modal)"
       rows={[]}
       sections={sections}
       above={pick ? preview : undefined}

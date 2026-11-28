@@ -12,7 +12,7 @@ import { blockPlainText } from '@session-chat/core/markdown/plain-text';
 import { pxTokens } from '@session-chat/styles/px-tokens';
 import { vars as themeVars } from '@session-chat/styles/theme.css';
 import { assignInlineVars } from '@vanilla-extract/dynamic';
-import { fileRowStyle } from '@gugu/session-shared/file-row';
+import { fileRowBox, fileRowStyle } from '@gugu/session-shared/file-row';
 import '@gugu/session-shared/file-row.css';
 import { For, Show, createEffect, createMemo, createResource, createSignal, onCleanup, type JSX } from 'solid-js';
 import type { ChatAttachment, ChatMessage } from '@session-chat/model';
@@ -214,7 +214,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
           }}
         >
           <For each={props.data.attachments}>
-            {(att) => att.kind === 'annotation' ? <AnnotationChip attachment={att} /> : <AttachmentChip attachment={att} itemId={props.data.id} />}
+            {(att) => att.kind === 'annotation' ? <AnnotationChip attachment={att} /> : <AttachmentChip attachment={att} itemId={props.data.id} available={availableWidth()} />}
           </For>
         </div>
       </Show>
@@ -315,13 +315,15 @@ function AnnotationChip(props: { attachment: ChatAttachment }) {
 }
 
 /**
- * 一枚附件 = 一条文件行(`@gugu/session-shared/file-row`):文件是图标 + 名字 + 扩展名,图片是同高的缩略图。
+ * 一枚附件 = 一条文件行(`@gugu/session-shared/file-row`):文件是图标 + 名字 + 扩展名;图片是一张图,
+ * 像群聊气泡那样按原图比例画(框是 `fileRowBox`,量高读的同一个),不知道宽高的图完整放进定高的框。
  * 点开是同一个回调,宿主按 kind 分岔(图 → 看图、文件 → 用它该用的方式打开)。
  */
-function AttachmentChip(props: { attachment: ChatAttachment; itemId: string }) {
+function AttachmentChip(props: { attachment: ChatAttachment; itemId: string; available: number }) {
   const commands = useCommands();
   const translate = useChatTranslator();
   const isImage = () => props.attachment.kind !== 'file';
+  const box = () => fileRowBox({ kind: 'image', size: props.attachment.imageDimensions }, props.available);
   const [resolvedDataUrl] = createResource(
     () => (!isImage() || props.attachment.dataUrl ? null : props.attachment.id),
     async () => commands().resolveAttachment?.(props.attachment) ?? null
@@ -335,7 +337,9 @@ function AttachmentChip(props: { attachment: ChatAttachment; itemId: string }) {
       type="button"
       data-attachment-chip
       data-kind={isImage() ? 'image' : 'file'}
+      data-fit={isImage() && !props.attachment.imageDimensions ? 'contain' : undefined}
       class="gg-file-row"
+      style={isImage() ? { width: `${box().width}px`, height: `${box().height}px` } : undefined}
       // 名字长了会截断,全名放这儿。
       title={props.attachment.name}
       // 附件名是原始数据(用户自己的文件名),只被这句话包住,❌ 不进 catalog。
@@ -345,9 +349,8 @@ function AttachmentChip(props: { attachment: ChatAttachment; itemId: string }) {
       )}
       onClick={(e) => {
         e.stopPropagation();
-        if (props.attachment.href) {
-          const picture = isImage() ? e.currentTarget.querySelector('img') : null;
-          if (picture) commands().onDrawnPictureLink?.(props.attachment.href, picture);
+        // A file opens where its link says; a picture opens in the viewer at once, out of the thumbnail drawn here.
+        if (props.attachment.href && !isImage()) {
           commands().onOpenLink?.(props.attachment.href);
           return;
         }

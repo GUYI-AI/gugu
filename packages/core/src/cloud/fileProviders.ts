@@ -23,6 +23,8 @@ const cacheKey = (context: FileContext, digest: string) => hex(sha256(new TextEn
 const sameLegacyObject = (revision: FileRevision, row: { bucket_id?: string; object_name?: string; message_id?: string }) =>
   !revision.legacy_object || row.bucket_id === revision.legacy_object.bucket_id && row.object_name === revision.legacy_object.object_name && row.message_id === revision.legacy_object.message_id
 // An unhashed historical object cannot authenticate persistent cached chunks between opens.
+/** Where a preview's verified bytes are kept for this reader and reference (`imageCache`). */
+export const filePreviewCacheKey = (context: FileContext, sha256: string) => `https://attachments.gugu.invalid/preview/${cacheKey(context, sha256)}`
 const uncached: FileChunkCache = { get: async () => null, put: async () => {}, clear: async () => {} }
 
 /** Bytes per download lane: a file gets one more parallel ranged GET per this many bytes, up to `DOWNLOAD_LANES`. */
@@ -159,13 +161,6 @@ export function cloudFileProviders(deps: {
   endpoint(context: FileContext): Promise<AttachmentsEndpoint>
   sink(size: number, context: FileContext): Promise<FileSink>
   cache: FileChunkCache; fetch?: typeof globalThis.fetch
-  /**
-   * Where this platform reads a signed object's bytes from, when not from the address itself: the desktop renderer reads
-   * them through main (`cloudObjectUrl`). The mapped address is read with `fetch`, which such a platform gives too (main's
-   * address is not the network's). A `<video>` is handed the signed address itself: Chromium's media loader is the
-   * platform's reader for it, with Chromium's own proxy and certificates.
-   */
-  objectUrl?(signed: string): string
   downloadSession?: FileDownloadSession
   metadata?(context: FileContext): Promise<unknown>
   imageCache?: Pick<Cache, 'match' | 'put'>
@@ -194,8 +189,7 @@ export function cloudFileProviders(deps: {
     context.signal?.throwIfAborted()
     const fetcher = deps.fetch ?? (await deps.endpoint(context)).fetch ?? egress.fetch
     context.signal?.throwIfAborted()
-    const objectUrl = deps.objectUrl
-    return objectUrl ? ((input: RequestInfo | URL, init?: RequestInit) => fetcher(objectUrl(String(input)), init)) as typeof globalThis.fetch : fetcher
+    return fetcher
   }
   const read = async (revision: FileRevision, context: FileContext, encrypted: boolean, destination?: FileSink): Promise<FileBytes> => {
     const ref = 'item_id' in context.ref ? { ...context.ref, version: revision.version } : context.ref
@@ -240,7 +234,8 @@ export function cloudFileProviders(deps: {
     if (encrypted && !lease) await sign()
     const digest = encrypted ? lease!.ciphertext_sha256! : revision.sha256, key = cacheKey(context, digest ?? crypto.randomUUID())
     // An unhashed historical object keeps no chunks, so it has nowhere to put bytes read ahead: one lane.
-    const source = remoteSource(encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes, key, revision.legacy_object ? uncached : deps.cache, async (renew, origin) => renew || origin ? sign(renew, origin) : lease ? { lease, direct } : sign(), () => objectTransport(context), session, context.signal, context.progress, revision.legacy_object ? 1 : DOWNLOAD_LANES)
+    const openSource = () => remoteSource(encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes, key, revision.legacy_object ? uncached : deps.cache, async (renew, origin) => renew || origin ? sign(renew, origin) : lease ? { lease, direct } : sign(), () => objectTransport(context), session, context.signal, context.progress, revision.legacy_object ? 1 : DOWNLOAD_LANES)
+    const source = openSource()
     // @@@save-through-cache - a save to disk reads through the same chunk cache as a read for display, so a read that dies
     // halfway (the process stops, the retry window runs out) resumes from the chunks it has; once it ends they are dropped.
     let dataKey: Uint8Array | undefined
@@ -254,7 +249,23 @@ export function cloudFileProviders(deps: {
       }
       // Downloads publish only after the final authorization read; private snapshot readers retain their existing sink.
       const writing = destination ? { ...sink, commit: async (): Promise<FileBytes> => ({ size: revision.size_bytes, read: async () => { throw new Error('Download is not committed') }, dispose: async () => {} }) } : sink
-      const file = encrypted ? (await transformFile({ direction: 'decrypt', revision, source, sink: writing, key: dataKey!, ciphertextSha256: lease!.ciphertext_sha256!, signal: context.signal })).file : await copyVerifiedFile(revision, source, writing, context.signal)
+      // @@@adopt-staged-file - plaintext chunks kept in one file (`FileChunkCache.take`) are the content itself: once the
+      // reader has checked them in order, the sink makes that file its own, and nothing is written a second time.
+      const chunks = Math.max(1, Math.ceil(revision.size_bytes / FILE_CHUNK_BYTES)), staging = deps.cache
+      const adopting: FileSink | undefined = !encrypted && !revision.legacy_object && staging.take && sink.adopt ? {
+        write: async () => {}, abort: () => writing.abort(),
+        async commit() {
+          const staged = await staging.take!(key, chunks)
+          const adopted = staged !== null && await sink!.adopt!(staged).then(() => true, error => { if (error?.code !== 'ENOENT') throw error; return false })
+          if (adopted) return writing.commit()
+          // Another read of this same file ended first and took or cleared the chunks: read once more, into the sink.
+          const again = openSource()
+          try { return await copyVerifiedFile(revision, again, writing, context.signal) } finally { await again.dispose() }
+        },
+      } : undefined
+      const file = encrypted
+        ? (await transformFile({ direction: 'decrypt', revision, source, sink: writing, key: dataKey!, ciphertextSha256: lease!.ciphertext_sha256!, signal: context.signal })).file
+        : await copyVerifiedFile(revision, source, adopting ?? writing, context.signal)
       const changed = (current: Download) => {
         if (missingObject(current)) throw new MissingFileObjectError()
         if (current.status !== 'ready') throw new FileReadRevokedError(current.status === 'gone' || current.status === 'expired' ? current.status : 'access')
@@ -296,10 +307,11 @@ export function cloudFileProviders(deps: {
       dataKey?.fill(0); if (lease) delete lease.key; await source.dispose()
       // The sink holds the bytes once read. Only an interrupted or abandoned read keeps its chunks, to resume from them.
       if (!source.interrupted() && !context.signal?.aborted) await deps.cache.clear(key)
+      else await deps.cache.rest?.(key)
     }
   }
   const readPreview = async (preview: FilePreview, ref: FileContext['ref'], context: FileContext) => {
-    const key = `https://attachments.gugu.invalid/preview/${cacheKey(context, preview.sha256)}`
+    const key = filePreviewCacheKey(context, preview.sha256)
     const hit = await deps.imageCache?.match(key)
     if (hit) return hit.blob()
     let lease: Download | undefined

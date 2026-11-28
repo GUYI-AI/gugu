@@ -70,7 +70,7 @@ it('drags an inner-column topic row into the chat area with the topic sub-row pa
   }
 });
 
-it('All › expands every topic in the column itself, with a search box over the names; ‹ Back folds it to level one', async () => {
+it('All adds search to the same full list of topics; Back restores the scrollable compact list', async () => {
   const many = [
     chat({ id: 'grp-1', kind: 'group', name: '产品讨论群', avatar: null, last_message_at: recent }),
     ...Array.from({ length: 14 }, (_, index) => chat({ id: `t-${index}`, kind: 'topic', name: `话题 ${index}`, source_chat_id: 'grp-1', last_message_at: recent })),
@@ -82,8 +82,7 @@ it('All › expands every topic in the column itself, with a search box over the
   const rows = () => slot.querySelectorAll('[data-topic-row]').length;
   try {
     await act(async () => readShellSlots()!.setSlot(innerSidebarTopicsSlotKey('grp-1'), slot));
-    await until('level one rendered', () => rows() > 0);
-    expect(rows()).toBeLessThan(15);
+    await until('every topic is available in the compact list', () => rows() === 15);
     expect(slot.querySelector('[data-slot="search-field"]')).toBeNull();
 
     await act(async () => setInnerSidebarTopicsAll('grp-1'));
@@ -97,7 +96,7 @@ it('All › expands every topic in the column itself, with a search box over the
     await until('the no-match line', () => rows() === 0 && slot.textContent!.includes('未找到'));
 
     await act(async () => setInnerSidebarTopicsAll(null));
-    await until('back to level one', () => rows() > 0 && rows() < 15);
+    await until('back to level one', () => rows() === 15);
     expect(slot.querySelector('[data-slot="search-field"]')).toBeNull();
   } finally {
     slot.remove();
