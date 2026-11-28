@@ -1,14 +1,15 @@
 // 附件缓存的字节上限,在真 Cache Storage 上量:超了删最旧的,刚写入的还在;比整个上限还大的一份不进缓存、不挤掉别的;
 // 只算留下的;读到一半的续传分片不计入、不删,崩溃留下的分片删掉;写入不每次都扫。
 import { afterEach, describe, expect, it } from 'vitest'
-import { budgetedCacheWriter, trimCacheToBytes, type CacheEntryRole } from '@/lib/attachmentCacheBudget'
+import { budgetedCacheWriter, trimCacheToBytes } from '@/lib/attachmentCacheBudget'
+import type { BudgetRole } from '@gugu/core/shared/byteBudget'
 
 const NAME = 'attachment-cache-budget-test'
 const ORIGIN = 'https://attachments.gugu.invalid'
 const bytes = (n: number) => new Blob([new Uint8Array(n)])
 const open = () => caches.open(NAME)
 const names = async () => (await (await open()).keys()).map((r) => r.url.replace(ORIGIN, ''))
-const byPrefix = (url: string, response: Response): CacheEntryRole =>
+const byPrefix = (url: string, response: Response): BudgetRole =>
   !url.startsWith(`${ORIGIN}/chunks/`) ? 'budget' : response.headers.get('x-live') ? 'keep' : 'drop'
 const fail = (error: unknown) => { throw error }
 

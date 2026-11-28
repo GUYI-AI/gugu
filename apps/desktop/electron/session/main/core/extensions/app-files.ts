@@ -1245,12 +1245,19 @@ export async function downloadAppFile(page: DesktopFilePage, args: { ref?: unkno
  * app's own data folder, so a plain Save hid the file there.
  */
 async function saveAsked(window: BrowserWindow | null, source: SaveSource, write: (filePath: string) => Promise<void>): Promise<string | null> {
+  const target = await askSaveTarget(window?.webContents ?? null, source.name);
+  if (!target) { if (source.kind === 'file') await source.file.dispose(); return null; }
+  await write(target);
+  return target;
+}
+
+/** The save dialog alone, for a file whose writer is elsewhere (a chat file's Download, `desktopFileAccess`): where, or `null`. */
+export async function askSaveTarget(owner: WebContents | null, name: string): Promise<string | null> {
+  const window = owner ? BrowserWindow.fromWebContents(owner) : null;
   // basename: a name carrying separators (`../x`) must not point the dialog outside Downloads.
-  const options = { defaultPath: path.join(app.getPath('downloads'), path.basename(source.name)) };
+  const options = { defaultPath: path.join(app.getPath('downloads'), path.basename(name)) };
   const target = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
-  if (target.canceled || !target.filePath) { if (source.kind === 'file') await source.file.dispose(); return null; }
-  await write(target.filePath);
-  return target.filePath;
+  return target.canceled || !target.filePath ? null : target.filePath;
 }
 
 /**

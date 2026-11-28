@@ -7,7 +7,7 @@ import { createFileSink } from './fileSnapshot'
 import type { AttachmentDeclareRequest, createAttachmentUploadHost } from './attachmentUploadHost'
 import type { SelectedProjectFile, ProjectFileMessage } from './projectFilePublication'
 import { sanitizeRemoteFileName } from './remoteFileOpen'
-import { FileIntegrityError, fileRefKey, requireFileRange, requireFileRevision, type FileBytes, type FileContext, type FileProviders, type FileRevision, type FileStageCommand } from '@gugu/core/shared/fileResolver'
+import { FileIntegrityError, fileReadFailure, fileRefKey, requireFileRange, requireFileRevision, type FileBytes, type FileContext, type FilePreview, type FileProviders, type FileRevision, type FileStageCommand } from '@gugu/core/shared/fileResolver'
 
 /** Opaque capabilities stay within the issuing renderer and account. Bytes use the existing invoke bus and FileSink. */
 export function createNativeFileHost(deps: {
@@ -19,17 +19,31 @@ export function createNativeFileHost(deps: {
   /** A task attachment's own copy for the agent (`writeTaskCopy`): its path. */
   taskCopy?(name: string, bytes: Uint8Array, mimeType?: string): Promise<{ path: string; name: string; size: number; mimeType?: string }>
   publication?(chatId: string, owner: string): Promise<boolean>
-  /** This machine's bytes of a sha (`localCopy`): asked only for a read already authorized. */
-  stored?(sha256: string): Promise<Blob | null>
+  /** This machine's bytes of a sha (`desktopFileAccess.here`), held until disposed: asked only for a read already authorized. */
+  stored?(sha256: string): Promise<FileBytes | null>
   /**
    * This machine's bytes reach the renderer at an address (`createBytesPreview`, `gugu-preview://<id>/<sha>`), never over
    * this IPC: a `<video>` reads its ranges, a Blob is fetched whole. `release` takes the address down.
    */
   serve(sha256: string, contentType: string, file: Pick<FileBytes, 'size' | 'read'>): Promise<{ url: string; release(): void }>
+  /**
+   * The window's reads and saves of cloud files, all run here (`desktopFileAccess`): main signs, reads, verifies and keeps
+   * the bytes, and the window reads the kept copy at its address. `preview`: a video's signed address, or a small preview's
+   * bytes. `download`: saved where the person says, in the save dialog of the scope's window; `known`: this machine's
+   * bytes of the version the window already knows (`stored`), saved without asking the server.
+   */
+  cloud?: {
+    read(revision: FileRevision, context: FileContext): Promise<FileBytes>
+    preview(revision: FileRevision, context: FileContext): Promise<{ url: string; expiresAt: number } | Uint8Array>
+    expiredPreview(preview: FilePreview, context: FileContext): Promise<Uint8Array>
+    download(scope: number, context: FileContext, name: string, known: FileBytes | null): Promise<{ saved: boolean; revision?: FileRevision } | { status: string }>
+  }
 }) {
   type Entry = { scope: number; epoch: number; owner: string; file?: FileBytes; release?: () => void; url?: string; context?: string; name?: string; size?: number; sha?: string;
     sink?: Awaited<ReturnType<typeof createFileSink>>; hash?: ReturnType<typeof createHash>; written?: number; path?: string; busy?: boolean }
   const entries = new Map<string, Entry>()
+  /** Cloud reads and saves still running, by the window's name for them: stopped when it lets go (`cancel`) or goes away. */
+  const running = new Map<string, { scope: number; stop: AbortController }>()
   let lastOwner: string | null = null
   const epochs = new Map<number, number>()
   const epochOf = (scope: number) => { const value = epochs.get(scope) ?? 0; epochs.set(scope, value); return value }
@@ -38,6 +52,7 @@ export function createNativeFileHost(deps: {
   }
   const drop = async (scope?: number) => {
     for (const id of scope === undefined ? epochs.keys() : [scope]) epochs.set(id, epochOf(id) + 1)
+    for (const [id, read] of running) if (scope === undefined || read.scope === scope) { running.delete(id); read.stop.abort(new Error('File reader account or window changed')) }
     await Promise.all([...entries].filter(([, entry]) => scope === undefined || entry.scope === scope).map(async ([id, entry]) => {
       entries.delete(id); entry.release?.(); await entry.file?.dispose(); await entry.sink?.abort()
     }))
@@ -68,22 +83,53 @@ export function createNativeFileHost(deps: {
     },
     async ownerChanged(owner: string | null) { if (owner !== lastOwner) { lastOwner = owner; await drop() } },
     /** `progress`: the reader's name for this read; `report` hands it how far the bytes have come (`files:read-progress`). */
-    async read(scope: number, context: FileContext, request: { op: string; id?: string; revision?: FileRevision; offset?: number; length?: number; progress?: string; sha256?: string; contentType?: string },
+    async read(scope: number, context: FileContext, request: { op: string; id?: string; revision?: FileRevision; offset?: number; length?: number; progress?: string; sha256?: string; contentType?: string; read?: string; preview?: FilePreview; name?: string },
       report?: (progress: { id: string; done: number; total: number; stalled?: true }) => void) {
       const epoch = epochOf(scope), owner = await deps.owner(); if (!owner || context.actor.accountId !== owner) throw new Error('File reader is not signed in')
       const key = JSON.stringify([context.actor.accountId, context.actor.actorId, fileRefKey(context.ref)])
       /** This machine's bytes, verified: kept for this reader at an address until it disposes them. */
       const served = async (sha256: string, contentType: string, file: FileBytes) => {
-        try { await check(scope, owner, epoch) } catch (error) { await file.dispose(); throw error }
-        const { url, release } = await deps.serve(sha256, contentType, file)
-        const id = randomUUID(); entries.set(id, { scope, epoch, owner, context: key, file, release, url }); return { id, size: file.size, url }
+        try {
+          await check(scope, owner, epoch)
+          const { url, release } = await deps.serve(sha256, contentType, file)
+          const id = randomUUID()
+          entries.set(id, { scope, epoch, owner, context: key, file, release, url })
+          return { id, size: file.size, url }
+        } catch (error) { await file.dispose(); throw error }
+      }
+      if (request.op === 'cloud' || request.op === 'cloud-preview' || request.op === 'cloud-expired-preview' || request.op === 'download') {
+        // A failure comes back as a value (`fileReadFailure`): the reader branches on its kind, which an invoke error loses.
+        const cloud = deps.cloud, name = request.read
+        if (!cloud || typeof name !== 'string' || running.has(name)) throw new Error('Cloud file reads are unavailable')
+        if (request.op === 'download' && (typeof request.name !== 'string' || !request.name)) throw new Error('A download needs its file name')
+        const stop = new AbortController(); running.set(name, { scope, stop })
+        const named = request.progress
+        const reading: FileContext = { ...context, signal: stop.signal,
+          ...(typeof named === 'string' && report ? { progress: (done: number, total: number, stalled?: true) => report({ id: named, done, total, ...(stalled ? { stalled } : {}) }) } : {}) }
+        try {
+          if (request.op === 'download') return await cloud.download(scope, reading, request.name!, request.sha256 ? await deps.stored?.(request.sha256) ?? null : null)
+          if (request.op === 'cloud-expired-preview') {
+            const bytes = await cloud.expiredPreview(request.preview!, reading); await check(scope, owner, epoch); return { bytes }
+          }
+          const revision = request.revision!; requireFileRevision(revision)
+          if (request.op === 'cloud-preview') { const shown = await cloud.preview(revision, reading); await check(scope, owner, epoch); return shown instanceof Uint8Array ? { bytes: shown } : shown }
+          const file = await cloud.read(revision, reading)
+          // The verified copy, at its address; a historical object without a sha is read over this channel instead.
+          const flags = { ...(file.acknowledged ? { ack: true } : {}), ...(file.here ? { here: true } : {}) }
+          if (revision.sha256) return { ...await served(revision.sha256, revision.content_type, file), ...flags }
+          try { await check(scope, owner, epoch) } catch (error) { await file.dispose(); throw error }
+          const id = randomUUID(); entries.set(id, { scope, epoch, owner, context: key, file }); return { id, size: file.size, ...flags }
+        } catch (error) { return { failed: fileReadFailure(error) } } finally { running.delete(name) }
+      }
+      if (request.op === 'cancel') {
+        const read = typeof request.read === 'string' ? running.get(request.read) : undefined
+        if (read?.scope === scope) read.stop.abort(new Error('File read cancelled'))
+        return
       }
       if (request.op === 'stored') {
         const sha256 = request.sha256!
-        const blob = await deps.stored?.(sha256) ?? null
-        if (!blob) return null
-        const contentType = typeof request.contentType === 'string' ? request.contentType : ''
-        return served(sha256, contentType, { size: blob.size, read: async (offset, length) => new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()), dispose: async () => {} })
+        const file = await deps.stored?.(sha256) ?? null
+        return file ? served(sha256, typeof request.contentType === 'string' ? request.contentType : '', file) : null
       }
       if (request.op === 'local' || request.op === 'open' || request.op === 'ssh') {
         const named = request.progress
@@ -103,6 +149,8 @@ export function createNativeFileHost(deps: {
       const entry = await entryFor(scope, request.id!)
       if (!entry.file || entry.context !== key) throw new Error('File handle belongs to another reader')
       if (request.op === 'dispose') { entries.delete(request.id!); entry.release?.(); await entry.file.dispose(); return }
+      // Bytes shown before the server acknowledged the read: how that acknowledgement ended, as a value.
+      if (request.op === 'ack') { try { await entry.file.acknowledged; return null } catch (error) { return { failed: fileReadFailure(error) } } }
       if (request.op !== 'read') throw new Error('Unknown file operation')
       if (entry.url) throw new Error('This file is read at its address')
       requireFileRange(entry.file.size, request.offset!, request.length!)

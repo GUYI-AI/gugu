@@ -1,9 +1,8 @@
-import { cloudFileProviders } from '@gugu/core/cloud/fileProviders'
+import { cloudFileProviders, filePreviewCacheKey } from '@gugu/core/cloud/fileProviders'
 import { createFileMetadataLoader } from '@gugu/core/cloud/fileMetadata'
 import { attachmentRequest } from '@gugu/core/cloud/attachmentsApi'
 import { createCachedFileSink, type FileChunkCache } from '@gugu/core/shared/fileCache'
-import { createFileResolver, requireFileRange, FILE_CHUNK_BYTES, type FileBytes, type FileContext, type FileRevision } from '@gugu/core/shared/fileResolver'
-import { cloudObjectUrl } from '@shared/preview/preview-url'
+import { createFileResolver, fileReadError, parseFileMetadata, requireFileRange, snapshotBlob, FILE_CHUNK_BYTES, type FileBytes, type FileContext, type FileMetadata, type FilePreview, type FileProviders, type FileReadFailure, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { attachmentsEndpoint } from './attachmentsEndpoint'
 import { budgetedCacheWriter } from './attachmentCacheBudget'
 import { rendererLogger } from './log'
@@ -17,8 +16,14 @@ const CHUNK_PREFIX = `${attachmentCacheOrigin}/chunks/`
 /** 续传分片带写入时刻:一天内的是读到一半的(不计入、不删,别的窗口也可能正在读),更早的是崩溃留下的(删)。 */
 const CHUNK_WRITTEN_AT = 'x-gugu-written-at'
 const CHUNK_ORPHAN_MS = 24 * 60 * 60_000
+/**
+ * On the desktop main keeps every file this machine reads (its file cache): the page cache holds only what the page draws
+ * from (previews, which version a source is). Originals and chunks a version before this kept here are dropped.
+ */
+export const mainKeepsFiles = !!globalThis.window?.electronAPI
+const ORIGINAL = new RegExp(`^${attachmentCacheOrigin}/account/[^/]+/sha256/`)
 const attachmentWriter = budgetedCacheWriter(attachmentCache, ATTACHMENT_CACHE_BYTES,
-  (url, response) => !url.startsWith(CHUNK_PREFIX) ? 'budget'
+  (url, response) => mainKeepsFiles && (ORIGINAL.test(url) || url.startsWith(CHUNK_PREFIX)) ? 'drop' : !url.startsWith(CHUNK_PREFIX) ? 'budget'
     : Date.now() - Number(response.headers.get(CHUNK_WRITTEN_AT) ?? 0) < CHUNK_ORPHAN_MS ? 'keep' : 'drop',
   (error) => log.warn({ error }, 'attachment cache trim failed'))
 /** 写进附件缓存的唯一入口(打开的原图、预览、发送时留的本机副本)。 */
@@ -49,7 +54,7 @@ const metadata = createFileMetadataLoader(async (context, refs) => attachmentReq
 const native = (op: string, context: FileContext, args = {}): Promise<unknown> => window.electronAPI
   ? window.electronAPI.invoke('files:read', { op, actor: context.actor, ref: context.ref, ...args }) : Promise.resolve(null)
 /** A read whose bytes the main process carries (this computer's copy, or one over the SSH link): how far it has come, while it runs. */
-async function nativeWithProgress(op: 'open' | 'ssh', context: FileContext, args: Record<string, unknown>): Promise<unknown> {
+async function nativeWithProgress(op: 'open' | 'ssh' | 'cloud', context: FileContext, args: Record<string, unknown>): Promise<unknown> {
   const electron = window.electronAPI
   if (!context.progress || !electron) return native(op, context, args)
   const id = crypto.randomUUID(), progress = context.progress
@@ -83,12 +88,65 @@ const servedBytes = (context: FileContext, file: ServedFile): FileBytes => ({
   },
   async dispose() { await native('dispose', context, { id: file.id }) },
 })
-// On the desktop no cloud object is fetched here: every one is read through main (`cloudObjectUrl`), a `<video>`'s too.
-// That address is main's own, not the network: the page reads it with its fetch, and main's egress goes out.
-const cloud = cloudFileProviders({ endpoint, metadata, cache: chunks, sink: async size => createCachedFileSink(chunks, size),
-  ...(globalThis.window?.electronAPI ? { objectUrl: cloudObjectUrl, fetch: (input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init) } : {}),
-  imageCache: { match: async request => (await attachmentCache()).match(request), put: async (request, response) => putAttachment(request, await response.blob()) },
-})
+const imageCache = { match: async (request: string) => (await attachmentCache()).match(request), put: async (request: string, response: Response) => putAttachment(request, await response.blob()) }
+type CloudProviders = Pick<FileProviders, 'metadata' | 'managed' | 'temporary' | 'preview' | 'expiredPreview'>
+/**
+ * On the desktop main reads and saves every cloud file (`files:read` ops `cloud`…, `download`): it signs, reads, verifies
+ * and keeps the bytes in this machine's file cache. The window downloads and hashes nothing: it reads the kept copy at its
+ * address, like this machine's own files, and a `<video>` its signed address, which main signs. A failure comes back as a
+ * value and is the same error here (`fileReadError`); a read this side lets go is stopped in main. Hosts with no main
+ * process (the web, the phone) read in the page.
+ */
+async function mainRead(op: 'cloud' | 'cloud-preview' | 'cloud-expired-preview' | 'download', context: FileContext, args: Record<string, unknown>) {
+  context.signal?.throwIfAborted()
+  const read = crypto.randomUUID(), cancel = () => { void native('cancel', context, { read }) }
+  context.signal?.addEventListener('abort', cancel, { once: true })
+  try {
+    const answer = await (op === 'cloud' ? nativeWithProgress(op, context, { ...args, read }) : native(op, context, { ...args, read })) as { failed?: FileReadFailure } & Record<string, unknown>
+    if (answer.failed) throw fileReadError(answer.failed)
+    return answer
+  } finally { context.signal?.removeEventListener('abort', cancel) }
+}
+function mainCloudProviders(): CloudProviders {
+  const read = async (revision: FileRevision, context: FileContext): Promise<FileBytes> => {
+    const file = await mainRead('cloud', context, { revision }) as { id: string; size: number; url?: string; ack?: true; here?: true }
+    // `here`: main keeps it in this machine's file cache, so nothing here keeps another copy of it.
+    const bytes = { ...(file.url ? servedBytes(context, file as ServedFile) : nativeBytes(context, file)), ...(file.here ? { here: true as const } : {}) }
+    if (!file.ack) return bytes
+    const acknowledged = (native('ack', context, { id: file.id }) as Promise<{ failed?: FileReadFailure } | null>).then(answer => { if (answer?.failed) throw fileReadError(answer.failed) })
+    acknowledged.catch(() => undefined)
+    return { ...bytes, acknowledged }
+  }
+  // A preview's bytes, kept in the page's attachment cache under the same key a page read keeps them.
+  const cachedPreview = async (context: FileContext, sha256: string, contentType: string, fetchBytes: () => Promise<Uint8Array>) => {
+    const key = filePreviewCacheKey(context, sha256), hit = await imageCache.match(key)
+    if (hit) return hit.blob()
+    const blob = new Blob([await fetchBytes() as Uint8Array<ArrayBuffer>], { type: contentType })
+    await imageCache.put(key, new Response(blob)); return blob
+  }
+  return {
+    metadata: async (context): Promise<FileMetadata> => {
+      context.signal?.throwIfAborted()
+      const row = await metadata(context)
+      context.signal?.throwIfAborted()
+      return parseFileMetadata(row, context.ref)
+    },
+    managed: read, temporary: read,
+    async preview(revision, context, full) {
+      const video = revision.content_type.startsWith('video/')
+      if (!video && !revision.content_type.startsWith('image/')) throw new Error('File has no media preview')
+      // An image without a preview of its own is shown from the file itself, read like any file.
+      if (!video && !revision.preview) return snapshotBlob(await full(), revision.content_type)
+      const shown = () => mainRead('cloud-preview', context, { revision })
+      if (video) return await shown() as { url: string; expiresAt: number }
+      return cachedPreview(context, revision.preview!.sha256, revision.preview!.content_type, async () => (await shown()).bytes as Uint8Array)
+    },
+    expiredPreview: (preview: FilePreview, context) => cachedPreview(context, preview.sha256, preview.content_type,
+      async () => (await mainRead('cloud-expired-preview', context, { preview })).bytes as Uint8Array),
+  }
+}
+const cloud: CloudProviders = mainKeepsFiles ? mainCloudProviders()
+  : cloudFileProviders({ endpoint, metadata, cache: chunks, sink: async size => createCachedFileSink(chunks, size), imageCache })
 export const resolveFile = createFileResolver({ ...cloud,
   async local(context) {
     const revision = await native('local', context) as FileRevision | null
@@ -101,7 +159,7 @@ export const resolveFile = createFileResolver({ ...cloud,
 })
 
 /**
- * The bytes of `sha256` the main process holds on this machine (its file store, an original this machine sent, a file it
+ * The bytes of `sha256` the main process holds on this machine (its file store, an original this machine sent, its file cache, a file it
  * holds), checked against the sha: their address, until `release`. No network.
  */
 export async function nativeLocalBytes(sha256: string, contentType = ''): Promise<{ url: string; size: number; blob(): Promise<Blob>; release(): Promise<void> } | null> {
@@ -114,6 +172,18 @@ export async function nativeLocalBytes(sha256: string, contentType = ''): Promis
     async blob() { const blob = await (await fetchServed(file.url, { signal: context.signal })).blob(); return contentType ? blob.slice(0, blob.size, contentType) : blob },
     async release() { await native('dispose', context, { id: file.id }) },
   }
+}
+
+/**
+ * A chat file saved to this computer by main: the save dialog asks where, and the bytes come from this machine's copy, read
+ * into its file cache first when they are not here. `sha256`: the version this window already knows, saved from this
+ * machine without asking the server when its bytes are here. `saved: false`: the person cancelled; `revision`: the
+ * version the server named. Null where the page saves (the web, the phone).
+ */
+type Unavailable = Exclude<FileMetadata['status'], 'ready'>
+export async function nativeDownload(ref: FileContext['ref'], fileName: string, sha256?: string | null): Promise<{ saved: boolean; revision?: FileRevision } | { status: Unavailable } | null> {
+  if (!mainKeepsFiles) return null
+  return await mainRead('download', { ref, actor: fileReader(), signal: fileReadSignal() }, { name: fileName, ...(sha256 ? { sha256 } : {}) }) as { saved: boolean; revision?: FileRevision } | { status: Unavailable }
 }
 
 /** Where a chat file's bytes are kept, from the same metadata batch the resolver reads: no bytes, no transfer. */

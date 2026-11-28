@@ -78,6 +78,24 @@ export class FileIntegrityError extends Error {
 export function isFileIntegrityError(error: unknown): boolean {
   return error instanceof FileIntegrityError || error instanceof Error && error.message.includes('integrity_failed')
 }
+/**
+ * A file read's failure as a plain value, for a read run in another process (main for the desktop renderer): what the
+ * reader branches on (the class of a revocation or a missing object, an HTTP status, a code, the message) survives.
+ */
+export type FileReadFailure = { name: string; message: string; reason?: string; status?: number; code?: string }
+export function fileReadFailure(error: unknown): FileReadFailure {
+  const { message = String(error), reason, status, code } = (error ?? {}) as Partial<FileReadFailure>
+  const name = error instanceof FileReadRevokedError ? 'FileReadRevokedError' : error instanceof MissingFileObjectError ? 'MissingFileObjectError'
+    : error instanceof Error ? error.name : 'Error'
+  return { name, message, ...(typeof reason === 'string' ? { reason } : {}), ...(typeof status === 'number' ? { status } : {}), ...(typeof code === 'string' ? { code } : {}) }
+}
+export function fileReadError(failure: FileReadFailure): Error {
+  if (failure.name === 'FileReadRevokedError') return new FileReadRevokedError(failure.reason as FileReadRevokedError['reason'])
+  if (failure.name === 'MissingFileObjectError') return new MissingFileObjectError()
+  const error = Object.assign(new Error(failure.message), { ...(failure.status !== undefined ? { status: failure.status } : {}), ...(failure.code !== undefined ? { code: failure.code } : {}) })
+  if (failure.name === 'AbortError') error.name = 'AbortError'
+  return error
+}
 /** How long an agent's read waits for bytes their sender is still uploading before saying so. */
 export const ATTACHMENT_PENDING_WAIT_MS = 8_000
 const RELAY_QUOTA_FULL = new Set(['account_storage_full', 'group_storage_full', 'global_storage_full'])
@@ -100,7 +118,7 @@ export interface FileBytes {
   dispose(): Promise<void>
   /** Bytes returned before the server acknowledged the read: this settles that acknowledgement. */
   readonly acknowledged?: Promise<void>
-  /** Read from this machine's own disk: they are already here, so nothing keeps another copy of them. */
+  /** On this machine's disk already (its own file, or the copy the desktop keeps in its file cache): nothing keeps another copy of them. */
   readonly here?: true
 }
 export type ResolvedFile = Exclude<FileMetadata, { status: 'ready' }> | {
@@ -112,7 +130,7 @@ export type ResolvedFile = Exclude<FileMetadata, { status: 'ready' }> | {
   stream(): AsyncIterable<Uint8Array>
   /** Opened with `showFirst`: rejects (FileReadRevokedError) when what was read must be taken down. Otherwise already settled by the first read. */
   acknowledgement?(): Promise<void>
-  /** Once read: whether its bytes came from this machine's own disk (`FileBytes.here`). */
+  /** Once read: whether its bytes are on this machine's disk (`FileBytes.here`). */
   fromDisk?(): Promise<boolean>
   dispose(): Promise<void>
   /** `store`: into the shared file store (`fileStoreDirectory`): read-only, one sha once. */

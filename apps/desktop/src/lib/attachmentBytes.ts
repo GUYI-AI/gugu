@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fileBlob, FileReadRevokedError, MissingFileObjectError, shownFileBlob, requireFileRevision, type FileHandle, type FileMetadata, type FileProgress, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { attachmentFileRef, type AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
-import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment, nativeLocalBytes, fileMetadata } from './fileAccess'
+import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment, nativeLocalBytes, nativeDownload, fileMetadata, mainKeepsFiles } from './fileAccess'
 import { onAccountChange, replica } from './replica'
 import { offlineHolder, type OfflineHolder } from './fileHost'
 import { platform } from '../platform'
@@ -483,8 +483,14 @@ export function workingCopyImageItem(name: string, read: (progress: FileProgress
   }
 }
 
-/** 下载一个附件(同一份缓存);条目删了就抛。 */
+/** Save one attachment to this computer: main does it on the desktop (`nativeDownload`), the page elsewhere. A deleted entry throws. */
 export async function downloadAttachment(source: AttachmentSource, fileName: string): Promise<void> {
+  const ref = source.kind === 'session-file' ? null : attachmentFileRef(source)
+  // @@@local-first: a version already known is saved from this machine; only one that is not is asked for.
+  const saved = ref ? await nativeDownload(ref, fileName, (await knownVersion(source))?.sha256).catch((error: unknown) => { if (error instanceof MissingFileObjectError) throw new Error('missing'); throw error }) : null
+  if (saved && 'status' in saved) throw new Error(saved.status === 'failed' ? 'unsent' : saved.status)
+  if (saved?.revision) await rememberVersion(source, saved.revision, true).catch((error) => log.warn({ error }, 'file version not remembered'))
+  if (saved) return
   const bytes = await attachmentBytes(source)
   if (bytes.status !== 'ready') throw new Error(bytes.status)
   const { downloadBlob } = await import('./download')
@@ -501,9 +507,9 @@ export async function openAttachmentInSystemApp(source: AttachmentSource, fileNa
 export const openFileHandle = (file: FileHandle, fileName: string) => platform.openRemoteFile(file, fileName)
 
 /**
- * The one way to this machine's bytes of a sha: what the desktop holds on disk (its file store, or an original it sent,
- * checked against the sha), else what this renderer kept of bytes it read over the network. Never signs or downloads; ACL
- * is checked by the caller.
+ * The one way to this machine's bytes of a sha: on the desktop what main holds on disk (its file store or file cache, or an original it
+ * sent, checked against the sha); where there is no main process, what the page kept of bytes it read over the network.
+ * Never signs or downloads; ACL is checked by the caller.
  */
 export async function localAttachmentCopy(sha256: string | null, contentType = ''): Promise<Blob | null> {
   if (!sha256 || !/^[0-9a-f]{64}$/.test(sha256)) return null
@@ -523,7 +529,9 @@ export async function localAttachmentUrl(sha256: string | null, contentType = ''
   return { url, release: async () => URL.revokeObjectURL(url) }
 }
 
+/** Where there is no main process, the page's own kept copy, checked against the sha. On the desktop main keeps every copy. */
 async function keptAttachmentCopy(sha256: string, contentType: string): Promise<Blob | null> {
+  if (mainKeepsFiles) return null
   const hit = await (await attachmentCache()).match(fullKey(fileReader().accountId, sha256))
   if (!hit) return null
   const blob = await hit.blob()

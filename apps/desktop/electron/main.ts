@@ -44,7 +44,6 @@ import { remoteFileStreams } from './projectFileSsh'
 import { nodeImagePreview } from '@gugu/core/local/files/nodeImagePreview'
 import { rendererImagePreview, rendererScaleImage } from './imagePreview'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
-import { localCopy } from '@gugu/core/local/files/fileSnapshots'
 import { registerExternalImportIpc } from './external-import/ipc'
 import { uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
 import { writeTaskCopy } from './projectFilePublication'
@@ -2552,7 +2551,7 @@ const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider()
   fetch: egress.fetch, links: () => sshLinks,
   root: async projectId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectRoot(projectId) },
   project: async chatId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectOfGroup(chatId) },
-  deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
+  deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient, home: resolveGuguHome(process.env),
 })
 // A file on another of this account's machines streams over its device link (`@@@machine-file-stream`).
 setMachineFileStreams(remoteFileStreams(() => sshLinks ?? null, async () => (await requireAuth()).userId, linkReaches))
@@ -2587,11 +2586,15 @@ const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments
   local: desktopFiles.providers.local, ssh: desktopFiles.providers.ssh, publish: (chat, file, actor, message, task) => desktopFiles.publish(chat, file, null, actor, undefined, { message, ...(task ? { task: true, itemId: task.itemId } : {}) }),
   taskCopy: (name, bytes, mimeType) => writeTaskCopy(join(resolveGuguHome(process.env), 'attachments'), name, bytes, mimeType), publication: desktopFiles.publish.local,
   openPath: path => shell.openPath(path), published: directory => trackRemoteFileDirectory(remoteFileOpenDirectories, directory),
-  stored: async sha256 => await localCopy(resolveGuguHome(process.env), sha256) ?? await desktopFiles.held(sha256),
+  stored: sha256 => desktopFiles.here(sha256),
   serve: async (sha256, contentType, file) => {
     const { createBytesPreview, releasePreview } = await import('./session/main/core/files/preview-protocol')
     const { url, previewId } = createBytesPreview(sha256, contentType, file)
     return { url, release: () => releasePreview(previewId) }
+  },
+  cloud: { ...desktopFiles.cloud,
+    download: (scope, context, name, known) => desktopFiles.download(context.ref, context.actor,
+      async () => (await import('./session/main/core/extensions/app-files')).askSaveTarget(webContents.fromId(scope) ?? null, name), known, context.signal),
   },
 })
 /**
