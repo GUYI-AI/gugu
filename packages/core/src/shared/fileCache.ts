@@ -6,6 +6,12 @@ export interface FileChunkCache {
   get(key: string, index: number): Promise<Uint8Array | null>
   put(key: string, index: number, bytes: Uint8Array): Promise<void>
   clear(key: string): Promise<void>
+  /**
+   * Where a host with a filesystem keeps a key's chunks: one file, each chunk written once at its own offset. Its path
+   * once it holds all `chunks` (it is never written again after that), `null` before. A sink can take that file as it is
+   * (`FileSink.adopt`) instead of being handed the same bytes a second time.
+   */
+  file?(key: string, chunks: number): Promise<string | null>
 }
 
 /** Browser private staging uses the existing cache, with an unguessable temporary namespace. */

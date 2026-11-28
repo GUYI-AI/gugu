@@ -234,7 +234,8 @@ export function cloudFileProviders(deps: {
     if (encrypted && !lease) await sign()
     const digest = encrypted ? lease!.ciphertext_sha256! : revision.sha256, key = cacheKey(context, digest ?? crypto.randomUUID())
     // An unhashed historical object keeps no chunks, so it has nowhere to put bytes read ahead: one lane.
-    const source = remoteSource(encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes, key, revision.legacy_object ? uncached : deps.cache, async (renew, origin) => renew || origin ? sign(renew, origin) : lease ? { lease, direct } : sign(), () => objectTransport(context), session, context.signal, context.progress, revision.legacy_object ? 1 : DOWNLOAD_LANES)
+    const openSource = () => remoteSource(encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes, key, revision.legacy_object ? uncached : deps.cache, async (renew, origin) => renew || origin ? sign(renew, origin) : lease ? { lease, direct } : sign(), () => objectTransport(context), session, context.signal, context.progress, revision.legacy_object ? 1 : DOWNLOAD_LANES)
+    const source = openSource()
     // @@@save-through-cache - a save to disk reads through the same chunk cache as a read for display, so a read that dies
     // halfway (the process stops, the retry window runs out) resumes from the chunks it has; once it ends they are dropped.
     let dataKey: Uint8Array | undefined
@@ -248,7 +249,22 @@ export function cloudFileProviders(deps: {
       }
       // Downloads publish only after the final authorization read; private snapshot readers retain their existing sink.
       const writing = destination ? { ...sink, commit: async (): Promise<FileBytes> => ({ size: revision.size_bytes, read: async () => { throw new Error('Download is not committed') }, dispose: async () => {} }) } : sink
-      const file = encrypted ? (await transformFile({ direction: 'decrypt', revision, source, sink: writing, key: dataKey!, ciphertextSha256: lease!.ciphertext_sha256!, signal: context.signal })).file : await copyVerifiedFile(revision, source, writing, context.signal)
+      // @@@adopt-staged-file - plaintext chunks kept in one file (`FileChunkCache.file`) are the content itself: once the
+      // reader has checked them in order, the sink takes that file as it is, and nothing is written a second time.
+      const chunks = Math.max(1, Math.ceil(revision.size_bytes / FILE_CHUNK_BYTES)), staging = deps.cache
+      const adopting: FileSink | undefined = !encrypted && !revision.legacy_object && staging.file && sink.adopt ? {
+        write: async () => {}, abort: () => writing.abort(),
+        async commit() {
+          const staged = await staging.file!(key, chunks)
+          if (staged) { await sink!.adopt!(staged); return writing.commit() }
+          // Another read of this same file ended first and took the chunks with it: read once more, into the sink.
+          const again = openSource()
+          try { return await copyVerifiedFile(revision, again, writing, context.signal) } finally { await again.dispose() }
+        },
+      } : undefined
+      const file = encrypted
+        ? (await transformFile({ direction: 'decrypt', revision, source, sink: writing, key: dataKey!, ciphertextSha256: lease!.ciphertext_sha256!, signal: context.signal })).file
+        : await copyVerifiedFile(revision, source, adopting ?? writing, context.signal)
       const changed = (current: Download) => {
         if (missingObject(current)) throw new MissingFileObjectError()
         if (current.status !== 'ready') throw new FileReadRevokedError(current.status === 'gone' || current.status === 'expired' ? current.status : 'access')
