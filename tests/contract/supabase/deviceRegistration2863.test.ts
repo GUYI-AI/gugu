@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { registerGuguDevice, type DeviceRegistrationClient, type DeviceRegistrationInput } from '@gugu/core/cloud/deviceRegistration'
 import { resolveLocalDeviceId, syncDeviceHeartbeat, type DeviceHeartbeatTableClient } from '@gugu/core/cloud/deviceRuntime'
+import { SERVER_CONNECT_VIA_FILE } from '@gugu/core/cloud/serverConnectVia'
 import { withContractDatabase } from './database'
 
 /** Exercise the shipped client payload/receipt against the installed RPC with PostgREST's auth role.
@@ -50,8 +54,8 @@ async function fixture(body: (owner: string, input: DeviceRegistrationInput) => 
 }
 
 async function rows(owner: string) {
-  return await withContractDatabase(async db => (await db.query<{ device_id: string; status: string; label: string; capabilities: Record<string, unknown> }>(
-    'SELECT device_id,status,label,capabilities FROM identity.gugu_devices WHERE user_id=$1', [owner])).rows)
+  return await withContractDatabase(async db => (await db.query<{ device_id: string; status: string; label: string; label_customized_at: Date | null; capabilities: Record<string, unknown> }>(
+    'SELECT device_id,status,label,label_customized_at,capabilities FROM identity.gugu_devices WHERE user_id=$1', [owner])).rows)
 }
 
 describe('atomic device registration client/database contract #2863', () => {
@@ -80,6 +84,26 @@ describe('atomic device registration client/database contract #2863', () => {
         hostname: () => input.hostname, platform: () => input.platform, capabilities: { terminals: [], runtimes: ['codex'] } }, env)
       expect(await rows(owner)).toMatchObject([{ device_id: oldId, status: 'online', label: 'Custom label', capabilities: { runtimes: ['codex'] } }])
       expect(await rows(owner)).toHaveLength(1)
+    })
+  })
+
+  it('reserves the saved SSH alias as the initial label and leaves it uncustomized', async () => {
+    await fixture(async (owner, input) => {
+      const dir = await mkdtemp(join(tmpdir(), 'gugu-ssh-reservation-'))
+      try {
+        await writeFile(join(dir, SERVER_CONNECT_VIA_FILE), JSON.stringify({ via: 'ssh', at: new Date().toISOString(), name: 'build-box' }))
+        const env = { GUGU_TIER: input.tier, GUGU_SERVER_MODE: '1', GUGU_TASK_HOST_USER_DATA: dir }
+        const client = { ...clientAs(owner), from: () => { throw new Error('raw registration is forbidden') } } as unknown as DeviceHeartbeatTableClient
+        const machineIdentifier = () => input.machine_id
+        const deviceId = await resolveLocalDeviceId({ userId: owner, heartbeatClient: client, env,
+          machineIdentifier, deviceIdCacheWriter: async () => {} })
+        expect(await rows(owner)).toMatchObject([{ device_id: deviceId, label: 'build-box', label_customized_at: null, status: 'offline' }])
+        await syncDeviceHeartbeat(client, { userId: owner, deviceId, machineIdentifier,
+          label: () => 'hostname from heartbeat', capabilities: { terminals: [], runtimes: [] } }, env)
+        expect(await rows(owner)).toMatchObject([{ device_id: deviceId, label: 'build-box', label_customized_at: null, status: 'online' }])
+      } finally {
+        await rm(dir, { recursive: true, force: true })
+      }
     })
   })
 

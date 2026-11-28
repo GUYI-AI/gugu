@@ -144,8 +144,8 @@ export async function runServerLogin(out: Out = defaultOut, args: readonly strin
   }
   const nameAt = args.indexOf('--name')
   const name = nameAt >= 0 ? args[nameAt + 1]?.trim() || null : null
-  if (nameAt >= 0 && (!name || name === '--grant-stdin' || name === '--name')) {
-    out('请在 --name 后填写设备名。')
+  if (nameAt >= 0 && (!name || name.startsWith('--'))) {
+    out('请在 --name 后填写设备名。以 -- 开头的参数用于命令选项。')
     return 2
   }
   if (args.includes('--grant-stdin')) {
@@ -217,9 +217,15 @@ async function pollUntilDone(
       // Save the name before publishing the session: a waiting server can start its heartbeat as soon as the session appears.
       writeServerConnectVia(accountDataDir(), fromGrant ? 'ssh' : 'tunnel', { name })
       if (!fromGrant && name) {
+        let deviceId: string
         try {
-          // Resolving the id can reserve a row with the hostname. Use the owner-scoped rename RPC so heartbeats keep the explicit name.
-          const deviceId = await deviceIdForAccount(userId, tokens.accessToken)
+          deviceId = await deviceIdForAccount(userId, tokens.accessToken)
+        } catch (error) {
+          out(`无法登记设备：${error instanceof Error ? error.message : String(error)}。请重新执行 gugu-server login。`)
+          return 1
+        }
+        try {
+          // Use the owner-scoped rename RPC so heartbeats keep the explicit name.
           const client = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${tokens.accessToken}` } })
           await renameDevice(client as unknown as DeviceRpcClient, deviceId, name)
         } catch (error) {

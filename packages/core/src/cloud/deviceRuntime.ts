@@ -41,6 +41,7 @@ import {
 } from './deviceCommands'
 import { resolveDeviceHostInfo } from './deviceHostInfo'
 import { registerGuguDevice, type DeviceRegistrationClient } from './deviceRegistration'
+import { readServerConnectVia } from './serverConnectVia'
 import { machineDisplayName } from '../device/machineDisplayName'
 import type { DeviceHostInfo } from '../shared/types/deviceHost'
 import {
@@ -400,23 +401,27 @@ async function resolveLocalDeviceIdentity(
     throw new Error('resolveLocalDeviceIdentity requires heartbeatClient — cloud is the source of truth')
   }
   const env = options.env ?? process.env
+  const isServer = env.GUGU_SERVER_MODE === '1'
   const timeouts = resolveDeviceOperationTimeouts(options.operationTimeouts)
   const machineId = await runDeviceOperation(
     'device machine identifier',
     timeouts.machineIdentifierMs,
     (signal) => resolveMachineIdentifier(options.machineIdentifier, signal, env),
   ).catch(error => {
-    if (env.GUGU_SERVER_MODE === '1') throw error
+    if (isServer) throw error
     throw new LocalDeviceIdUnreadableError(error)
   })
   const tier = resolveTier(env)
+  // A reservation sets the initial label. An SSH alias is a default for a new row only.
+  const connectVia = isServer ? readServerConnectVia(env.GUGU_TASK_HOST_USER_DATA) : null
+  const sshName = connectVia?.via === 'ssh' ? connectVia.name : undefined
   const registered = await runDeviceOperation(
     'device identity registration', timeouts.deviceLookupMs,
     (signal) => registerGuguDevice(options.heartbeatClient, {
       device_id: deterministicDeviceId(machineId, options.userId, tier),
       machine_id: machineId, tier,
-      label: machineDisplayName(), hostname: hostname(), platform: platform(),
-      capabilities: { host_kind: env.GUGU_SERVER_MODE === '1' ? 'server' : 'desktop', terminals: [], runtimes: [] },
+      label: sshName ?? machineDisplayName(), hostname: hostname(), platform: platform(),
+      capabilities: { host_kind: isServer ? 'server' : 'desktop', terminals: [], runtimes: [] },
       reserve_only: true,
     }, { signal }),
   )
