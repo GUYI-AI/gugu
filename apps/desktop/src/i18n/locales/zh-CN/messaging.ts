@@ -1044,6 +1044,10 @@ export default {
     "title": "发送到"
   },
   "topic": {
+    "inviteTitle": "邀请加入话题",
+    "noInviteCandidates": "暂无可邀请的成员。",
+    "sendInvitation": "发送邀请",
+    "invitationText": "来这个话题聊聊吧。",
     "untitled": "话题",
     "leave": "退出话题",
     "leaveHint": "你仍可阅读，只是不再收到这个话题的通知",
