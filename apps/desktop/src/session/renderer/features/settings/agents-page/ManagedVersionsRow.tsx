@@ -19,7 +19,7 @@ export function ManagedVersionsRow({ agentId, name, disabled }: { agentId: strin
   const host = useLibraryHost();
   const deviceId = host.remote?.deviceId ?? null;
   const { translate } = useSessionMessages();
-  const reading = useReplica(managedVersions, [deviceId, agentId], { read: !disabled && host.remote?.online !== false });
+  const reading = useReplica(managedVersions, [deviceId, agentId], { read: host.remote?.online !== false });
   if (reading.state === 'unknown') return <SettingsRow title={translate('agentsPage.oldVersions')} data-testid="managed-old-versions" description={<span aria-busy="true">…</span>} />;
   if (reading.state === 'error') return <SettingsRow title={translate('agentsPage.oldVersions')} data-testid="managed-old-versions"
     description={translate('agentsPage.oldVersionsReadFailed')}

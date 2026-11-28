@@ -1,6 +1,7 @@
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import type { AgentInstallProgress } from '@gugu/session-core/workspace-server';
 import { useMutation, useMutationState } from '@tanstack/react-query';
+import { messageForUser } from '@/lib/userFacingError';
 import { refreshFailure, refreshTag } from '@/lib/replica';
 import { createElement, type ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -200,10 +201,10 @@ export function useAgentInstallationStatuses() {
    * 装完 / 卸完 / 重新检测之后,从安装状态派生的那一族读数一起重读。
    */
   const invalidate = (providerId?: string) => {
-    void refreshAgentReadings(machine);
     // Auth/connection readings are the subscription replicas: re-read them on the host that completed the
     // operation, including when the library has since switched hosts.
     void refreshTag(SUBSCRIPTIONS, machine, providerId);
+    return refreshAgentReadings(machine);
   };
 
   /**
@@ -285,11 +286,30 @@ export function useAgentInstallationStatuses() {
     mutationKey: opKey('update', host.key),
     mutationFn: ({ id, method, registry }) =>
       agentsRpc.update(id, method, registry) as Promise<AgentUpdateResult>,
-    onSuccess: (result, vars) => {
-      invalidate(vars.id);
+    onSuccess: async (result, vars) => {
+      const refreshed = invalidate(vars.id);
       const name = nameOf(vars.id);
       if (result.success) {
-        toast({ title: translate('agentsPage.updateSucceeded', { name }) });
+        // Keep the operation pending until the target's displayed readings have caught up.
+        await refreshed;
+        try {
+          // Also obtain a fresh status when the user closed the card or switched devices.
+          const statuses = await agentInstallationStatus.fetch(machine);
+          const status = statuses.find((entry) => entry.id === vars.id);
+          const managed = status?.installations.find((entry) => entry.provenance.ours);
+          const remaining = (status?.programs ?? []).slice(1)
+            .filter((program) => program.managedUpdateAvailable).map((program) => program.name);
+          if (managed?.updateAvailable) remaining.unshift(managed.latestVersion ? `${name} v${managed.latestVersion}` : name);
+          if (remaining.length) {
+            toast({ title: translate('agentsPage.updateRemaining', { programs: remaining.join(', ') }) });
+          } else if (managed?.version) {
+            toast({ title: translate('agentsPage.updateSucceeded', { name, version: managed.version }) });
+          } else {
+            toast({ title: translate('agentsPage.updateUnverified', { name }) });
+          }
+        } catch (error) {
+          failureToast(translate('agentsPage.updateUnverified', { name }), messageForUser(error));
+        }
       } else if (result.error.type === 'cancelled') {
         toast({ title: translate('agentsPage.updateCancelled') });
       } else {
@@ -320,7 +340,7 @@ export function useAgentInstallationStatuses() {
     mutationKey: opKey('uninstall', host.key),
     mutationFn: ({ id, method }) =>
       agentsRpc.uninstall(id, method) as Promise<AgentUninstallResult>,
-    onSuccess: (_result, vars) => invalidate(vars.id),
+    onSuccess: (_result, vars) => void invalidate(vars.id),
   });
 
   const setUsedMutation = useMutation<
@@ -329,19 +349,19 @@ export function useAgentInstallationStatuses() {
     { id: string; selection: HostDependencySelection }
   >({
     mutationFn: ({ id, selection }) => agentsRpc.setUsedInstallation(id, selection),
-    onSuccess: (_result, vars) => invalidate(vars.id),
+    onSuccess: (_result, vars) => void invalidate(vars.id),
   });
 
   const refreshLatestMutation = useMutation<void, Error, string>({
     mutationFn: (id) => agentsRpc.refreshLatestVersion(id),
-    onSuccess: (_result, id) => invalidate(id),
+    onSuccess: (_result, id) => void invalidate(id),
   });
 
   const probeAllMutation = useMutation<void, Error, void>({
     mutationFn: async () => {
       await agentsRpc.probeAll();
     },
-    onSuccess: () => invalidate(),
+    onSuccess: () => void invalidate(),
   });
 
   const uninstallAsync = useCallback(async (vars: { id: AgentProviderId; method?: InstallMethod }) => {
