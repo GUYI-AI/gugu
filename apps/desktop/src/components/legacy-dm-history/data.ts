@@ -89,8 +89,7 @@ export async function readLegacyDmMessages(scope: LegacyDmScope, chatId: string,
   const chat = await chatDb.from('chats').select(DM_SELECT).eq('id', chatId).eq('kind', 'dm').abortSignal(signal).single();
   if (chat.error) throw new Error(chat.error.message);
   if ((await identify([chat.data as unknown as DmRow], scope)).length !== 1) throw new Error('This legacy DM is not owned by the signed-in account');
-  let request = chatDb.from('messages_view').select(MESSAGES_VIEW_SELECT).eq('chat_id', chatId)
-    .is('deleted_at', null).not('deleted_for_user_ids', 'cs', JSON.stringify([scope.ownerUserId]));
+  let request = chatDb.from('messages_view').select(MESSAGES_VIEW_SELECT).eq('chat_id', chatId);
   if (beforeSeq !== undefined) request = request.lt('seq', beforeSeq);
   const { data, error } = await request.order('seq', { ascending: false }).limit(PAGE_SIZE + 1).abortSignal(signal);
   if (error) throw new Error(error.message);

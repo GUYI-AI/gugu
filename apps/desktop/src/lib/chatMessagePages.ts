@@ -1,5 +1,4 @@
 import { messageItemFromRow, type RawMessageRow } from '@gugu/core/cloud/messageItem'
-import { isMessageHidden } from './localMessageHides'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { ingestMessagePage } from './messageIngest'
 import { applyMessageOverlays } from './chatMessageRevalidation'
@@ -11,7 +10,8 @@ export async function ingestFetchedMessagePage(raw: RawMessageRow[], userId: str
   let rows = raw.map(row => messageItemFromRow(row, userId)).filter((row): row is MessageItem => row !== null)
   if (page.afterSeq === undefined) rows.reverse()
   if (page.threadRootId) rows = await applyMessageOverlays(rows, userId)
-  await ingestMessagePage(userId, rows, page.chatId, page.limit, page.beforeSeq, page.afterSeq, page.threadRootId ?? null, raw.length)
-  // The store refused the rows this device hides (@@@local-hide); the page shown must not bring them back either.
-  return rows.filter(row => !isMessageHidden(userId, row))
+  const accepted = await ingestMessagePage(userId, rows, page.chatId, page.limit, page.beforeSeq, page.afterSeq, page.threadRootId ?? null, raw.length)
+  // The store refuses the rows this device hides (@@@local-hide); the page shown must not bring them back either.
+  const kept = new Set(accepted.flatMap(write => write.type === 'put' ? [write.message.id] : []))
+  return rows.filter(row => kept.has(row.id))
 }

@@ -1,5 +1,5 @@
 import type { MessageItem } from '@gugu/core/shared/types/chat'
-import type { ImMessageBatch, ImMessagePage, ImMessagePageResult, ImMessageWrite, MessageStore } from '../session/shared/core/im-messages'
+import type { ImMessageBatch, ImMessagePage, ImMessagePageResult, ImMessageWrite, MessageRef, MessageStore } from '../session/shared/core/im-messages'
 import { chatsOfBatch, messageStoreOperations, requireId, type ChatAccessRow, type MessageStoreAdapter, type SeqRange } from '../session/shared/core/im-message-store'
 import { createIndexedDbHandle } from './indexedDbHandle'
 import { MAX_WINDOW } from '../store/chatMessageWindow'
@@ -283,6 +283,8 @@ export function createLocalMessageStore({ indexedDb = globalThis.indexedDB }: { 
       return run(accountId, () => chats, current => operations(current).page(page))
     },
     throughRevision: (accountId: string) => run(accountId, () => [], rows => rows.through),
+    hidden: (accountId: string, messages: MessageRef[]): Promise<string[]> =>
+      run(accountId, () => [...new Set(messages.map(message => message.chat_id))], rows => operations(rows).hidden(messages)),
     async clearAccount(accountId: string) {
       await run(accountId, () => [], rows => operations(rows).clear(), true, true)
       accounts.delete(accountId)

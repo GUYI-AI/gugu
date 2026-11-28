@@ -1020,7 +1020,7 @@ async function readableWidgetOf(deps, widgetId) {
   const [origin] = await deps.restRpc('widget_origin', { p_widget_id: widgetId })
   if (!origin || origin.is_retracted) return null
   const message = await messageAs(deps, origin.origin_message_id)
-  if (!message || message.content_type !== 'widget' || message.retracted_at || message.deleted_for_me) return null
+  if (!message || message.content_type !== 'widget' || message.retracted_at) return null
   const spec = parseWidgetMessage(message.content)
   if (!spec) return null
   const widget = { id: origin.widget_id, message_id: message.id, chat_id: message.chat_id,

@@ -53,6 +53,9 @@ export interface ImMessagePageResult {
   covered: boolean
 }
 
+/** A message as far as hiding needs it. */
+export type MessageRef = Pick<MessageItem, 'id' | 'chat_id' | 'created_at'>
+
 /** The local host owns these rows even when the workbench is connected to another machine. */
 export interface MessageStore {
   ingest(accountId: string, batch: ImMessageBatch): Promise<ImMessageWrite[]>
@@ -60,6 +63,8 @@ export interface MessageStore {
   page(accountId: string, page: ImMessagePage): Promise<ImMessagePageResult>
   throughRevision(accountId: string): Promise<string | null>
   clearAccount(accountId: string): Promise<void>
+  /** Of these messages, the ids this device hides (deleted or cleared here). */
+  hidden(accountId: string, messages: MessageRef[]): Promise<string[]>
   /** Only where the platform indexes message text (the desktop's SQLite FTS). */
   search?(accountId: string, chatId: string, query: string, limit: number, fromUserId?: string): Promise<MessageItem[]>
 }

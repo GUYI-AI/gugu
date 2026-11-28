@@ -49,7 +49,7 @@ export const sharedAppPackages = replica({
   name: 'sharedAppPackages',
   scope: 'account',
   read: async (owner: string, chatId: string): Promise<SharedAppPackage[]> => {
-    const cards = await chatPackageCards(chatId, owner)
+    const cards = await chatPackageCards(chatId)
     if (replicaAccount().id !== owner) throw new Error('The account changed while the chat\'s packages were read')
     // A package whose bytes are not there offers no App (as one this build cannot read); any other failure fails the list.
     const read = await Promise.all(cards.map(async (card) => ({

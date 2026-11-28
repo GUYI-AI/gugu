@@ -58,8 +58,8 @@ export interface SharedPackage {
 }
 
 /** The `.guguext` cards among this chat's attachments, newest first. */
-export async function chatPackageCards(chatId: string, userId: string): Promise<PackageCard[]> {
-  return (await chatService.getChatFiles(chatId, userId)).flatMap((file) =>
+export async function chatPackageCards(chatId: string): Promise<PackageCard[]> {
+  return (await chatService.getChatFiles(chatId)).flatMap((file) =>
     /\.guguext$/i.test(file.fileName) && file.source.kind !== 'gone' ? [{ source: file.source, messageId: file.messageId }] : [],
   )
 }

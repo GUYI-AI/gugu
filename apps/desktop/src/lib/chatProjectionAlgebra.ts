@@ -12,7 +12,6 @@ import { replaceEqualDeep } from '@tanstack/react-query'
 import { historyMessageVisible, historyTime } from '@gugu/core/shared/conversationHistoryTime'
 import { IN_FILTER_CHUNK } from '@gugu/core/shared/inChunks'
 import type { SystemNotice } from '@gugu/core/shared/ui/systemNotice'
-import type { LocalHides } from './localMessageHides'
 import type { ChatItem, ChatKind, ChatStatus, ChatUnreadLocator, GroupMemberRole, NotificationLevel } from '@gugu/core/shared/types/chat'
 import { compareChatsByActivityDesc, fallbackChatName, isRoomChat, mergeConversationVisibility } from '@gugu/core/shared/ui/chatModels'
 
@@ -132,7 +131,8 @@ export type IdentityValue = { id: string } & Record<string, unknown>
 export type UnreadValue = ChatUnreadLocator & { chat_id: string }
 export type PresenceValue = { id: string; online: boolean }
 /** viewer-scoped 最后一条可见消息:gated 成员看到的活动可能与 chat 行不同。 */
-export type PreviewValue = { chat_id: string; id?: string | null; created_at: string | null; preview: string | null; notice: SystemNotice | null }
+/** `hidden`: the message is deleted or cleared on this device (@@@local-hide): the row keeps its place without its text. */
+export type PreviewValue = { chat_id: string; id?: string | null; created_at: string | null; preview: string | null; notice: SystemNotice | null; hidden?: boolean }
 export type OverrideValue = { alias: string | null }
 
 export type EntityValue =
@@ -479,8 +479,6 @@ export type AssembleSource = {
   value<T extends EntityValue>(family: EntityFamily, id: string): T | undefined
   members(chatId: string): readonly MembershipValue[]
   stamp(family: EntityFamily, id: string): string | undefined
-  /** What this device alone hides (@@@local-hide): read like a cell, never written by the projection. */
-  local: LocalHides
 }
 
 /** Members in display order: joined_at, then user id. */
@@ -515,11 +513,9 @@ export function assembleChat(source: AssembleSource, viewerId: string, chatId: s
   const notificationLevel = own.notification_level
   const messageAt = preview ? preview.created_at : chat.last_message_at
   const nativeAt = own.native_personal_activity_at
-  const clearedAt = source.local.clearedAt(chat.id, own.conversation_cleared_at)
-  const messageVisible = messageAt && historyMessageVisible(messageAt, clearedAt)
-  // A latest message hidden on this device keeps its place in the list, without its text.
-  const previewHidden = !!preview?.id && !!messageAt && source.local.hidden({ id: preview.id, chat_id: chat.id, created_at: messageAt })
-  const nativeVisible = nativeAt && historyMessageVisible(nativeAt, clearedAt)
+  const messageVisible = messageAt && historyMessageVisible(messageAt, own.conversation_cleared_at)
+  const previewHidden = !!preview?.hidden
+  const nativeVisible = nativeAt && historyMessageVisible(nativeAt, own.conversation_cleared_at)
   const nativeNewer = nativeVisible && (!messageVisible || historyTime(nativeAt) > historyTime(messageAt))
   return {
     id: chat.id,
@@ -555,7 +551,7 @@ export function assembleChat(source: AssembleSource, viewerId: string, chatId: s
     source_chat_id: chat.source_chat_id,
     source_message_id: chat.source_message_id,
     conversation_hidden_at: own.conversation_hidden_at ?? null,
-    conversation_cleared_at: clearedAt ?? null,
+    conversation_cleared_at: own.conversation_cleared_at ?? null,
     native_personal_activity_at: nativeAt ?? null,
     native_personal_activity_revision: own.native_personal_activity_revision,
     personal_state_observed_revision: own.personal_state_observed_revision,
@@ -570,7 +566,7 @@ export function assembleChat(source: AssembleSource, viewerId: string, chatId: s
  * assemble : C → 会话列表。**纯函数、零 IO** —— 于是「界面为什么长这样」永远只由 C 回答,
  * 不必回答「哪次请求先到」(spec「投影是什么」)。冷启快照走这里(读一遍整个缓存);增量走 reassemble。
  */
-export function assemble(cache: ProjectionCache, viewerId: string, local: LocalHides): ChatItem[] {
+export function assemble(cache: ProjectionCache, viewerId: string): ChatItem[] {
   if (!viewerId) throw new Error('assemble requires the viewer id')
   const values = new Map<EntityFamily, Map<string, EntityValue>>()
   const membersByChat = new Map<string, MembershipValue[]>()
@@ -592,7 +588,6 @@ export function assemble(cache: ProjectionCache, viewerId: string, local: LocalH
     value: <T extends EntityValue>(family: EntityFamily, id: string) => values.get(family)?.get(id) as T | undefined,
     members: (chatId) => membersByChat.get(chatId) ?? [],
     stamp: (family, id) => cache.get(entityKey(family, id))?.stamp,
-    local,
   }
   const rows: ChatItem[] = []
   for (const chatId of values.get('chat')?.keys() ?? []) {

@@ -37,7 +37,7 @@ function useAccountRead<Q, T>(model: Replica<[Q], T>, request: Q, chatOf: (reque
     // Not yet known (a widget quote before its first read): any change may be its.
     if (!chatId || operations.some(operation => (operation.payload as { chat_id?: unknown } | null)?.chat_id === chatId)) void model.refresh(JSON.parse(key) as Q)
   }), [subscribeAccountRevision, chatId, model, key])
-  useEffect(() => subscribeLocalHides((_account, hidden) => { if (!chatId || hidden === chatId) void model.refresh(JSON.parse(key) as Q) }), [chatId, model, key])
+  useEffect(() => subscribeLocalHides((_account, hide) => { if (!chatId || hide.chatId === chatId) void model.refresh(JSON.parse(key) as Q) }), [chatId, model, key])
   return reading.state === 'error' ? reading.error : value
 }
 

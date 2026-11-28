@@ -1,5 +1,4 @@
 import { ingestMessages } from './messageIngest'
-import { isMessageHidden } from './localMessageHides'
 import { ingestFetchedMessagePage } from './chatMessagePages'
 import { dbPayload } from '@gugu/core/cloud/supabase'
 import { createGroupWithInvitations, groupInvitationNote } from '@gugu/core/cloud/groupChat'
@@ -317,11 +316,9 @@ export const chatService = {
       .from('messages_view')
       .select(MESSAGES_VIEW_SELECT)
       .eq('chat_id', chatId)
-      .is('deleted_at', null)
       // @@@threads (#957) — 主时间线过滤 thread 回复；root 本身保留，由详情按 root 拉取回复。
       .is('thread_root_id', null)
       .eq('is_imported_history_root', false)
-      .not('deleted_for_user_ids', 'cs', JSON.stringify([userId]))
     if (ascending) query = query.gt('seq', afterSeq as number)
     else if (typeof beforeSeq === 'number') query = query.lt('seq', beforeSeq)
     const { data: msgs, error } = await query.order('seq', { ascending }).limit(limit)
@@ -346,8 +343,6 @@ export const chatService = {
       .from('messages_view')
       .select(MESSAGES_VIEW_SELECT)
       .eq('chat_id', chatId)
-      .is('deleted_at', null)
-      .not('deleted_for_user_ids', 'cs', JSON.stringify([userId]))
       // root 本身(id=rootId, 其 thread_root_id 为 null) + 所有回复(thread_root_id=rootId)
       .or(`id.eq.${rootId},thread_root_id.eq.${rootId}`)
       .order('seq', { ascending: false })
@@ -366,16 +361,14 @@ export const chatService = {
 
   /** @@@history (#957) — 历史面板「文件」tab：会话内全部媒体附件消息（图片/文档），按 seq 倒序。
    *  messages_view 为 security_invoker → RLS 自动按成员过滤。语音附件 content 格式不同，
-   *  parseAttachmentContent 返回 null 被跳过（语音不算文件）；撤回/软删的不计。 */
-  async getChatFiles(chatId: string, userId: string): Promise<ChatFileItem[]> {
+   *  parseAttachmentContent 返回 null 被跳过（语音不算文件）；撤回的不计。 */
+  async getChatFiles(chatId: string): Promise<ChatFileItem[]> {
     const { data, error } = await chatDb
       .from('messages_view')
       .select('id, sender_user_id, content, created_at, file_item_id, file_version, file_blob_id')
       .eq('chat_id', chatId)
       .eq('content_type', 'attachment')
-      .is('deleted_at', null)
       .is('retracted_at', null)
-      .not('deleted_for_user_ids', 'cs', JSON.stringify([userId]))
       .order('seq', { ascending: false })
       .limit(200)
     if (error) throw new Error(error.message)
@@ -472,16 +465,15 @@ export const chatService = {
       .from('messages_view')
       .select(MESSAGES_VIEW_SELECT)
       .eq('id', messageId)
-      .is('deleted_at', null).not('deleted_for_user_ids', 'cs', JSON.stringify([userId]))
       .maybeSingle()
 
     if (error) throw new Error(error.message)
     if (!msg) return null
     const item = messageItemFromRow(msg as RawMessageRow, userId)
-    // A message hidden on this device reads as one this reader cannot see (@@@local-hide).
-    if (!item || isMessageHidden(userId, item)) return null
-    await ingestMessages(userId, { writes: [{ type: 'put', message: item }], revisions: [] })
-    return item
+    if (!item) return null
+    // The store refuses a message hidden on this device: it reads as one this reader cannot see (@@@local-hide).
+    const accepted = await ingestMessages(userId, { writes: [{ type: 'put', message: item }], revisions: [] })
+    return accepted.length ? item : null
   },
 
   markUnread: markMemberUnread,

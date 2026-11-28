@@ -25,7 +25,7 @@ import {
 import { closeImRepository, completeWindowIdentities } from '../lib/chatMessageWindowPublication'
 import { messageWindow } from '../lib/messageWindows'
 import { ingestMessages } from '../lib/messageIngest'
-import { clearChatLocally, hideMessageLocally, newestShown } from '../lib/localMessageHides'
+import { clearChatWrites, hideMessageWrites, newestShown } from '../lib/localMessageHides'
 import { paintLocalChats, publishLocalFirstFrame } from '../lib/chatSnapshotPublication'
 import { createChatListProjectionLedger, useChatProjectionBinding, notifyForIngestedMessage } from './chatListProjection'
 import { adoptOptimisticChatRow } from '../lib/optimisticChatIdentity'
@@ -715,14 +715,14 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     const through = chatId && newestShown(cache.rows(chatId), chatsRef.current.find(chat => chat.id === chatId)?.last_message_at)
     if (!chatId || !userId || !through) return
     invalidateMessageSnapshots(chatId)
-    await ingestMessages(userId, { writes: clearChatLocally(userId, chatId, through), revisions: [] })
+    await ingestMessages(userId, { writes: clearChatWrites(chatId, through), revisions: [] })
   }, [cache, chatsRef, invalidateMessageSnapshots, userId])
 
   const deleteMessage = useCallback(async (messageId: string, chatId = activeChatIdRef.current) => {
     if (!chatId || !userId) return
     invalidateMessageSnapshots(chatId)
     if (outboxRef.current?.outbox.has(messageId)) return outboxRef.current.outbox.discard(messageId)
-    await ingestMessages(userId, { writes: hideMessageLocally(userId, chatId, messageId), revisions: [] })
+    await ingestMessages(userId, { writes: hideMessageWrites(chatId, messageId), revisions: [] })
   }, [invalidateMessageSnapshots, userId])
 
   const appendMessage = useCallback((msg: MessageItem) => {

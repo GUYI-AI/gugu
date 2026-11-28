@@ -24,8 +24,7 @@ export type UnreadLocatorWindowPages = {
 // 三个查询（锚点页 / forward 页 / 尾部）逐字共用这条边界：尾部若按另一套算，会把看不见的消息标成已读。
 function streamVisibilityFilter(chatId: string, locator: OpenableLocator, userId: string, select: string) {
   const query = chatDb.from('messages_view').select(select)
-    .eq('chat_id', chatId).is('deleted_at', null)
-    .not('deleted_for_user_ids', 'cs', JSON.stringify([userId]))
+    .eq('chat_id', chatId)
   return locator.stream_kind === 'main'
     ? query.is('thread_root_id', null).eq('is_imported_history_root', false)
     : query.or(`id.eq.${locator.thread_root_id},thread_root_id.eq.${locator.thread_root_id}`)

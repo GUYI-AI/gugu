@@ -15,7 +15,6 @@ import { messageAccessWrites } from './messageRevisionWrites'
 import { createSupabaseAccountRevisionSource } from './supabaseAccountRevisionSource'
 import { noteBackendAnswer } from '@gugu/core/cloud/backendReachability'
 import { sendGroupPreview } from './sendGroupPreview'
-import { localHidesOf } from './localMessageHides'
 
 const log = rendererLogger('im/snapshot')
 const row = z.record(z.string(), z.unknown())
@@ -74,7 +73,7 @@ export async function initializeAccountSync(repository: AccountImRepository): Pr
   if (!signal.aborted) noteBackendAnswer(!error)
   if (error) throw error
   const snapshot = decodeAccountSnapshot(data, repository.accountId)
-  const chats = assemble(snapshot.cells, repository.accountId, localHidesOf(repository.accountId))
+  const chats = assemble(snapshot.cells, repository.accountId)
   await alignMessageStore(repository.accountId, snapshot.revision, createSupabaseAccountRevisionSource(), currentAuthSessionSignal())
   await ingestMessages(repository.accountId, { writes: messageAccessWrites(snapshot.cells, repository.accountId, snapshot.cells.keys()), revisions: [] })
   await prefetchMessages(repository.accountId, chats.map(chat => chat.id))

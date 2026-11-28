@@ -16,7 +16,6 @@ export async function messagesByIdPrefix(chatId: string, prefix: string, userId:
     .select(MESSAGES_VIEW_SELECT)
     .eq('chat_id', chatId)
     .gte('id', range.lo).lte('id', range.hi)
-    .is('deleted_at', null).not('deleted_for_user_ids', 'cs', JSON.stringify([userId]))
     .order('created_at', { ascending: false })
     .limit(11)
   if (error) throw new Error(error.message)

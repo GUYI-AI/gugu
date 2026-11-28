@@ -17,7 +17,7 @@ import { renderMentionTokens } from '@renderer/lib/chat/render-mention-tokens'
 import { rankPaletteMatches } from '../command-palette/palette-rank'
 import type { SearchChip, SearchFacet, SearchKind } from './search-session'
 import { localMessageQueries } from '@/lib/messageIngest'
-import { isMessageHidden } from '@/lib/localMessageHides'
+import { subscribeLocalHides } from '@/lib/localMessageHides'
 import { useNetworkOnline } from '@/hooks/useNetworkOnline'
 
 /** One page per source: the counts beside the filters are these rows, shown as "100+" when a source returns a full page. */
@@ -52,10 +52,12 @@ export interface SearchView {
 const messageSearch = replica({
   name: 'messageSearch',
   scope: 'account',
-  read: async (_owner, query: string, chatId: string | null, _clears: string): Promise<MessageRow[]> => {
+  read: async (owner, query: string, chatId: string | null, _clears: string): Promise<MessageRow[]> => {
     const { data, error } = await chatDb.rpc('message_search_as', { p_chat_id: chatId, p_query: query, p_limit: SEARCH_LIMIT })
     if (error) throw new Error(error.message)
-    return data as MessageRow[]
+    // The cloud does not know what this device hides (@@@local-hide); the store does.
+    const hidden = new Set(await localMessageQueries().hidden(owner, data as MessageRow[]))
+    return (data as MessageRow[]).filter(row => !hidden.has(row.id))
   },
   fresh: 5_000,
   keep: 30_000,
@@ -110,7 +112,7 @@ export function messageKinds(row: Pick<MessageRow, 'content_type' | 'content' | 
 export async function firstMessageOn(chatId: string, day: string): Promise<string | null> {
   const from = new Date(`${day}T00:00:00`)
   if (Number.isNaN(from.getTime())) throw new Error(`Not a date: ${day}`)
-  const { data, error } = await chatDb.from('messages_view').select('id').eq('chat_id', chatId).is('deleted_at', null).is('thread_root_id', null)
+  const { data, error } = await chatDb.from('messages_view').select('id').eq('chat_id', chatId).is('thread_root_id', null)
     .neq('content_type', 'system').gte('created_at', from.toISOString()).order('seq', { ascending: true }).limit(1)
   if (error) throw new Error(error.message)
   return (data as { id: string }[] | null)?.[0]?.id ?? null
@@ -171,9 +173,11 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
   const localScope = !!inChat && !online && !!localMessageQueries().search
   const boundaries = useMemo(() => [...summaries].flatMap(([id, chat]) => chat.historyClearedAt
     ? [[id, chat.historyClearedAt] as const] : []).sort(([left], [right]) => left.localeCompare(right)), [summaries])
-  // Part of every search's arguments: a clear (here, another window, another device) is a new search, ❌ the cached
-  // answer or one already on its way. Hiding a chat keeps the same history and the same search.
-  const clears = JSON.stringify(boundaries)
+  // Part of every search's arguments: a clear (here, another window, another device) or a message hidden here is a new
+  // search, ❌ the cached answer or one already on its way. Hiding a chat keeps the same history and the same search.
+  const [hides, setHides] = useState(0)
+  useEffect(() => subscribeLocalHides(() => setHides(count => count + 1)), [])
+  const clears = JSON.stringify([boundaries, hides])
 
   const messagesApply = runnable && !inTask
   // Task turns answer words alone (no sender, no kind of message). An in: chip leaves them out of the list, but they
@@ -192,8 +196,7 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
     const ids = [...new Set(storedRows.flatMap(row => row.sender_user_id && !identities[row.sender_user_id] ? [row.sender_user_id] : []))]
     if (ids.length) readIdentityDirectoryBridge()?.ensure(ids)
   }, [identities, storedRows])
-  // The cloud does not know what this device hides (@@@local-hide).
-  const shownRow = (row: MessageRow) => row.content_type !== 'system' && (!me || !isMessageHidden(me, row)) && (!from || row.sender_user_id === from.userId)
+  const shownRow = (row: MessageRow) => row.content_type !== 'system' && (!from || row.sender_user_id === from.userId)
     && (kinds.length === 0 || kinds.every((kind) => messageKinds(row, me).has(kind)))
 
   // Messages that cannot be asked now are said (❌ placeholders for ever): no account to search for, or the cloud offline.

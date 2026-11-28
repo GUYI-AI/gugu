@@ -334,8 +334,8 @@ export function useChatProjectionBinding(deps: {
         preserveMissingActive: false, revokedMembership: owner.isMembershipRevoked,
       }),
     })
-    const stopHides = subscribeLocalHides((hider, chatId) => {
-      if (hider === accountId) void publish(owner.republishLocalHide(chatId), owner.identities, { requestSeq: ++requestSeqRef.current, notify: false, preserveMissingActive: true })
+    const stopHides = subscribeLocalHides((hider, hide) => {
+      if (hider === accountId) void publish(owner.republishLocalHide(hide), owner.identities, { requestSeq: ++requestSeqRef.current, notify: false, preserveMissingActive: true })
     })
     return () => { detach(); stopHides() }
   }, [ownerFor, publish, repositoryRef, requestSeqRef])
