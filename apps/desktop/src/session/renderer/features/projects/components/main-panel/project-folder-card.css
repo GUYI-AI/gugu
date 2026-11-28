@@ -409,6 +409,8 @@
 .gg-folder-card__hint {
   font-size: var(--font-size-sm);
   line-height: 18px;
+  /* 只有一个文件夹、卡片收着时这一行没有字(见 project-folder-card.tsx),高度照留:展开 / 收起时卡片不跳。 */
+  min-height: 18px;
   color: var(--muted-fg);
   text-align: center;
 }

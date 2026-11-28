@@ -52,6 +52,9 @@ function storeWith(projects: AccountProject[], local: { here?: boolean } = {}) {
   return store;
 }
 
+/** A host whose network never comes back (the tests below that are not about it). */
+const noNetworkBack = () => () => undefined;
+
 beforeEach(() => {
   followRendererSession('SIGNED_IN', 'user-a');
 });
@@ -118,7 +121,7 @@ describe('accountProjectsStore reading', () => {
   it('knows this computer even when the first list read fails', async () => {
     const store = new AccountProjectsStore();
     read.list.mockRejectedValueOnce(new Error('fetch failed'));
-    const stop = store.start('user-a', (() => () => undefined) as unknown as Parameters<AccountProjectsStore['start']>[1]);
+    const stop = store.start('user-a', (() => () => undefined) as unknown as Parameters<AccountProjectsStore['start']>[1], noNetworkBack);
     await vi.waitFor(() => expect(store.status).toBe('error'));
     await vi.waitFor(() => expect(store.localDeviceId).toBe('this-computer'));
     stop();
@@ -196,7 +199,7 @@ describe('accountProjectsStore reading', () => {
       return () => revisions.delete(event);
     }) as unknown as Parameters<AccountProjectsStore['start']>[1];
     read.list.mockResolvedValue([paper]);
-    const stop = store.start('user-a', subscribe);
+    const stop = store.start('user-a', subscribe, noNetworkBack);
     await vi.waitFor(() => expect(store.status).toBe('ready'));
     const readsAgain = async (signal: () => void, list: AccountProject[]) => {
       read.list.mockResolvedValueOnce(list);
@@ -224,7 +227,7 @@ describe('accountProjectsStore reading', () => {
     expect(store.projects).toEqual([paper]);
     // Another account signs in: the previous account's projects go before anything is read.
     read.list.mockImplementationOnce(() => new Promise(() => {}));
-    store.start('user-b', subscribe);
+    store.start('user-b', subscribe, noNetworkBack);
     expect(store.projects).toEqual([]);
     expect(store.status).toBe('loading');
     // Its read lands in this test, not in the next one's mock.
@@ -242,7 +245,7 @@ describe('accountProjectsStore reading', () => {
       return () => revisions.delete(event);
     }) as unknown as Parameters<AccountProjectsStore['start']>[1];
     read.list.mockResolvedValue([paper, empty]);
-    const stop = store.start('user-a', subscribe);
+    const stop = store.start('user-a', subscribe, noNetworkBack);
     await vi.waitFor(() => expect(store.status).toBe('ready'));
     expect(read.list).toHaveBeenCalledTimes(1);
 
@@ -263,6 +266,32 @@ describe('accountProjectsStore reading', () => {
     expect(read.list).toHaveBeenCalledTimes(2);
     stop();
     expect(revisions.size).toBe(0);
+  });
+
+  // UX recheck B8-F06: a read failed while offline (the sidebar says 「项目列表读取失败 · 重试」); the network comes back with
+  // no project of this computer left to publish and no revision, so nothing else makes it read again — the line stayed.
+  it('a failed read is read again when the network comes back; a list read fine is not read again for it', async () => {
+    const store = new AccountProjectsStore();
+    const back = new Set<() => void>();
+    const networkBack = (listener: () => void) => { back.add(listener); return () => { back.delete(listener); }; };
+    read.list.mockRejectedValueOnce(new Error('fetch failed'));
+    const stop = store.start('user-a', (() => () => undefined) as unknown as Parameters<AccountProjectsStore['start']>[1], networkBack);
+    await vi.waitFor(() => expect(store.status).toBe('error'));
+    expect(read.list).toHaveBeenCalledTimes(1);
+
+    read.list.mockResolvedValueOnce([paper]);
+    back.forEach((listener) => listener());
+    await vi.waitFor(() => expect(store.status).toBe('ready'));
+    expect(store.error).toBeNull();
+    expect(store.projects).toEqual([paper]);
+    expect(read.list).toHaveBeenCalledTimes(2);
+
+    back.forEach((listener) => listener());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(read.list).toHaveBeenCalledTimes(2);
+
+    stop();
+    expect(back.size).toBe(0);
   });
 
   it('a refresh asked for while reading reads again afterwards; a read that lands after clear is dropped', async () => {

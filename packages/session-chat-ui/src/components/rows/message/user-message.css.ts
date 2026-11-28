@@ -1,4 +1,4 @@
-import { createVar, style } from '@vanilla-extract/css';
+import { createVar, globalStyle, style } from '@vanilla-extract/css';
 import { recipe } from '@vanilla-extract/recipes';
 import { USER_MESSAGE_ACTION_GAP, type MessageStyleVars } from './metrics';
 import { vars } from '@session-chat/styles/theme.css';
@@ -164,6 +164,11 @@ export const userMessageRoot = style({
   flexDirection: 'column',
 });
 
+/** 时间那一行里相邻两颗操作钮之间的空隙。 */
+const ACTION_GAP_PX = 4;
+/** 操作钮可点的范围至少这么大(UX 复审 B3-F04:回复的复制钮原来只有 22 × 16)。 */
+const ACTION_HIT_PX = 32;
+
 /** Message-level actions sit below the bubble and keep their space on hover. */
 export const userMessageActions = style({
   display: 'flex',
@@ -171,7 +176,7 @@ export const userMessageActions = style({
   minWidth: 0,
   justifyContent: 'flex-end',
   alignItems: 'center',
-  gap: '4px',
+  gap: `${ACTION_GAP_PX}px`,
   paddingTop: `${USER_MESSAGE_ACTION_GAP}px`,
   boxSizing: 'border-box',
   flexShrink: 0,
@@ -189,6 +194,7 @@ export const userMessageActions = style({
 });
 
 export const userMessageActionButton = style({
+  position: 'relative',
   display: 'flex',
   flexShrink: 0,
   alignItems: 'center',
@@ -205,8 +211,22 @@ export const userMessageActionButton = style({
   selectors: {
     '&:hover': { color: vars.fg, background: vars.bgHover },
     '&:focus-visible:not([data-pointer-focus])': { outline: `2px solid ${vars.fgMuted}`, outlineOffset: '1px' },
+    // 看得见的钮不变,四周的留白并进可点的范围:向外各扩到 ACTION_HIT_PX(钮本身已够大的那一边不扩)。
+    // 只是一层透明的命中区,不占版面 ⇒ 页脚高度(measure 契约)不变。
+    '&::after': {
+      content: '""',
+      position: 'absolute',
+      top: `min(0px, calc((100% - ${ACTION_HIT_PX}px) / 2))`,
+      bottom: `min(0px, calc((100% - ${ACTION_HIT_PX}px) / 2))`,
+      left: `min(0px, calc((100% - ${ACTION_HIT_PX}px) / 2))`,
+      right: `min(0px, calc((100% - ${ACTION_HIT_PX}px) / 2))`,
+    },
   },
 });
+
+// 两颗钮挨着(复制 + 编辑):各自只扩到中间那条缝的一半,❌ 后一颗的命中区盖住前一颗的边。
+globalStyle(`${userMessageActionButton}:has(+ ${userMessageActionButton})::after`, { right: `-${ACTION_GAP_PX / 2}px` });
+globalStyle(`${userMessageActionButton} + ${userMessageActionButton}::after`, { left: `-${ACTION_GAP_PX / 2}px` });
 
 /** 对话布局里折着的长消息:时间那一行最前面的「展开全文」。 */
 export const userMessageExpandRow = style({
