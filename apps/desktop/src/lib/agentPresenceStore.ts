@@ -137,7 +137,8 @@ export function setPresenceBusContext(ctx: { currentUserId: string | null }): vo
   // `null → 某个身份` 是**激活**,不是换人:那一刻屏上已经确认过的状态仍然是这个人自己的,
   // 把它打回 pending 只会在启动时白闪一次(shell 提交发生在会话列表已经订阅之后)。
   const leftAnIdentity = previousUserId !== null
-  if (leftAnIdentity) channels.clear()
+  // The channels stay held (agentPresenceChannels owns them); what they carried was the previous identity's.
+  if (leftAnIdentity) for (const held of channels.values()) { held.carried = null; held.down = true }
   for (const entry of [...entries.values()]) {
     if (leftAnIdentity) {
       // 没人看的直接丢。有人看的退回 pending —— 这正是 pending 唯一合法的场合:
@@ -206,8 +207,10 @@ export function uncoverAgentPresence(channel: string): void {
 function readAfterSubscribe(carried: Set<string>, agentUserIds: readonly string[]): void {
   if (!accountContext.currentUserId) return
   for (const id of agentUserIds) {
+    // Another channel already carries it, with a value read after that channel subscribed: nothing to ask.
+    const current = !!entries.get(id)?.state.payload && isCovered(id)
     carried.add(id)
-    void fetchFreshSnapshot(entries.get(id) ?? createCooledEntry(id))
+    if (!current) void fetchFreshSnapshot(entries.get(id) ?? createCooledEntry(id))
   }
   evictCooledEntries()
 }

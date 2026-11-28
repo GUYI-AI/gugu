@@ -102,8 +102,11 @@ async function openCurrentDatabase(factory: IDBFactory): Promise<IDBDatabase> {
     state = { state: 'verified' }
   }
   if (state?.state === 'verified' && await deleteDatabase(factory, LEGACY_DB_NAME)) await writeMigrationState(current, 'done')
-  // Databases made before agent status moved to its channels still hold a presence store nothing reads or writes.
-  if (current.objectStoreNames.contains('presence')) {
+  // Databases made before agent status moved to its channels still hold a presence store nothing here reads or writes.
+  // The store stays (dropping it is a schema change, which locks out older clients sharing this database); its rows are
+  // cleared once, and an older client writing there again is cleared at the next open.
+  if (current.objectStoreNames.contains('presence')
+    && await requestResult<number>(current.transaction('presence', 'readonly').objectStore('presence').count()) > 0) {
     const sweep = current.transaction('presence', 'readwrite')
     sweep.objectStore('presence').clear()
     await transactionDone(sweep)
