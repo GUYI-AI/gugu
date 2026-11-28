@@ -3,11 +3,11 @@ import { mergeMessagesById } from '@gugu/core/shared/ui/messageListModels'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import type { AccountImRepository } from '../lib/imRepository'
 import { chatService } from '../lib/chat'
-import { INITIAL_PAGE, maxMainlineSeq } from './chatMessageWindow'
+import { INITIAL_PAGE } from './chatMessageWindow'
 import { seedCacheFromDisk } from './chatDiskWindow'
 import { rendererLogger } from '../lib/log'
 import { readMessagePage } from '../lib/messageIngest'
-import { messageWindow, setMessageWindow } from '../lib/messageWindows'
+import { setMessageWindow } from '../lib/messageWindows'
 
 import { ChatWindowCache } from './chatWindowCache'
 import type { ChatHistoryWindow, FetchHistoryPage } from './chatHistoryWindow'
@@ -26,8 +26,7 @@ export type WindowObserver = {
 
 /** Whether the store holds the conversation's newest page as one verified range (im-message-store `page`). */
 export async function storedTailCovered(userId: string, chatId: string): Promise<boolean> {
-  const tail = maxMainlineSeq(messageWindow(userId, chatId) ?? [])
-  return tail > 0 && (await readMessagePage(userId, { chatId, beforeSeq: tail + 1, limit: INITIAL_PAGE })).covered
+  return (await readMessagePage(userId, { chatId, limit: INITIAL_PAGE })).covered
 }
 
 /**

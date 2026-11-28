@@ -222,10 +222,11 @@ describe('打开会话的第一帧', () => {
     network.resolve()
     const harness = await mount()
     try {
+      vi.mocked(chatService.revalidateWindow).mockClear()
       await act(async () => { select('chatA') })
       shell.visibleChat = 'chatA'
       act(() => followCurrent(false))
-      await act(async () => { await Promise.resolve() })
+      await vi.waitFor(() => expect(chatService.revalidateWindow).toHaveBeenCalled(), WAIT) // the open has finished
       vi.mocked(chatService.getMessages).mockClear()
       vi.mocked(chatService.revalidateWindow).mockClear()
       const before = framesOf('chatA').at(-1)?.messages

@@ -128,6 +128,10 @@ describe.each(subjects)('IM message store contract (%s)', (_name, open) => {
     await store.ingest(account, batch(message('m52', 'ack', 52)))
     expect(ids(await store.windows(account, ['chat-a'], 10))).toEqual(['m50', 'm51', 'm52'])
     expect((await store.page(account, { chatId: 'chat-a', beforeSeq: 3, limit: 5 })).covered).toBe(true)
+    // The newest page is covered only as far as the stream is known to go: here the acknowledged send lies above the range.
+    expect((await store.page(account, { chatId: 'chat-a', limit: 2 })).covered).toBe(false)
+    await store.ingest(account, { writes: [], revisions: [], ranges: [{ chatId: 'chat-a', fromSeq: 52, toSeq: 52 }] })
+    expect((await store.page(account, { chatId: 'chat-a', limit: 3 })).covered).toBe(true)
     // A stream with no verified range gives its newest rows.
     await store.ingest(account, { writes: [{ type: 'truncateRange', chatId: 'chat-a' }], revisions: [] })
     expect(ids(await store.windows(account, ['chat-a'], 10))).toEqual(['m1', 'm2', 'm50', 'm51', 'm52'])
