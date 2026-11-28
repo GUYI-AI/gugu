@@ -88,13 +88,13 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
   // The followers come and go with the render that starts the move (the lane's button mounts, the strip takes the class): their rider is registered after that render, and joins the move under way.
   useLayoutEffect(() => {
     const fill = fillNode.current;
-    const rest = () => { // ❌ the column's box read here: in the render that starts its move it would lay the page out again; while it moves, its rider holds the mark
+    const rest = () => { // ❌ the column's box read here: in the render that starts its move it would lay the page out again. The card's mark is written here only, after the render's own removals (❌ before them: removing the focused button would restyle the card on the spot), and not at all by a fold until it has landed
       for (const follower of all(fill, RESTORE_LANE_FOLLOWER)) follower.style.setProperty('--shell-restore-lane-shown', innerSidebarShown ? '0' : '1');
-      fill?.toggleAttribute('data-inner-column', innerSidebarShown);
+      fill?.toggleAttribute('data-inner-column', innerSidebarShown || track.moving);
     };
     rest();
-    const off = [track.onLanded(rest), track.ride('inner', (from, to, content) => !moves(from, to, content) ? [] : (fill?.toggleAttribute('data-inner-column', true),
-      all(fill, RESTORE_LANE_FOLLOWER).map((follower) => follower.animate(innerFoldFrames(from, to, content, '--shell-restore-lane-shown', (open) => innerFoldOpacity(1 - open)), MOVE))))];
+    const off = [track.onLanded(rest), track.ride('inner', (from, to, content) => !moves(from, to, content) ? [] :
+      all(fill, RESTORE_LANE_FOLLOWER).map((follower) => follower.animate(innerFoldFrames(from, to, content, '--shell-restore-lane-shown', (open) => innerFoldOpacity(1 - open)), MOVE)))];
     return () => off.forEach((stop) => stop());
   }, [track, innerSidebarShown]);
 
