@@ -3,6 +3,7 @@ import { observer } from 'mobx-react-lite';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { SurfaceBox } from '@renderer/lib/layout/place-in';
+import { PANEL_REST, panelRest } from '@renderer/lib/layout/panel-track';
 import { PanelToggleIcon } from '@/components/PanelToggleIcon';
 import { Maximize2, Minimize2 } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
@@ -105,11 +106,10 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   useLayoutEffect(() => {
     const cell = chatColumn.current?.closest<HTMLElement>('[data-panel-slot], [data-panel-fill]');
     if (!cell || !divided) return setChatRestNarrow(undefined);
-    const read = () => { const [rest, grow] = (cell.dataset.panelRest ?? '').split(' ').map(Number); setChatRestNarrow(cell.dataset.panelRest ? Math.min(rest, rest - grow) < TAB_STRIP_NARROW_PX : undefined); };
+    const read = () => { const [rest, grow] = (panelRest.get(cell) ?? '').split(' ').map(Number); setChatRestNarrow(panelRest.get(cell) ? Math.min(rest, rest - grow) < TAB_STRIP_NARROW_PX : undefined); };
     read();
-    const told = new MutationObserver(read);
-    told.observe(cell, { attributeFilter: ['data-panel-rest'] });
-    return () => told.disconnect();
+    cell.addEventListener(PANEL_REST, read);
+    return () => cell.removeEventListener(PANEL_REST, read);
   }, [divided, inCells]);
   // @@@card-gap — the conversation's half of the gutter closes with the last pixels of the tools' cell. Written on the two
   // boxes (❌ an inherited variable on the workspace: it restyled the whole conversation, owner 11-26「刚弹出来一点点的那一瞬间卡顿」).

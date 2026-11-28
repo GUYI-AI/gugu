@@ -12,9 +12,11 @@ import { playSpring } from './panel-clock';
  *  · Between two open sizes content is its drawn size in every frame; one that does not reflow keeps the wider until it lands.
  */
 
+/** What a row's box will rest at through a move — "<its content's resting size> <how much wider than now>" — and the event the box fires (a microtask on) as that is set or cleared. ❌ An attribute on the box: it restyles all that is in it (a `:has()` above), in the task that starts the move. */
+export const PANEL_REST = 'panelrest';
+export const panelRest = new WeakMap<Element, string | undefined>();
 /** A size this close to nothing is nothing. */
 export const PANEL_LANDED_PX = 0.5;
-
 /** A fading slot's soft edge: transparent at its drawn edge, opaque this far in. */
 export const PANEL_SOFT_EDGE_PX = 24;
 const softEdge = (toward: string) => `linear-gradient(to ${toward}, transparent 0, black ${PANEL_SOFT_EDGE_PX}px)`;
@@ -27,9 +29,7 @@ const OUT_OF_WINDOW = 'translate(-100000px, -100000px)';
 /** A move as the platform's animation, linear over a nominal time: the spring's progress is set as its time. */
 export const MOVE = { duration: 1000, fill: 'both' } as const;
 
-export function clamp01(value: number): number {
-  return Math.max(0, Math.min(1, value));
-}
+export const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
 
 /** Where a slot goes: the size it takes on screen. */
 export interface SlotTarget {
@@ -41,10 +41,9 @@ export interface SlotTarget {
 }
 
 export interface PanelSlotNodes {
-  /** In the flow: the slot's place, laid out at its drawn size. Through a move `data-panel-rest` on it is the size its content will rest at, and how much wider than now that is. */
+  /** In the flow: the slot's place, laid out at its drawn size. Through a move `panelRest` has for it the size its content will rest at, and how much wider than now that is. */
   place: HTMLElement;
-  /** Fills `place` and clips the content (overflow clip, ❌ hidden: a hidden box can be scrolled, and focus coming into a
-   *  page still off the edge scrolls it, moving everything beside it). */
+  /** Fills `place` and clips the content (overflow clip, ❌ hidden: a hidden box can be scrolled, and focus coming into a page still off the edge scrolls it, moving everything beside it). */
   window: HTMLElement;
   /** The content, laid out at the slot's content size. */
   content: HTMLElement;
@@ -67,7 +66,7 @@ export class PanelTrack {
   /** The move under way: the platform's animations of it, and the clock that steps them. */
   private move: Animation[] = [];
   private clock: { stop(): void } | null = null;
-  private starts = new Map<string, number>(); // where each slot was drawn as the move under way began
+  private starts = new Map<string, number>(); private stepped = false; // where each slot was drawn as the move under way began, and whether that move has had a frame yet
   private readonly landings = new Set<() => void>();
 
   /** `axis`: a row (x, widths) or a column (y, heights). `extent`: the track's length as its owner measures it: the fill has this less the slots, so placing writes and never reads the layout back. */
@@ -93,20 +92,18 @@ export class PanelTrack {
   }
 
   /** Whether a move is under way. */
-  get moving(): boolean {
-    return this.move.length > 0;
-  }
+  get moving(): boolean { return this.move.length > 0; }
 
   /** Where a slot is drawn now (px): through a move its box, measured; at rest where it was put (❌ a read of the layout: asked right after a write it lays the page out again). */
   drawn(id: string): number {
     const slot = this.slot(id);
-    return this.moving && slot.nodes ? this.sizeOf(slot.nodes.place) : slot.target.size;
+    return !this.moving ? slot.target.size : this.stepped && slot.nodes ? this.sizeOf(slot.nodes.place) : this.starts.get(id)!; // before a move's first frame it is where it started
   }
 
   /** The size a slot's content is laid out at now (px). */
   content(id: string): number {
     const { nodes, target } = this.slot(id);
-    return (nodes && heldPx(nodes.content, this.sides[0])) || (this.moving && nodes ? this.sizeOf(nodes.content) : (target.content ?? target.size));
+    return (nodes && heldPx(nodes.content, this.sides[0])) || (!this.moving ? (target.content ?? target.size) : this.stepped && nodes ? this.sizeOf(nodes.content) : this.starts.get(id)!);
   }
 
   /** `rider`'s animations go with every move of this slot from here on — the one under way too, from where it is (what mounts as a move starts rides it). */
@@ -138,7 +135,7 @@ export class PanelTrack {
   private restFill(): void {
     const fill = this.fillBox();
     if (fill) this.rest(fill, { size: this.left((slot) => slot.target.size) }, 'fill', this.extent);
-    else if (this.fill?.place.dataset[this.mark]) delete this.fill.place.dataset[this.mark];
+    else if (this.fill) this.mark(this.fill.place);
   }
 
   private fillBox(): PanelSlotNodes | null {
@@ -159,7 +156,7 @@ export class PanelTrack {
     const from = new Map(this.slots.map((slot) => [slot.id, this.drawn(slot.id)]));
     const fillFrom = this.left((slot) => from.get(slot.id)!);
     this.stop();
-    this.starts = from;
+    this.starts = from; this.stepped = false;
     const move: Animation[] = [];
     let distance = 0;
     for (const slot of this.slots) {
@@ -178,13 +175,14 @@ export class PanelTrack {
     const fill = this.fillBox();
     const fillTo = this.left((slot) => slot.target.size);
     if (fill) this.sheet(fill, fillFrom, { size: fillTo, reflows: true }, 'fill', move);
-    else if (this.fill && this.extent > 0) this.fill.place.dataset[this.mark] = `${fillTo} ${fillTo - fillFrom}`;
+    else if (this.fill && this.extent > 0) this.mark(this.fill.place, `${fillTo} ${fillTo - fillFrom}`);
     if (move.length === 0) return this.jump(targets, true); // nothing to move on screen: it has landed all the same
     for (const animation of move) animation.pause();
     this.move = move;
     this.clock = playSpring((progress) => {
       // There when every edge is within half a pixel: the spring's sub-pixel tail would hold the landing layout back.
       if (Math.abs(progress - 1) * distance < PANEL_LANDED_PX) return this.jump({});
+      this.stepped = true;
       for (const animation of move) animation.currentTime = progress * MOVE.duration;
     }, () => { if (this.move === move) this.jump({}); });
   }
@@ -197,10 +195,7 @@ export class PanelTrack {
     for (const animation of move) animation.cancel();
   }
 
-  /**
-   * A box for the length of a move from `start` to `target`. To or from nothing it is a sheet: its content at its open
-   * size on the edge that moves, the window fading with the share of it that is drawn.
-   */
+  /** A box for the length of a move from `start` to `target`. To or from nothing it is a sheet: its content at its open size on the edge that moves, the window fading with the share of it that is drawn. */
   private sheet(nodes: PanelSlotNodes, start: number, target: SlotTarget, role: 'slot' | 'held' | 'fill', move: Animation[]): void {
     const [size, near, far] = this.sides;
     const end = target.size;
@@ -210,7 +205,7 @@ export class PanelTrack {
     const held = faded ? (target.content ?? (end >= PANEL_LANDED_PX ? end : now)) : target.reflows && target.content === undefined ? null : Math.max(now, target.content ?? end);
     nodes.content.style[size] = held === null ? '100%' : `${held}px`;
     const rest = faded ? held! : (target.content ?? end);
-    nodes.place.dataset[this.mark] = `${rest} ${rest - (held ?? start)}`;
+    this.mark(nodes.place, `${rest} ${rest - (held ?? start)}`);
     nodes.content.style[near] = faded && role === 'slot' ? 'auto' : '';
     nodes.content.style[far] = faded && role === 'slot' ? '0' : '';
     nodes.window.style.maskImage = faded && role !== 'held' ? SOFT_EDGE[this.axis][role] : '';
@@ -225,7 +220,7 @@ export class PanelTrack {
     const gone = target.size < PANEL_LANDED_PX;
     const kept = gone && target.content === undefined ? heldPx(nodes.content, size) || open : 0; // at nothing: the size it was open at
     if (role === 'slot') nodes.place.style[size] = `${target.size}px`;
-    if (nodes.place.dataset[this.mark]) delete nodes.place.dataset[this.mark];
+    this.mark(nodes.place);
     if (target.content !== undefined) nodes.content.style[size] = `${target.content}px`;
     else if (!gone) nodes.content.style[size] = role === 'slot' ? '100%' : '';
     else if (kept > 0) nodes.content.style[size] = `${kept}px`;
@@ -235,7 +230,11 @@ export class PanelTrack {
     nodes.window.inert = gone;
   }
 
-  private get mark() { return this.axis === 'x' ? 'panelRest' : 'panelRestY'; } // a row's mark is what widths are decided from, once (pane-dimension-provider, the chat strip): a column has its own
+  private mark(place: HTMLElement, rest?: string): void { // a row's only: what is decided from a width is decided once (pane-dimension-provider, the chat strip)
+    if (this.axis !== 'x' || panelRest.get(place) === rest) return;
+    panelRest.set(place, rest);
+    queueMicrotask(() => place.dispatchEvent(new Event(PANEL_REST)));
+  }
   private get sides() {
     return this.axis === 'x' ? (['width', 'left', 'right'] as const) : (['height', 'top', 'bottom'] as const);
   }
