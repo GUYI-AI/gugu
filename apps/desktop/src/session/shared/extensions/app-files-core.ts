@@ -1067,13 +1067,20 @@ export function createAppFiles(platform: FilesPlatform) {
     const { token, userId } = await platform.account();
     // Acting for an agent (A2): what the agent sees, by its own membership — never the person's chats (#6492).
     const actor = as.asAgent ?? userId;
-    const args = {
-      p_chat_id: chatId, p_as_user_id: actor,
-      ...(as.folder === undefined ? {} : { p_folder: as.folder.replace(/^\/+|\/+$/g, '') }),
-      ...(as.kind ? { p_kind: as.kind } : {}),
-      ...(as.name ? { p_name: as.name } : {}),
-    };
-    const rows = as.limit === undefined ? await listedRows(token, args) : await agentRows(token, 'workspace_list_as', { ...args, p_offset: as.offset ?? 0, p_limit: as.limit });
+    const rows = as.limit === undefined
+      ? await listedRows(token, {
+        p_chat_id: chatId, p_as_user_id: actor,
+        ...(as.folder !== undefined ? { p_folder: as.folder.replace(/^\/+|\/+$/g, '') } : {}),
+        ...(as.kind ? { p_kind: as.kind } : {}),
+        ...(as.name ? { p_name: as.name } : {}),
+      })
+      : await agentRows(token, 'workspace_list_as', {
+        p_chat_id: chatId, p_as_user_id: actor,
+        ...(as.folder !== undefined ? { p_folder: as.folder.replace(/^\/+|\/+$/g, '') } : {}),
+        ...(as.kind ? { p_kind: as.kind } : {}),
+        ...(as.name ? { p_name: as.name } : {}),
+        p_offset: as.offset ?? 0, p_limit: as.limit,
+      });
     return listedEntriesOf(token, rows, platform, actor);
   }
 
