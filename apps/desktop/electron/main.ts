@@ -614,7 +614,7 @@ import {
 } from './tray-badge'
 import { FIRST_FRAME_CHANNEL, type FirstFrameAnswer, type FirstFrameRequest } from '../shared/first-frame'
 import type { DevicePreferences } from '../shared/device-preferences'
-import { HOST_SYSTEM_LANGUAGES_CHANNEL, hostText, updateRestartCopy } from '../shared/host-localization'
+import { HOST_SYSTEM_LANGUAGES_CHANNEL, accountLeaveCopy, hostText, updateRestartCopy } from '../shared/host-localization'
 
 // ── Dual-instance support ────────────────────────────────────────────────────
 // CLI arg (preferred): --user-data-dir=/path/to/dir ; env fallback: GUGU_USER_DATA_DIR=/path/to/dir
@@ -624,6 +624,12 @@ function getArgValue(flag: string): string | undefined {
 }
 
 import { writeSharedUserDataPointer } from './session/headless/shared-user-data'
+import { promisify } from 'node:util'
+import { execFile } from '@gugu/core/local/childProcess'
+import {
+  accountLayout, accountTmuxLabel, adoptLegacyOwner, decideAccountEntry, homeFollowsUserData, isAccountId, readAccountRegistry,
+  takeAccountHandoff, writeAccountHandoff, writeAccountRegistry, type AccountLayout,
+} from './account-profiles'
 import { removeLegacyBrowserLogins } from './lib/remove-legacy-browser-logins'
 import { removeLegacyAssistantPanelState } from './lib/remove-legacy-assistant-panel-state'
 import { enterUserDataDirectory } from './working-directory'
@@ -642,6 +648,64 @@ if (userDataDir) {
   // Absolute before the working directory moves into it (below): a relative one would mean something else afterwards.
   app.setPath('userData', resolve(userDataDir))
 }
+// @@@gugu-tier - inlined at build time by vite (define in vite.config.mts), default 'production'.
+declare const __GUGU_TIER__: string
+declare const __GUGU_BUILD_DISTRIBUTION__: string
+
+// @@@home-unify - one account home shared by desktop, CLI, and runtime host. The DEFAULT instance's home is ~/.gugu
+// (per tier); an isolated instance (--user-data-dir) keeps it inside its own userData.
+function machineGuguHome(): { home: string; followsUserData: boolean } {
+  const explicit = process.env.GUGU_HOME?.trim()
+  if (explicit) return { home: explicit, followsUserData: homeFollowsUserData(app.getPath('userData'), explicit) }
+  if (userDataDir) return { home: join(app.getPath('userData'), 'gugu-home'), followsUserData: true }
+  const home =
+    __GUGU_TIER__ === 'production'
+      ? resolveGuguHome(process.env)
+      : join(homedir(), `.gugu${tierSuffix(__GUGU_TIER__)}`)
+  const legacy = join(app.getPath('userData'), 'gugu-home')
+  if (legacy !== home && existsSync(legacy) && !existsSync(home)) {
+    mkdirSync(dirname(home), { recursive: true })
+    renameSync(legacy, home)
+  }
+  return { home, followsUserData: false }
+}
+
+/** The account the desktop's auth mirror says was signed in: before this version, the owner of the shared directories. */
+function legacyMirrorUserId(home: string): string | null {
+  try {
+    const value = JSON.parse(readFileSync(join(home, 'auth.json'), 'utf8')) as { user_id?: unknown }
+    return isAccountId(value.user_id) ? value.user_id : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * gugu-dev#1616 This process serves one account: its userData (sessions, transcripts, files, Apps' data, custom models
+ * and keys, the Chromium profile with its sign-in) and its GUGU_HOME (roster, agent homes) are set here, before anything
+ * reads them. Signing in as another account relaunches (account-profile:enter). The headless server has its own layout.
+ */
+const machineUserData = app.getPath('userData')
+// What this process was started with: a relaunch starts from it again, never from this account's values (relaunchApp).
+const inheritedAccountEnv = {
+  GUGU_HOME: process.env.GUGU_HOME, GUGU_TMUX_SOCKET_LABEL: process.env.GUGU_TMUX_SOCKET_LABEL, GUGU_MACHINE_USER_DATA: process.env.GUGU_MACHINE_USER_DATA,
+}
+const machineHome = machineGuguHome()
+const accountBoot: { userId: string | null; layout: AccountLayout } | null = SERVER_MODE ? null : (() => {
+  const read = readAccountRegistry(machineUserData)
+  const registry = adoptLegacyOwner(read, legacyMirrorUserId(machineHome.home))
+  if (registry !== read) writeAccountRegistry(machineUserData, registry)
+  const layout = accountLayout({ machineUserData, machineHome: machineHome.home, homeFollowsUserData: machineHome.followsUserData,
+    registry, userId: registry.current })
+  return { userId: registry.current, layout }
+})()
+if (accountBoot && !accountBoot.layout.root) {
+  mkdirSync(accountBoot.layout.userData, { recursive: true, mode: 0o700 })
+  app.setPath('userData', accountBoot.layout.userData)
+}
+process.env.GUGU_HOME = accountBoot?.layout.home ?? machineHome.home
+// Machine-wide state (installed Apps, window placement, this registry) stays in the original directory.
+process.env.GUGU_MACHINE_USER_DATA = machineUserData
 // @@@app-cwd - leave the launch directory (on Windows: the install directory) before anything is started.
 if (!SERVER_MODE) enterUserDataDirectory(app.getPath('userData'))
 // @@@5080 把**解析之后**的 userData 真值留给同机的无头宿主,让「桌面版 / 网页版」看同一份会话
@@ -650,7 +714,7 @@ if (!SERVER_MODE) enterUserDataDirectory(app.getPath('userData'))
 // 那会让下一个无头宿主指向一个用完就删的目录。所以只有跑在默认目录上的那个实例才写。
 // server 用自己的数据目录,❌ 不改写桌面壳留给无头任务宿主的那根机器级指针。
 if (!userDataDir && !SERVER_MODE) {
-  writeSharedUserDataPointer(app.getPath('userData'))
+  writeSharedUserDataPointer(app.getPath('userData'), process.env.GUGU_HOME)
 }
 // @@@logging (#2382) - 日志要尽早起来,但必须在 userData 定好之后(日志文件就落在 userData/logs 里)。
 // installConsoleBridge:存量 console.* 立刻进文件(逐个改成结构化调用是增量的事)。
@@ -757,30 +821,11 @@ registerHostLayer(ipcMain)
 registerFileViewerMenus(app, () => hostCopy().fileViewerMenu, (error) => {
   processGoneLogger.error({ error: String(error) }, 'Content context menu failed')
 }, (host) => isOwnPage(host.getURL(), mainWindow?.webContents.getURL() ?? ''))
-// @@@gugu-tier - inlined at build time by vite (define in vite.config.mts), default 'production'.
-declare const __GUGU_TIER__: string
-declare const __GUGU_BUILD_DISTRIBUTION__: string
-
-// @@@home-unify - one account home shared by desktop, CLI, and runtime host. The DEFAULT instance's
-if (!process.env.GUGU_HOME) {
-  if (userDataDir) {
-    process.env.GUGU_HOME = join(app.getPath('userData'), 'gugu-home')
-  } else {
-    const home =
-      __GUGU_TIER__ === 'production'
-        ? resolveGuguHome(process.env)
-        : join(homedir(), `.gugu${tierSuffix(__GUGU_TIER__)}`)
-    const legacy = join(app.getPath('userData'), 'gugu-home')
-    if (legacy !== home && existsSync(legacy) && !existsSync(home)) {
-      mkdirSync(dirname(home), { recursive: true })
-      renameSync(legacy, home)
-    }
-    process.env.GUGU_HOME = home
-  }
-}
 // @@@tmux-socket-isolation - Gugu must not share tmux's default socket with a user's own Homebrew tmux
+// gugu-dev#1616 One tmux server per account (the root account keeps the label it always had).
 if (!process.env.GUGU_TMUX_SOCKET_LABEL) {
-  process.env.GUGU_TMUX_SOCKET_LABEL = `gugu${tierSuffix(__GUGU_TIER__)}`
+  const base = `gugu${tierSuffix(__GUGU_TIER__)}`
+  process.env.GUGU_TMUX_SOCKET_LABEL = accountBoot ? accountTmuxLabel(base, accountBoot.layout) : base
 }
 // @@@spawn-tmux-bin - Prefer the self-contained tmux built by build:tmux in both packaged
 // and source-launched app instances. Source-launched Electron does not inherit the user's
@@ -1666,7 +1711,7 @@ const mainRendererResponsiveness = createMainRendererResponsivenessLog({
 
 function createWindow(loadContents = true): void {
   const { width: defaultWidth, height: defaultHeight } = mainWindowSize(screen.getPrimaryDisplay().workAreaSize)
-  const winState = openMainWindowState({ defaultWidth, defaultHeight })
+  const winState = openMainWindowState({ defaultWidth, defaultHeight, path: machineUserData })
   const display = winState.x == null || winState.y == null
     ? screen.getPrimaryDisplay()
     : screen.getDisplayMatching(winState)
@@ -2172,7 +2217,8 @@ function messagePreviewHostDeps({ openTopicPublisher }: {
 }
 
 // 免费额度跟设备走(官方会员口径):owner 确立时认领一次,结果记在本机;失败静默,下次启动再试。
-const deviceClaimStorePath = () => join(app.getPath('userData'), 'device-free-credits.json')
+// gugu-dev#1616 "This device has claimed" is about the machine, not the signed-in account.
+const deviceClaimStorePath = () => join(machineUserData, 'device-free-credits.json')
 async function claimFreeCreditsForOwner(provider: RuntimeAuthProvider, ownerUserId: string): Promise<void> {
   if (!officialServicesEnabled()) return
   const auth = await provider.getAuth().catch(() => null)
@@ -3015,6 +3061,63 @@ ipcMain.handle('human-auth-session:clear', (event, reason: unknown) => {
   if (!isNativeAccountSender(event, mainWindow)) throw new ClosureFailure('wrong_local_owner')
   return humanAuthSessionIpc.clear(reason)
 })
+
+// gugu-dev#1616 Leaving this account stops its running tasks: ask first when any are running (the same busy reading and
+// the same native question as a restart to update).
+ipcMain.handle('account-profile:confirm-leave', async (event) => {
+  if (!isNativeAccountSender(event, mainWindow)) throw new ClosureFailure('wrong_local_owner')
+  const busy = loadEmdashBridge()?.sessionpageVersionSwitchActivity?.().busyAgents ?? 0
+  if (!busy) return true
+  const copy = accountLeaveCopy(hostCopy(), busy)
+  const options = { type: 'question' as const, message: copy.title, detail: copy.detail, buttons: [copy.leave, copy.cancel], defaultId: 1, cancelId: 1 }
+  const { response } = await (mainWindow && !mainWindow.isDestroyed() ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options))
+  return response === 0
+})
+// gugu-dev#1616 A sign-in decides which account's directories this process serves, before the renderer shows anything
+// of it. Another account's process hands the session over and relaunches into that account's own directories.
+ipcMain.handle('account-profile:enter', async (event, input: unknown) => {
+  if (!isNativeAccountSender(event, mainWindow)) throw new ClosureFailure('wrong_local_owner')
+  if (!accountBoot) return 'here'
+  const session = input as { user_id?: unknown; access_token?: unknown; refresh_token?: unknown } | null
+  if (!session || !isAccountId(session.user_id) || typeof session.access_token !== 'string' || typeof session.refresh_token !== 'string') {
+    throw new Error('Invalid account session')
+  }
+  const entry = decideAccountEntry({ processAccount: accountBoot.userId, registry: readAccountRegistry(machineUserData), userId: session.user_id })
+  if (entry.kind === 'here') return 'here'
+  writeAccountRegistry(machineUserData, entry.registry)
+  if (entry.kind === 'claim') {
+    accountBoot.userId = session.user_id
+    return 'here'
+  }
+  const target = accountLayout({ machineUserData, machineHome: machineHome.home, homeFollowsUserData: machineHome.followsUserData,
+    registry: entry.registry, userId: session.user_id })
+  writeAccountHandoff(target.userData, { user_id: session.user_id, access_token: session.access_token, refresh_token: session.refresh_token })
+  createLogger('account-profile').info({ from: accountBoot.userId?.slice(0, 8) ?? null, to: session.user_id.slice(0, 8), root: target.root }, 'switching account')
+  setImmediate(() => { void leaveForAccountSwitch() })
+  return 'switching'
+})
+// The session handed over by the previous account's process, once.
+ipcMain.handle('account-profile:take-handoff', (event) => {
+  if (!isNativeAccountSender(event, mainWindow)) throw new ClosureFailure('wrong_local_owner')
+  if (!accountBoot) return null
+  const handoff = takeAccountHandoff(app.getPath('userData'), accountBoot.userId)
+  return handoff && { access_token: handoff.access_token, refresh_token: handoff.refresh_token }
+})
+
+/** Say so on screen, stop this account's terminals and agents (its own tmux server), then relaunch into the next account. */
+async function leaveForAccountSwitch(): Promise<void> {
+  const text = hostCopy().accountLeave.switching.replace(/[<>&]/g, '')
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    await mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(
+      `<!doctype html><meta charset="utf-8"><body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;font:15px system-ui,sans-serif;color:#555;background:#fafafa">${text}</body>`)}`).catch(() => undefined)
+  }
+  const label = process.env.GUGU_TMUX_SOCKET_LABEL?.trim()
+  if (label) {
+    await promisify(execFile)(process.env.GUGU_TMUX_BIN?.trim() || 'tmux', ['-L', label, 'kill-server'], { timeout: 10_000 })
+      .catch(() => undefined) // No server for this account = nothing was running.
+  }
+  relaunchApp()
+}
 // #5906 —— 渲染层刚把一条设备命令放回了 pending(失败条的「重试」)。那是 UPDATE,库那侧的 `command_created`
 // 广播只挂在 INSERT 上 ⇒ 没有任何事件会叫醒宿主;由发起方在这里说一声。
 ipcMain.on('device-runtime:commands-changed', () => {
@@ -4205,34 +4308,42 @@ const RELAUNCH_EXIT_WATCHDOG_MS = 12_000
 ipcMain.handle('app:relaunch', () => {
   // 先让这次 invoke 正常返回再退 —— 否则渲染层那个 await 挂在一个永远不会回的调用上,
   // 日志里只会看到一次无声中断,分不清是重启还是崩了。
-  setImmediate(() => {
-    // dev 下 vite-plugin-electron 拥有这个进程:Electron 一退,dev server 就跟着收摊,
-    // relaunch 起来的新进程会撞上 ERR_CONNECTION_REFUSED。这里不因此改成「dev 不重启」——
-    // 那会让开发态走一条产品态永远不走的路径,bug 只在打包后现形。响亮说清楚,让人重跑 pnpm dev。
-    if (process.env.VITE_DEV_SERVER_URL) {
-      relaunchLogger.warn(
-        {},
-        'dev 模式:重启应用时 vite dev server 会随本进程一起结束,' +
-          '新窗口连不上 —— 这是 dev 独有的,打包产物正常。重新 `pnpm dev` 即可。',
-      )
-    }
-    relaunchLogger.info({}, 'relaunching')
-    app.relaunch()
-    // ❌ 不用 app.exit():它强制退出、**跳过 before-quit**,于是既错过了优雅停机,又把退出
-    //    交给 Node 的正常销毁流程 —— 有活 PTY 时会永久卡死在 pty.node 的线程 join 上
-    //    (实测栈:FreeEnvironment → uv_run → ThreadSafeFinalize(pty.node) → pthread_join)。
-    //    进程退不掉,relaunch 的新进程也就永远不会 spawn,用户对着一个再也不回来的窗口等。
-    //    app.quit() 走 before-quit:三段停机各 5s 超时,末尾 reallyExit 硬退、不进 finalize。
-    app.quit()
-    // 看门狗:即便 before-quit 那条路也没能让进程走掉,重启也必须真的发生
-    // (product spec)。unref 让它自己永不拖住一次正常退出。
-    const watchdog = setTimeout(() => {
-      relaunchLogger.error({}, '退出超时:before-quit 未能终结本进程,硬杀自己以保证重启真的发生')
-      process.kill(process.pid, 'SIGKILL')
-    }, RELAUNCH_EXIT_WATCHDOG_MS)
-    watchdog.unref()
-  })
+  setImmediate(relaunchApp)
 })
+
+function relaunchApp(): void {
+  // dev 下 vite-plugin-electron 拥有这个进程:Electron 一退,dev server 就跟着收摊,
+  // relaunch 起来的新进程会撞上 ERR_CONNECTION_REFUSED。这里不因此改成「dev 不重启」——
+  // 那会让开发态走一条产品态永远不走的路径,bug 只在打包后现形。响亮说清楚,让人重跑 pnpm dev。
+  if (process.env.VITE_DEV_SERVER_URL) {
+    relaunchLogger.warn(
+      {},
+      'dev 模式:重启应用时 vite dev server 会随本进程一起结束,' +
+        '新窗口连不上 —— 这是 dev 独有的,打包产物正常。重新 `pnpm dev` 即可。',
+    )
+  }
+  relaunchLogger.info({}, 'relaunching')
+  // gugu-dev#1616 The next process chooses its own account's directories from the environment this one was started
+  // with: app.relaunch() hands over the current environment, which by now names this account's home and tmux server.
+  for (const [key, value] of Object.entries(inheritedAccountEnv)) {
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
+  app.relaunch()
+  // ❌ 不用 app.exit():它强制退出、**跳过 before-quit**,于是既错过了优雅停机,又把退出
+  //    交给 Node 的正常销毁流程 —— 有活 PTY 时会永久卡死在 pty.node 的线程 join 上
+  //    (实测栈:FreeEnvironment → uv_run → ThreadSafeFinalize(pty.node) → pthread_join)。
+  //    进程退不掉,relaunch 的新进程也就永远不会 spawn,用户对着一个再也不回来的窗口等。
+  //    app.quit() 走 before-quit:三段停机各 5s 超时,末尾 reallyExit 硬退、不进 finalize。
+  app.quit()
+  // 看门狗:即便 before-quit 那条路也没能让进程走掉,重启也必须真的发生
+  // (product spec)。unref 让它自己永不拖住一次正常退出。
+  const watchdog = setTimeout(() => {
+    relaunchLogger.error({}, '退出超时:before-quit 未能终结本进程,硬杀自己以保证重启真的发生')
+    process.kill(process.pid, 'SIGKILL')
+  }, RELAUNCH_EXIT_WATCHDOG_MS)
+  watchdog.unref()
+}
 
 ipcMain.handle(SESSION_SHELL_CHANNELS.fatalBoot, (event, message: unknown) => {
   reportFatalBoot(event, message, fatalBootDeps)

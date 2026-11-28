@@ -48,6 +48,9 @@ interface Window {
     getLocalDeviceSelfSnapshot: () => Promise<unknown>
     writeHumanAuthSession: (session: unknown) => Promise<void>
     clearHumanAuthSession: (reason: 'signed-out' | 'lost') => Promise<void>
+    enterAccountProfile?: (session: unknown) => Promise<'here' | 'switching'>
+    takeAccountHandoff?: () => Promise<{ access_token: string; refresh_token: string } | null>
+    confirmAccountLeave?: () => Promise<boolean>
     notifyDeviceCommandsChanged: () => void
     notifyScheduledTasksChanged: () => void
   }

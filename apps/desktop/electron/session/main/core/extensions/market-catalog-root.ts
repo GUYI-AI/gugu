@@ -12,6 +12,7 @@ import { } from '../../../../supabase';
 import feeds from '../../../../updateFeeds.json';
 import { DownloadSiteMarketBackend } from './download-site';
 import { CloudExtensionMarket } from './market-catalog';
+import { machineUserDataDir } from '../app/machine-user-data';
 
 /*
  * App 市场在这台机器上怎么接线:下载站的 `market/` 根(地址与更新 feed 同在 updateFeeds.json)。
@@ -54,7 +55,7 @@ let market: CloudExtensionMarket | null = null;
  * 「文件夹不见了」失败,而用户什么都没做错。
  */
 function marketDir(): string {
-  return path.join(app.getPath('userData'), 'extension-market');
+  return path.join(machineUserDataDir(), 'extension-market');
 }
 
 /**

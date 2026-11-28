@@ -8,6 +8,6 @@ import windowStateStore from 'electron-window-state'
  * window with full-screen geometry outside a full-screen Space, its top under the menu bar. Launching as a
  * normal window at the saved bounds avoids the half-entered state; the user re-enters full screen when wanted.
  */
-export function openMainWindowState(defaults: { defaultWidth: number; defaultHeight: number }) {
+export function openMainWindowState(defaults: { defaultWidth: number; defaultHeight: number; path: string }) {
   return windowStateStore({ ...defaults, fullScreen: false })
 }

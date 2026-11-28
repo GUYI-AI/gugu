@@ -54,7 +54,7 @@ import {
 import { makeChatClient } from '../supabase'
 import { agentsForOwner } from '@gugu/core/local/state/agentOwner'
 import { AGENT_CLOUD_IDENTITY_STATE_CACHE_KEY } from '@gugu/core/local/state/agentCloudIdentity'
-import { emdashAgentRegistry, registerEmdashAgent, unregisterEmdashAgent } from './emdash-agent-registry'
+import { registerEmdashAgent, unregisterEmdashAgent } from './emdash-agent-registry'
 // #5419 撤回一行没落地的本机身份 = 释放它的本机足迹,与「owner 删 agent」「回收器收 agent」
 // 是同一个动作的第三条驱动 ⇒ 用同一个实现。(该模块回头引本文件的 cache key 常量,两边都只在
 // 调用时用,模块初始化期互不依赖。)
@@ -1388,7 +1388,11 @@ type RosterRow = Awaited<ReturnType<typeof listAgents>>[number]
 
 /**
  * #4277 按(会话, 当前账号)找名册行。返回可直接走复用路径的那一行(绑定已在 emdash_session_id 上),
- * 或 undefined(该为当前账号新登记)。副作用只有两种:把别家的活动行停放、把自己停放过的行恢复。
+ * 或 undefined(该为当前账号新登记)。
+ *
+ * gugu-dev#1616 别家账号的会话不接管:一个进程只服务一个账号的本机数据(account-profiles.ts),别家的活动行
+ * 只会出现在 #1616 之前混过的老目录里 ⇒ 拒绝,❌ 再停放它、给当前账号在同一条会话上发新身份(那会让两个账号
+ * 互相看到对方的话,并让这条会话卡住)。自己停放过的行(#1616 之前的那次停放)照旧恢复;老目录的归属拆分在迁移里做。
  *
  * 判「归谁」:行上记了 owner 就认它;老行没记 ⇒ 有探针就问云端一次,没探针按「归我」认领。
  */
@@ -1413,7 +1417,7 @@ async function resolveOwnedBindingForSession(
   )
   if (active) {
     if (await isMine(active)) return active
-    await parkSessionpageAgentBinding(active, sessionId, env)
+    throw new SessionOfAnotherAccountError(sessionId)
   }
   for (const parked of roster) {
     if (!parked.gugu_user_id || parked === active) continue
@@ -1424,18 +1428,12 @@ async function resolveOwnedBindingForSession(
   return undefined
 }
 
-/** 停放:绑定挪到 parked 格、摘掉进程内的投递注册与 registry 项。名册行、云端身份一字不动。 */
-async function parkSessionpageAgentBinding(agent: RosterRow, sessionId: string, env: NodeJS.ProcessEnv): Promise<void> {
-  const cache: Record<string, unknown> = { ...(agent.cache ?? {}) }
-  delete cache[SESSION_CACHE_KEY]
-  cache[PARKED_SESSION_CACHE_KEY] = sessionId
-  await updateAgent({ guguUserId: agent.gugu_user_id }, { cache }, env)
-  emdashAgentRegistry.unregister(agent.gugu_user_id)
-  unregisterLocalSessionDeliveryForAgent(agent.gugu_user_id, sessionId)
-  createLogger('sessionpage/provision').info(
-    { sessionId, agentUserId: agent.gugu_user_id },
-    '#4277 parked another account agent binding; the current account gets its own',
-  )
+/** gugu-dev#1616 This session's agent belongs to another Gugu account on this computer: it is not taken over. */
+export class SessionOfAnotherAccountError extends Error {
+  override name = 'SessionOfAnotherAccountError'
+  constructor(readonly sessionId: string) {
+    super('This task belongs to another Gugu account on this computer')
+  }
 }
 
 /** 恢复:自己停放过的行把绑定挪回来。复用路径随后重新登记投递归属与 registry。

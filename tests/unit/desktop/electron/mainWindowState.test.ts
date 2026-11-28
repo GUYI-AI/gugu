@@ -33,7 +33,7 @@ describe('main window state restored on launch (#1641)', () => {
       displayBounds: display.bounds, isMaximized: false, isFullScreen: true,
     }))
     const { openMainWindowState } = await import('../../../../apps/desktop/electron/main-window-state')
-    const state = openMainWindowState({ defaultWidth: 1280, defaultHeight: 900 })
+    const state = openMainWindowState({ defaultWidth: 1280, defaultHeight: 900, path: userData })
     const win = fakeWindow()
     state.manage(win as never)
     expect(win.setFullScreen).not.toHaveBeenCalled()
@@ -47,7 +47,7 @@ describe('main window state restored on launch (#1641)', () => {
     }))
     const { openMainWindowState } = await import('../../../../apps/desktop/electron/main-window-state')
     const win = fakeWindow()
-    openMainWindowState({ defaultWidth: 1280, defaultHeight: 900 }).manage(win as never)
+    openMainWindowState({ defaultWidth: 1280, defaultHeight: 900, path: userData }).manage(win as never)
     expect(win.maximize).toHaveBeenCalledOnce()
   })
 })

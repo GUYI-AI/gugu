@@ -7,6 +7,7 @@ import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './Settin
 import { SettingsChoice } from './SettingsChoice'
 import { Button } from '../ui/Button'
 import { LogOut } from '@/lib/icons'
+import { platform } from '@/platform'
 import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
 import { useTranslation } from 'react-i18next'
 import { OCCUPATION_KEYS, OCCUPATION_OTHER_MAX, occupationComplete, parseOccupation, type Occupation } from '@gugu/core/shared/firstRun'
@@ -145,6 +146,11 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
     setLoggingOut(true)
     setLogoutError('')
     try {
+      // gugu-dev#1616 Leaving the account stops its running tasks: the host asks first when any are running.
+      if (platform.accountProfiles && !(await platform.accountProfiles.confirmLeave())) {
+        setLoggingOut(false)
+        return
+      }
       await logout()
     } catch (error) {
       log.error({ error }, 'logout failed')

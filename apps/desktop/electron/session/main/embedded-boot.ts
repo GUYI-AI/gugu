@@ -407,6 +407,7 @@ import { withRpcLogging } from '@main/lib/rpc-logging'
 import { pluginIdForAgentType } from '@gugu/core/agentTypes'
 import { lastModelSource } from '@main/core/usage/model-source-recorder'
 import { codexChannelSwitchNeedsNewThread } from '@main/core/agents/codex-channel-switch'
+import { machineUserDataDir } from '@main/core/app/machine-user-data'
 
 // The full router, re-exported so the host's renderer IPC bridge can type the surface.
 export const emdashRpcRouter = rpcRouter
@@ -508,7 +509,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   // 首启默认组(161 10-15):这个 profile 是不是第一次启动,只有在任何东西建出 App 的记录目录之前才看得出来 —— 所以最先。
   // 只归桌面和咕咕 server(first-run-apps.ts `firstRunAtBoot`):网页版的无头宿主不记、不装。
   const firstRun = firstRunAtBoot(browserFeatures)
-  firstRun.noteProfile(app.getPath('userData'))
+  firstRun.noteProfile(machineUserDataDir())
   // --- Electron-28 API gap shim FIRST — before any code path can touch a Session (index.ts:0). ---
   if (browserFeatures) installSessionClearDataShim()
 
