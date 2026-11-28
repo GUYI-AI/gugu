@@ -19,7 +19,11 @@ export function createSupabaseAccountRevisionSource(): AccountRevisionSource {
       .rpc(rpc, { p_after_revision: cursor, p_limit: limit })
       .abortSignal(signal)
       .then(answer => answer, (thrown: unknown) => ({ data: null, error: thrown }))
-    if (!signal.aborted) noteBackendAnswer(!error)
+    // A server without the compacted read answers that the function does not exist (PostgREST PGRST202): it is reachable,
+    // and too old for this client.
+    const outdated = rpc === 'sync_since_compact' && (error as { code?: unknown } | null)?.code === 'PGRST202'
+    if (!signal.aborted) noteBackendAnswer(!error || outdated)
+    if (outdated) throw new Error('The server is too old for this app: it has no chat.sync_since_compact (gugu-supabase release with the compacted catch-up read required)')
     if (error) throw error
     return parseRevisionPage(data)
   }

@@ -97,6 +97,8 @@ async function fetchOverlayRows<T>(
   messageIds: string[],
   /** Set for facts the caller cannot do without: a failed read throws with this message instead of coming back short. */
   unavailable?: string,
+  /** Otherwise the ids of a failed chunk land here: their facts are unknown, not empty. */
+  failed?: Set<string>,
 ): Promise<T[]> {
   const rows: T[] = []
   for (let i = 0; i < messageIds.length; i += OVERLAY_IN_CHUNK) {
@@ -107,6 +109,7 @@ async function fetchOverlayRows<T>(
       console.warn(
         `[chat] ${table} overlay fetch failed (offset ${i}/${messageIds.length}): ${error.message}`
       )
+      for (const id of chunk) failed?.add(id)
       continue
     }
     if (data) rows.push(...(data as T[]))
@@ -147,18 +150,21 @@ async function fetchMessageOverlays(
 }
 
 async function readMessageOverlays(messageIds: string[], userId: string): Promise<Map<string, MessageOverlay>> {
+  // A message whose reactions or deliveries could not be read gets no overlay: folding it would write empty facts over
+  // the ones it has. Callers leave a message without an overlay as it is.
+  const failed = new Set<string>()
   const [reactions, deliveries, blocks] = await Promise.all([
     fetchOverlayRows<MessageOverlayRows['reactions'][number]>(
-      'message_reactions', 'message_id, user_id, emoji', messageIds,
+      'message_reactions', 'message_id, user_id, emoji', messageIds, undefined, failed,
     ),
     fetchOverlayRows<MessageOverlayRows['deliveries'][number]>(
-      'message_deliveries', 'message_id, status, device_id', messageIds,
+      'message_deliveries', 'message_id, status, device_id', messageIds, undefined, failed,
     ),
     fetchOverlayRows<MessageOverlayRows['delivery_blocks'][number]>(
       'message_agent_delivery_blocks', 'message_id, agent_user_id, reason', messageIds, 'Message refusal status is unavailable',
     ),
   ])
-  return foldMessageOverlays(messageIds, userId, { reactions, deliveries, delivery_blocks: blocks })
+  return foldMessageOverlays(messageIds.filter(id => !failed.has(id)), userId, { reactions, deliveries, delivery_blocks: blocks })
 }
 
 export function foldMessageOverlays(

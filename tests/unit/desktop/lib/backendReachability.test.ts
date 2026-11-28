@@ -66,6 +66,19 @@ describe('backend recovered = the sync pull failed, then answered', () => {
     expect(recovered).toHaveBeenCalledOnce()
   })
 
+  it('a server without the compacted read is too old, not unreachable', async () => {
+    unbinds.push(bindBackendProbe(() => {}))
+    const recovered = vi.fn()
+    unbinds.push(subscribeBackendRecovered(recovered))
+    const source = createSupabaseAccountRevisionSource()
+    const live = new AbortController().signal
+    db.syncSince.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await expect(source.syncSince('5', 500, live, true)).rejects.toThrow('Failed to fetch')
+    db.syncSince.mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'Could not find the function chat.sync_since_compact' } })
+    await expect(source.syncSince('5', 500, live, true)).rejects.toThrow('The server is too old for this app')
+    expect(recovered).toHaveBeenCalledOnce()
+  })
+
   it('a new account starts from "answering": the last account\'s outage does not fire for it', () => {
     const unbind = bindBackendProbe(() => {})
     noteBackendAnswer(false)
