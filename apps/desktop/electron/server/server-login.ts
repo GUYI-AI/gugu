@@ -18,6 +18,8 @@
 import { egress } from '@gugu/core/shared/egress'
 import { REMOTE_TUNNEL_OPEN, SERVER_LOGIN_ACTION } from '@gugu/core/cloud/remoteTunnel'
 import os from 'node:os'
+import { rmSync } from 'node:fs'
+import { join } from 'node:path'
 import { app } from 'electron'
 import {
   MACHINE_LIMIT_ERROR,
@@ -34,6 +36,7 @@ import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase'
 import { getSupabaseAnonKey, getSupabaseUrl } from '@gugu/core/cloud/config'
 import { writeStoredServerSession } from './server-auth'
 import { prepareAccountLogin, assertAccountLayoutReady, assertAccountLogin } from './server-startup'
+import { UNINSTALL_ARCHIVE_RECEIPT } from './server-names'
 import { EXIT_CONFIG } from './server-exit'
 import { controllerOwnsUpdates } from './server-package-environment.mts'
 import { accountDataDir, applyAccountEnv, clearSignedOutMark, emailFromAccessToken, readServerAccount, serverHome, writeAccountMeta, writeServerConnectVia } from './server-layout'
@@ -211,6 +214,7 @@ async function pollUntilDone(
       // 知道是谁之后才把数据目录指到这个账号自己的目录,再落登录态(替身的 userData 第一次读到就缓存住)。
       prepareAccountLogin(serverHome(), userId)
       applyAccountEnv(userId)
+      rmSync(join(serverHome(), UNINSTALL_ARCHIVE_RECEIPT), { force: true })
       writeAccountMeta(userId, email)
       writeStoredServerSession(tokens)
       // 重新登上了:之前「登录已失效 / 被移除」的说法作废。

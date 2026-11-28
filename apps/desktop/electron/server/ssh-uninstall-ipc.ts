@@ -11,8 +11,6 @@ import type { BrowserWindow, IpcMain } from 'electron'
 import {
   SERVER_SSH_MACHINES_CHANNELS,
   type ServerUninstallAnswer,
-  type ServerUninstallConfirmation,
-  type ServerUninstallDisposition,
   type ServerUninstallStartResponse,
   type ServerUninstallState,
 } from '../../src/lib/serverSshMachines'
@@ -25,7 +23,8 @@ type ActiveUninstall = {
   run: UninstallRun
   abort: AbortController
   prompts: SshPromptBroker
-  confirm: ((disposition: ServerUninstallDisposition | null) => void) | null
+  confirm: ((confirmed: boolean) => void) | null
+  userId: string
 }
 
 export function registerServerSshUninstallIpc(options: {
@@ -48,14 +47,14 @@ export function registerServerSshUninstallIpc(options: {
       const deviceId = typeof request?.deviceId === 'string' ? request.deviceId : ''
       const userId = await options.currentUserId().catch(() => null)
       const machine = userId ? options.store.list().find((m) => m.deviceId === deviceId && m.ownerUserId === userId) : undefined
-      if (!machine) return { error: 'unknownMachine' }
+      if (!userId || !machine) return { error: 'unknownMachine' }
       const target = sshTargetOf(machine)
       const runId = crypto.randomUUID()
       const abort = new AbortController()
       const run = new UninstallRun(runId, deviceId, machine.display, push)
       // 与添加机器同一套提问分类(指纹 / 密码 / 口令 / 验证码 / 提醒)与「再试一次」,界面也是同一张卡片。
       const prompts = createSshPromptBroker({ onPrompt: (prompt) => run.setPrompt(prompt), stopped: () => abort.signal.aborted })
-      const active: ActiveUninstall = { run, abort, prompts, confirm: null }
+      const active: ActiveUninstall = { run, abort, prompts, confirm: null, userId }
       runs.set(runId, active)
 
       void (async () => {
@@ -69,11 +68,11 @@ export function registerServerSshUninstallIpc(options: {
             controlPath: workspaceControlPath(workspace.dir),
             currentUserId: userId,
             waitForConfirm: () =>
-              new Promise<ServerUninstallDisposition | null>((resolve) => {
-                if (abort.signal.aborted) return resolve(null)
-                active.confirm = (disposition) => {
+              new Promise<boolean>((resolve) => {
+                if (abort.signal.aborted) return resolve(false)
+                active.confirm = (confirmed) => {
                   active.confirm = null
-                  resolve(disposition)
+                  resolve(confirmed)
                 }
               }),
             signal: abort.signal,
@@ -94,7 +93,7 @@ export function registerServerSshUninstallIpc(options: {
           }
         } finally {
           prompts.cancelAll()
-          active.confirm?.(null)
+          active.confirm?.(false)
           const controlPath = workspace ? workspaceControlPath(workspace.dir) : null
           if (controlPath) {
             await new Promise<void>((resolve) => {
@@ -114,12 +113,11 @@ export function registerServerSshUninstallIpc(options: {
     },
   )
 
-  options.ipcMain.handle(SERVER_SSH_MACHINES_CHANNELS.uninstallConfirm, (_event, request: Partial<ServerUninstallConfirmation> | null) => {
-    const { runId, disposition } = request ?? {}
-    if (typeof runId !== 'string' || (disposition !== 'remove' && disposition !== 'cascade' && disposition !== 'preserve')) return false
+  options.ipcMain.handle(SERVER_SSH_MACHINES_CHANNELS.uninstallConfirm, async (_event, runId: unknown) => {
+    if (typeof runId !== 'string') return false
     const active = runs.get(runId)
-    if (!active?.confirm) return false
-    active.confirm(disposition)
+    if (!active?.confirm || await options.currentUserId() !== active.userId || !active.confirm) return false
+    active.confirm(true)
     return true
   })
 
@@ -127,7 +125,7 @@ export function registerServerSshUninstallIpc(options: {
     const active = runs.get(String(runId))
     if (!active) return false
     active.abort.abort()
-    active.confirm?.(null)
+    active.confirm?.(false)
     active.prompts.cancelAll()
     return true
   })

@@ -6,6 +6,9 @@
  */
 import { tierSuffix } from '@gugu/core/shared/ui/guguLink'
 
+export const UNINSTALL_ARCHIVE_RECEIPT = 'uninstall-archive-ready'
+export const SERVER_LOGIN_REVOKED = '__GUGU_SERVER_LOGIN_REVOKED__'
+
 export type ServerNames = {
   /** 家目录下的数据目录名。 */
   homeDir: string

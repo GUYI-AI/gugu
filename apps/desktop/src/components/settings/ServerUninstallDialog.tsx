@@ -1,10 +1,12 @@
-import { messageForUser } from '@/lib/userFacingError';
+import { messageForUser } from '@/lib/userFacingError'
+import { archiveOwnedAgent } from '@/lib/archiveOwnedAgent'
+import { rpcOn } from '@renderer/lib/ipc'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Device } from '@gugu/core/shared/types/chat'
+import type { DevicesContextValue } from '../../store/devicesContext'
 import {
   SERVER_SSH_MACHINES_CHANNELS,
-  type ServerUninstallConfirmation,
   type ServerUninstallStartResponse,
   type ServerUninstallState,
 } from '../../lib/serverSshMachines'
@@ -12,14 +14,12 @@ import { rendererLogger } from '../../lib/log'
 import { desktopIpc } from '../../platform/desktopIpc'
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
-import type { BoundAgentsState } from '../../lib/deviceRowModel'
-import { BoundAgentsConfirm } from './DeviceRemoveDialog'
 import { SshPromptCard } from './addServer/SshPromptCard'
 
 // #6264「从这台机器上卸载咕咕 server」(只给这台电脑用 SSH 装上的机器)。
 // 经 SSH 连过去停服务、删安装。
 // 两段式:先连上去看清楚装了什么、谁登着,摆在确认页上(卸载会让同机的其他账号一起用不了,要点名);
-// 人确认后才卸;保留智能体时设备行继续承载绑定。连不上时给退路:改为只移除。
+// 人确认后归档宿主的任务，再卸载。账号数据原位保留供重装使用。
 
 const api = desktopIpc
 const log = rendererLogger('devices')
@@ -29,24 +29,34 @@ const muted = 'text-[var(--muted-fg)]'
 
 /** 失败原因 → 一句人话。SSH 那几种与「添加一台机器」同一套说法。 */
 function reasonKey(reason: NonNullable<ServerUninstallState['failure']>['reason']): string {
-  return reason === 'uninstallFailed' || reason === 'revokeFailed' ? `devices.uninstall.${reason}` : `devices.addServer.reasons.${reason}`
+  return reason === 'uninstallFailed' || reason === 'revokeFailed' || reason === 'updateRequired' ? `devices.uninstall.${reason}` : `devices.addServer.reasons.${reason}`
+}
+
+async function archiveServerTasks(deviceId: string, listBoundAgents: DevicesContextValue['listBoundAgents']): Promise<void> {
+  const host = rpcOn(deviceId)
+  const agents = await listBoundAgents(deviceId)
+  for (const agent of agents) await archiveOwnedAgent(agent.id, { removeSocialIdentity: true })
+  // The host still knows its active tasks when identity archival committed but the host action did not.
+  for (const task of await host.sessions.getSessions()) {
+    const outcome = await host.sessions.archiveSession(task.projectId, task.id, { removeSocialIdentity: true })
+    if (outcome.unreached.length) throw new Error('The task host could not be reached')
+  }
+  if ((await listBoundAgents(deviceId)).length) throw new Error('Some agents still need to be archived')
 }
 
 export function ServerUninstallDialog({
   device,
   address,
-  agents,
-  onCascadeChange,
+  listBoundAgents,
   onRemove,
   onRemoveOnly,
   onClose,
 }: {
   device: Device
   address: string
-  agents: BoundAgentsState
-  onCascadeChange: (value: boolean) => void
-  /** 卸完之后按已确认的级联选项移除设备。 */
-  onRemove: (cascade: boolean) => Promise<void>
+  listBoundAgents: DevicesContextValue['listBoundAgents']
+  /** Remove the empty device after archive and uninstall. */
+  onRemove: () => Promise<void>
   /** 连不上 / 已经没装:改走「只移除」。 */
   onRemoveOnly: () => void
   onClose: () => void
@@ -56,6 +66,11 @@ export function ServerUninstallDialog({
   const [states, setStates] = useState<Record<string, ServerUninstallState>>({})
   const [unknownMachine, setUnknownMachine] = useState(false)
   const [removed, setRemoved] = useState<true | string | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  const [archiving, setArchiving] = useState(false)
+  const [archiveError, setArchiveError] = useState('')
+  const [agentCount, setAgentCount] = useState<number | null>(null)
+  const [countError, setCountError] = useState(false)
   const runIdRef = useRef<string | null>(null)
   const removeStarted = useRef(false)
 
@@ -91,7 +106,7 @@ export function ServerUninstallDialog({
       const id = runIdRef.current
       if (id) void api()?.invoke(SERVER_SSH_MACHINES_CHANNELS.uninstallCancel, id)
     }
-  }, [device.device_id])
+  }, [device.device_id, attempt])
 
   const state = runId ? states[runId] ?? null : null
   const phase = state?.phase ?? (unknownMachine ? null : 'inspecting')
@@ -100,32 +115,60 @@ export function ServerUninstallDialog({
     if (state?.failure) log.error({ reason: state.failure.reason, detail: state.failure.detail ?? null, target: state.target }, 'server uninstall failed')
   }, [state?.failure, state?.target])
 
-  const disposition = state?.disposition
+  const inspection = state?.inspection ?? null
+  const othersSignedIn = inspection?.accounts.some((account) => !account.you && account.signedIn) ?? false
+  const needsSignIn = Boolean(inspection && !inspection.archiveReady && inspection.accounts.length > 0
+    && !inspection.accounts.some((account) => account.you && account.signedIn))
 
   useEffect(() => {
-    if (phase !== 'done' || !disposition || removeStarted.current) return
+    if (phase !== 'confirm' || !inspection?.installed) return
+    let live = true
+    void listBoundAgents(device.device_id).then(
+      (agents) => { if (live) setAgentCount(agents.length) },
+      () => { if (live) setCountError(true) },
+    )
+    return () => { live = false }
+  }, [phase, inspection?.installed, device.device_id, listBoundAgents])
+
+  useEffect(() => {
+    if (phase !== 'done' || removeStarted.current) return
     removeStarted.current = true
-    if (disposition === 'preserve') setRemoved(true)
-    else void onRemove(disposition === 'cascade').then(() => setRemoved(true), (error: unknown) => setRemoved(messageForUser(error)))
-  }, [phase, disposition, onRemove])
+    void onRemove().then(() => setRemoved(true), (error: unknown) => setRemoved(messageForUser(error)))
+  }, [phase, onRemove])
 
   const answer = useCallback((value: string | null) => {
     if (!state?.prompt) return
     void api()?.invoke(SERVER_SSH_MACHINES_CHANNELS.uninstallAnswer, { runId: state.runId, promptId: state.prompt.id, value })
   }, [state])
 
-  const confirm = useCallback(() => {
-    if (!runId || agents.loading) return
-    const confirmation: ServerUninstallConfirmation = {
-      runId,
-      disposition: agents.agents.length === 0 ? 'remove' : agents.cascadeChecked ? 'cascade' : 'preserve',
+  const confirm = async () => {
+    const electron = api()
+    if (!electron || !runId || !inspection?.supported || needsSignIn || othersSignedIn || agentCount === null || archiving) return
+    setArchiving(true)
+    setArchiveError('')
+    try {
+      if (!inspection.archiveReady && inspection.accounts.length > 0) await archiveServerTasks(device.device_id, listBoundAgents)
+      else if (agentCount > 0) throw new Error(t('devices.uninstall.signInRequired'))
+      if (!(await electron.invoke(SERVER_SSH_MACHINES_CHANNELS.uninstallConfirm, runId))) {
+        throw new Error(t('devices.uninstall.confirmExpired'))
+      }
+    } catch (error) {
+      setArchiveError(messageForUser(error))
+    } finally {
+      setArchiving(false)
     }
-    void api()?.invoke(SERVER_SSH_MACHINES_CHANNELS.uninstallConfirm, confirmation)
-  }, [runId, agents])
+  }
 
-  const inspection = state?.inspection ?? null
-  const othersSignedIn = inspection?.accounts.some((account) => !account.you && account.signedIn) ?? false
-  const uninstalling = phase === 'uninstalling' || (phase === 'done' && removed === null)
+  const retry = () => {
+    setRunId(null)
+    setStates({})
+    setUnknownMachine(false)
+    setAgentCount(null)
+    setCountError(false)
+    setArchiveError('')
+    setAttempt(value => value + 1)
+  }
+  const uninstalling = archiving || phase === 'uninstalling' || (phase === 'done' && removed === null)
   const finished = phase === 'failed' || phase === 'cancelled' || (phase === 'done' && removed !== null)
 
   return (
@@ -158,9 +201,9 @@ export function ServerUninstallDialog({
               <div className={`${body} text-[var(--fg)]`}>{t('devices.uninstall.willDelete')}</div>
               <ul className={`${body} ${muted} m-0 list-disc pl-5`}>
                 <li>{inspection.version ? t('devices.uninstall.deleteProgramVersion', { version: inspection.version }) : t('devices.uninstall.deleteProgram')}</li>
-                <li>{t('devices.uninstall.deleteData')}</li>
+                <li>{t('devices.uninstall.revokeLogin')}</li>
               </ul>
-              <div className={`${body} ${muted}`}>{t('devices.uninstall.keep')}</div>
+              <div className={`${body} ${muted}`}>{inspection.home ? t('devices.uninstall.keepAt', { path: inspection.home }) : t('devices.uninstall.keep')}</div>
             </div>
             {inspection.accounts.length > 0 && (
               <div className="flex flex-col gap-1">
@@ -174,21 +217,26 @@ export function ServerUninstallDialog({
                     </li>
                   ))}
                 </ul>
-                {othersSignedIn && <div className={`${body} text-[var(--warn-fg)]`}>{t('devices.uninstall.othersWarning')}</div>}
+                {othersSignedIn && <div className={`${body} text-[var(--warn-fg)]`}>{t('devices.uninstall.otherAccount')}</div>}
               </div>
             )}
           </>
         )}
 
-        {phase === 'confirm' && (
-          <BoundAgentsConfirm state={agents} onCascadeChange={onCascadeChange} uninstall />
+        {phase === 'confirm' && inspection?.installed && (
+          <div className={`${body} ${muted}`}>
+            {!inspection.supported ? t('devices.uninstall.updateRequired') : needsSignIn ? t('devices.uninstall.signInRequired') :
+              countError ? t('devices.uninstall.countFailed') : agentCount === null ? t('devices.checkingAgents') :
+                t('devices.uninstall.boundAgents', { count: agentCount })}
+          </div>
         )}
+        {archiveError && <div role="alert" className={`${body} text-[var(--danger-fg)]`}>{t('devices.uninstall.archiveFailed', { reason: archiveError })}</div>}
 
-        {uninstalling && <div className={`${body} ${muted}`}>{t('devices.uninstall.uninstalling')}</div>}
+        {uninstalling && <div className={`${body} ${muted}`}>{t(archiving ? 'devices.uninstall.archiving' : 'devices.uninstall.uninstalling')}</div>}
 
         {phase === 'done' && removed !== null && (
           <div className={`${body} text-[var(--fg)]`}>
-            {removed === true ? t(disposition === 'preserve' ? 'devices.uninstall.donePreservingAgents' : 'devices.uninstall.done', { target: state?.target ?? address }) : removed}
+            {removed === true ? t('devices.uninstall.done', { target: state?.target ?? address }) : removed}
           </div>
         )}
 
@@ -200,14 +248,13 @@ export function ServerUninstallDialog({
 
         <div className="flex justify-end gap-2">
           {!finished && !uninstalling && <Button size="sm" onClick={onClose}>{t('devices.cancel')}</Button>}
-          {phase === 'confirm' && inspection?.installed && (
-            <Button size="sm" variant="danger" disabled={agents.loading} onClick={confirm}>{t('devices.uninstall.confirm')}</Button>
+          {phase === 'confirm' && inspection?.installed && !archiving && (
+            <Button size="sm" variant="danger" disabled={!inspection.supported || needsSignIn || othersSignedIn || agentCount === null} onClick={() => void confirm()}>{t('devices.uninstall.confirm')}</Button>
           )}
-          {((phase === 'confirm' && inspection && !inspection.installed) || phase === 'failed' || unknownMachine) && (
-            <Button size="sm" variant={phase === 'failed' ? 'secondary' : 'danger'} onClick={onRemoveOnly}>
-              {phase === 'failed' ? t('devices.uninstall.removeOnly') : t('devices.uninstall.removeFromList')}
-            </Button>
+          {((phase === 'confirm' && inspection && !inspection.installed) || unknownMachine) && (
+            <Button size="sm" variant="danger" onClick={onRemoveOnly}>{t('devices.uninstall.removeFromList')}</Button>
           )}
+          {(phase === 'failed' || countError) && <Button size="sm" onClick={retry}>{t('devices.uninstall.retry')}</Button>}
           {finished && <Button size="sm" variant={phase === 'done' ? 'primary' : 'secondary'} onClick={onClose}>{t('devices.uninstall.close')}</Button>}
         </div>
       </div>

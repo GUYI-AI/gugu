@@ -90,8 +90,7 @@ export function useDeviceRemoval(machines: readonly DeviceMachine[], { onRemoved
 
   const openUninstall = useCallback((device: Device) => {
     setDialog(current => ({ kind: 'uninstall', device, machineKey: current?.kind === 'versions' ? current.machineKey : undefined }))
-    void loadAgents([device])
-  }, [loadAgents])
+  }, [])
 
   const openVersions = useCallback((device: Device) => {
     const machine = deviceMachineFor(machines, device.device_id)
@@ -176,12 +175,12 @@ export function useDeviceRemoval(machines: readonly DeviceMachine[], { onRemoved
 
     {dialog?.kind === 'uninstall' && (
       <ServerUninstallDialog
+        key={dialog.device.device_id}
         device={dialog.device}
         address={addressOf(dialog.device.device_id) ?? dialog.device.label}
-        agents={agents}
-        onCascadeChange={(value) => setAgents((s) => ({ ...s, cascadeChecked: value }))}
-        onRemove={(cascade) => removeDevice(dialog.device, cascade)}
-        onRemoveOnly={() => setDialog({ kind: 'remove', devices: [dialog.device], removing: false, failed: '', machineKey: dialog.machineKey })}
+        listBoundAgents={listBoundAgents}
+        onRemove={() => removeDevice(dialog.device, false)}
+        onRemoveOnly={() => openRemove(dialog.device)}
         onClose={() => back(dialog.machineKey)}
       />
     )}

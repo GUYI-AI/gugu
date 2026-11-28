@@ -16,6 +16,19 @@ import type { ServerUninstallState } from '@/lib/serverSshMachines'
 const retryMatch = vi.hoisted(() => vi.fn(async (_deviceId: string) => true))
 const restartNow = vi.hoisted(() => vi.fn(async (_deviceId: string, _version: string, _confirmedRpc: boolean) => ({ requested: true })))
 vi.mock('@/lib/serverVersionRetry', () => ({ retryServerVersionMatch: retryMatch, restartServerVersionNow: restartNow, readServerVersionSwitchBusyAgents: async () => undefined }))
+const archiveAgent = vi.hoisted(() => vi.fn())
+const hostSessions = vi.hoisted(() => ({
+  getSessions: vi.fn(),
+  archiveSession: vi.fn(),
+}))
+vi.mock('@/lib/archiveOwnedAgent', async (original) => ({
+  ...await original<typeof import('@/lib/archiveOwnedAgent')>(),
+  archiveOwnedAgent: archiveAgent,
+}))
+vi.mock('@renderer/lib/ipc', async (original) => {
+  const actual = await original<typeof import('@renderer/lib/ipc')>()
+  return { ...actual, rpcOn: (id: string | null | undefined) => id === 'srv' ? { sessions: hostSessions } : actual.rpcOn(id) }
+})
 function device(overrides: Partial<Device> = {}): Device {
   return {
     device_id: 'remote',
@@ -547,15 +560,20 @@ describe('DevicesSection interaction', () => {
     expect(ids).toEqual(['gpu'])
   })
 
-  it.each(['preserve', 'cascade'] as const)('uses the selected %s disposition when uninstalling an SSH server', async (disposition) => {
+  it('archives tasks before uninstall confirmation and removes the device without cascading', async () => {
     const confirming: ServerUninstallState = {
-      runId: 'uninstall-1', deviceId: 'srv', target: 'alice@box', phase: 'confirm', disposition: null,
-      inspection: { installed: true, version: '1.0', accounts: [] }, prompt: null, failure: null,
+      runId: 'uninstall-1', deviceId: 'srv', target: 'alice@box', phase: 'confirm',
+      inspection: {
+        installed: true, supported: true, archiveReady: false, home: '/home/alice/.gugu-server', version: '1.0',
+        accounts: [{ email: null, signedIn: true, you: true }],
+      },
+      prompt: null, failure: null,
     }
     let pushState: ((state: ServerUninstallState) => void) | undefined
     const invoke = vi.fn(async (channel: string, _arg?: unknown) => {
       if (channel === 'server-ssh-machines:describe') return [{ deviceId: 'srv', display: 'alice@box' }]
       if (channel === 'server-ssh-machines:uninstall-start') return { runId: confirming.runId, state: confirming }
+      if (channel === 'server-ssh-machines:uninstall-confirm') return true
       return null
     })
     ;(window as unknown as { electronAPI: unknown }).electronAPI = {
@@ -565,49 +583,47 @@ describe('DevicesSection interaction', () => {
         return () => undefined
       },
     }
+    const agent = { id: 'agent-1', display_name: 'Research Agent', avatar: null }
+    let bound = [agent]
+    const finishing = Promise.withResolvers<void>()
+    archiveAgent.mockReset().mockRejectedValueOnce(new Error('Host did not respond')).mockImplementationOnce(async () => {
+      await finishing.promise
+      bound = []
+    })
+    hostSessions.getSessions.mockReset().mockResolvedValue([{ id: 'unfinished-task', projectId: 'project-1' }])
+    hostSessions.archiveSession.mockReset().mockResolvedValue({ archived: [], unreached: [] })
     try {
       const value = store({
         devices: [device({ device_id: 'srv', label: 'Linux 1', capabilities: { terminals: [], runtimes: [], host_kind: 'server' } })],
-        listBoundAgents: vi.fn(async () => [
-          { id: 'agent-1', display_name: 'Research Agent', avatar: null },
-          { id: 'agent-2', display_name: 'Review Agent', avatar: null },
-        ]),
+        listBoundAgents: vi.fn(async () => bound),
       })
       await act(async () => {
         root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection)))
       })
       await flush()
-      await openMenu(0)
-      expect(document.body.querySelector('[data-testid="settings-device-copy-address"]')).not.toBeNull()
-      expect(document.body.querySelector('[data-testid="settings-device-remove-button"]')?.textContent).toContain('移除这台机器')
-      const item = document.body.querySelector<HTMLElement>('[data-testid="settings-device-uninstall-button"]')!
-      expect(item.textContent).toContain('卸载咕咕 server')
-      await act(async () => { item.click() })
+      await openMenuItem('settings-device-uninstall-button')
       const dialog = document.body.querySelector<HTMLElement>('[data-testid="settings-device-uninstall-dialog"]')!
       expect(value.listBoundAgents).toHaveBeenCalledWith('srv')
-      expect(dialog.textContent).toContain('共有 2 条智能体记录')
-      expect(dialog.textContent).toContain('同时永久删除这 2 个智能体')
+      expect(dialog.textContent).toContain('还有 1 个智能体需要归档')
+      expect(dialog.textContent).toContain('/home/alice/.gugu-server')
       expect(dialog.textContent).not.toContain('Research Agent')
-      expect(dialog.textContent).not.toContain('Review Agent')
+      expect(dialog.querySelector('input[type="checkbox"]')).toBeNull()
 
-      const confirm = buttonByText(dialog, '卸载')
-      const checkbox = dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')!
-      expect(checkbox.checked).toBe(false)
-      expect(confirm.disabled).toBe(false)
-      await act(async () => { checkbox.click() })
-      if (disposition === 'preserve') await act(async () => { checkbox.click() })
-      expect(checkbox.checked).toBe(disposition === 'cascade')
-      expect(confirm.disabled).toBe(false)
-      await act(async () => { confirm.click() })
-      expect(invoke).toHaveBeenCalledWith('server-ssh-machines:uninstall-confirm', { runId: confirming.runId, disposition })
+      const confirms = () => invoke.mock.calls.filter(([channel]) => channel === 'server-ssh-machines:uninstall-confirm')
+      await act(async () => { buttonByText(dialog, '卸载').click() })
+      expect(dialog.textContent).toContain('任务归档未完成')
+      expect(confirms()).toHaveLength(0)
+      await act(async () => { buttonByText(dialog, '卸载').click() })
+      expect(archiveAgent).toHaveBeenLastCalledWith(agent.id, { removeSocialIdentity: true })
+      expect(confirms()).toHaveLength(0)
+      await act(async () => { finishing.resolve() })
+      expect(hostSessions.archiveSession).toHaveBeenCalledWith('project-1', 'unfinished-task', { removeSocialIdentity: true })
+      expect(confirms()).toEqual([['server-ssh-machines:uninstall-confirm', confirming.runId]])
       expect(value.remove).not.toHaveBeenCalled()
-      await act(async () => { pushState!({ ...confirming, phase: 'done', disposition }) })
-      if (disposition === 'cascade') {
-        expect(value.remove).toHaveBeenCalledWith('srv', { cascade: true })
-      } else {
-        expect(value.remove).not.toHaveBeenCalled()
-        expect(dialog.textContent).toContain('智能体记录保留在离线设备记录下')
-      }
+
+      await act(async () => { pushState!({ ...confirming, phase: 'done' }) })
+      expect(value.remove).toHaveBeenCalledWith('srv', { cascade: false })
+      expect(dialog.textContent).toContain('已归档任务保留在原机')
     } finally {
       delete (window as unknown as { electronAPI?: unknown }).electronAPI
     }

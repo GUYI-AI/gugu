@@ -224,6 +224,11 @@ export function stopSystemdService(): void {
   if (!result.ok) throw new Error(`systemd 停止 server 失败:${result.out}`)
 }
 
+/** Prevent a unit that was force-stopped during uninstall from restarting while the login is being revoked. */
+export function stopRegisteredSystemdService(): void {
+  if (process.platform === 'linux' && fs.existsSync(unitPath())) stopSystemdService()
+}
+
 function lingerEnabled(user: string): boolean {
   const r = tryRun('loginctl', ['show-user', user, '-p', 'Linger', '--value'])
   return r.ok && r.out === 'yes'

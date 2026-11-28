@@ -13,32 +13,28 @@ import { Sheet } from '../ui/Sheet'
 
 const body = 'text-[length:var(--font-body)] leading-[1.5]'
 
-/** 移除与卸载共用绑定智能体数量和级联确认；移除页还显示姓名。 */
+/** Show which agents are bound to the device before removing it. */
 export function BoundAgentsConfirm({
   state,
   onCascadeChange,
   removesVersion = false,
-  uninstall = false,
 }: {
   state: BoundAgentsState
   onCascadeChange: (value: boolean) => void
   removesVersion?: boolean
-  uninstall?: boolean
 }) {
   const { t } = useTranslation('settings')
   if (state.loading) return <div className={`${body} text-[var(--muted-fg)]`}>{t('devices.checkingAgents')}</div>
   if (state.agents.length === 0) return null
-  const countKey = uninstall ? 'devices.uninstall.boundAgents' : removesVersion ? 'devices.remove.version.boundAgents' : 'devices.boundAgents'
+  const countKey = removesVersion ? 'devices.remove.version.boundAgents' : 'devices.boundAgents'
   return (
     <div className="flex flex-col gap-2">
       <div className={`${body} text-[var(--muted-fg)]`}>{t(countKey, { count: state.agents.length })}</div>
-      {!uninstall && (
-        <div className="flex max-h-40 flex-col gap-[5px] overflow-y-auto rounded-[var(--radius-document)] bg-foreground/[0.025] px-[10px] py-2 dark:bg-foreground/[0.04]">
-          {state.agents.map((agent) => (
-            <div key={agent.id} className={`${body} truncate text-[var(--fg)]`}>{agent.display_name}</div>
-          ))}
-        </div>
-      )}
+      <div className="flex max-h-40 flex-col gap-[5px] overflow-y-auto rounded-[var(--radius-document)] bg-foreground/[0.025] px-[10px] py-2 dark:bg-foreground/[0.04]">
+        {state.agents.map((agent) => (
+          <div key={agent.id} className={`${body} shrink-0 truncate text-[var(--fg)]`}>{agent.display_name}</div>
+        ))}
+      </div>
       <label className={`${body} flex cursor-pointer items-start gap-2 text-[var(--fg)]`}>
         <input
           type="checkbox"
