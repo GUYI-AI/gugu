@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation';
 import { observable, runInAction } from 'mobx';
+import { InitialResizeObserver } from '../../../../../../../tests/support/initialResizeObserver';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -187,6 +188,7 @@ function ShellProbe() {
 }
 
 beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', InitialResizeObserver);
   installShellSlots();
   runInAction(() => {
     state.live.shownMore.clear();
@@ -219,6 +221,7 @@ beforeEach(() => {
   root = createRoot(host);
 });
 afterEach(() => {
+  vi.unstubAllGlobals();
   act(() => root.unmount());
   host.remove();
   act(() => setInnerSidebarTopicsAll(null));
