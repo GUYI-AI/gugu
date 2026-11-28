@@ -1,14 +1,13 @@
 import type { RuntimeAuth } from '@gugu/core'
 import type { DeviceRpcHandlers } from '@gugu/core/cloud/deviceRpcResponder'
-import { mkdir, open, rename, rm } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
+import { mkdir } from 'node:fs/promises'
 import { readCachedDeviceId } from '@gugu/core/cloud/deviceRuntime'
 import { accountAttachmentsEndpoint, attachmentRequest, offerImagePreviewOf } from '@gugu/core/cloud/attachmentsApi'
 import { getSupabaseAnonKey, getSupabaseUrl } from '@gugu/core/cloud/config'
 import { createFileMetadataLoader } from '@gugu/core/cloud/fileMetadata'
 import { cloudFileProviders } from '@gugu/core/cloud/fileProviders'
-import { createFileCache, createFileChunkCache, createFileSink, createFileSaver, fileCacheDirectory, localCopy, storeFileBytes, writeFileHandle } from '@gugu/core/local/files/fileSnapshots'
-import { DEVICE_STORE, FILE_CHUNK_BYTES, createFileResolver, type FileActor, type FileBytes, type FileContext, type FileMetadata, type FilePreview, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { createFileCache, createFileChunkCache, createFileSink, createFileSaver, fileCacheDirectory, localCopy, storeFileBytes, writeFileAt, writeFileBytes, writeFileHandle } from '@gugu/core/local/files/fileSnapshots'
+import { DEVICE_STORE, createFileResolver, type FileActor, type FileBytes, type FileContext, type FileMetadata, type FilePreview, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { coreLogger } from '@gugu/core/log'
 import { parseFileStorage } from '@gugu/core/shared/fileStorage'
 import { readUserSettingsConfig, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
@@ -18,6 +17,7 @@ import { createProjectTransferHost } from './projectFileTransferHost'
 import { findProjectFileByName, heldRevisionBySha, type ProjectFileVersionLookup } from './sessionpage/sessionpage-project-groups'
 import type { setAccountFileResolver } from './session/main/core/extensions/account-token'
 import { createProjectFilePublisher } from './projectFilePublication'
+import { copySnapshot } from './projectFileImport'
 import type { makeIdentityClient } from './supabase'
 
 /** One composition root for native IPC, Apps, MCP and inbox. Identity lookup here never registers or refreshes. */
@@ -49,8 +49,8 @@ export function createDesktopFileAccess(deps: {
   rpc(name: string, args: Record<string, unknown>): Promise<unknown>
   /** Where this device keeps what it sends into project chats it binds no project to (DEVICE_STORE). */
   deviceStore: string
-  /** This device's Gugu home: its file cache (`fileCacheDirectory`) keeps what the window read over the network, up to `cacheBytes`. */
-  home: string; cacheBytes?: number
+  /** This device's Gugu home: its file cache (`fileCacheDirectory`) keeps what the window read over the network. */
+  home: string
   /** The identity schema, as the signed-in account: its own settings and projects. */
   identityDb(accessToken: string): ReturnType<typeof makeIdentityClient>
 }) {
@@ -89,13 +89,13 @@ export function createDesktopFileAccess(deps: {
   }
   const saveTo = createFileSaver(providers)
   const resolve = createFileResolver({ ...providers, saveTo })
-  const cache = createFileCache(fileCacheDirectory(deps.home), deps.cacheBytes), log = coreLogger('file-cache')
+  const cache = createFileCache(fileCacheDirectory(deps.home)), log = coreLogger('file-cache')
   const blobBytes = (blob: Blob): FileBytes => ({ size: blob.size, here: true, read: async (offset, length) => new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()), dispose: async () => {} })
   /**
    * This machine's bytes of `sha256`, without the network: the file store's copy or an original this machine sent, a
    * version it holds in a project, else what the window read before (the file cache).
    */
-  const here = async (sha256: string): Promise<FileBytes | null> => {
+  const here = async (sha256: string): Promise<FileBytes & { path?: string } | null> => {
     const kept = await localCopy(deps.home, sha256) ?? await held(sha256)
     return kept ? blobBytes(kept) : cache.read(sha256)
   }
@@ -130,16 +130,10 @@ export function createDesktopFileAccess(deps: {
     },
     expiredPreview: async (preview: FilePreview, context: FileContext) => new Uint8Array(await (await providers.expiredPreview!(preview, context)).arrayBuffer()),
   }
-  /** `bytes` written beside `target` under a private name, then into place: a save that fails leaves nothing there. */
-  const save = async (bytes: FileBytes, target: string) => {
-    const partial = `${target}.${randomUUID()}.part`
-    try {
-      const output = await open(partial, 'wx', 0o644)
-      try { for (let offset = 0; offset < bytes.size; offset += FILE_CHUNK_BYTES) await output.writeFile(await bytes.read(offset, Math.min(FILE_CHUNK_BYTES, bytes.size - offset))) }
-      finally { await output.close() }
-      await rename(partial, target)
-    } catch (error) { await rm(partial, { force: true }); throw error }
-  }
+  /** This machine's copy saved as the person's own file: a cached copy is cloned where the filesystem can, anything else written as bytes. */
+  const save = (copy: FileBytes & { path?: string }, target: string) => copy.path
+    ? writeFileAt(target, 0o644, partial => copySnapshot(copy.path!, partial))
+    : writeFileBytes(copy, target, 0o644)
   /**
    * A file saved where the person says (`pick`: the save dialog; `null` saves nothing). The bytes are this machine's.
    * `known`: its bytes of the version the window already knows, saved without asking the server (local-first, as an
@@ -147,7 +141,7 @@ export function createDesktopFileAccess(deps: {
    * is, anything else from this machine's copy of it, read into the file cache first when it has none. `revision`: the
    * version saved, for the window to know next time.
    */
-  const download = async (ref: FileRef, actor: FileActor, pick: () => Promise<string | null>, known: FileBytes | null, signal?: AbortSignal): Promise<{ saved: boolean; revision?: FileRevision } | { status: Exclude<FileMetadata['status'], 'ready'> }> => {
+  const download = async (ref: FileRef, actor: FileActor, pick: () => Promise<string | null>, known: FileBytes & { path?: string } | null, signal?: AbortSignal): Promise<{ saved: boolean; revision?: FileRevision } | { status: Exclude<FileMetadata['status'], 'ready'> }> => {
     if (known) {
       try { const target = await pick(); if (target) await save(known, target); return { saved: !!target } }
       finally { await known.dispose() }
@@ -158,7 +152,7 @@ export function createDesktopFileAccess(deps: {
       const target = await pick()
       if (!target) return { saved: false }
       const context: FileContext = { ref, actor, ...(signal ? { signal } : {}) }, { revision } = file
-      if (!revision.sha256 || await providers.local(context)) await writeFileHandle(file, target)
+      if (!revision.sha256 || await providers.local(context)) await writeFileHandle(file, target, 0o644)
       else {
         const copy = await here(revision.sha256) ?? (await cache.read(revision.sha256, () => saveTo(revision, context, cache.directory, revision.file_name, true)))!
         try { await save(copy, target) } finally { await copy.dispose() }
@@ -198,7 +192,7 @@ export function createDesktopFileAccess(deps: {
     const projectRoot = revision ? await root(revision.host_project_id!) : null
     return revision && projectRoot ? heldFileBlob(revision, projectRoot).catch(() => null) : null
   }
-  return { providers, resolve, resolveAccount, read, stream, drain, publish, held, here, cloud, download, cacheIdle: cache.idle,
+  return { providers, resolve, resolveAccount, read, stream, drain, publish, held, here, cloud, download,
     handlers: (transport: 'ssh' | 'realtime'): DeviceRpcHandlers => transport === 'ssh' ? sshHandlers : {},
   }
 }

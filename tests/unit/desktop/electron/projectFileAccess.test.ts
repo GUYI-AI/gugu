@@ -16,7 +16,7 @@ import { createFileResolver, type FileProviders, type FileRevision } from '../..
 import { ciphertextSize, createFileKey, transformFile } from '../../../../packages/core/src/shared/fileCipher'
 import { createProjectTransferHost } from '../../../../apps/desktop/electron/projectFileTransferHost'
 import { createFileChunkCache, createFileSink } from '../../../../apps/desktop/electron/fileSnapshot'
-import { createNodeFileResolver, saveFileHandle, saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
+import { createFileCache, createNodeFileResolver, saveFileHandle, saveToFileStore, storeFileBytes } from '@gugu/core/local/files/fileSnapshots'
 import { createProjectFileReader, localProjectFileProvider, openProjectFileSource, snapshotProjectFile } from '../../../../apps/desktop/electron/projectFileHost'
 import { ownSshFileProvider } from '../../../../apps/desktop/electron/projectFileSsh'
 import { createDesktopFileAccess } from '../../../../apps/desktop/electron/desktopFileAccess'
@@ -486,7 +486,7 @@ describe('the database\'s version record decides what this device holds', () => 
 
 describe('what the window reads over the network is kept in this machine\'s file cache', () => {
   /** A cloud of managed objects by item id, and how many times each object's bytes were asked for. */
-  const cloud = (files: Record<string, Uint8Array>, cacheBytes?: number) => {
+  const cloud = (files: Record<string, Uint8Array>) => {
     const revisions = Object.fromEntries(Object.entries(files).map(([id, content]): [string, FileRevision] => [id, { source: 'managed-object', item_id: id, version: 1, chat_id: 'group', file_name: `${id}.bin`, content_type: 'application/octet-stream', size_bytes: content.length, sha256: digest(content) }]))
     const reads: Record<string, number> = {}, state = { status: 'ready' }
     const network = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -503,7 +503,7 @@ describe('what the window reads over the network is kept in this machine\'s file
       return new Response(content.subarray(from, to + 1) as Uint8Array<ArrayBuffer>, { status: 206, headers: { 'content-range': `bytes ${from}-${to}/${content.length}` } })
     })
     const never = vi.fn(async () => { throw new Error('Unexpected request') })
-    const access = createDesktopFileAccess({ auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links: () => null, tempRoot, fetch: network as typeof fetch, rpc: never, env, home, cacheBytes, deviceStore: join(home, 'project-files'), identityDb: never as never })
+    const access = createDesktopFileAccess({ auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links: () => null, tempRoot, fetch: network as typeof fetch, rpc: never, env, home, deviceStore: join(home, 'project-files'), identityDb: never as never })
     const read = (id: string) => access.cloud.read(revisions[id]!, { ref: { item_id: id, version: 1 }, actor })
     return { access, revisions, reads, state, network, read }
   }
@@ -542,11 +542,16 @@ describe('what the window reads over the network is kept in this machine\'s file
     expect(digest(await readFile(again))).toBe(sha)
     expect(network.mock.calls.length).toBe(asks)
   })
-  it('past its byte budget drops the copy read longest ago, never one being read, and reads a dropped one over the network again', async () => {
-    await writeDeviceIdCache(deviceFile(env, 'owner'), 'host-device')
+  it('past its byte budget drops the copy read longest ago, never one being read, and a dropped one is written again when it is wanted', async () => {
     const files = { a: Buffer.alloc(400_000, 1), b: Buffer.alloc(400_000, 2), c: Buffer.alloc(400_000, 3), d: Buffer.alloc(400_000, 4), e: Buffer.alloc(400_000, 5) }
-    const { access, revisions, reads, read } = cloud(files, 1_000_000), sha = (id: keyof typeof files) => revisions[id]!.sha256!
-    const settle = async () => { await new Promise(done => setTimeout(done, 20)); await access.cacheIdle() }
+    const sha = (id: keyof typeof files) => digest(files[id]), writes: Record<string, number> = {}
+    const cache = createFileCache(join(home, 'file-cache'), 1_000_000)
+    // What a read over the network does: the bytes go into the cache's directory, verified as they are written.
+    const read = async (id: keyof typeof files) => (await cache.read(sha(id), async () => {
+      writes[id] = (writes[id] ?? 0) + 1
+      await storeFileBytes(cache.directory, sha(id), `${id}.bin`, '', { size: files[id].length, read: async (offset, length) => files[id].subarray(offset, offset + length) })
+    }))!
+    const settle = async () => { await new Promise(done => setTimeout(done, 20)); await cache.idle() }
     for (const id of ['a', 'b'] as const) { await (await read(id)).dispose(); await settle() }
     // `a` is read again, and held: `b` is now the copy read longest ago.
     const held = await read('a')
@@ -557,16 +562,18 @@ describe('what the window reads over the network is kept in this machine\'s file
     await (await read('b')).dispose(); await settle()
     expect(await cached()).toEqual([sha('a'), sha('b'), sha('c')].sort())
     expect(digest(await held.read(0, held.size))).toBe(sha('a'))
+    // Let go, it is what was over the budget: it goes at once, without waiting for the next write.
     await held.dispose(); await settle()
-    // Let go, it is a copy like any other: two newer ones fill the budget and it goes with the rest.
+    expect(await cached()).toEqual([sha('b'), sha('c')].sort())
     for (const id of ['d', 'e'] as const) { await (await read(id)).dispose(); await settle() }
     expect(await cached()).toEqual([sha('d'), sha('e')].sort())
-    // A dropped copy is not lost: its next open reads the network once more.
-    expect(reads).toEqual({ a: 1, b: 2, c: 1, d: 1, e: 1 })
+    // A dropped copy is not lost: it is written again the next time it is wanted. A copy still here is not.
+    expect(writes).toEqual({ a: 1, b: 2, c: 1, d: 1, e: 1 })
     const again = await read('a')
     expect(digest(await again.read(0, again.size))).toBe(sha('a'))
     await again.dispose()
-    expect(reads.a).toBe(2)
+    expect(writes.a).toBe(2)
+    expect(await cache.read('f'.repeat(64))).toBeNull()
   })
   it('reads the file store before the cache: what an agent saved there is not cached again', async () => {
     await writeDeviceIdCache(deviceFile(env, 'owner'), 'host-device')

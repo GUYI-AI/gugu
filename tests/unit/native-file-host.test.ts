@@ -179,6 +179,14 @@ describe('the desktop renderer\'s cloud reads run in main', () => {
     await files.read(1, context, { op: 'dispose', id: opened.id })
     expect(file.dispose).toHaveBeenCalledOnce()
   })
+  it('lets go of this machine\'s bytes when their address cannot be made', async () => {
+    const dispose = vi.fn(async () => {})
+    const stored = async (): Promise<FileBytes> => ({ size: bytes.length, read: async (offset, length) => bytes.slice(offset, offset + length), dispose })
+    const files = createNativeFileHost({ root: tmpdir(), owner: async () => 'owner', alive: () => true, local: vi.fn(), ssh: vi.fn(), openPath: vi.fn(), published: () => {}, stored,
+      serve: async () => { throw new Error('no address') } })
+    await expect(files.read(1, { ref: { attachment_id: 'a'.repeat(64) }, actor: context.actor }, { op: 'stored', sha256: 'a'.repeat(64) })).rejects.toThrow('no address')
+    expect(dispose).toHaveBeenCalledOnce()
+  })
   it('says a failed read as what it was, and a cancelled read stops main\'s', async () => {
     const files = host({ read: async () => { throw Object.assign(new MissingFileObjectError()) }, preview: vi.fn(), expiredPreview: vi.fn(), download: vi.fn() })
     const missing = await files.read(1, context, { op: 'cloud', read: 'r2', revision: cloudRevision }) as { failed: FileReadFailure }

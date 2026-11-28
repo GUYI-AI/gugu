@@ -11,7 +11,8 @@ import { etagOf, inWorkspace } from './session/main/core/files/workspace-transfe
 import { sanitizeRemoteFileName } from './remoteFileOpen'
 
 const clone = promisify(execFile)
-async function copySnapshot(source: string, target: string) {
+/** `source` at `target`, where nothing is yet: an APFS clone when the filesystem can, else a copy. */
+export async function copySnapshot(source: string, target: string) {
   source = await requireAgentFileAccess(source)
   target = await requireAgentFileAccess(target)
   if (process.platform === 'darwin') {

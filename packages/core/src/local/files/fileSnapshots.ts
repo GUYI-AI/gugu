@@ -256,30 +256,53 @@ export async function saveFileHandle(file: FileHandle, directory: string, name =
 /** Save into this machine's file store (`fileStoreDirectory`). */
 export const saveToFileStore = (file: FileHandle, guguHome: string, name = file.revision.file_name) => saveFileHandle(file, fileStoreDirectory(guguHome), name, true)
 
-/** A trusted native save dialog may select an exact destination; the original still verifies before atomic rename. */
-export async function writeFileHandle(file: FileHandle, path: string) {
+/**
+ * The one way a file is written where someone says: `fill` makes it under a private name beside `path`; it is then given
+ * `mode`, synced and renamed into place. A write that fails leaves nothing at `path` and no private name behind.
+ */
+export async function writeFileAt(path: string, mode: number, fill: (partial: string) => Promise<void>): Promise<void> {
   const target = dirname(path), partial = `${path}.${randomUUID()}.part`
-  let output: Awaited<ReturnType<typeof open>> | undefined
   let createdDirectory: string | undefined
-  let createdPartial = false
-  const hash = createHash('sha256'); let size = 0
   try {
-    requireFileRevision(file.revision)
     await requireAgentFileAccess(path)
     createdDirectory = await mkdir(target, { recursive: true, mode: 0o700 })
     await requireAgentFileAccess(partial)
-    output = await open(partial, 'wx', 0o600)
-    createdPartial = true
-    for await (const chunk of file.stream()) { size += chunk.length; if (size > file.revision.size_bytes) throw new Error('File export size changed'); hash.update(chunk); await output.writeFile(chunk) }
-    const observedSha = hash.digest('hex')
-    if (size !== file.revision.size_bytes || file.revision.sha256 !== null && observedSha !== file.revision.sha256) throw new FileIntegrityError('File export')
-    await output.sync(); await output.close(); await requireAgentFileAccess(path); await rename(partial, path)
-    return { file_path: path, file_name: basename(path), size_bytes: size, sha256: observedSha, content_type: file.revision.content_type }
+    await fill(partial)
+    await chmod(partial, mode)
+    const written = await open(partial, 'r+')
+    try { await written.sync() } finally { await written.close() }
+    await requireAgentFileAccess(path); await rename(partial, path)
   } catch (error) {
-    await output?.close().catch(() => undefined); if (createdPartial) await rm(await requireAgentFileAccess(partial), { force: true })
+    await rm(partial, { force: true })
     if (createdDirectory === target) await rmdir(target).catch(failure => { if (!['ENOENT', 'ENOTEMPTY'].includes(failure.code)) throw failure }); throw error
   }
+}
+
+/**
+ * A trusted native save dialog may select an exact destination; the original still verifies before atomic rename. `mode`:
+ * private by default; a file the person saves for themselves is `0o644`, as a browser saves it.
+ */
+export async function writeFileHandle(file: FileHandle, path: string, mode = 0o600) {
+  const hash = createHash('sha256'); let size = 0
+  try {
+    requireFileRevision(file.revision)
+    await writeFileAt(path, mode, async partial => {
+      const output = await open(partial, 'wx', mode)
+      try { for await (const chunk of file.stream()) { size += chunk.length; if (size > file.revision.size_bytes) throw new Error('File export size changed'); hash.update(chunk); await output.writeFile(chunk) } }
+      finally { await output.close() }
+      if (size !== file.revision.size_bytes || file.revision.sha256 !== null && hash.copy().digest('hex') !== file.revision.sha256) throw new FileIntegrityError('File export')
+    })
+    return { file_path: path, file_name: basename(path), size_bytes: size, sha256: hash.digest('hex'), content_type: file.revision.content_type }
+  }
   finally { await file.dispose() }
+}
+/** Bytes already verified (this machine's copy of a version), written the same way. */
+export async function writeFileBytes(bytes: Pick<FileBytes, 'size' | 'read'>, path: string, mode: number): Promise<void> {
+  await writeFileAt(path, mode, async partial => {
+    const output = await open(partial, 'wx', mode)
+    try { for (let offset = 0; offset < bytes.size; offset += FILE_CHUNK_BYTES) await output.writeFile(await bytes.read(offset, Math.min(FILE_CHUNK_BYTES, bytes.size - offset))) }
+    finally { await output.close() }
+  })
 }
 
 /** Where `directory` (the file store, or the file cache) holds a complete file of `sha256`, checked against it. */
@@ -322,6 +345,18 @@ export function createFileCache(directory: string, maxBytes = FILE_CACHE_BYTES) 
     const file = files.find(info => info?.isFile())
     return file ? { size: file.size, readAt: Math.max(...files.map(info => info?.atimeMs ?? 0)) } : null
   }
+  /**
+   * Where the cache holds `sha256`. Not hashed again: a copy is verified as it is written, comes into place only whole,
+   * is read-only, and nothing but this cache writes here (the store, which hands out paths, checks on every hand-out).
+   */
+  const cachedPath = async (sha256: string) => {
+    if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error('Invalid stored file SHA-256')
+    const copy = await requireAgentFileAccess(join(directory, sha256))
+    for (const name of await readdir(copy).catch(error => { if (error.code === 'ENOENT') return [] as string[]; throw error })) {
+      if (!name.endsWith('.part') && (await stat(join(copy, name))).isFile()) return join(copy, name)
+    }
+    return null
+  }
   const trim = async () => {
     await requireAgentFileTreeAccess(directory)
     const names = await readdir(directory).catch(error => { if (error.code === 'ENOENT') return [] as string[]; throw error })
@@ -330,21 +365,21 @@ export function createFileCache(directory: string, maxBytes = FILE_CACHE_BYTES) 
     // What is not a complete copy (an interrupted write, a file moved aside) is dropped, unless it is being written. A
     // copy someone holds counts like any other and is never dropped, even past the budget.
     return trimToBytes(copies, maxBytes, async ({ name, copy }) => ({ role: copy ? 'budget' : held.has(name) ? 'keep' : 'drop', size: () => copy!.size }),
-      async ({ name }) => { if (!held.has(name)) await rm(join(directory, name), { recursive: true, force: true }) })
+      async ({ name }) => { if (held.has(name)) return false; await rm(join(directory, name), { recursive: true, force: true }) })
   }
   const budget = byteBudget(maxBytes, trim, error => storeLog.warn({ error }, 'file cache trim failed'))
   return { directory, idle: budget.idle,
     /**
-     * The cached copy of `sha256`, held until disposed; `null` when the cache has none. `fill`: write it first when it is
-     * missing (into `directory`, the way the store is written).
+     * The cached copy of `sha256`, held until disposed, and where it is (`path`, for a clone; never handed out); `null`
+     * when the cache has none. `fill`: write it first when it is missing (into `directory`, the way the store is written).
      */
-    async read(sha256: string, fill?: () => Promise<unknown>): Promise<FileBytes | null> {
+    async read(sha256: string, fill?: () => Promise<unknown>): Promise<FileBytes & { path: string } | null> {
       hold(sha256)
       try {
-        let path = await verifiedCopy(directory, sha256)
+        let path = await cachedPath(sha256)
         if (!path && fill) {
           await fill()
-          path = await verifiedCopy(directory, sha256)
+          path = await cachedPath(sha256)
           if (path) budget.wrote((await stat(path)).size)
         }
         if (!path) { release(sha256); return null }
@@ -352,8 +387,8 @@ export function createFileCache(directory: string, maxBytes = FILE_CACHE_BYTES) 
         const info = await stat(path); await utimes(path, new Date(), info.mtime)
         const blob = await openAsBlob(path)
         let disposed = false
-        return { size: blob.size, here: true, read: async (offset, length) => new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()),
-          dispose: async () => { if (!disposed) { disposed = true; release(sha256); budget.wrote(0) } } }
+        return { path, size: blob.size, here: true, read: async (offset, length) => new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()),
+          dispose: async () => { if (!disposed) { disposed = true; release(sha256); budget.released() } } }
       } catch (error) { release(sha256); throw error }
     },
   }
@@ -394,11 +429,11 @@ export async function localCopy(guguHome: string, sha256: string, strict = false
 
 /** Keep outgoing bytes through the same verified, atomic, read-only store used for downloaded originals. */
 export async function storeBytes(guguHome: string, sha256: string, name: string, bytes: Blob): Promise<void> {
+  if (await storedCopy(guguHome, sha256)) return
   await storeFileBytes(fileStoreDirectory(guguHome), sha256, name, bytes.type, { size: bytes.size, read: async (offset, length) => new Uint8Array(await bytes.slice(offset, offset + length).arrayBuffer()) })
 }
-/** The same from bytes already verified elsewhere (a read's snapshot), into the store or the file cache (`directory`): checked against the sha again. */
+/** Bytes into the store or the file cache (`directory`), checked against the sha as they are written. */
 export async function storeFileBytes(directory: string, sha256: string, name: string, contentType: string, bytes: Pick<FileBytes, 'size' | 'read'>): Promise<void> {
-  if (await verifiedCopy(directory, sha256)) return
   const revision = { source: 'managed-object' as const, file_name: name, content_type: contentType || 'application/octet-stream', size_bytes: bytes.size, sha256 }
   const source = async () => ({ size: bytes.size, read: bytes.read, dispose: async () => {} })
   const save = createFileSaver({ local: async () => null, metadata: async () => ({ status: 'ready', revision }), managed: source, ssh: async () => null, temporary: source })

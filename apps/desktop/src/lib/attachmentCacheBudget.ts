@@ -13,7 +13,7 @@ export async function trimCacheToBytes(cache: Cache, maxBytes: number, roleOf: (
   return trimToBytes([...await cache.keys()].reverse(), maxBytes, async (request) => {
     const response = await cache.match(request)
     return response ? { role: roleOf(request.url, response), size: async () => (await response.blob()).size } : null
-  }, request => cache.delete(request))
+  }, async request => { await cache.delete(request) })
 }
 
 /**

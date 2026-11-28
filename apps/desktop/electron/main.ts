@@ -2552,8 +2552,6 @@ const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider()
   root: async projectId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectRoot(projectId) },
   project: async chatId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectOfGroup(chatId) },
   deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient, home: resolveGuguHome(process.env),
-  // The file cache's byte budget (10 GB); a test instance may set a small one.
-  cacheBytes: Number(process.env.GUGU_FILE_CACHE_BYTES) || undefined,
 })
 // A file on another of this account's machines streams over its device link (`@@@machine-file-stream`).
 setMachineFileStreams(remoteFileStreams(() => sshLinks ?? null, async () => (await requireAuth()).userId, linkReaches))

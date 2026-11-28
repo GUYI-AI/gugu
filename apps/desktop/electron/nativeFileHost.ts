@@ -89,9 +89,11 @@ export function createNativeFileHost(deps: {
       const key = JSON.stringify([context.actor.accountId, context.actor.actorId, fileRefKey(context.ref)])
       /** This machine's bytes, verified: kept for this reader at an address until it disposes them. */
       const served = async (sha256: string, contentType: string, file: FileBytes) => {
-        try { await check(scope, owner, epoch) } catch (error) { await file.dispose(); throw error }
-        const { url, release } = await deps.serve(sha256, contentType, file)
-        const id = randomUUID(); entries.set(id, { scope, epoch, owner, context: key, file, release, url }); return { id, size: file.size, url }
+        try {
+          await check(scope, owner, epoch)
+          const { url, release } = await deps.serve(sha256, contentType, file)
+          const id = randomUUID(); entries.set(id, { scope, epoch, owner, context: key, file, release, url }); return { id, size: file.size, url }
+        } catch (error) { await file.dispose(); throw error }
       }
       if (request.op === 'cloud' || request.op === 'cloud-preview' || request.op === 'cloud-expired-preview' || request.op === 'download') {
         // A failure comes back as a value (`fileReadFailure`): the reader branches on its kind, which an invoke error loses.
