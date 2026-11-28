@@ -43,11 +43,11 @@ describe('external selections become durable project-owned copies through the sa
     expect(await readFile(second.path)).toEqual(Buffer.from(data))
   })
   const selected = () => ({ name: file.name, path: join(home, 'selected.bin'), size: data.length, contentType: file.contentType })
-  it('copies into a unique fenced directory, never overwrites a same-name original, and survives original deletion', async () => {
+  it('copies into a fenced directory named by its sha256, never overwrites a same-name original, and survives original deletion', async () => {
     const f = fixture(); await writeFile(selected().path, data)
     await f.publish('group', selected(), null, 'owner')
     const [path] = publishedPaths(f)
-    expect(path).toMatch(/^\.gugu\/attachments\/[0-9a-f-]{36}\/file\.bin$/)
+    expect(path).toBe(`.gugu/attachments/${createHash('sha256').update(data).digest('hex')}/file.bin`)
     expect(await readFile(join(root, path))).toEqual(Buffer.from(data))
     await rm(selected().path)
     expect(await readFile(join(root, path))).toEqual(Buffer.from(data))
@@ -66,7 +66,7 @@ describe('external selections become durable project-owned copies through the sa
     const f = fixture(), pasted = { name: 'image.png', path: '', size: data.length, contentType: 'image/png', data: data.buffer }
     await expect(f.publish('group', pasted, null, 'owner')).resolves.toEqual(row)
     const [path] = publishedPaths(f)
-    expect(path).toMatch(/^\.gugu\/attachments\/[0-9a-f-]{36}\/image\.png$/)
+    expect(path).toMatch(/^\.gugu\/attachments\/[0-9a-f]{64}\/image\.png$/)
     expect(await readFile(join(root, path))).toEqual(Buffer.from(data))
     expect(f.rpc.mock.calls.find(([name]) => name === 'file_device_publish')?.[1]).toMatchObject({ p_filename: 'image.png', p_type: 'image/png', p_sha: createHash('sha256').update(data).digest('hex') })
     expect((await readdir(tmpdir())).filter(name => name.startsWith('gugu-pasted-'))).toHaveLength(0)
@@ -77,7 +77,7 @@ describe('external selections become durable project-owned copies through the sa
     try { await f.publish('group', { name: 'image.png', path: '', size: data.length, contentType: 'image/png', data: data.buffer }, null, 'owner') }
     finally { if (previous === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = previous }
     const [path] = publishedPaths(f)
-    expect(path).toMatch(/^\.gugu\/attachments\/[0-9a-f-]{36}\/image\.png$/)
+    expect(path).toMatch(/^\.gugu\/attachments\/[0-9a-f]{64}\/image\.png$/)
     expect(await readFile(join(root, path))).toEqual(Buffer.from(data))
     expect(await readdir(inside)).toEqual([])
   })
@@ -87,13 +87,13 @@ describe('external selections become durable project-owned copies through the sa
     await expect(f.publish('group', { ...pasted, path: join(home, 'selected.bin') }, null, 'owner')).rejects.toThrow('Pasted file')
     expect(publishedPaths(f)).toEqual([])
   })
-  it.each(['missing', 'corrupt'])('imports again when its indexed copy is %s, without reusing invalid bytes', async state => {
+  it.each(['missing', 'corrupt'])('imports again when its kept copy is %s, without reusing invalid bytes', async state => {
     const f = fixture(); await writeFile(selected().path, data)
     await f.publish('group', selected(), null, 'owner')
     const old = join(root, publishedPaths(f)[0])
     if (state === 'missing') await rm(old); else await writeFile(old, new Uint8Array([9, 9, 9]))
     await f.publish('group', selected(), null, 'owner')
-    expect(publishedPaths(f)[1]).not.toBe(publishedPaths(f)[0])
+    expect(publishedPaths(f)[1]).toBe(publishedPaths(f)[0])
     expect(await readFile(join(root, publishedPaths(f)[1]))).toEqual(Buffer.from(data))
   })
   it.each(['missing', 'corrupt'])('reuses the repaired copy on the next real new-item publication after a %s copy', async state => {
@@ -106,10 +106,9 @@ describe('external selections become durable project-owned copies through the sa
     if (state === 'missing') await rm(old); else await writeFile(old, new Uint8Array([9, 9, 9]))
     await f.publish('group', selected(), null, 'owner')
     await f.publish('group', selected(), null, 'owner')
-    const paths = publishedPaths(f)
-    expect(paths[1]).not.toBe(paths[0]); expect(paths[2]).toBe(paths[1])
-    expect(await readFile(join(root, paths[2]))).toEqual(Buffer.from(data))
-    expect(await readdir(join(root, '.gugu/attachments'))).toHaveLength(2)
+    expect(new Set(publishedPaths(f)).size).toBe(1)
+    expect(await readFile(join(root, publishedPaths(f)[2]))).toEqual(Buffer.from(data))
+    expect(await readdir(join(root, '.gugu/attachments'))).toHaveLength(1)
     expect(f.store).not.toHaveBeenCalled()
   })
   it.each(['.gugu', '.gugu/attachments'])('rejects a %s symlink escaping the root before copying or publishing', async link => {
@@ -166,7 +165,7 @@ describe('project file publication runs before document conversion or cloud uplo
     expect(f.store).not.toHaveBeenCalled()
     const publication = f.rpc.mock.calls.find(([name]) => name === 'file_device_publish')![1]
     expect(publication).toMatchObject({ p_sha: createHash('sha256').update(data).digest('hex'), p_size: 3, p_device: 'device' })
-    expect(publication.p_path).toMatch(/^\.gugu\/attachments\/[0-9a-f-]{36}\/file\.bin$/)
+    expect(publication.p_path).toMatch(/^\.gugu\/attachments\/[0-9a-f]{64}\/file\.bin$/)
     expect(publication).not.toHaveProperty('p_expected')
     expect(Object.values(publication)).not.toContain(root)
     expect(await readProjectFile({ item_id: 'item', version: 1 }, 'owner', 'device', env, noRecord)).toMatchObject({ workspace: { path: row.path, created_at: row.created_at, created_by: row.created_by }, sha256: publication.p_sha })
@@ -195,7 +194,7 @@ describe('project file publication runs before document conversion or cloud uplo
     expect(await f.publish('group', selected, null, 'owner')).toEqual(row)
     expect(f.rpc.mock.calls.find(([name]) => name === 'file_device_publish')?.[1]).toMatchObject({ p_sha: createHash('sha256').update(data).digest('hex'), p_size: data.length })
     const [path] = publishedPaths(f)
-    expect(path).toMatch(/^\.gugu\/attachments\/[0-9a-f-]{36}\/file\.bin$/)
+    expect(path).toMatch(/^\.gugu\/attachments\/[0-9a-f]{64}\/file\.bin$/)
     await writeFile(selected.path, 'edited afterwards')
     expect(await readFile(join(root, path))).toEqual(Buffer.from(data))
     for (const path of [join(home, 'secret'), '', 'relative/file.bin']) {
@@ -221,7 +220,7 @@ describe('project file publication runs before document conversion or cloud uplo
     if (kind.includes('other bytes')) await writeFile(join(root, file.name), new Uint8Array([9, 9, 9]))
     await f.publish('group', { ...file, name }, null, 'owner')
     const [path] = publishedPaths(f)
-    expect(path).toMatch(/^\.gugu\/attachments\/[0-9a-f-]{36}\/[^/]+$/)
+    expect(path).toMatch(/^\.gugu\/attachments\/[0-9a-f]{64}\/[^/]+$/)
     expect(await readFile(join(root, path))).toEqual(Buffer.from(data))
     expect(f.rpc.mock.calls.find(([call]) => call === 'file_device_publish')?.[1]).toMatchObject({ p_sha: createHash('sha256').update(data).digest('hex'), p_size: data.length })
     if (kind.includes('other bytes')) expect(await readFile(join(root, file.name))).toEqual(Buffer.from([9, 9, 9]))
