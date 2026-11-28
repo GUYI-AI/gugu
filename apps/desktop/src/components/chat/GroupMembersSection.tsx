@@ -6,12 +6,10 @@ import type { ChatItem, GroupCollabSnapshot, NotificationLevel } from '@gugu/cor
 import { GroupFolderRow, GroupMemberCount, GroupMembersRow } from './GroupInfoRows'
 import { GroupNameRow } from './GroupNameRow'
 import { GroupDetailsMain } from './GroupDetailsMain'
-import { Avatar } from '../Avatar'
 import { Button } from '../ui/Button'
 import { useUnifiedMembers } from './useUnifiedMembers'
 import { chatService } from '../../lib/chat'
-import { GroupAvatarEditor } from './GroupAvatarEditor'
-import { useGroupAvatarUpload } from './useGroupAvatarUpload'
+import { GroupAvatarControl } from './GroupAvatarEditor'
 import { ChatManagementActions } from './ChatManagementActions'
 import { GroupSettingsManagePage } from './GroupSettingsManagePage'
 import { MemberListPanel, type MemberListPanelProps } from './MemberListPanel'
@@ -32,16 +30,6 @@ import {
 // @@@6418 群聊设置 = 一个页面栈(useSettingsPages):成员、公告、群管理、规则、描述各是一页。
 
 const profileRowStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }
-const avatarFrameStyle: CSSProperties = {
-  position: 'relative', width: 52, height: 52, borderRadius: 'var(--radius-2xl)', overflow: 'hidden', flexShrink: 0,
-  background: 'transparent', display: 'grid', placeItems: 'center', cursor: 'default',
-}
-const avatarFrameEditableStyle: CSSProperties = { ...avatarFrameStyle, cursor: 'pointer' }
-const avatarFrameDragStyle: CSSProperties = { ...avatarFrameEditableStyle, border: '1px dashed var(--primary)' }
-const avatarUploadingStyle: CSSProperties = {
-  position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'var(--bg-overlay-modal)',
-  color: 'var(--color-white)', fontSize: 'var(--font-caption)',
-}
 const profileTextStyle: CSSProperties = { flex: 1, minWidth: 0 }
 const memberCountStyle: CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--muted-fg)', marginTop: 3 }
 const confirmStyle: CSSProperties = { marginTop: 20 }
@@ -106,9 +94,6 @@ export function GroupMembersSection({
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [confirmExit, setConfirmExit] = useState(false)
-  const { avatarUploading, handleAvatarFile, handleAvatarReset } = useGroupAvatarUpload({ chatId, viewerIsManager, setAvatarUrl, setActionError })
-  const [avatarDragOver, setAvatarDragOver] = useState(false)
-  const [avatarEditing, setAvatarEditing] = useState(false)
   const [draft, setDraft] = useState('')
   // 成员行的「+」:进成员页时选人页已经开着(成员页自己那一个)。
 
@@ -210,32 +195,15 @@ export function GroupMembersSection({
       </>
     )
   } else if (!mobileShell) { // 桌面:第 16 版「详情」页(GroupDetailsMain);手机整页照旧,左上返回 = 关。
-    content = <GroupDetailsMain chat={chat} name={groupName} settings={settings} manager={viewerIsManager} memberIds={unifiedMembers.map((member) => member.id)} total={totalMembers} people={snapshot ? snapshot.humans.length : null} agents={snapshot ? snapshot.agents.length : null} avatar={{ uploading: avatarUploading, onFile: handleAvatarFile, onReset: handleAvatarReset }} onRename={handleRename} onOpenPage={push} onOpenText={openTextPage} onClose={onClose} onClearMessages={onClearMessages} onSetNotificationLevel={onSetNotificationLevel} onTogglePinned={onTogglePinned} exit={canExit ? { owner: viewerRole === 'owner', busy, confirming: confirmExit, setConfirming: setConfirmExit, run: () => { void handleExit() } } : null} errorLine={errorLine} />
+    content = <GroupDetailsMain chat={chat} name={groupName} settings={settings} manager={viewerIsManager} memberIds={unifiedMembers.map((member) => member.id)} total={totalMembers} people={snapshot ? snapshot.humans.length : null} agents={snapshot ? snapshot.agents.length : null} setAvatarUrl={setAvatarUrl} onAvatarError={setActionError} onRename={handleRename} onOpenPage={push} onOpenText={openTextPage} onClose={onClose} onClearMessages={onClearMessages} onSetNotificationLevel={onSetNotificationLevel} onTogglePinned={onTogglePinned} exit={canExit ? { owner: viewerRole === 'owner', busy, confirming: confirmExit, setConfirming: setConfirmExit, run: () => { void handleExit() } } : null} errorLine={errorLine} />
   } else {
     content = (
       <>
         <SettingsPageHead title={t('header.groupInfoAndSettings')} onClose={onClose} mobile />
         <div style={bodyStyle}>
           <div style={profileRowStyle}>
-            <div
-              data-testid="group-avatar"
-              title={viewerIsManager ? t('group.settings.changeAvatar') : undefined}
-              onClick={viewerIsManager && !avatarUploading ? () => setAvatarEditing(true) : undefined}
-              onDragOver={viewerIsManager ? (event) => { event.preventDefault(); setAvatarDragOver(true) } : undefined}
-              onDragLeave={viewerIsManager ? () => setAvatarDragOver(false) : undefined}
-              onDrop={viewerIsManager ? (event) => {
-                event.preventDefault()
-                setAvatarDragOver(false)
-                void handleAvatarFile(event.dataTransfer.files?.[0])
-              } : undefined}
-              style={avatarDragOver ? avatarFrameDragStyle : viewerIsManager && !avatarUploading ? avatarFrameEditableStyle : avatarFrameStyle}
-            >
-              <Avatar variant="group" name={groupName ?? t('group.settings.groupFallback')} avatarUrl={settings?.avatar_url ?? null} seed={chatId} size={52} />
-              {avatarUploading ? <div style={avatarUploadingStyle}>{t('group.settings.uploading')}</div> : null}
-            </div>
-            {avatarEditing ? (
-              <GroupAvatarEditor chatId={chatId} groupName={groupName ?? ''} avatarUrl={settings?.avatar_url ?? null} busy={avatarUploading} onFile={handleAvatarFile} onReset={handleAvatarReset} onClose={() => setAvatarEditing(false)} />
-            ) : null}
+            <GroupAvatarControl chatId={chatId} name={groupName ?? t('group.settings.groupFallback')} settings={settings} size={52}
+              square setAvatarUrl={setAvatarUrl} onError={setActionError} />
             <div style={profileTextStyle}>
               <GroupNameRow chat={chat} name={groupName} canEdit={viewerIsManager && Boolean(settings)} onCommit={handleRename} />
               <GroupMemberCount total={totalMembers} style={memberCountStyle} />

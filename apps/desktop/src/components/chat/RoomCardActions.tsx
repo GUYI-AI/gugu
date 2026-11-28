@@ -5,22 +5,9 @@ import { useChatStore } from '@/store/chatContext'
 import { useAuth } from '@/store/auth'
 import { withSourceLineCandidates } from '@/lib/mention'
 import { messageForUser } from '@/lib/userFacingError'
-import { useToast } from '../toastContext'
 import { ChatPickSheet } from './ChatPickSheet'
-import { GroupAvatarEditor } from './GroupAvatarEditor'
-import { useGroupAvatarUpload } from './useGroupAvatarUpload'
-import { useGroupChatSettings } from './useGroupChatSettings'
 
 type CardSheetProps = { chat: ChatItem; onClose: () => void }
-
-export function CardAvatarEditor({ chat, onClose }: CardSheetProps) {
-  const { settings, setAvatarUrl } = useGroupChatSettings(chat.id)
-  const { toast } = useToast()
-  const upload = useGroupAvatarUpload({ chatId: chat.id, viewerIsManager: settings?.can_manage === true, setAvatarUrl,
-    setActionError: (error) => { if (error) toast(error, 'error') } })
-  return <GroupAvatarEditor chatId={chat.id} groupName={chat.name} avatarUrl={settings?.avatar_url ?? null}
-    busy={upload.avatarUploading} onFile={upload.handleAvatarFile} onReset={upload.handleAvatarReset} onClose={onClose} />
-}
 
 /** An addressed message brings source members into a topic. Group invitations have a separate acceptance flow. */
 export function TopicInviteSheet({ chat, onClose }: CardSheetProps) {

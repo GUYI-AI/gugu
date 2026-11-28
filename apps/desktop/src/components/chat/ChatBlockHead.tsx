@@ -5,7 +5,7 @@ import { isRoomChat } from '@gugu/core/shared/ui/chatModels'
 import { Avatar } from '../Avatar'
 import { Popover } from '../ui/Popover'
 import { ChatConversationCard } from './ChatConversationCard'
-import { CardAvatarEditor, TopicInviteSheet } from './RoomCardActions'
+import { TopicInviteSheet } from './RoomCardActions'
 
 /**
  * gugu-dev#181 聊天画在会话页一块里(项目块的项目群、对话块,见 ChatSlotHost)时的头:对话的头像和名字画进第一枚页签
@@ -22,7 +22,7 @@ export function ChatBlockHead({ host, chat, name, avatar, isAgent }: {
 }) {
   const room = isRoomChat(chat.kind)
   const [open, setOpen] = useState(false)
-  const [action, setAction] = useState<'avatar' | 'invite' | null>(null)
+  const [inviting, setInviting] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   // Focus goes back to the name only when the card is closed with Escape. Its rows close it on their way somewhere else
   // (search's input takes focus in the same render): handing focus back to the name there stole it from the search prompt.
@@ -44,12 +44,11 @@ export function ChatBlockHead({ host, chat, name, avatar, isAgent }: {
       {open ? <Popover.Portal><Popover.Positioner side="bottom" align="center" sideOffset={3} collisionPadding={8}
         anchor={() => trigger.current?.closest<HTMLElement>('[data-chat-workspace-title]') ?? trigger.current}>
         <Popover.Popup aria-label={name} finalFocus={() => escaped.current}>
-          <ChatConversationCard chat={chat} name={name} avatar={avatar} isAgent={isAgent} onClose={() => setOpen(false)} onAction={(next) => { setOpen(false); setAction(next) }} />
+          <ChatConversationCard chat={chat} name={name} avatar={avatar} isAgent={isAgent} onClose={() => setOpen(false)} onInvite={() => { setOpen(false); setInviting(true) }} />
         </Popover.Popup>
       </Popover.Positioner></Popover.Portal> : null}
     </Popover.Root>
-    {action === 'avatar' && chat.kind === 'group' && <CardAvatarEditor key={chat.id} chat={chat} onClose={() => setAction(null)} />}
-    {action === 'invite' && chat.kind === 'topic' && <TopicInviteSheet key={chat.id} chat={chat} onClose={() => setAction(null)} />}</>,
+    {inviting && chat.kind === 'topic' && <TopicInviteSheet key={chat.id} chat={chat} onClose={() => setInviting(false)} />}</>,
     host.title,
   ) : null
 }
