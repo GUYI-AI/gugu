@@ -13,6 +13,7 @@ export const QUICK_CHAT_CHANNELS = {
   setEnabled: 'quick-chat:set-enabled',
   /** 收起小窗(invoke):关闭钮、发完想走。 */
   hide: 'quick-chat:hide',
+  show: 'quick-chat:show',
   /** 收起小窗、把主窗叫到前面(invoke):「打开咕咕」。 */
   openMain: 'quick-chat:open-main',
   /** 主进程 → 主窗:按了快捷键而小窗还没开(或被关掉了),开一扇;开好主进程就把它摆出来(event)。 */

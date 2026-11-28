@@ -130,7 +130,6 @@ function createAppCommandProvider(): CommandProvider {
         {
           ...navigateBackDef,
           enabled: appState.history.canGoBack,
-          hideFromPalette: true,
           execute() {
             appState.history.back(applyHistoryEntry);
           },
@@ -138,7 +137,6 @@ function createAppCommandProvider(): CommandProvider {
         {
           ...navigateForwardDef,
           enabled: appState.history.canGoForward,
-          hideFromPalette: true,
           execute() {
             appState.history.forward(applyHistoryEntry);
           },
@@ -154,7 +152,7 @@ function createAppCommandProvider(): CommandProvider {
       commands.push(
         { id: 'app.resourceMonitor', execute: () => openShellSettings('resource-monitor') },
         // The last answer to ⌘W: a focused pane with tabs takes it first (session.tabClose, a narrower scope).
-        { id: 'app.closeWindow', hideFromPalette: true, execute: () => {
+        { id: 'app.closeWindow', execute: () => {
           // A modal up front is what ⌘W closes, as its Escape would. Then a popped-out window closes itself; the main
           // window goes through the host (it may hide to the tray).
           if (aModalIsOpen()) { dismissOpenModal(); return; }

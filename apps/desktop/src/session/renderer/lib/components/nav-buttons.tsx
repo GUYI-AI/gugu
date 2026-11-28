@@ -4,7 +4,7 @@ import { getSessionView } from '@renderer/features/sessions/stores/session-selec
 import { appState } from '@renderer/lib/stores/app-state';
 import type { HistoryEntry } from '@renderer/lib/stores/navigation-history-store';
 import { Button } from '@renderer/lib/ui/button';
-import { BoundShortcut } from '@renderer/lib/ui/shortcut';
+import { BoundShortcut, useCommandAriaShortcut } from '@renderer/lib/ui/shortcut';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 
 export function applyHistoryEntry(entry: HistoryEntry): void {
@@ -30,6 +30,8 @@ export function navigateForward(canGoForward: boolean): void {
 }
 
 export const NavButtons = observer(function NavButtons() {
+  const backKey = useCommandAriaShortcut('app.navigateBack');
+  const forwardKey = useCommandAriaShortcut('app.navigateForward');
   const { canGoBack, canGoForward } = appState.history;
   return (
     <div className="flex items-center gap-0.5 [-webkit-app-region:no-drag]">
@@ -40,6 +42,7 @@ export const NavButtons = observer(function NavButtons() {
             size="sm"
             className="size-7 p-0 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
             aria-disabled={!canGoBack || undefined}
+            aria-keyshortcuts={backKey}
             aria-label="Go Back"
             onClick={() => navigateBack(canGoBack)}
           >
@@ -58,6 +61,7 @@ export const NavButtons = observer(function NavButtons() {
             size="sm"
             className="size-7 p-0 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
             aria-disabled={!canGoForward || undefined}
+            aria-keyshortcuts={forwardKey}
             aria-label="Go Forward"
             onClick={() => navigateForward(canGoForward)}
           >

@@ -24,7 +24,12 @@ export function commandDescription(id: CommandId): string {
 
 const CATEGORY_KEYS: Record<CommandCategory, SessionMessageKey> = {
   Navigation: 'keyboard.categoryNavigation',
-  'Task View': 'keyboard.categoryTaskView',
+  'Current Conversation': 'keyboard.currentConversation',
+  Create: 'keyboard.categoryCreate',
+  Git: 'keyboard.categoryGit',
+  Browser: 'keyboard.categoryBrowser',
+  Apps: 'keyboard.categoryApps',
+  Diagnostics: 'keyboard.categoryDiagnostics',
   'Tab Navigation': 'keyboard.tabNavigation',
   View: 'keyboard.categoryView',
 };

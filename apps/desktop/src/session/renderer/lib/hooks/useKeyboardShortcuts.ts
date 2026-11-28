@@ -1,5 +1,7 @@
 import type { Hotkey } from '@tanstack/react-hotkeys';
 import { COMMANDS, type CommandId } from '@shared/commands';
+import { getEffectiveHotkey } from '@shared/effective-hotkey';
+export { getEffectiveHotkey };
 import { resolveDefaultHotkey } from '@shared/shortcuts';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { platform } from '@/platform';
@@ -12,24 +14,6 @@ type ShortcutOverrides = Partial<Record<CommandId, string | null>>;
 
 export function isHostCommandId(id: string): id is CommandId {
   return Object.hasOwn(COMMANDS, id);
-}
-
-/**
- * Returns the currently assigned hotkey for an action.
- * - `undefined` override -> falls back to default
- * - `null` override -> unassigned (disabled)
- * - no `defaultHotkey` and no override -> `null` (not bound)
- * - `custom === null`: the user's bindings are not read yet -> `null` (nothing bound or shown until they are)
- */
-export function getEffectiveHotkey(
-  key: CommandId,
-  custom?: ShortcutOverrides | null
-): Hotkey | null {
-  if (custom === null) return null;
-  const configured = custom?.[key];
-  if (configured === null) return null;
-  const resolved = configured ?? resolveDefaultHotkey(COMMANDS[key]);
-  return resolved != null ? (resolved as Hotkey) : null;
 }
 
 /**

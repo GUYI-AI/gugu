@@ -1,3 +1,4 @@
+import { isImeComposing } from '@/lib/ime'
 import { metadataSeparator } from '@/i18n/format'
 import { useCallback, useDeferredValue, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { GrowingList, type GrowingListWindow } from '@gugu/session-ui/react/growing-list'
@@ -45,6 +46,7 @@ export interface MemberPickerProps {
   /** 返回一组 id = 换成这组继续选(添加成员时没加进去的那几个);不返回 = 照旧。 */
   onConfirm: (ids: string[]) => Promise<readonly string[] | void> | void
   onClose: () => void
+  singleSelection?: boolean
   initialSelectedIds?: readonly string[]
   /** 已经在群里的:勾着、不能取消,不进已选。 */
   lockedIds?: ReadonlySet<string>
@@ -63,7 +65,7 @@ export interface MemberPickerProps {
   underlineMobileSources?: boolean
 }
 
-export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialSelectedIds = [], lockedIds, peopleDenied, agentNote, busy = false, busyLabel, footer, actions, empty, underlineMobileSources = false }: MemberPickerProps) {
+export function MemberPicker({ title, confirmLabel, onConfirm, onClose, singleSelection, initialSelectedIds = [], lockedIds, peopleDenied, agentNote, busy = false, busyLabel, footer, actions, empty, underlineMobileSources = false }: MemberPickerProps) {
   usePhoneTaskDirectory()
   const { t } = useTranslation('contacts')
   const mobile = useMobileShell()
@@ -137,7 +139,7 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
   const isLocked = (id: string) => lockedIds?.has(id) ?? false
   const toggle = (id: string) => {
     if (isLocked(id)) return
-    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : singleSelection ? [id] : [...prev, id]))
   }
   const confirm = async () => {
     if (!canConfirm) return
@@ -162,7 +164,7 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
     if (query.trim()) changeQuery('')
   }
   const onSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.nativeEvent.isComposing) return
+    if (isImeComposing(event)) return
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); void confirm() }
     else if (event.key === 'Enter') { event.preventDefault(); activate(activeIndex) }
     else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -173,6 +175,7 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
     } else if (event.key === 'Backspace' && !query && selected.length > 0) { event.preventDefault(); setSelected((prev) => prev.slice(0, -1)) }
   }
   const onRowKeyDown = (index: number) => (event: KeyboardEvent<HTMLDivElement>) => {
+    if (isImeComposing(event)) return
     if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); activate(index) }
     else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()

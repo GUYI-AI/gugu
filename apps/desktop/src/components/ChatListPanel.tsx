@@ -931,10 +931,10 @@ export function ChatListPanel({
     surface: 'shell',
     isActive: () => walksListKeys,
     getCommands: () => [
-      { id: 'session.next', hideFromPalette: true, execute: () => walkTo((ids) => nextChatId(ids, selectedChatId, 1)) },
-      { id: 'session.previous', hideFromPalette: true, execute: () => walkTo((ids) => nextChatId(ids, selectedChatId, -1)) },
+      { id: 'session.next', execute: () => walkTo((ids) => nextChatId(ids, selectedChatId, 1)) },
+      { id: 'session.previous', execute: () => walkTo((ids) => nextChatId(ids, selectedChatId, -1)) },
       ...([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map((n) => ({
-        id: `chat.select${n}` as const, hideFromPalette: true, execute: () => walkTo((ids) => ids[n - 1] ?? null),
+        id: `chat.select${n}` as const, execute: () => walkTo((ids) => ids[n - 1] ?? null),
       })),
     ],
   })

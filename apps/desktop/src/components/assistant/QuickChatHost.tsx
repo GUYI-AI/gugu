@@ -1,3 +1,4 @@
+import { useCommandProvider } from '@renderer/lib/commands/use-command-provider'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
@@ -88,6 +89,12 @@ export function QuickChatHost({
   const state = quick.reading.state === 'value' ? quick.reading.value : null
   const mountedRef = useRef<Mounted | null>(null)
   mountedRef.current = mounted
+
+  useCommandProvider({
+    scopeId: 'app', surface: 'shell',
+    getCommands: () => [{ id: 'app.quickChat', enabled: !!mounted && !!state?.supported,
+      execute: () => { void ipc?.invoke(QUICK_CHAT_CHANNELS.show) } }],
+  })
 
   // Subscribe before window.open: adoption can show a pending shortcut window immediately.
   useLayoutEffect(() => {

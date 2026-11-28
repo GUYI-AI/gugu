@@ -2,6 +2,7 @@ import { detectPlatform, matchesKeyboardEvent, parseHotkey, type Hotkey } from '
 import { observer } from 'mobx-react-lite';
 import { useEffect } from 'react';
 import { revealSessionpage } from '@/hooks/useSessionpageReveal';
+import { effectiveAliases } from '@shared/effective-hotkey';
 import { isImeComposing } from '@/lib/ime';
 import { COMMANDS, getEffectiveHotkey, isHostCommandId, type CommandId, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { isEmbedVisible, subscribeEmbedVisibility } from '@renderer/lib/portal-container';
@@ -80,9 +81,16 @@ function dispatchIn(event: KeyboardEvent, source: KeySource): boolean {
     // focus (CodeMirror stops the keys its keymaps bind) except what the editor keeps for itself.
     if (source === 'capture' && !def.capture && !(inEditor && !def.ignoreWhenCodeEditorFocused)) continue;
     if (source === 'bubble' && (def.capture || (inEditor && !def.ignoreWhenCodeEditorFocused))) continue;
-    const hotkeys = [getEffectiveHotkey(id, overrides), ...(def.aliases ?? [])].filter((h): h is Hotkey => !!h);
-    const hotkey = hotkeys.find((h) => matchesKeyboardEvent(event, h, PLATFORM));
+    const hotkeys = [getEffectiveHotkey(id, overrides), ...effectiveAliases(id, overrides)].filter((h): h is Hotkey => !!h);
+    const hotkey = hotkeys.find((h) => {
+      if (id === 'app.showKeyboardShortcuts' && String(h) === 'Shift+/') {
+        return event.key === '?' && !event.altKey && !event.ctrlKey && !event.metaKey;
+      }
+      return matchesKeyboardEvent(event, h, PLATFORM);
+    });
     if (!hotkey) continue;
+    if (id === 'app.showKeyboardShortcuts' && String(hotkey) === 'Shift+/' &&
+        (typing || !start?.closest('[data-region="left-sidebar"]'))) continue;
     if (typing && !def.capture && !inEditor && yieldsToText(id, hotkey)) continue;
     // @@@native-editor-find — CodeMirror owns replacement, regex and selection search; only app.find yields.
     if (id === 'app.find' && start?.closest('.cm-editor, [cmdk-root], [role=menu]')) continue;
@@ -142,7 +150,7 @@ let uninstall: (() => void) | null = null;
 
 /**
  * Listens for the whole document, always — not only while the task page is on screen: the shell's own tabs need their
- * shortcuts too (⌘P, ⌘, … used to go dead on 通讯录). Which commands answer while the task page is hidden is the
+ * shortcuts too (the palette and settings … used to go dead on 通讯录). Which commands answer while the task page is hidden is the
  * registry's call. Mounted by the shell and by the task page (which also runs standalone); the listeners go in once.
  */
 export const KeyboardDispatcher = observer(function KeyboardDispatcher() {

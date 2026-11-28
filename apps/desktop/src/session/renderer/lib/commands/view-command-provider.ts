@@ -10,17 +10,18 @@ import type { CommandProvider } from './types';
  * is restored). No React dependency — runs entirely off MobX observables.
  */
 export function setupViewCommandProvider(): void {
+  let releaseView: (() => void) | undefined;
   reaction(
     () => {
       const viewId = appState.navigation.currentViewId;
       return { viewId, params: appState.navigation.viewParamsStore[viewId] ?? {} };
     },
     ({ viewId, params }) => {
-      commandRegistry.unregister('session');
+      releaseView?.();
       const def = (
         registeredViews() as unknown as Record<string, { commandProvider?: (p: unknown) => CommandProvider }>
       )[viewId];
-      if (def?.commandProvider) commandRegistry.register(def.commandProvider(params));
+      releaseView = def?.commandProvider ? commandRegistry.register(def.commandProvider(params)) : undefined;
     },
     { fireImmediately: true, equals: comparer.structural }
   );

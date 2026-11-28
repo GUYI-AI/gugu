@@ -5,13 +5,11 @@ import { commandRegistry } from '@renderer/lib/commands/registry';
 import { commandCategoryLabel, commandDescription, commandLabel } from '@renderer/lib/commands/command-copy';
 import { useAppSettingsKey, type AppSettingsKeyApi } from '@renderer/features/settings/use-app-settings-key';
 import type { AppSettings } from '@shared/core/app-settings';
-import type { CommandCategory } from '@shared/commands';
+import { CONFIGURABLE_SHORTCUTS, SHORTCUTS_BY_CATEGORY } from '@shared/commands';
 import { SettingValue } from './SettingControls';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import {
-  COMMANDS,
   getEffectiveHotkey,
-  resolveDefaultHotkey,
   sharesChordIntentionally,
   type CommandId,
 } from '@renderer/lib/hooks/useKeyboardShortcuts';
@@ -21,19 +19,6 @@ import { describeHotkey } from '@renderer/lib/ui/shortcut-format';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { terminalShown, useTerminalEnabled } from '../use-terminal-enabled';
-
-const CONFIGURABLE_SHORTCUTS = (
-  Object.entries(COMMANDS) as [
-    CommandId,
-    (typeof COMMANDS)[CommandId],
-  ][]
-).filter(([, def]) => !def.hideFromSettings);
-
-const SHORTCUTS_BY_CATEGORY = CONFIGURABLE_SHORTCUTS.reduce((acc, entry) => {
-  const category = entry[1].category;
-  acc.set(category, [...(acc.get(category) ?? []), entry]);
-  return acc;
-}, new Map<CommandCategory, [CommandId, (typeof COMMANDS)[CommandId]][]>());
 
 /** 只对终端起作用的快捷键:「终端」开关关着时不列(终端整个不出现,它们也就无事可做)。 */
 const TERMINAL_SHORTCUTS: ReadonlySet<CommandId> = new Set<CommandId>(['session.newTerminal', 'session.viewTerminals']);
@@ -130,13 +115,11 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
               {commandCategoryLabel(category)}
             </div>
             <div className="space-y-3">
-              {shortcuts.map(([key, def]) => {
+              {shortcuts.map(([key]) => {
                 const effectiveHotkey = getEffectiveHotkey(key, keyboard);
                 const capturing = editingKey === key && recorder.isRecording;
-                const cleared = keyboard[key] === null;
-                const showClear = !cleared;
-                const defaultHotkey = resolveDefaultHotkey(def);
-                const showReset = defaultHotkey != null && effectiveHotkey !== defaultHotkey;
+                const showClear = effectiveHotkey !== null;
+                const showReset = keyboard[key] !== undefined;
                 const showActions = showClear || showReset;
 
                 return (

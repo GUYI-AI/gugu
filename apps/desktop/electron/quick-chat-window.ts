@@ -244,6 +244,11 @@ export function installQuickChat({ mainWindow, focusMain, supported }: { mainWin
     tellMain(QUICK_CHAT_CHANNELS.changed)
     return state()
   })
+  ipcMain.handle(QUICK_CHAT_CHANNELS.show, (event) => {
+    if (!supported || event.sender !== mainWindow()?.webContents || !win || win.isDestroyed()) return false
+    show()
+    return true
+  })
   ipcMain.handle(QUICK_CHAT_CHANNELS.hide, () => hide())
   ipcMain.handle(QUICK_CHAT_CHANNELS.openMain, () => {
     hide()
