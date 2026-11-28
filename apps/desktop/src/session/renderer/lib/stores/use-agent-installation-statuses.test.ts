@@ -279,6 +279,25 @@ describe('useAgentInstallationStatuses invalidate', () => {
   });
 
 
+  it('keeps the verified version when a status read from before the update finishes late', async () => {
+    await renderAvailability('server-a');
+    const snapshot = (version: string) => [{ id: 'claude', installations: [
+      { version, provenance: { ours: true }, updateAvailable: version !== '2.1.332', latestVersion: '2.1.332' },
+    ] }];
+    let oldRead!: (value: ReturnType<typeof snapshot>) => void;
+    mocks.listAgentInstallationStatus.mockImplementationOnce(() => new Promise(resolve => { oldRead = resolve; }));
+    let earlier!: Promise<void>;
+    await act(async () => { earlier = agentInstallationStatus.refresh('server-a'); });
+    expect(oldRead).toBeTypeOf('function');
+    mocks.listAgentInstallationStatus.mockResolvedValue(snapshot('2.1.332'));
+    mocks.update.mockResolvedValueOnce({ success: true, data: {} });
+    await act(async () => { await api!.updateAsync({ id: 'claude', method: 'mise' }); });
+    await act(async () => { oldRead(snapshot('2.1.278')); await earlier; });
+    expect(toast).toHaveBeenCalledWith({ title: 'claude updated to v2.1.332' });
+    expect(agentInstallationStatus.peekValue('server-a')?.[0]?.installations[0]?.version).toBe('2.1.332');
+  });
+
+
   it('subscribes to progress while updating and clears it when the update settles', async () => {
     let complete!: (value: { success: true; data: object }) => void;
     mocks.update.mockReturnValue(new Promise(resolve => { complete = resolve; }));
